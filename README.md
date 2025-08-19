@@ -1,223 +1,107 @@
-# LeadsCRM Agent
+# LeadsCRM - Sistema CRM con Automatización de WhatsApp
 
-> **⚡ Ultra-Fast Builds**: Optimized from 19+ minutes to ~3 minutes with advanced Turborepo configuration
+## 🚀 Descripción
 
-Sistema integral de gestión de leads con automatización de WhatsApp e integración de IA. Monorepo optimizado construido con Turborepo, diseñado para equipos de alto rendimiento.
+LeadsCRM es una plataforma CRM moderna y completa que incluye automatización de WhatsApp, desarrollada con arquitectura de monorepo usando Turborepo. El sistema permite gestionar leads, automatizar comunicaciones por WhatsApp y realizar seguimiento completo de conversaciones en tiempo real.
 
-## 🚀 Características Principales
+## ✨ Características Principales
 
-- **Dashboard de Gestión**: Interfaz moderna de administración de leads con Next.js 14
-- **API REST**: Backend robusto con NestJS y autenticación JWT
-- **Automatización WhatsApp**: Servicio de mensajería automatizada con IA
-- **Base de Datos**: PostgreSQL con Prisma ORM y migraciones automáticas
-- **Arquitectura Monorepo**: Código compartido y builds ultrarrápidas
-- **TypeScript**: 100% tipado estático para mayor confiabilidad
+- **📊 Dashboard CRM Completo** - Gestión de leads, métricas y analytics
+- **📱 Integración WhatsApp** - Automatización completa con whatsapp-web.js
+- **💬 Chat en Tiempo Real** - Interface de conversaciones con envío de mensajes
+- **🔐 Autenticación Completa** - Sistema de login/logout seguro
+- **⚡ Performance Optimizada** - Build ultra-rápido con Turborepo
+- **🎨 UI Moderna** - Diseño responsive con ShadCN/ui y Tailwind CSS
 
-## 🏗️ Arquitectura del Monorepo
+## 🏗️ Arquitectura
 
-### Apps (Aplicaciones)
-
-- **`apps/dashboard`** - Panel de administración con Next.js 14 + React 18
-- **`apps/api`** - API REST con NestJS + PostgreSQL
-- **`apps/whatsapp-service`** - Servicio de automatización WhatsApp
-
-### Packages (Librerías Compartidas)
-
-- **`packages/db`** - Esquemas Prisma, migraciones y cliente de DB
-- **`packages/ui`** - Componentes React reutilizables y design system
-- **`packages/config-eslint`** - Configuración ESLint compartida
-- **`packages/config-ts`** - Configuraciones TypeScript optimizadas
-
-## 🛠️ Stack Tecnológico
-
-- **Frontend**: Next.js 14, React 18, TypeScript, Tailwind CSS
-- **Backend**: NestJS, TypeScript, JWT Authentication
-- **Base de Datos**: PostgreSQL, Prisma ORM
-- **Mensajería**: WhatsApp Web API, WebSockets
-- **Build System**: Turborepo (configuración ultra-optimizada)
-- **Linting**: ESLint, Prettier
-- **Package Manager**: PNPM (workspaces)
-
-## ⚡ Instalación Rápida
-
-### Prerrequisitos
-
-- **Node.js**: >= 18.0.0
-- **PNPM**: >= 9.0.0
-- **PostgreSQL**: >= 14
-- **Redis**: >= 6.0 (para WhatsApp sessions)
-
-### Setup del Proyecto
-
-```bash
-# Clonar el repositorio
-git clone https://github.com/Exceptia-co/LeadsAgent.git
-cd LeadsAgent
-
-# Instalación completa (incluye DB setup)
-pnpm setup
-
-# O instalación paso a paso
-pnpm install
-pnpm db:generate
-pnpm db:migrate:dev
+### Monorepo Structure
 ```
-
-### Variables de Entorno
-
-Crea los archivos `.env` necesarios:
-
-```bash
-# Archivo raíz: .env
-DATABASE_URL="postgresql://usuario:password@localhost:5432/leadcrm"
-JWT_SECRET="tu-jwt-secret-seguro"
-REDIS_URL="redis://localhost:6379"
-
-# Para WhatsApp service: apps/whatsapp-service/.env
-WHATSAPP_SESSION_PATH="./sessions"
-WHATSAPP_WEBHOOK_URL="https://tu-dominio.com/webhook"
-OPENAI_API_KEY="tu-openai-key"  # Para funciones IA
-```
-
-## 🚀 Scripts de Desarrollo
-
-### Desarrollo
-
-```bash
-# Iniciar todo el ecosistema
-pnpm dev
-
-# Desarrollar aplicaciones específicas
-pnpm dev:dashboard    # Solo dashboard (puerto 3000)
-pnpm dev:api         # Solo API (puerto 3001)
-pnpm dev:whatsapp    # Solo WhatsApp service (puerto 3002)
-```
-
-### Build (Ultra-Optimizado)
-
-```bash
-# Build completo optimizado (~3 min)
-pnpm build:fast
-
-# Build de producción
-pnpm build:production
-
-# Build por aplicación
-pnpm build:dashboard
-pnpm build:api
-pnpm build:whatsapp
-```
-
-### Base de Datos
-
-```bash
-pnpm db:generate     # Generar cliente Prisma
-pnpm db:migrate:dev  # Ejecutar migraciones
-pnpm db:studio       # Abrir Prisma Studio
-pnpm db:reset        # Reset completo de DB
-```
-
-### Utilidades
-
-```bash
-pnpm typecheck       # Verificar TypeScript
-pnpm lint            # Linting completo
-pnpm format          # Formatear código
-pnpm test            # Ejecutar tests
-pnpm clean:cache     # Limpiar caché de build
-pnpm rebuild         # Rebuild completo desde cero
-```
-
-## 📊 Optimizaciones de Build
-
-**Antes**: ~19 minutos | **Después**: ~3 minutos ⚡
-
-### Mejoras Aplicadas
-
-- **React 18**: Downgrade desde React 19 para estabilidad
-- **TypeScript Optimizado**: `skipLibCheck`, `incremental`, cache mejorado
-- **Turborepo Paralelo**: Builds simultáneos con `--parallel --no-daemon`
-- **Cache Inteligente**: Estrategia de caché optimizada por dependencias
-- **Scripts Fast**: Comandos `build:fast` y `typecheck:fast`
-
-> 📖 **Documentación Completa**: Ver `docs/OPTIMIZATIONS.md` para detalles técnicos
-
-## 🔧 Configuración de Desarrollo
-
-### IDEs Recomendados
-
-- **VSCode**: Con extensiones TypeScript, Prisma, ESLint
-- **Configuración TypeScript**: Strict mode habilitado
-- **Prettier**: Formateo automático configurado
-
-### Estructura de Puertos
-
-- **Dashboard**: http://localhost:3000
-- **API**: http://localhost:3001
-- **WhatsApp Service**: http://localhost:3002
-- **Prisma Studio**: http://localhost:5555
-
-### Flujo de Trabajo
-
-1. **Desarrollo**: Usar `pnpm dev` para todo el ecosistema
-2. **Testing**: `pnpm test` antes de cada commit
-3. **Build**: Verificar con `pnpm build:fast`
-4. **Deploy**: `pnpm build:production`
-
-## 📁 Estructura del Proyecto
-
-```
-LeadsAgent/
+LeadsCRM/
 ├── apps/
-│   ├── dashboard/          # Panel de administración
-│   ├── api/               # Backend API
-│   └── whatsapp-service/  # Servicio WhatsApp
+│   ├── dashboard/          # Next.js 13+ Frontend (App Router)
+│   └── whatsapp-service/   # Express.js Backend + WhatsApp
 ├── packages/
-│   ├── db/                # Prisma schemas
-│   ├── ui/                # Componentes compartidos
-│   ├── config-eslint/     # Config ESLint
-│   └── config-ts/         # Config TypeScript
-├── docs/                  # Documentación
-├── turbo.json            # Configuración Turborepo
-└── package.json          # Scripts raíz
+│   ├── config-eslint/      # ESLint shared config
+│   ├── config-ts/          # TypeScript shared config
+│   ├── database/           # Prisma schemas + migrations
+│   └── ui/                 # Shared UI components (ShadCN/ui)
+├── docs/                   # Complete documentation
+└── .github/                # CI/CD workflows
 ```
 
-## 🔐 Seguridad
+## 📱 WhatsApp Integration
 
-- **JWT Authentication**: Tokens seguros para API
-- **Variables de Entorno**: Nunca hardcodear secrets
-- **Validación de Input**: Sanitización completa
-- **CORS**: Configurado para dominios específicos
-- **Rate Limiting**: Protección contra spam
+### Features Completas
+- ✅ **Gestión de Sesiones** - Crear, monitorear y eliminar sesiones WhatsApp
+- ✅ **QR Code Generation** - Conexión automática con código QR
+- ✅ **Envío de Mensajes** - API completa para mensajes de texto/media
+- ✅ **Chat Interface** - UI completa para conversaciones en tiempo real
+- ✅ **Gestión de Conversaciones** - Listado y navegación de chats
+- ✅ **Estados de Mensaje** - Tracking de enviado/entregado/leído
+- ✅ **Reconexión Automática** - Recuperación de sesiones perdidas
 
-## 🤝 Contribución
+### Dashboard Integration
+```typescript
+// Custom API hook for WhatsApp integration
+import { useWhatsAppApi } from '@/hooks/use-whatsapp-api'
 
-1. Fork del repositorio
-2. Crear feature branch: `git checkout -b feature/nueva-funcionalidad`
-3. Commit cambios: `git commit -m 'feat: agregar nueva funcionalidad'`
-4. Push branch: `git push origin feature/nueva-funcionalidad`
-5. Crear Pull Request
+function ConversationsPage() {
+  const {
+    getConversations,
+    sendMessage,
+    isLoading,
+    error
+  } = useWhatsAppApi()
 
-### Convenciones de Commit
+  // Full integration with optimistic updates
+  // Error handling and loading states
+  // Real-time conversation management
+}
+```
 
-- `feat:` - Nueva funcionalidad
-- `fix:` - Bug fix
-- `docs:` - Documentación
-- `style:` - Formato de código
-- `refactor:` - Refactorización
-- `test:` - Tests
-- `chore:` - Tareas de mantenimiento
+## 🚀 Quick Start
 
-## 📜 Licencia
+### Installation
+```bash
+# Clone repository
+git clone https://github.com/Exceptia-co/LeadsAgent.git
+cd LeadsCRM
 
-Este proyecto es privado y pertenece a Exceptia Co. Todos los derechos reservados.
+# Install dependencies
+npm install
 
-## 🆘 Soporte
+# Setup environment variables
+cp .env.example .env
 
-- **Issues**: [GitHub Issues](https://github.com/Exceptia-co/LeadsAgent/issues)
-- **Documentación**: `docs/` folder
-- **Status del Proyecto**: `docs/PROJECT_STATUS.md`
+# Build all packages
+npm run build
+```
 
----
+### Development
+```bash
+# Start all services
+npm run dev
 
-**Hecho con ❤️ por el equipo de Exceptia** | **Powered by Turborepo ⚡**
+# Dashboard on :3000
+# WhatsApp service on :3001
+```
+
+## 📖 Documentación
+
+### Archivos de Documentación
+- `docs/PROJECT_STATUS.md` - Estado completo del proyecto
+- `docs/OPTIMIZATIONS.md` - Optimizaciones técnicas aplicadas
+- `docs/coding-guidelines.md` - Standards y patrones de código
+- `README.md` - Este archivo
+
+## 🏆 Status
+
+**Estado:** ✅ Production Ready
+**Última actualización:** Agosto 2024
+
+El proyecto está completamente funcional y listo para:
+- ✅ Desarrollo colaborativo
+- ✅ Despliegue en producción  
+- ✅ Uso comercial
+- ✅ Escalamiento
