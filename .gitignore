@@ -1,50 +1,29 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
 # Dependencies
-node_modules
-.pnp
-.pnp.js
+node_modules/
+*/node_modules/
+**/node_modules/
+.pnpm-store/
 
-# Local env files
+# Build outputs
+dist/
+build/
+.next/
+*.tsbuildinfo
+
+# Turborepo
+.turbo/
+
+# Environment variables
 .env
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-# Testing
-coverage
-
-# Turbo
-.turbo
-
-# Vercel
-.vercel
-
-# Build Outputs
-.next/
-out/
-build
-dist
-
-# TypeScript
-*.tsbuildinfo
-.tsbuildinfo
-
-# Debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+.env.production
+.env.staging
 
 # Database
 *.db
-*.sqlite
-*.sqlite3
-
-# WhatsApp Sessions
-apps/whatsapp-service/sessions/
-apps/whatsapp-service/.wwebjs_auth/
-apps/whatsapp-service/.wwebjs_cache/
+*.db-journal
+packages/db/prisma/dev.db
+packages/db/prisma/migrations/
 
 # Logs
 logs/
@@ -52,20 +31,15 @@ logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-lerna-debug.log*
+apps/whatsapp-service/logs/
+apps/whatsapp-service/*.log
 
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
+# WhatsApp specific (CRITICAL - contains sensitive session data)
+apps/whatsapp-service/sessions/
+apps/whatsapp-service/.wwebjs_cache/
+apps/whatsapp-service/.wwebjs_auth/
 
-# Uploads
-uploads/
-tmp/
-temp/
-
-# IDE
+# IDE/Editor
 .vscode/
 .idea/
 *.swp
@@ -81,7 +55,25 @@ temp/
 ehthumbs.db
 Thumbs.db
 
-# Certificates
-*.pem
-*.key
-*.crt
+# Test files and demos
+demo-*.jpg
+demo-*.mp4
+demo-*.png
+test-*.jpg
+test-*.mp4
+*-placeholder.*
+small-video.mp4
+video-placeholder.jpg
+
+# Package manager
+.pnpm-debug.log*
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Prisma
+packages/db/prisma/packages/
