@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
-import logger from '../utils/logger'
+import { logger } from '../utils/logger'
 
 // Validation schemas
 export interface CreateSessionRequest {
@@ -276,5 +276,40 @@ export function rateLimit(req: Request, res: Response, next: NextFunction): void
     // Don't block request on rate limit error
     next()
   }
+}
+
+// Request logging middleware
+export function logRequest(req: Request, res: Response, next: NextFunction): void {
+  const startTime = Date.now()
+  
+  // Get client info
+  const clientIp = req.ip || req.connection.remoteAddress || 'unknown'
+  const userAgent = req.get('User-Agent') || 'unknown'
+  const method = req.method
+  const originalUrl = req.originalUrl || req.url
+  
+  // Log request start
+  logger.info(`<-- ${method} ${originalUrl}`, {
+    ip: clientIp,
+    userAgent,
+    body: method === 'POST' || method === 'PUT' || method === 'PATCH' ? req.body : undefined
+  })
+  
+  // Override res.end to log response
+  const originalEnd = res.end.bind(res)
+  res.end = function(chunk?: any, encoding?: any, callback?: any) {
+    const duration = Date.now() - startTime
+    
+    logger.info(`--> ${method} ${originalUrl}`, {
+      status: res.statusCode,
+      duration: `${duration}ms`,
+      ip: clientIp
+    })
+    
+    // Call the original end method with proper return
+    return originalEnd(chunk, encoding, callback)
+  } as any
+  
+  next()
 }
 

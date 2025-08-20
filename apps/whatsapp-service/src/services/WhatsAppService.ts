@@ -1,7 +1,7 @@
 import { Client, LocalAuth, Message } from 'whatsapp-web.js'
 import qrcode from 'qrcode-terminal'
-import logger from '../utils/logger'
-import redis from '../utils/redis'
+import { logger } from '../utils/logger'
+import { redis } from '../utils/redis'
 import { WhatsAppMessage, WhatsAppSession, WebhookPayload, SendMessageResponse } from '../types'
 
 class WhatsAppService {

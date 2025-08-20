@@ -1,5 +1,3 @@
-// Re-export Prisma client
+// Re-export Prisma client and types directly
 export { PrismaClient } from '@prisma/client';
-
-// Re-export all generated types
 export * from '@prisma/client';

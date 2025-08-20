@@ -11,7 +11,14 @@ import { resolve } from 'path'
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: resolve(process.cwd(), '../../.env'),
+      envFilePath: [
+        // When running from compiled dist (NODE runs from project root or dist)
+        resolve(__dirname, '../../.env'),
+        // When running via workspace scripts (cwd at repo root)
+        resolve(process.cwd(), '.env'),
+        // Fallback to default .env resolution in current working directory
+        '.env',
+      ],
     }),
     PrismaModule,
     LeadsModule,

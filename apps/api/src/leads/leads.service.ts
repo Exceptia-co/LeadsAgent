@@ -8,22 +8,25 @@ import { LeadsQueryDto } from './dto/leads-query.dto';
 export class LeadsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createLeadDto: CreateLeadDto) {
+  async create(createLeadDto: CreateLeadDto, userId?: string) {
     return this.prisma.lead.create({
-      data: createLeadDto,
+      data: {
+        ...createLeadDto,
+        userId,
+      },
     });
   }
 
-  async findAll(query: LeadsQueryDto) {
-    const { page = 1, limit = 10, search, status } = query;
+  async findAll(query: LeadsQueryDto, userId?: string) {
+    const { page = 1, limit = 10, q, status } = query;
     const skip = (page - 1) * limit;
 
     const where = {
-      ...(search && {
+      ...(userId && { userId }),
+      ...(q && {
         OR: [
-          { name: { contains: search, mode: 'insensitive' as const } },
-          { email: { contains: search, mode: 'insensitive' as const } },
-          { phone: { contains: search, mode: 'insensitive' as const } },
+          { name: { contains: q, mode: 'insensitive' as const } },
+          { phone: { contains: q, mode: 'insensitive' as const } },
         ],
       }),
       ...(status && { status }),
@@ -66,6 +69,37 @@ export class LeadsService {
   async remove(id: string) {
     return this.prisma.lead.delete({
       where: { id },
+    });
+  }
+
+  async getStats(userId?: string) {
+    const where = userId ? { userId } : {};
+
+    const [total, newLeads, contacted, hot, warm, cold] = await Promise.all([
+      this.prisma.lead.count({ where }),
+      this.prisma.lead.count({ where: { ...where, status: 'NEW' } }),
+      this.prisma.lead.count({ where: { ...where, status: 'CONTACTED' } }),
+      this.prisma.lead.count({ where: { ...where, status: 'HOT' } }),
+      this.prisma.lead.count({ where: { ...where, status: 'WARM' } }),
+      this.prisma.lead.count({ where: { ...where, status: 'COLD' } }),
+    ]);
+
+    return {
+      total,
+      byStatus: {
+        NEW: newLeads,
+        CONTACTED: contacted,
+        HOT: hot,
+        WARM: warm,
+        COLD: cold,
+      },
+    };
+  }
+
+  async updateStatus(id: string, status: string) {
+    return this.prisma.lead.update({
+      where: { id },
+      data: { status },
     });
   }
 }

@@ -59,17 +59,21 @@ const createMutate = (getToken?: () => Promise<string | null>) => async (url: st
 
 // Hooks para diferentes endpoints
 export const useLeads = (page = 1, limit = 20) => {
-  const { getToken } = useAuth()
-  const fetcher = createFetcher(getToken)
-  
+  // Temporalmente usar endpoint público hasta arreglar autenticación
   const { data, error, mutate: refetch } = useSWR(
-    `/leads?page=${page}&limit=${limit}`,
-    fetcher
+    `/public/leads?page=${page}&limit=${limit}`,
+    async (url: string) => {
+      const response = await fetch(`${API_BASE_URL}${url}`)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return response.json()
+    }
   )
   
   return {
-    leads: data?.leads || [],
-    pagination: data?.pagination,
+    leads: data?.data || [], // La API devuelve data: [...]
+    pagination: data?.meta,
     isLoading: !error && !data,
     isError: error,
     refetch,
@@ -77,10 +81,14 @@ export const useLeads = (page = 1, limit = 20) => {
 }
 
 export const useLeadStats = () => {
-  const { getToken } = useAuth()
-  const fetcher = createFetcher(getToken)
-  
-  const { data, error, mutate: refetch } = useSWR('/leads/stats', fetcher)
+  // Temporalmente usar endpoint público hasta arreglar autenticación
+  const { data, error, mutate: refetch } = useSWR('/public/leads/stats', async (url: string) => {
+    const response = await fetch(`${API_BASE_URL}${url}`)
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+    return response.json()
+  })
   
   return {
     stats: data,

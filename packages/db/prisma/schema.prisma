@@ -30,6 +30,7 @@ model Lead {
   phone        String        @unique
   status       String        @default("NEW") // NEW, CONTACTED, HOT, WARM, COLD, DISCARDED
   score        Float?        // AI score (0.0-1.0)
+  tags         String?       // JSON string for tags
   userId       String?       // Clerk user ID - opcional para webhooks externos
   user         User?         @relation(fields: [userId], references: [clerkId])
   createdAt    DateTime      @default(now())
@@ -54,12 +55,12 @@ model Conversation {
 
 model Message {
   id             String   @id @default(uuid())
-  content        String   // Removed @db.Text for SQLite compatibility
+  content        String   // SQLite text field
   direction      String   // INBOUND | OUTBOUND | SUGGESTION
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   
-  // AI metadata as string for SQLite compatibility (will be JSON string)
+  // AI metadata como string JSON para compatibilidad con SQLite
   aiMetadata     String?  // JSON string: { model, prompt, result, score, classification }
   
   createdAt      DateTime @default(now())

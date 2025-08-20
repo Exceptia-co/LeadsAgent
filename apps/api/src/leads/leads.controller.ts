@@ -55,6 +55,7 @@ export class LeadsController {
     return this.leadsService.getStats(user.userId)
   }
 
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a lead by ID' })
   @ApiResponse({ status: 200, description: 'Return the lead.' })

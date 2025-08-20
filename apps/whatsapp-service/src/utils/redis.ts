@@ -1,5 +1,5 @@
 import { createClient, RedisClientType } from 'redis'
-import logger from './logger'
+import { logger } from './logger'
 
 class RedisManager {
   private client: RedisClientType
@@ -31,7 +31,11 @@ class RedisManager {
 
   async disconnect(): Promise<void> {
     try {
-      await this.client.disconnect()
+      if (this.client.isReady) {
+        await this.client.disconnect()
+      } else {
+        logger.debug('Redis client not connected, skipping disconnect')
+      }
     } catch (error) {
       logger.error('Failed to disconnect from Redis:', error)
     }
@@ -57,6 +61,10 @@ class RedisManager {
 
   async getSession(sessionId: string): Promise<any | null> {
     try {
+      if (!this.client.isReady) {
+        logger.debug('Redis not ready, returning null for session')
+        return null
+      }
       const key = this.getKey(`session:${sessionId}`)
       const data = await this.client.get(key)
       return data ? JSON.parse(data) : null
@@ -78,6 +86,10 @@ class RedisManager {
 
   async getAllSessions(): Promise<{ [key: string]: any }> {
     try {
+      if (!this.client.isReady) {
+        logger.debug('Redis not ready, returning empty sessions object')
+        return {}
+      }
       const pattern = this.getKey('session:*')
       const keys = await this.client.keys(pattern)
       const sessions: { [key: string]: any } = {}
@@ -127,4 +139,6 @@ class RedisManager {
   }
 }
 
-export default new RedisManager()
+const redis = new RedisManager()
+export { redis }
+export default redis

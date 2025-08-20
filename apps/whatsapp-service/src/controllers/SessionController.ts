@@ -1,6 +1,6 @@
 import { Request, Response } from 'express'
 import WhatsAppService from '../services/WhatsAppService'
-import logger from '../utils/logger'
+import { logger } from '../utils/logger'
 
 export class SessionController {
   // Create a new WhatsApp session
@@ -165,6 +165,37 @@ export class SessionController {
       }
     } catch (error) {
       logger.error('Error sending message:', error)
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+    }
+  }
+
+  // Get analytics for dashboard integration
+  async getAnalytics(req: Request, res: Response): Promise<void> {
+    try {
+      const sessions = await WhatsAppService.getAllSessions()
+      
+      // Mock analytics data for now
+      // In a real implementation, this would come from a database
+      const analytics = {
+        total: {
+          messages: 0,
+          inbound: 0,
+          outbound: 0,
+          conversations: sessions.length
+        },
+        responseRate: '0%',
+        sessions: sessions.length
+      }
+      
+      res.json({
+        success: true,
+        ...analytics
+      })
+    } catch (error) {
+      logger.error('Error getting analytics:', error)
       res.status(500).json({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'

@@ -35,4 +35,8 @@ router.get('/sessions/:sessionId/qr', validateSessionId, sessionController.getQR
 // Message routes
 router.post('/sessions/:sessionId/send', validateSendMessage, sessionController.sendMessage.bind(sessionController))
 
+// Analytics routes (for dashboard integration)
+router.get('/whatsapp/sessions', sessionController.getAllSessions.bind(sessionController))
+router.get('/whatsapp/analytics/messages', sessionController.getAnalytics.bind(sessionController))
+
 export default router
