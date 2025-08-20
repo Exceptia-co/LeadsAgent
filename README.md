@@ -84,7 +84,9 @@ npm run build
 npm run dev
 
 # Dashboard on :3000
-# WhatsApp service on :3001
+# Docs on :3001
+# WhatsApp service on :3002
+# API service on :3003
 ```
 
 ## 📖 Documentación

@@ -85,7 +85,7 @@
     "db:generate": {
       "cache": true,
       "inputs": ["prisma/schema.prisma", ".env*"],
-      "outputs": ["node_modules/.prisma/**", "src/generated/**"]
+      "outputs": ["node_modules/.pnpm/**"]
     },
     "db:migrate:dev": {
       "cache": false

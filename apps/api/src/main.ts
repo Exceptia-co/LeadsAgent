@@ -43,7 +43,7 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config)
   SwaggerModule.setup('api/docs', app, document)
   
-  const port = process.env.API_PORT || 3001
+  const port = process.env.API_PORT || 3003
   await app.listen(port)
   
   console.log(`🚀 LeadsCRM API running on port ${port}`)

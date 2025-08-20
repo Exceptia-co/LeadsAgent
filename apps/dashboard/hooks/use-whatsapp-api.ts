@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
+const WHATSAPP_API_BASE_URL = process.env.NEXT_PUBLIC_WHATSAPP_API_URL || 'http://localhost:3002'
 
 interface ApiResponse<T = any> {
   data?: T
@@ -54,7 +54,7 @@ export function useWhatsAppApi() {
       setIsLoading(true)
       setError(null)
 
-      const response = await fetch(`${API_BASE_URL}/whatsapp${endpoint}`, {
+      const response = await fetch(`${WHATSAPP_API_BASE_URL}/api${endpoint}`, {
         headers: {
           'Content-Type': 'application/json',
           ...options.headers,

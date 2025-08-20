@@ -43,6 +43,23 @@ LeadsCRM es un sistema CRM completo con automatización de WhatsApp, desarrollad
 
 ## 🔧 Correcciones de Sistema (Agosto 20, 2024)
 
+### Resolución de Conflicto de Puertos (Agosto 20, 2024)
+1. **Port Conflict EADDRINUSE Error**
+   - ✅ Identificado conflicto: API (3001) vs Docs (3001)
+   - ✅ Reconfiguración de puertos:
+     - Dashboard: `3000` (sin cambios)
+     - Docs: `3001` (mantenido)
+     - WhatsApp Service: `3002` (sin cambios)
+     - API Service: `3003` (cambiado de 3001)
+   - ✅ Actualización de archivos de configuración:
+     - `.env`: `API_PORT=3003`
+     - `apps/api/.env.local`: `API_PORT=3003`
+     - `packages/db/.env`: configuración completa
+     - Dashboard API client: `http://localhost:3003`
+     - WhatsApp API hook: `http://localhost:3002`
+   - ✅ Actualización CORS en WhatsApp service para incluir puerto 3003
+   - ✅ Testing exitoso: API inicia correctamente en puerto 3003
+
 ### Resolución de Problemas de Archivos Corruptos
 1. **Archivos JSON Corruptos**
    - ✅ Detectados y corregidos múltiples `package.json` vacíos/corruptos
@@ -187,7 +204,7 @@ LeadsCRM es un sistema CRM completo con automatización de WhatsApp, desarrollad
 
 ---
 
-*Última actualización: Agosto 19, 2024*
+*Última actualización: Agosto 20, 2024*
 *Estado: Proyecto expandido con Dashboard WhatsApp completo, Apps/docs, herramientas de desarrollo y WARP.md actualizado*
 *Commit: Latest - docs: update WARP.md to reflect actual project implementation*
 
