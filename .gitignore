@@ -77,3 +77,9 @@ next-env.d.ts
 
 # Prisma
 packages/db/prisma/packages/
+
+#IA Rules
+.augment/
+.clinerules/
+.kilocode/
+.roo/
