@@ -83,3 +83,4 @@ packages/db/prisma/packages/
 .clinerules/
 .kilocode/
 .roo/
+.claude/
