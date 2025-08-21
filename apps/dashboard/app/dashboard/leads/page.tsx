@@ -43,7 +43,7 @@ export default function LeadsPage() {
   }
 
   const filteredLeads = leads.filter((lead: Lead) =>
-    lead.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (lead.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
     lead.phone.includes(searchTerm)
   )
 
@@ -89,7 +89,7 @@ export default function LeadsPage() {
         <Card className="p-4">
           <div className="text-center">
             <p className="text-2xl font-bold text-blue-600">
-              {leads.filter((l: Lead) => l.status === 'NEW').length}
+              {leads.filter((l: Lead) => l.status === 'NUEVO').length}
             </p>
             <p className="text-sm text-gray-500">Nuevos</p>
           </div>
@@ -105,9 +105,9 @@ export default function LeadsPage() {
         <Card className="p-4">
           <div className="text-center">
             <p className="text-2xl font-bold text-green-600">
-              {leads.filter((l: Lead) => l.status === 'CONVERTED').length}
+              {leads.filter((l: Lead) => l.status === 'GANADO').length}
             </p>
-            <p className="text-sm text-gray-500">Convertidos</p>
+            <p className="text-sm text-gray-500">Ganados</p>
           </div>
         </Card>
       </div>
@@ -150,7 +150,7 @@ export default function LeadsPage() {
                           </div>
                         </div>
                         <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">{lead.name}</div>
+                          <div className="text-sm font-medium text-gray-900">{lead.name || 'Sin nombre'}</div>
                         </div>
                       </div>
                     </td>

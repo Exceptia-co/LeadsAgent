@@ -47,21 +47,35 @@ export class LeadsService {
       this.prisma.lead.count({ where }),
     ]);
 
+    // Transform data to match frontend expectations
+    const transformedLeads = leads.map(lead => ({
+      ...lead,
+      score: lead.moodScore, // Map moodScore to score for frontend
+    }));
+
     return {
-      data: leads,
+      data: transformedLeads,
       meta: {
         page,
         limit,
         total,
         totalPages: Math.ceil(total / limit),
+        hasNext: page * limit < total,
+        hasPrev: page > 1,
       },
     };
   }
 
   async findOne(id: string) {
-    return this.prisma.lead.findUniqueOrThrow({
+    const lead = await this.prisma.lead.findUniqueOrThrow({
       where: { id },
     });
+    
+    // Transform data to match frontend expectations
+    return {
+      ...lead,
+      score: lead.moodScore, // Map moodScore to score for frontend
+    };
   }
 
   async update(id: string, updateLeadDto: UpdateLeadDto) {
