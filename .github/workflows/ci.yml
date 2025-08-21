@@ -49,7 +49,7 @@ jobs:
         run: pnpm typecheck:fast
 
       - name: Format Check
-        run: pnpm format --check
+        run: pnpm format:check
 
   # ============================================================================
   # Build Matrix - Test Node.js Versions
@@ -131,7 +131,7 @@ jobs:
         run: pnpm test || echo "Tests will be configured later"
 
       - name: Test Coverage
-        run: pnpm test:coverage || echo "Coverage will be configured later"
+        run: pnpm test:cov || echo "Coverage will be configured later"
 
   # ============================================================================
   # Security & Dependency Audit
