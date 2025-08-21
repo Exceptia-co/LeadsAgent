@@ -1,0 +1,46 @@
+{
+  "name": "@leadcrm/root",
+  "private": true,
+  "description": "LeadsCRM - Dashboard de Gestión de Leads con WhatsApp e IA",
+  "scripts": {
+    "build": "turbo run build",
+    "build:fast": "turbo run build --parallel --no-daemon",
+    "build:production": "NODE_ENV=production turbo run build --parallel",
+    "dev": "turbo run dev",
+    "dev:dashboard": "turbo run dev --filter=@leadcrm/dashboard",
+    "dev:api": "turbo run dev --filter=@leadcrm/api",
+    "dev:whatsapp": "turbo run dev --filter=@leadcrm/whatsapp-service",
+    "build:dashboard": "turbo run build --filter=@leadcrm/dashboard",
+    "build:api": "turbo run build --filter=@leadcrm/api",
+    "build:whatsapp": "turbo run build --filter=@leadcrm/whatsapp-service",
+    "lint": "turbo run lint",
+    "lint:fix": "turbo run lint:fix",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "typecheck": "turbo run typecheck",
+    "typecheck:fast": "turbo run typecheck --parallel --no-daemon",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "test:coverage": "turbo run test:cov",
+    "db:generate": "turbo run db:generate --filter=@leadcrm/db",
+    "db:migrate:dev": "turbo run db:migrate:dev --filter=@leadcrm/db",
+    "db:studio": "turbo run db:studio --filter=@leadcrm/db",
+    "db:reset": "turbo run db:migrate:reset --filter=@leadcrm/db",
+    "clean": "turbo run clean",
+    "clean:cache": "turbo daemon stop && rm -rf .turbo && rm -rf apps/*/.next && rm -rf apps/*/dist && rm -rf packages/*/dist",
+    "setup": "pnpm install && pnpm db:generate",
+    "rebuild": "pnpm clean:cache && pnpm install && pnpm db:generate && pnpm build:fast"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "tsx": "^4.7.1",
+    "turbo": "^2.5.6",
+    "typescript": "5.9.2"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}

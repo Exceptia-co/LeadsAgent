@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clerkId   String   @unique
+  email     String   @unique
+  name      String
+  role      UserRole @default(AGENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@map("users")
+}
+
+model Lead {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone         String         @unique
+  name          String?
+  email         String?
+  tags          String[]       @default([])
+  status        LeadStatus     @default(NUEVO)
+  moodScore     Float?
+  lastContact   DateTime?
+  assignedTo    String?
+  source        String         @default("whatsapp")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @default(now()) @updatedAt
+  campaignLeads CampaignLead[]
+  messages      Message[]
+
+  @@map("leads")
+}
+
+model Campaign {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  description   String?
+  status        CampaignStatus @default(ACTIVE)
+  template      String?
+  createdBy     String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @default(now()) @updatedAt
+  campaignLeads CampaignLead[]
+
+  @@map("campaigns")
+}
+
+model Message {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId       String           @db.Uuid
+  content      String
+  type         MessageType      @default(TEXT)
+  direction    MessageDirection
+  status       MessageStatus    @default(SENT)
+  timestamp    DateTime         @default(now())
+  aiAnalyzed   Boolean          @default(false)
+  sentiment    String?
+  confidence   Float?
+  autoResponse Boolean          @default(false)
+  externalId   String?          @unique
+  vendor       String           @default("whatsapp")
+  lead         Lead             @relation(fields: [leadId], references: [id])
+
+  @@index([leadId])
+  @@index([direction])
+  @@index([timestamp])
+  @@map("messages")
+}
+
+model CampaignLead {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId      String    @db.Uuid
+  campaignId  String    @db.Uuid
+  status      String    @default("PENDING")
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  campaign    Campaign  @relation(fields: [campaignId], references: [id])
+  lead        Lead      @relation(fields: [leadId], references: [id])
+
+  @@index([leadId])
+  @@index([campaignId])
+  @@map("campaign_leads")
+}
+
+enum UserRole {
+  ADMIN
+  AGENT
+
+  @@map("UserRole")
+}
+
+enum LeadStatus {
+  NUEVO
+  CONTACTADO
+  QUALIFIED
+  GANADO
+  PERDIDO
+
+  @@map("LeadStatus")
+}
+
+enum CampaignStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+
+  @@map("CampaignStatus")
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+
+  @@map("MessageType")
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+
+  @@map("MessageDirection")
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ      @map("READ")
+  FAILED
+
+  @@map("MessageStatus")
+}

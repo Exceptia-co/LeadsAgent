@@ -1,0 +1,104 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "tui",
+  "globalEnv": [
+    "NODE_ENV",
+    "NEXT_PUBLIC_*",
+    "DATABASE_URL",
+    "OPENAI_API_KEY",
+    "CLERK_*"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build", "db:generate"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        ".env*",
+        "!**/*.test.*",
+        "!**/*.spec.*",
+        "!**/test/**",
+        "!**/tests/**"
+      ],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "!.next/cache/**",
+        "build/**",
+        "!build/cache/**"
+      ],
+      "env": ["NODE_ENV", "NEXT_PUBLIC_*"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["db:generate"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"],
+      "inputs": [
+        "src/**/*.{js,ts,jsx,tsx}",
+        "app/**/*.{js,ts,jsx,tsx}",
+        "components/**/*.{js,ts,jsx,tsx}",
+        "lib/**/*.{js,ts,jsx,tsx}",
+        ".eslintrc*",
+        "eslint.config.*"
+      ]
+    },
+    "lint:fix": {
+      "dependsOn": ["^lint:fix"],
+      "inputs": [
+        "src/**/*.{js,ts,jsx,tsx}",
+        "app/**/*.{js,ts,jsx,tsx}",
+        "components/**/*.{js,ts,jsx,tsx}",
+        "lib/**/*.{js,ts,jsx,tsx}",
+        ".eslintrc*",
+        "eslint.config.*"
+      ],
+      "cache": false
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck", "db:generate"],
+      "inputs": [
+        "src/**/*.{ts,tsx}",
+        "app/**/*.{ts,tsx}",
+        "components/**/*.{ts,tsx}",
+        "lib/**/*.{ts,tsx}",
+        "tsconfig.json",
+        "**/*.d.ts"
+      ]
+    },
+    "test": {
+      "dependsOn": ["^test"],
+      "inputs": [
+        "src/**/*.{js,ts,jsx,tsx}",
+        "**/*.test.{js,ts,jsx,tsx}",
+        "**/*.spec.{js,ts,jsx,tsx}",
+        "jest.config.*"
+      ]
+    },
+    "test:e2e": {
+      "dependsOn": ["^test:e2e", "build"]
+    },
+    "test:cov": {
+      "dependsOn": ["^test:cov"]
+    },
+    "db:generate": {
+      "cache": true,
+      "inputs": ["prisma/schema.prisma", ".env*"],
+      "outputs": ["node_modules/.pnpm/**"]
+    },
+    "db:migrate:dev": {
+      "cache": false
+    },
+    "db:studio": {
+      "cache": false,
+      "persistent": true
+    },
+    "db:migrate:reset": {
+      "cache": false
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}
