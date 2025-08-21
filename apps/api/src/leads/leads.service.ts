@@ -1,0 +1,110 @@
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateLeadDto } from './dto/create-lead.dto';
+import { UpdateLeadDto } from './dto/update-lead.dto';
+import { LeadsQueryDto } from './dto/leads-query.dto';
+import { LeadStatus } from '@prisma/client';
+
+@Injectable()
+export class LeadsService {
+  constructor(private prisma: PrismaService) {}
+
+  async create(createLeadDto: CreateLeadDto) {
+    return this.prisma.lead.create({
+      data: createLeadDto,
+    });
+  }
+
+  async findAll(query: LeadsQueryDto, assignedUserId?: string) {
+    const { page = 1, limit = 10, q, status } = query;
+    const skip = (page - 1) * limit;
+
+    const where = {
+      ...(assignedUserId && { assignedTo: assignedUserId }),
+      ...(q && {
+        OR: [
+          { name: { contains: q, mode: 'insensitive' as const } },
+          { phone: { contains: q, mode: 'insensitive' as const } },
+          { email: { contains: q, mode: 'insensitive' as const } },
+        ],
+      }),
+      ...(status && { status }),
+    };
+
+    const [leads, total] = await Promise.all([
+      this.prisma.lead.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          messages: {
+            orderBy: { timestamp: 'desc' },
+            take: 1, // Get latest message
+          },
+        },
+      }),
+      this.prisma.lead.count({ where }),
+    ]);
+
+    return {
+      data: leads,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async findOne(id: string) {
+    return this.prisma.lead.findUniqueOrThrow({
+      where: { id },
+    });
+  }
+
+  async update(id: string, updateLeadDto: UpdateLeadDto) {
+    return this.prisma.lead.update({
+      where: { id },
+      data: updateLeadDto,
+    });
+  }
+
+  async remove(id: string) {
+    return this.prisma.lead.delete({
+      where: { id },
+    });
+  }
+
+  async getStats(assignedUserId?: string) {
+    const where = assignedUserId ? { assignedTo: assignedUserId } : {};
+
+    const [total, nuevos, contactados, qualified, ganados, perdidos] = await Promise.all([
+      this.prisma.lead.count({ where }),
+      this.prisma.lead.count({ where: { ...where, status: LeadStatus.NUEVO } }),
+      this.prisma.lead.count({ where: { ...where, status: LeadStatus.CONTACTADO } }),
+      this.prisma.lead.count({ where: { ...where, status: LeadStatus.QUALIFIED } }),
+      this.prisma.lead.count({ where: { ...where, status: LeadStatus.GANADO } }),
+      this.prisma.lead.count({ where: { ...where, status: LeadStatus.PERDIDO } }),
+    ]);
+
+    return {
+      total,
+      byStatus: {
+        NUEVO: nuevos,
+        CONTACTADO: contactados,
+        QUALIFIED: qualified,
+        GANADO: ganados,
+        PERDIDO: perdidos,
+      },
+    };
+  }
+
+  async updateStatus(id: string, status: LeadStatus) {
+    return this.prisma.lead.update({
+      where: { id },
+      data: { status },
+    });
+  }
+}

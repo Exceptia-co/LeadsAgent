@@ -1,0 +1,19 @@
+{
+  "exportDate": "2025-08-21T09:40:24.610Z",
+  "totalRecords": {
+    "users": 2,
+    "leads": 5,
+    "conversations": 3,
+    "messages": 6
+  },
+  "files": [
+    "users.json",
+    "conversations.json",
+    "leads.json",
+    "messages.json"
+  ],
+  "database": {
+    "source": "SQLite (dev.db)",
+    "backupFile": "dev.db.backup"
+  }
+}
