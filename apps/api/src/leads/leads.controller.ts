@@ -18,6 +18,7 @@ import { UpdateLeadDto } from './dto/update-lead.dto'
 import { LeadsQueryDto } from './dto/leads-query.dto'
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard'
 import { CurrentUser } from '../auth/user.decorator'
+import { LeadStatus } from '@prisma/client'
 
 @ApiTags('leads')
 @ApiBearerAuth()
@@ -32,14 +33,18 @@ export class LeadsController {
   @ApiResponse({ status: 400, description: 'Bad Request.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   create(@Body() createLeadDto: CreateLeadDto, @CurrentUser() user: any) {
-    return this.leadsService.create(createLeadDto, user.userId)
+    // If assignedTo is not provided in DTO but user context exists, use it
+    if (!createLeadDto.assignedTo && user?.userId) {
+      createLeadDto.assignedTo = user.userId
+    }
+    return this.leadsService.create(createLeadDto)
   }
 
   @Get()
   @ApiOperation({ summary: 'Get all leads with optional filtering and pagination' })
   @ApiResponse({ status: 200, description: 'Return all leads.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiQuery({ name: 'status', required: false, enum: ['NEW', 'CONTACTED', 'HOT', 'WARM', 'COLD', 'DISCARDED'] })
+  @ApiQuery({ name: 'status', required: false, enum: ['NUEVO', 'CONTACTADO', 'QUALIFIED', 'GANADO', 'PERDIDO'] })
   @ApiQuery({ name: 'q', required: false, description: 'Search query' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number' })
   @ApiQuery({ name: 'limit', required: false, description: 'Items per page' })
@@ -78,7 +83,7 @@ export class LeadsController {
   @ApiResponse({ status: 404, description: 'Lead not found.' })
   updateStatus(
     @Param('id') id: string,
-    @Body('status') status: string
+    @Body('status') status: LeadStatus
   ) {
     return this.leadsService.updateStatus(id, status)
   }
