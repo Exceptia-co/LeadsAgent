@@ -1,7 +1,7 @@
 // Lead types
 export interface Lead {
   id: string
-  name: string
+  name: string | null
   phone: string
   status: LeadStatus
   score: number | null
@@ -10,7 +10,7 @@ export interface Lead {
   conversation?: Conversation | null
 }
 
-export type LeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'CONVERTED' | 'LOST'
+export type LeadStatus = 'NUEVO' | 'CONTACTADO' | 'QUALIFIED' | 'GANADO' | 'PERDIDO'
 
 export interface Conversation {
   id: string
@@ -83,18 +83,18 @@ export interface PaginationProps {
 
 // Status badge variants
 export const STATUS_VARIANTS: Record<LeadStatus, 'default' | 'secondary' | 'success' | 'warning' | 'destructive'> = {
-  NEW: 'default',
-  CONTACTED: 'secondary', 
+  NUEVO: 'default',
+  CONTACTADO: 'secondary', 
   QUALIFIED: 'warning',
-  CONVERTED: 'success',
-  LOST: 'destructive'
+  GANADO: 'success',
+  PERDIDO: 'destructive'
 }
 
 // Status labels for UI
 export const STATUS_LABELS: Record<LeadStatus, string> = {
-  NEW: 'Nuevo',
-  CONTACTED: 'Contactado',
+  NUEVO: 'Nuevo',
+  CONTACTADO: 'Contactado',
   QUALIFIED: 'Calificado', 
-  CONVERTED: 'Convertido',
-  LOST: 'Perdido'
+  GANADO: 'Ganado',
+  PERDIDO: 'Perdido'
 }
