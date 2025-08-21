@@ -3,30 +3,29 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { LeadsQueryDto } from './dto/leads-query.dto';
+import { LeadStatus } from '@prisma/client';
 
 @Injectable()
 export class LeadsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createLeadDto: CreateLeadDto, userId?: string) {
+  async create(createLeadDto: CreateLeadDto) {
     return this.prisma.lead.create({
-      data: {
-        ...createLeadDto,
-        userId,
-      },
+      data: createLeadDto,
     });
   }
 
-  async findAll(query: LeadsQueryDto, userId?: string) {
+  async findAll(query: LeadsQueryDto, assignedUserId?: string) {
     const { page = 1, limit = 10, q, status } = query;
     const skip = (page - 1) * limit;
 
     const where = {
-      ...(userId && { userId }),
+      ...(assignedUserId && { assignedTo: assignedUserId }),
       ...(q && {
         OR: [
           { name: { contains: q, mode: 'insensitive' as const } },
           { phone: { contains: q, mode: 'insensitive' as const } },
+          { email: { contains: q, mode: 'insensitive' as const } },
         ],
       }),
       ...(status && { status }),
@@ -38,6 +37,12 @@ export class LeadsService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        include: {
+          messages: {
+            orderBy: { timestamp: 'desc' },
+            take: 1, // Get latest message
+          },
+        },
       }),
       this.prisma.lead.count({ where }),
     ]);
@@ -72,31 +77,31 @@ export class LeadsService {
     });
   }
 
-  async getStats(userId?: string) {
-    const where = userId ? { userId } : {};
+  async getStats(assignedUserId?: string) {
+    const where = assignedUserId ? { assignedTo: assignedUserId } : {};
 
-    const [total, newLeads, contacted, hot, warm, cold] = await Promise.all([
+    const [total, nuevos, contactados, qualified, ganados, perdidos] = await Promise.all([
       this.prisma.lead.count({ where }),
-      this.prisma.lead.count({ where: { ...where, status: 'NEW' } }),
-      this.prisma.lead.count({ where: { ...where, status: 'CONTACTED' } }),
-      this.prisma.lead.count({ where: { ...where, status: 'HOT' } }),
-      this.prisma.lead.count({ where: { ...where, status: 'WARM' } }),
-      this.prisma.lead.count({ where: { ...where, status: 'COLD' } }),
+      this.prisma.lead.count({ where: { ...where, status: LeadStatus.NUEVO } }),
+      this.prisma.lead.count({ where: { ...where, status: LeadStatus.CONTACTADO } }),
+      this.prisma.lead.count({ where: { ...where, status: LeadStatus.QUALIFIED } }),
+      this.prisma.lead.count({ where: { ...where, status: LeadStatus.GANADO } }),
+      this.prisma.lead.count({ where: { ...where, status: LeadStatus.PERDIDO } }),
     ]);
 
     return {
       total,
       byStatus: {
-        NEW: newLeads,
-        CONTACTED: contacted,
-        HOT: hot,
-        WARM: warm,
-        COLD: cold,
+        NUEVO: nuevos,
+        CONTACTADO: contactados,
+        QUALIFIED: qualified,
+        GANADO: ganados,
+        PERDIDO: perdidos,
       },
     };
   }
 
-  async updateStatus(id: string, status: string) {
+  async updateStatus(id: string, status: LeadStatus) {
     return this.prisma.lead.update({
       where: { id },
       data: { status },

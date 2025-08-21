@@ -1,15 +1,16 @@
 import { IsOptional, IsString, IsIn, IsNumberString } from 'class-validator'
 import { ApiPropertyOptional } from '@nestjs/swagger'
 import { Transform } from 'class-transformer'
+import { LeadStatus } from '@prisma/client'
 
 export class LeadsQueryDto {
   @ApiPropertyOptional({
     description: 'Filter by lead status',
-    enum: ['NEW', 'CONTACTED', 'HOT', 'WARM', 'COLD', 'DISCARDED']
+    enum: ['NUEVO', 'CONTACTADO', 'QUALIFIED', 'GANADO', 'PERDIDO']
   })
   @IsOptional()
-  @IsIn(['NEW', 'CONTACTED', 'HOT', 'WARM', 'COLD', 'DISCARDED'])
-  status?: string
+  @IsIn(['NUEVO', 'CONTACTADO', 'QUALIFIED', 'GANADO', 'PERDIDO'])
+  status?: LeadStatus
 
   @ApiPropertyOptional({
     description: 'Search query for name or phone',

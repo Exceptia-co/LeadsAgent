@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
+import { LeadStatus, MessageType, MessageDirection, MessageStatus } from '@prisma/client'
 
 interface WhatsAppMessage {
   id: string
@@ -39,7 +40,12 @@ export class WhatsAppService {
       // Find or create lead
       let lead = await this.prisma.lead.findUnique({
         where: { phone: phoneNumber },
-        include: { conversation: true }
+        include: {
+          messages: {
+            orderBy: { timestamp: 'desc' },
+            take: 1
+          }
+        }
       })
 
       if (!lead) {
@@ -48,38 +54,44 @@ export class WhatsAppService {
           data: {
             name: `Lead ${phoneNumber}`, // Default name, can be updated later
             phone: phoneNumber,
-            status: 'NEW'
+            status: LeadStatus.NUEVO
           },
-          include: { conversation: true }
+          include: {
+            messages: true
+          }
         })
 
         this.logger.log(`Created new lead for ${phoneNumber}`)
       }
 
-      // Find or create conversation
-      let conversation = lead.conversation
-      if (!conversation) {
-        conversation = await this.prisma.conversation.create({
-          data: {
-            leadId: lead.id
-          }
-        })
-      }
-
-      // Store message
+      // Store message directly associated with the lead
       await this.prisma.message.create({
         data: {
-          conversationId: conversation.id,
+          leadId: lead.id,
           content: messageData.body,
-          direction: 'INBOUND' // Message from lead
+          type: MessageType.TEXT,
+          direction: MessageDirection.INBOUND,
+          status: MessageStatus.READ,
+          timestamp: new Date(messageData.timestamp),
+          externalId: messageData.id,
+          vendor: 'whatsapp'
         }
       })
 
-      // Update lead status if it's the first message
-      if (lead.status === 'NEW') {
+      // Update lead status if it's the first message and currently NUEVO
+      if (lead.status === LeadStatus.NUEVO) {
         await this.prisma.lead.update({
           where: { id: lead.id },
-          data: { status: 'CONTACTED' }
+          data: { 
+            status: LeadStatus.CONTACTADO,
+            lastContact: new Date()
+          }
+        })
+      } else {
+        // Just update last contact time
+        await this.prisma.lead.update({
+          where: { id: lead.id },
+          data: { lastContact: new Date() }
         })
       }
 
@@ -130,17 +142,26 @@ export class WhatsAppService {
         
         // Store outgoing message in database
         const lead = await this.prisma.lead.findUnique({
-          where: { phone: to },
-          include: { conversation: true }
+          where: { phone: to }
         })
 
-        if (lead && lead.conversation) {
+        if (lead) {
           await this.prisma.message.create({
             data: {
-              conversationId: lead.conversation.id,
+              leadId: lead.id,
               content: message,
-              direction: 'OUTBOUND' // Message from system/user
+              type: MessageType.TEXT,
+              direction: MessageDirection.OUTBOUND,
+              status: MessageStatus.SENT,
+              timestamp: new Date(),
+              vendor: 'whatsapp'
             }
+          })
+
+          // Update last contact time
+          await this.prisma.lead.update({
+            where: { id: lead.id },
+            data: { lastContact: new Date() }
           })
         }
         

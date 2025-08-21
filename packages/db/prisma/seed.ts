@@ -15,8 +15,9 @@ async function main() {
     update: {},
     create: {
       email: 'admin@leadcrm.com',
+      name: 'Admin User',
       clerkId: 'clerk_admin_123',
-      role: 'admin',
+      role: 'ADMIN',
     },
   })
 
@@ -25,49 +26,45 @@ async function main() {
     update: {},
     create: {
       email: 'agent@leadcrm.com',
+      name: 'Agent User',
       clerkId: 'clerk_agent_123',
-      role: 'agent',
+      role: 'AGENT',
     },
   })
 
   console.log('✅ Users created:', { adminUser, agentUser })
 
-  // Crear leads de ejemplo con conversaciones
+  // Crear leads de ejemplo con mensajes directos
   const lead1 = await prisma.lead.create({
     data: {
       name: 'Juan Pérez',
       phone: '+1234567890',
-      status: 'NEW',
-      score: 0.8,
-      conversation: {
-        create: {
-          messages: {
-            create: [
-              {
-                content: 'Hola, estoy interesado en sus productos',
-                direction: 'INBOUND',
-                aiMetadata: JSON.stringify({
-                  model: 'gpt-3.5-turbo',
-                  classification: 'HOT',
-                  score: 0.8,
-                  keywords: ['interesado', 'productos']
-                })
-              },
-              {
-                content: '¡Hola Juan! Me da mucho gusto saber de tu interés. ¿En qué producto específico estás interesado?',
-                direction: 'OUTBOUND'
-              }
-            ]
+      email: 'juan@example.com',
+      status: 'NUEVO',
+      moodScore: 0.8,
+      assignedTo: agentUser.clerkId,
+      tags: ['interesado', 'productos'],
+      messages: {
+        create: [
+          {
+            content: 'Hola, estoy interesado en sus productos',
+            type: 'TEXT',
+            direction: 'INBOUND',
+            sentiment: 'positive',
+            confidence: 0.8,
+            aiAnalyzed: true
+          },
+          {
+            content: '¡Hola Juan! Me da mucho gusto saber de tu interés. ¿En qué producto específico estás interesado?',
+            type: 'TEXT',
+            direction: 'OUTBOUND',
+            status: 'SENT'
           }
-        }
+        ]
       }
     },
     include: {
-      conversation: {
-        include: {
-          messages: true
-        }
-      }
+      messages: true
     }
   })
 
@@ -75,25 +72,21 @@ async function main() {
     data: {
       name: 'María García',
       phone: '+0987654321',
-      status: 'CONTACTED',
-      score: 0.6,
-      conversation: {
-        create: {
-          messages: {
-            create: [
-              {
-                content: 'Buenos días, me pueden dar información sobre precios?',
-                direction: 'INBOUND',
-                aiMetadata: JSON.stringify({
-                  model: 'gpt-3.5-turbo',
-                  classification: 'WARM',
-                  score: 0.6,
-                  keywords: ['información', 'precios']
-                })
-              }
-            ]
+      email: 'maria@example.com',
+      status: 'CONTACTADO',
+      moodScore: 0.6,
+      tags: ['información', 'precios'],
+      messages: {
+        create: [
+          {
+            content: 'Buenos días, me pueden dar información sobre precios?',
+            type: 'TEXT',
+            direction: 'INBOUND',
+            sentiment: 'neutral',
+            confidence: 0.6,
+            aiAnalyzed: true
           }
-        }
+        ]
       }
     }
   })
@@ -102,39 +95,35 @@ async function main() {
     data: {
       name: 'Carlos Rodríguez',
       phone: '+1122334455',
-      status: 'HOT',
-      score: 0.9,
-      conversation: {
-        create: {
-          messages: {
-            create: [
-              {
-                content: 'Necesito comprar 50 unidades urgente, cuando pueden entregar?',
-                direction: 'INBOUND',
-                aiMetadata: JSON.stringify({
-                  model: 'gpt-3.5-turbo',
-                  classification: 'HOT',
-                  score: 0.9,
-                  keywords: ['comprar', 'urgente', '50 unidades', 'entrega']
-                })
-              },
-              {
-                content: 'Perfecto Carlos! Podemos tener las 50 unidades listas en 2 días. ¿Cuál es tu dirección de entrega?',
-                direction: 'OUTBOUND'
-              },
-              {
-                content: 'Excelente! Mi dirección es Av. Principal 123, Ciudad',
-                direction: 'INBOUND',
-                aiMetadata: JSON.stringify({
-                  model: 'gpt-3.5-turbo',
-                  classification: 'HOT',
-                  score: 0.95,
-                  keywords: ['dirección', 'entrega', 'confirmación']
-                })
-              }
-            ]
+      email: 'carlos@example.com',
+      status: 'QUALIFIED',
+      moodScore: 0.9,
+      tags: ['comprar', 'urgente', 'entrega'],
+      messages: {
+        create: [
+          {
+            content: 'Necesito comprar 50 unidades urgente, cuando pueden entregar?',
+            type: 'TEXT',
+            direction: 'INBOUND',
+            sentiment: 'urgent',
+            confidence: 0.9,
+            aiAnalyzed: true
+          },
+          {
+            content: 'Perfecto Carlos! Podemos tener las 50 unidades listas en 2 días. ¿Cuál es tu dirección de entrega?',
+            type: 'TEXT',
+            direction: 'OUTBOUND',
+            status: 'SENT'
+          },
+          {
+            content: 'Excelente! Mi dirección es Av. Principal 123, Ciudad',
+            type: 'TEXT',
+            direction: 'INBOUND',
+            sentiment: 'positive',
+            confidence: 0.95,
+            aiAnalyzed: true
           }
-        }
+        ]
       }
     }
   })
@@ -145,18 +134,19 @@ async function main() {
     lead3: lead3.id 
   })
 
-  // Crear algunos leads sin conversaciones
+  // Crear algunos leads sin mensajes
   await prisma.lead.createMany({
     data: [
       {
         name: 'Ana López',
         phone: '+5566778899',
-        status: 'COLD',
-        score: 0.3
+        email: 'ana@example.com',
+        status: 'PERDIDO',
+        moodScore: 0.3
       },
       {
         phone: '+9988776655',
-        status: 'NEW'
+        status: 'NUEVO'
       }
     ]
   })

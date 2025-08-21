@@ -1,0 +1,20 @@
+[
+  {
+    "id": "cmejy8ks30000sn0jygvobk7g",
+    "clerkId": "clerk_admin_123",
+    "email": "admin@leadcrm.com",
+    "role": "admin",
+    "createdAt": "2025-08-20T12:28:47.276Z",
+    "updatedAt": "2025-08-20T12:28:47.276Z",
+    "leads": []
+  },
+  {
+    "id": "cmejy8ktj0001sn0jmihgu2wo",
+    "clerkId": "clerk_agent_123",
+    "email": "agent@leadcrm.com",
+    "role": "agent",
+    "createdAt": "2025-08-20T12:28:47.336Z",
+    "updatedAt": "2025-08-20T12:28:47.336Z",
+    "leads": []
+  }
+]

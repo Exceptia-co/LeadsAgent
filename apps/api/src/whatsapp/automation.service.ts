@@ -1,6 +1,7 @@
 import { Injectable, Logger, forwardRef, Inject } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
 import { WhatsAppService } from './whatsapp.service'
+import { LeadStatus } from '@prisma/client'
 
 interface AutoResponseRule {
   id: string
@@ -356,13 +357,13 @@ No te preocupes, estaremos aquí cuando estés listo. ¿Te gustaría recibir inf
       })
       
       if (lead) {
-        const currentTags = lead.tags ? JSON.parse(lead.tags) : []
+        const currentTags = lead.tags || []
         if (!currentTags.includes(tag)) {
-          currentTags.push(tag)
+          const updatedTags = [...currentTags, tag]
           
           await this.prisma.lead.update({
             where: { id: leadId },
-            data: { tags: JSON.stringify(currentTags) }
+            data: { tags: updatedTags }
           })
           
           this.logger.log(`Tag "${tag}" added to lead ${leadId}`)
@@ -375,14 +376,14 @@ No te preocupes, estaremos aquí cuando estés listo. ¿Te gustaría recibir inf
 
   private async updateLeadPriority(leadId: string, reason: string): Promise<void> {
     try {
-      // Add priority tag or update score based on the auto-response trigger
+      // Add priority tag or update mood score based on the auto-response trigger
       await this.addTag(leadId, `priority:${reason}`)
       
-      // Optionally update the lead score
+      // Optionally update the lead mood score
       await this.prisma.lead.update({
         where: { id: leadId },
         data: { 
-          score: 0.8 // Higher score for leads that trigger priority responses
+          moodScore: 0.8 // Higher score for leads that trigger priority responses
         }
       })
     } catch (error) {
