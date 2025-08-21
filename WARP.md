@@ -2,7 +2,7 @@
 
 This file provides guidance to WARP (warp.dev) when working with code in this repository.
 
-*Version: 2.0 | Last Updated: August 19, 2024*
+*Version: 3.0 | Last Updated: August 21, 2025*
 
 # LeadsCRM - Dashboard de Gestión de Leads con WhatsApp e IA
 
@@ -29,7 +29,7 @@ Validar el flujo: **recepción de leads por WhatsApp → persistencia y visualiz
 |------------|------------|--------|-----------|
 | **Frontend** | Next.js 15.4.2 + TypeScript | ✅ Funcional | Dashboard web con App Router y SSR |
 | **Backend** | NestJS + TypeScript | ✅ Base configurada | API REST modular y escalable |
-| **Base de Datos** | SQLite (local) + Prisma | ✅ Funcional | Desarrollo local con migración a PostgreSQL planificada |
+| **Base de Datos** | PostgreSQL + Prisma | ✅ Funcional | Almacenamiento persistente con Supabase |
 | **ORM** | Prisma | ✅ Funcional | Capa de abstracción typesafe para DB |
 | **Autenticación** | Clerk | ✅ Configurado | Gestión de usuarios y sesiones |
 | **UI/Estilos** | TailwindCSS + Shadcn/ui | ✅ Funcional | Componentes modernos y accesibles |
@@ -44,7 +44,6 @@ Validar el flujo: **recepción de leads por WhatsApp → persistencia y visualiz
 ### 📋 Planificado
 | Componente | Tecnología | Estado | Propósito |
 |------------|------------|--------|-----------|
-| **Base de Datos** | Supabase (PostgreSQL) | 📋 Migración planificada | Almacenamiento persistente con RLS |
 | **Cache/Colas** | Redis + BullMQ | 📋 Pendiente | Tareas asíncronas y cache |
 | **Deploy** | Vercel + Railway/Fly.io | 📋 Configuración pendiente | Frontend y backend en la nube |
 
@@ -110,8 +109,8 @@ pnpm dev
 
 # Servicios individuales
 pnpm dev:dashboard    # Frontend en http://localhost:3000
-pnpm dev:api         # Backend en http://localhost:3001
-pnpm dev:whatsapp    # Servicio WhatsApp
+pnpm dev:api         # Backend en http://localhost:3003  
+pnpm dev:whatsapp    # Servicio WhatsApp en http://localhost:3002
 
 # Base de datos
 pnpm db:studio       # Prisma Studio
@@ -123,15 +122,18 @@ pnpm db:reset        # Reset completo (cuidado!)
 ### Testing
 ```bash
 # Tests unitarios
-pnpm test            # Todos los tests
-pnpm test:api        # Solo backend
-pnpm test:dashboard  # Solo frontend
+pnpm test            # Todos los tests (Jest)
+# Nota: Los comandos específicos por app se ejecutan en cada workspace
+
+# Para API específicamente (desde root o desde apps/api/):
+# pnpm --filter=@leadcrm/api test:watch   # Jest en modo watch
+# pnpm --filter=@leadcrm/api test:debug   # Jest con debugging
 
 # Tests de integración
-pnpm test:e2e
+pnpm test:e2e        # Tests end-to-end
 
 # Coverage
-pnpm test:coverage
+pnpm test:cov        # Cobertura de código (no test:coverage)
 ```
 
 ### Construcción y Linting
@@ -185,10 +187,49 @@ flyctl deploy
 ### Flujo de Datos Principal
 
 ```
-WhatsApp → whatsapp-service → Redis Pub/Sub → NestJS API → Supabase
+WhatsApp → whatsapp-service → Redis Pub/Sub → NestJS API → PostgreSQL/Supabase
                                                     ↓
 Frontend (Next.js) ← REST API ← BullMQ Workers ← AI Processing
 ```
+
+### Arquitectura Monorepo con Turborepo
+
+**Gestión de Dependencias y Caching:**
+- **Turborepo** maneja automáticamente las dependencias entre tareas
+- **Cache inteligente**: Las builds solo se ejecutan si hay cambios relevantes
+- **Ejecución paralela**: Tareas independientes se ejecutan simultáneamente
+- **Task dependencies**: `build` depende de `db:generate`, `typecheck` depende de `^typecheck`
+
+**Comunicación entre Apps:**
+```
+┌─────────────┐    HTTP REST     ┌──────────────┐    Prisma ORM    ┌────────────────┐
+│  Dashboard  │ ────────────────→ │   NestJS API │ ───────────────→ │  PostgreSQL/   │
+│  (Next.js)  │                  │   (Port 3003)│                 │   Supabase     │
+└─────────────┘                  └──────────────┘                 └────────────────┘
+       ↑                                ↑                                    ↑
+       │                                │                                    │
+   @leadcrm/ui              @leadcrm/db (shared types)            @leadcrm/db (Prisma)
+```
+
+**Shared Packages:**
+- **`@leadcrm/db`**: Prisma schema, cliente de base de datos, types TypeScript compartidos
+- **`@leadcrm/ui`**: Componentes React reutilizables basados en shadcn/ui
+- **`@leadcrm/config-eslint`**: Configuración ESLint compartida
+- **`@leadcrm/config-ts`**: Configuración TypeScript base
+
+**Workspace Configuration (pnpm):**
+```yaml
+# pnpm-workspace.yaml
+packages:
+  - "apps/*"
+  - "packages/*"
+```
+
+**Type Sharing Across Applications:**
+- Los tipos de Prisma se generan automáticamente en `@leadcrm/db`
+- Apps importan tipos: `import { Lead, Message } from '@leadcrm/db'`
+- Turborepo garantiza que `db:generate` se ejecute antes de `build`
+- IntelliSense y type checking funcionan across apps
 
 ### Flujo de Procesamiento de Mensajes
 
@@ -204,8 +245,9 @@ Frontend (Next.js) ← REST API ← BullMQ Workers ← AI Processing
 **✅ Actual (MVP Implementado):**
 - Dashboard funcional con gestión de leads
 - API base con autenticación Clerk configurada
-- Base de datos SQLite con Prisma
+- Base de datos PostgreSQL con Prisma
 - Componentes UI con shadcn/ui
+- Corrección completa de errores TypeScript (Agosto 21, 2025)
 
 ### Módulos del Backend (NestJS)
 
@@ -224,87 +266,163 @@ Frontend (Next.js) ← REST API ← BullMQ Workers ← AI Processing
 
 ## Modelo de Datos (Prisma)
 
-### Entidades Principales (SQLite - Actual)
+### Entidades Principales (PostgreSQL - Actual)
 
 ```prisma
-// Configuración actual: SQLite para desarrollo local
+// Configuración actual: PostgreSQL con Supabase
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
-  id        String   @id @default(cuid())
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   clerkId   String   @unique
   email     String   @unique
-  role      String   @default("agent") // "admin" | "agent"
+  name      String
+  role      UserRole @default(AGENT)
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  // Relaciones
-  leads     Lead[]
+  updatedAt DateTime @default(now()) @updatedAt
 
   @@map("users")
 }
 
 model Lead {
-  id           String        @id @default(uuid())
-  name         String?
-  phone        String        @unique
-  status       String        @default("NEW") // NEW, CONTACTED, HOT, WARM, COLD, DISCARDED
-  score        Float?        // AI score (0.0-1.0)
-  userId       String?       // Clerk user ID - opcional para webhooks externos
-  user         User?         @relation(fields: [userId], references: [clerkId])
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  conversation Conversation?
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone         String         @unique
+  name          String?
+  email         String?
+  tags          String[]       @default([])
+  status        LeadStatus     @default(NUEVO)
+  moodScore     Float?
+  lastContact   DateTime?
+  assignedTo    String?
+  source        String         @default("whatsapp")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @default(now()) @updatedAt
+  campaignLeads CampaignLead[]
+  messages      Message[]
 
   @@map("leads")
-  @@index([userId])
 }
 
-model Conversation {
-  id       String    @id @default(uuid())
-  leadId   String    @unique
-  lead     Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  messages Message[]
+model Campaign {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  description   String?
+  status        CampaignStatus @default(ACTIVE)
+  template      String?
+  createdBy     String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @default(now()) @updatedAt
+  campaignLeads CampaignLead[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("conversations")
+  @@map("campaigns")
 }
 
 model Message {
-  id             String   @id @default(uuid())
-  content        String   // Removed @db.Text for SQLite compatibility
-  direction      String   // INBOUND | OUTBOUND | SUGGESTION
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  
-  // AI metadata as string for SQLite compatibility (will be JSON string)
-  aiMetadata     String?  // JSON string: { model, prompt, result, score, classification }
-  
-  createdAt      DateTime @default(now())
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId       String           @db.Uuid
+  content      String
+  type         MessageType      @default(TEXT)
+  direction    MessageDirection
+  status       MessageStatus    @default(SENT)
+  timestamp    DateTime         @default(now())
+  aiAnalyzed   Boolean          @default(false)
+  sentiment    String?
+  confidence   Float?
+  autoResponse Boolean          @default(false)
+  externalId   String?          @unique
+  vendor       String           @default("whatsapp")
+  lead         Lead             @relation(fields: [leadId], references: [id])
 
-  @@map("messages")
-  @@index([conversationId])
+  @@index([leadId])
   @@index([direction])
-  @@index([createdAt])
+  @@index([timestamp])
+  @@map("messages")
+}
+
+model CampaignLead {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId      String    @db.Uuid
+  campaignId  String    @db.Uuid
+  status      String    @default("PENDING")
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  campaign    Campaign  @relation(fields: [campaignId], references: [id])
+  lead        Lead      @relation(fields: [leadId], references: [id])
+
+  @@index([leadId])
+  @@index([campaignId])
+  @@map("campaign_leads")
+}
+
+// Enums
+enum UserRole {
+  ADMIN
+  AGENT
+
+  @@map("UserRole")
+}
+
+enum LeadStatus {
+  NUEVO
+  CONTACTADO
+  QUALIFIED
+  GANADO
+  PERDIDO
+
+  @@map("LeadStatus")
+}
+
+enum CampaignStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+
+  @@map("CampaignStatus")
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+
+  @@map("MessageType")
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+
+  @@map("MessageDirection")
+}
+
+enum MessageStatus {
+  SENT
+  DELIVERED
+  READ      @map("READ")
+  FAILED
+
+  @@map("MessageStatus")
 }
 ```
 
-### Migración Futura (PostgreSQL)
+### Características Clave del Schema
 
-Cuando se migre a PostgreSQL/Supabase, los cambios incluirán:
-- `aiMetadata` volverá a ser `Json?` tipo
-- `content` usará `@db.Text` para mensajes largos
-- Row Level Security (RLS) habilitado
-- Optimización de índices para consultas complejas
+- **UUIDs como PKs**: Uso de `gen_random_uuid()` para generar IDs únicos
+- **Relaciones directas**: Messages se relacionan directamente con Leads (no hay tabla Conversation)
+- **Enums tipados**: Estados y tipos en español con mapeo a PostgreSQL
+- **Arrays nativos**: Campo `tags[]` usa arrays nativos de PostgreSQL
+- **Timestamps automáticos**: `@default(now())` y `@updatedAt` para auditoría
+- **Índices optimizados**: Para consultas frecuentes en `leadId`, `direction`, `timestamp`
 
 ## API Endpoints
 
@@ -360,10 +478,50 @@ Todos los endpoints excepto `/api/webhooks/*` requieren token JWT de Clerk.
 
 ### Testing
 
-- **Unitarios**: Jest para servicios y utilidades
-- **Integración**: Supertest para endpoints API
-- **E2E**: Playwright para flujos completos de usuario
-- **Coverage**: Mínimo 80% para código crítico
+**Configuración Jest (API):**
+```json
+{
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "src",
+  "testRegex": ".*\\.spec\\.ts$",
+  "transform": { "^.+\\.(t|j)s$": "ts-jest" },
+  "collectCoverageFrom": ["**/*.(t|j)s"],
+  "coverageDirectory": "../coverage",
+  "testEnvironment": "node"
+}
+```
+
+**Comandos y Patrones:**
+- **Unitarios**: Jest para servicios y utilidades (archivos `*.spec.ts`)
+- **Integración**: Supertest para endpoints API (directorio `test/` en apps/api)
+- **Pattern**: Tests unitarios usan extensión `.spec.ts`, tests E2E en `/test/`
+- **Coverage**: Directorio `coverage/` en cada app, mínimo 80% para código crítico
+- **Ambiente**: Node.js para backend, jsdom para frontend components
+
+### Desarrollo con AI Assistants
+
+**ByteRover MCP Tools Integration:**
+Este proyecto está configurado para trabajar con asistentes de IA que utilizan herramientas MCP (Model Context Protocol) para mantener el contexto del proyecto.
+
+**Importante para Desarrolladores:**
+
+```bash
+# Antes de iniciar cualquier tarea:
+# 1. Usar byterover-retrieve-knowledge para obtener contexto
+# 2. Realizar la tarea o desarrollo
+# 3. Usar byterover-store-knowledge para almacenar información crítica
+```
+
+**Beneficios:**
+- **Contexto Persistente**: Los asistentes mantienen información sobre el estado del proyecto
+- **Mejor Colaboración**: Conocimiento compartido entre sesiones de desarrollo
+- **Reducción de Errores**: Acceso a decisiones arquitectónicas previas
+- **Aceleración del Desarrollo**: Menos tiempo explicando el contexto del proyecto
+
+**Configuración Actual:**
+- Archivos de configuración: `CLAUDE.md`, `.github/copilot-instructions.md`
+- Herramientas habilitadas: byterover-retrieve-knowledge, byterover-store-knowledge
+- Scope: Arquitectura, decisiones técnicas, patterns, troubleshooting
 
 ## Configuración de WhatsApp
 
@@ -385,7 +543,7 @@ Todos los endpoints excepto `/api/webhooks/*` requieren token JWT de Clerk.
 
 ### Problemas Comunes
 
-**Database Connection Issues (SQLite)**
+**Database Connection Issues (PostgreSQL)**
 ```bash
 # Verificar conexión
 pnpm db:studio
@@ -393,8 +551,11 @@ pnpm db:studio
 # Regenerar cliente
 pnpm db:generate
 
-# Ver logs de conexión
-DATABASE_URL=file:./dev.db pnpm db:migrate:status
+# Ver estado de migraciones
+pnpm db:migrate:status
+
+# Reset de base de datos (development only)
+pnpm db:reset
 ```
 
 **Build Errors**
@@ -436,10 +597,11 @@ pnpm clean:cache
 ### ✅ Actualmente Implementado
 - **Dashboard Web**: Next.js 15.4.2 con App Router completo
 - **API Backend**: NestJS con estructura base y autenticación Clerk
-- **Base de Datos**: SQLite con Prisma y migraciones
+- **Base de Datos**: PostgreSQL con Prisma y Supabase
 - **UI Components**: shadcn/ui con TailwindCSS
 - **Monorepo**: Turborepo optimizado con pnpm
 - **Documentación**: Apps/docs y documentación completa
+- **TypeScript API**: Corrección completa de errores (26 → 0 errores)
 
 ### 🔄 En Desarrollo Activo
 - **Módulos NestJS**: LeadsModule, MessagingModule en progreso
@@ -455,7 +617,6 @@ pnpm clean:cache
 - [ ] Interface de chat en tiempo real
 
 **Fase 3: Escalabilidad**
-- [ ] Migración a PostgreSQL/Supabase
 - [ ] Redis + BullMQ para colas asíncronas
 - [ ] WebSocket para actualizaciones en tiempo real
 - [ ] Sistema de notificaciones
@@ -476,10 +637,11 @@ pnpm clean:cache
 
 ### Variables de Entorno Actuales
 
-**Desarrollo (SQLite):**
+**Desarrollo (PostgreSQL):**
 ```bash
-# Base de datos local
-DATABASE_URL="file:./dev.db"
+# Base de datos (PostgreSQL con Supabase)
+DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+DIRECT_URL="postgresql://user:pass@host:5432/dbname"
 
 # Autenticación
 CLERK_SECRET_KEY="sk_test_..."
@@ -489,10 +651,11 @@ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
 OPENAI_API_KEY="sk-..."
 ```
 
-**Producción (Futuro):**
+**Producción:**
 ```bash
 # Base de datos
 DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+DIRECT_URL="postgresql://user:pass@host:5432/dbname"
 
 # Autenticación
 CLERK_SECRET_KEY="sk_live_..."
