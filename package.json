@@ -16,6 +16,7 @@
     "lint": "turbo run lint",
     "lint:fix": "turbo run lint:fix",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,md,json}\"",
     "typecheck": "turbo run typecheck",
     "typecheck:fast": "turbo run typecheck --parallel --no-daemon",
     "test": "turbo run test",
