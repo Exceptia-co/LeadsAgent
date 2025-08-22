@@ -25,7 +25,7 @@ Servicio de IA nativo de Google:
 
 ```env
 GEMINI_API_KEY="AIzaSyA6tU2zY67ZZ3uEK0tBhzZZQbMpTI0-7pA"
-GEMINI_MODEL="gemini-1.5-pro"
+GEMINI_MODEL="gemini-2.5-flash"
 ```
 
 **Características de Gemini:**

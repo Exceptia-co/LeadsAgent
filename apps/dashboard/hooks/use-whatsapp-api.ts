@@ -108,6 +108,24 @@ export function useWhatsAppApi() {
     })
   }, [makeApiCall])
 
+  // Direct message sending (without conversation)
+  const sendDirectMessage = useCallback(async (
+    sessionId: string,
+    phone: string,
+    message: string,
+    type: 'text' | 'image' | 'document' | 'audio' | 'video' = 'text'
+  ): Promise<boolean> => {
+    return makeApiCall('/messages/send', {
+      method: 'POST',
+      body: JSON.stringify({
+        sessionId,
+        phone,
+        message,
+        type
+      })
+    })
+  }, [makeApiCall])
+
   // Session methods
   const getSessions = useCallback(async () => {
     return makeApiCall('/sessions')
@@ -153,6 +171,7 @@ export function useWhatsAppApi() {
     getConversations,
     getConversationMessages,
     sendMessage,
+    sendDirectMessage,
     
     // Session methods
     getSessions,

@@ -3,352 +3,649 @@
 import { useState, useEffect } from 'react'
 import { Card } from '../../../components/ui/card'
 import { Badge } from '../../../components/ui/badge'
+import { useWhatsAppApi } from '../../../hooks/use-whatsapp-api'
+import { WhatsAppSession, WhatsAppMessage } from '../../../types'
+import { LeadSelector } from '../../../components/LeadSelector'
+import { Lead } from '../../../hooks/use-leads'
 import { 
   Smartphone, 
-  MessageCircle, 
-  Users, 
-  TrendingUp, 
-  Settings, 
-  Plus,
+  Plus, 
+  Trash2, 
+  Send, 
+  MessageSquare, 
+  Activity,
   QrCode,
-  Wifi,
-  WifiOff,
-  BarChart3,
-  Bot,
-  MessageSquare,
-  Phone
+  Phone,
+  Clock,
+  AlertCircle,
+  CheckCircle2
 } from 'lucide-react'
 
-interface WhatsAppSession {
-  id: string
-  sessionId: string
-  name: string
-  status: 'connected' | 'connecting' | 'disconnected' | 'qr'
-  lastSeen?: string
-  qrCode?: string
+// Status variants for sessions
+const SESSION_STATUS_VARIANTS = {
+  DISCONNECTED: 'destructive' as const,
+  CONNECTING: 'warning' as const,
+  CONNECTED: 'success' as const,
+  QR_READY: 'secondary' as const
 }
 
-interface WhatsAppStats {
-  totalMessages: number
-  inboundMessages: number
-  outboundMessages: number
-  activeConversations: number
-  responseRate: string
-  sessionsCount: number
+const SESSION_STATUS_LABELS = {
+  DISCONNECTED: 'Desconectado',
+  CONNECTING: 'Conectando',
+  CONNECTED: 'Conectado',
+  QR_READY: 'QR Listo'
 }
 
 export default function WhatsAppPage() {
+  const [activeTab, setActiveTab] = useState<'sessions' | 'send' | 'messages'>('sessions')
   const [sessions, setSessions] = useState<WhatsAppSession[]>([])
-  const [stats, setStats] = useState<WhatsAppStats | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [showCreateSession, setShowCreateSession] = useState(false)
+  const [messages, setMessages] = useState<WhatsAppMessage[]>([])
+  const [selectedSession, setSelectedSession] = useState<string>('')
+  
+  const { 
+    getSessions, 
+    createSession, 
+    deleteSession, 
+    sendDirectMessage,
+    getMessageAnalytics,
+    isLoading, 
+    error 
+  } = useWhatsAppApi()
 
+  // Load sessions on component mount
   useEffect(() => {
-    loadWhatsAppData()
+    loadSessions()
   }, [])
 
-  const loadWhatsAppData = async () => {
+  const loadSessions = async () => {
     try {
-      setIsLoading(true)
-      
-      // Fetch sessions
-      const sessionsResponse = await fetch('/api/whatsapp/sessions')
-      if (sessionsResponse.ok) {
-        const sessionsData = await sessionsResponse.json()
-        setSessions(sessionsData.sessions || [])
+      const data = await getSessions()
+      setSessions(data.sessions || [])
+      if (data.sessions?.length > 0 && !selectedSession) {
+        setSelectedSession(data.sessions[0].id)
       }
-
-      // Fetch analytics
-      const analyticsResponse = await fetch('/api/whatsapp/analytics/messages')
-      if (analyticsResponse.ok) {
-        const analyticsData = await analyticsResponse.json()
-        setStats({
-          totalMessages: analyticsData.total.messages,
-          inboundMessages: analyticsData.total.inbound,
-          outboundMessages: analyticsData.total.outbound,
-          activeConversations: analyticsData.total.conversations,
-          responseRate: analyticsData.responseRate,
-          sessionsCount: sessionsData?.sessions?.length || 0
-        })
-      }
-    } catch (error) {
-      console.error('Error loading WhatsApp data:', error)
-    } finally {
-      setIsLoading(false)
+    } catch (err) {
+      console.error('Error loading sessions:', err)
     }
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'connected':
-        return 'bg-green-500'
-      case 'connecting':
-        return 'bg-yellow-500'
-      case 'qr':
-        return 'bg-blue-500'
-      default:
-        return 'bg-gray-500'
-    }
-  }
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'connected':
-        return <Wifi className="h-4 w-4" />
-      case 'connecting':
-        return <Wifi className="h-4 w-4" />
-      case 'qr':
-        return <QrCode className="h-4 w-4" />
-      default:
-        return <WifiOff className="h-4 w-4" />
-    }
-  }
-
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900">WhatsApp Business</h1>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, i) => (
-            <Card key={i} className="p-6 animate-pulse">
-              <div className="h-8 bg-gray-200 rounded mb-2"></div>
-              <div className="h-10 bg-gray-200 rounded"></div>
-            </Card>
-          ))}
-        </div>
-      </div>
-    )
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">WhatsApp Business</h1>
-          <p className="text-gray-500">Gestiona tus sesiones y conversaciones de WhatsApp</p>
+        <h1 className="text-2xl font-bold text-gray-900">WhatsApp Manager</h1>
+        <div className="flex items-center space-x-2">
+          <Activity className="h-5 w-5 text-green-500" />
+          <span className="text-sm text-gray-600">
+            {sessions.filter(s => s.status === 'CONNECTED').length} sesiones conectadas
+          </span>
         </div>
-        <div className="flex items-center space-x-3">
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          {[
+            { id: 'sessions', label: 'Sesiones', icon: Smartphone },
+            { id: 'send', label: 'Enviar Mensaje', icon: Send },
+            { id: 'messages', label: 'Historial', icon: MessageSquare }
+          ].map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActiveTab(id as any)}
+              className={`flex items-center py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === id
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <Icon className="h-4 w-4 mr-2" />
+              {label}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'sessions' && (
+        <SessionManager 
+          sessions={sessions}
+          onSessionsChange={loadSessions}
+          createSession={createSession}
+          deleteSession={deleteSession}
+          isLoading={isLoading}
+          error={error}
+        />
+      )}
+
+      {activeTab === 'send' && (
+        <SendMessage 
+          sessions={sessions}
+          selectedSession={selectedSession}
+          setSelectedSession={setSelectedSession}
+          sendDirectMessage={sendDirectMessage}
+          isLoading={isLoading}
+          error={error}
+        />
+      )}
+
+      {activeTab === 'messages' && (
+        <MessageHistory 
+          sessions={sessions}
+          selectedSession={selectedSession}
+          setSelectedSession={setSelectedSession}
+          getMessageAnalytics={getMessageAnalytics}
+          isLoading={isLoading}
+          error={error}
+        />
+      )}
+    </div>
+  )
+}
+
+// Session Manager Component
+function SessionManager({ 
+  sessions, 
+  onSessionsChange, 
+  createSession, 
+  deleteSession, 
+  isLoading, 
+  error 
+}: {
+  sessions: WhatsAppSession[]
+  onSessionsChange: () => void
+  createSession: (id: string, name?: string) => Promise<any>
+  deleteSession: (id: string) => Promise<any>
+  isLoading: boolean
+  error: string | null
+}) {
+  const [newSessionId, setNewSessionId] = useState('')
+  const [newSessionName, setNewSessionName] = useState('')
+  const [creating, setCreating] = useState(false)
+
+  const handleCreateSession = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newSessionId.trim()) return
+
+    setCreating(true)
+    try {
+      await createSession(newSessionId.trim(), newSessionName.trim() || undefined)
+      setNewSessionId('')
+      setNewSessionName('')
+      onSessionsChange()
+    } catch (err) {
+      console.error('Error creating session:', err)
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const handleDeleteSession = async (sessionId: string) => {
+    if (!confirm('¿Estás seguro de que quieres eliminar esta sesión?')) return
+    
+    try {
+      await deleteSession(sessionId)
+      onSessionsChange()
+    } catch (err) {
+      console.error('Error deleting session:', err)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Create New Session */}
+      <Card className="p-6">
+        <h2 className="text-lg font-medium text-gray-900 mb-4">
+          <Plus className="inline h-5 w-5 mr-2" />
+          Crear Nueva Sesión
+        </h2>
+        <form onSubmit={handleCreateSession} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Session ID *
+              </label>
+              <input
+                type="text"
+                value={newSessionId}
+                onChange={(e) => setNewSessionId(e.target.value)}
+                placeholder="ej: leadcrm-main"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Nombre (Opcional)
+              </label>
+              <input
+                type="text"
+                value={newSessionName}
+                onChange={(e) => setNewSessionName(e.target.value)}
+                placeholder="ej: Sesión Principal"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
           <button
-            onClick={() => setShowCreateSession(true)}
-            className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            type="submit"
+            disabled={creating || !newSessionId.trim()}
+            className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
           >
             <Plus className="h-4 w-4 mr-2" />
-            Nueva Sesión
+            {creating ? 'Creando...' : 'Crear Sesión'}
           </button>
-          <button
-            onClick={loadWhatsAppData}
-            className="flex items-center px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            <Settings className="h-4 w-4 mr-2" />
-            Configurar
-          </button>
+        </form>
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+          <p className="text-sm text-blue-800">
+            <QrCode className="inline h-4 w-4 mr-1" />
+            Al crear una sesión, se abrirá Chrome para escanear el código QR de WhatsApp.
+          </p>
         </div>
-      </div>
+      </Card>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card className="p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <Smartphone className="h-6 w-6 text-green-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Sesiones Activas</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {sessions.filter(s => s.status === 'connected').length}
-              </p>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <MessageCircle className="h-6 w-6 text-blue-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Mensajes Totales</p>
-              <p className="text-2xl font-bold text-gray-900">{stats?.totalMessages || 0}</p>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <Users className="h-6 w-6 text-purple-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Conversaciones</p>
-              <p className="text-2xl font-bold text-gray-900">{stats?.activeConversations || 0}</p>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <TrendingUp className="h-6 w-6 text-yellow-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">Tasa Respuesta</p>
-              <p className="text-2xl font-bold text-gray-900">{stats?.responseRate || '0%'}</p>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Sessions Management */}
-        <div className="lg:col-span-2">
-          <Card className="p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-medium text-gray-900">Sesiones WhatsApp</h2>
-              <Badge variant="outline">
-                {sessions.length} sesiones
-              </Badge>
-            </div>
-
-            <div className="space-y-4">
-              {sessions.length > 0 ? (
-                sessions.map((session) => (
-                  <div key={session.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
-                    <div className="flex items-center space-x-3">
-                      <div className={`w-3 h-3 rounded-full ${getStatusColor(session.status)}`}></div>
-                      <div>
-                        <p className="font-medium text-gray-900">{session.name || session.sessionId}</p>
-                        <p className="text-sm text-gray-500">ID: {session.sessionId}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-center space-x-3">
-                      <Badge variant={session.status === 'connected' ? 'default' : 'secondary'}>
-                        <span className="flex items-center">
-                          {getStatusIcon(session.status)}
-                          <span className="ml-1 capitalize">{session.status}</span>
-                        </span>
-                      </Badge>
-                      
-                      <div className="flex items-center space-x-2">
-                        {session.status === 'qr' && (
-                          <button className="text-blue-600 hover:text-blue-800">
-                            <QrCode className="h-4 w-4" />
-                          </button>
-                        )}
-                        <button className="text-gray-600 hover:text-gray-800">
-                          <Settings className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-12">
-                  <Smartphone className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-                  <p className="text-gray-500 mb-2">No hay sesiones configuradas</p>
-                  <p className="text-sm text-gray-400">Crea tu primera sesión de WhatsApp para empezar</p>
-                </div>
-              )}
-            </div>
-          </Card>
-        </div>
-
-        {/* Quick Actions */}
-        <div className="space-y-6">
-          <Card className="p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Acciones Rápidas</h3>
-            <div className="space-y-3">
-              <a
-                href="/dashboard/whatsapp/conversations"
-                className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <MessageSquare className="h-5 w-5 text-gray-600 mr-3" />
-                <div>
-                  <p className="font-medium text-gray-900">Ver Conversaciones</p>
-                  <p className="text-sm text-gray-500">Gestionar chats activos</p>
-                </div>
-              </a>
-              
-              <a
-                href="/dashboard/whatsapp/templates"
-                className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <Bot className="h-5 w-5 text-gray-600 mr-3" />
-                <div>
-                  <p className="font-medium text-gray-900">Plantillas</p>
-                  <p className="text-sm text-gray-500">Configurar respuestas automáticas</p>
-                </div>
-              </a>
-              
-              <a
-                href="/dashboard/whatsapp/analytics"
-                className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <BarChart3 className="h-5 w-5 text-gray-600 mr-3" />
-                <div>
-                  <p className="font-medium text-gray-900">Analytics</p>
-                  <p className="text-sm text-gray-500">Ver estadísticas detalladas</p>
-                </div>
-              </a>
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <h3 className="text-lg font-medium text-gray-900 mb-4">Estado del Sistema</h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Servicio WhatsApp</span>
-                <Badge variant="default">
-                  <Wifi className="h-3 w-3 mr-1" />
-                  Online
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Automatización</span>
-                <Badge variant="default">
-                  <Bot className="h-3 w-3 mr-1" />
-                  Activa
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Última sincronización</span>
-                <span className="text-sm text-gray-500">{new Date().toLocaleTimeString()}</span>
-              </div>
-            </div>
-          </Card>
-        </div>
-      </div>
-
-      {/* Message Distribution */}
+      {/* Existing Sessions */}
       <Card className="p-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-6">Distribución de Mensajes</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
-                <span className="text-sm text-gray-600">Mensajes Enviados</span>
+        <h2 className="text-lg font-medium text-gray-900 mb-4">
+          <Smartphone className="inline h-5 w-5 mr-2" />
+          Sesiones Activas ({sessions.length})
+        </h2>
+        
+        {sessions.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <Smartphone className="mx-auto h-12 w-12 text-gray-300 mb-4" />
+            <p>No hay sesiones creadas</p>
+            <p className="text-sm">Crea tu primera sesión para comenzar</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {sessions.map((session) => (
+              <div key={session.id} className="border border-gray-200 rounded-lg p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="font-medium text-gray-900">{session.name || session.id}</h3>
+                    <p className="text-sm text-gray-500">{session.id}</p>
+                  </div>
+                  <Badge variant={SESSION_STATUS_VARIANTS[session.status]}>
+                    {SESSION_STATUS_LABELS[session.status]}
+                  </Badge>
+                </div>
+                
+                <div className="space-y-2 text-sm text-gray-600">
+                  {session.phoneNumber && (
+                    <div className="flex items-center">
+                      <Phone className="h-4 w-4 mr-2" />
+                      {session.phoneNumber}
+                    </div>
+                  )}
+                  <div className="flex items-center">
+                    <Clock className="h-4 w-4 mr-2" />
+                    {new Date(session.updatedAt).toLocaleString('es-ES')}
+                  </div>
+                  {session.lastSeen && (
+                    <div className="flex items-center">
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      Último contacto: {new Date(session.lastSeen).toLocaleString('es-ES')}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-gray-100">
+                  <button
+                    onClick={() => handleDeleteSession(session.id)}
+                    className="text-red-600 hover:text-red-800 text-sm flex items-center"
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Eliminar
+                  </button>
+                </div>
               </div>
-              <span className="font-medium">{stats?.outboundMessages || 0}</span>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+// Send Message Component
+function SendMessage({ 
+  sessions, 
+  selectedSession, 
+  setSelectedSession, 
+  sendDirectMessage,
+  isLoading,
+  error 
+}: {
+  sessions: WhatsAppSession[]
+  selectedSession: string
+  setSelectedSession: (id: string) => void
+  sendDirectMessage: (sessionId: string, phone: string, message: string) => Promise<boolean>
+  isLoading: boolean
+  error: string | null
+}) {
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
+  const [phone, setPhone] = useState('')
+  const [message, setMessage] = useState('')
+  const [sending, setSending] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const [useManualInput, setUseManualInput] = useState(false)
+
+  const connectedSessions = sessions.filter(s => s.status === 'CONNECTED' || s.status === 'CONNECTING')
+
+  const handleLeadSelect = (lead: Lead) => {
+    setSelectedLead(lead)
+    if (lead.id === 'manual') {
+      setUseManualInput(true)
+      setPhone('')
+    } else {
+      setUseManualInput(false)
+      setPhone(lead.phone)
+    }
+  }
+
+  const handleSendMessage = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedSession || !phone.trim() || !message.trim()) return
+
+    setSending(true)
+    setSuccess(false)
+    try {
+      await sendDirectMessage(selectedSession, phone.trim(), message.trim())
+      setPhone('')
+      setMessage('')
+      setSuccess(true)
+      setTimeout(() => setSuccess(false), 3000)
+    } catch (err) {
+      console.error('Error sending message:', err)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-6">
+        <h2 className="text-lg font-medium text-gray-900 mb-4">
+          <Send className="inline h-5 w-5 mr-2" />
+          Enviar Mensaje Directo
+        </h2>
+
+        {connectedSessions.length === 0 ? (
+          <div className="text-center py-8">
+            <AlertCircle className="mx-auto h-12 w-12 text-orange-500 mb-4" />
+            <p className="text-gray-900 font-medium">No hay sesiones conectadas</p>
+            <p className="text-sm text-gray-500 mt-1">
+              Crea y conecta una sesión primero en la pestaña "Sesiones"
+            </p>
+          </div>
+        ) : (
+          <form onSubmit={handleSendMessage} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Sesión
+              </label>
+              <select
+                value={selectedSession}
+                onChange={(e) => setSelectedSession(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Seleccionar sesión...</option>
+                {connectedSessions.map((session) => (
+                  <option key={session.id} value={session.id}>
+                    {session.name || session.id} ({session.phoneNumber})
+                  </option>
+                ))}
+              </select>
             </div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <div className="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
-                <span className="text-sm text-gray-600">Mensajes Recibidos</span>
+
+            {/* Lead Selector */}
+            <LeadSelector
+              selectedLead={selectedLead}
+              onSelectLead={handleLeadSelect}
+            />
+            
+            {/* Manual phone input (only shown if manual input is selected) */}
+            {useManualInput && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Número de Teléfono
+                </label>
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+34658333517"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Incluye el código de país (ej: +34 para España)
+                </p>
               </div>
-              <span className="font-medium">{stats?.inboundMessages || 0}</span>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Mensaje
+              </label>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                rows={4}
+                placeholder="Escribe tu mensaje aquí..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+              />
             </div>
+
+            {success && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+                <p className="text-green-800 text-sm flex items-center">
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Mensaje enviado correctamente
+                </p>
+              </div>
+            )}
+
+            {error && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+                <p className="text-red-800 text-sm flex items-center">
+                  <AlertCircle className="h-4 w-4 mr-2" />
+                  {error}
+                </p>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={sending || !selectedSession || !phone.trim() || !message.trim()}
+              className="w-full bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+            >
+              <Send className="h-4 w-4 mr-2" />
+              {sending ? 'Enviando...' : 'Enviar Mensaje'}
+            </button>
+          </form>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+// Message History Component
+function MessageHistory({ 
+  sessions, 
+  selectedSession, 
+  setSelectedSession, 
+  getMessageAnalytics,
+  isLoading,
+  error 
+}: {
+  sessions: WhatsAppSession[]
+  selectedSession: string
+  setSelectedSession: (id: string) => void
+  getMessageAnalytics: (sessionId?: string, startDate?: string, endDate?: string) => Promise<any>
+  isLoading: boolean
+  error: string | null
+}) {
+  const [analytics, setAnalytics] = useState<any>(null)
+  const [dateRange, setDateRange] = useState({
+    startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0]
+  })
+
+  const loadAnalytics = async () => {
+    try {
+      const data = await getMessageAnalytics(
+        selectedSession || undefined,
+        dateRange.startDate,
+        dateRange.endDate
+      )
+      setAnalytics(data)
+    } catch (err) {
+      console.error('Error loading analytics:', err)
+    }
+  }
+
+  useEffect(() => {
+    if (sessions.length > 0) {
+      loadAnalytics()
+    }
+  }, [selectedSession, dateRange])
+
+  return (
+    <div className="space-y-6">
+      {/* Filters */}
+      <Card className="p-6">
+        <h2 className="text-lg font-medium text-gray-900 mb-4">
+          <MessageSquare className="inline h-5 w-5 mr-2" />
+          Historial de Mensajes
+        </h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Sesión
+            </label>
+            <select
+              value={selectedSession}
+              onChange={(e) => setSelectedSession(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Todas las sesiones</option>
+              {sessions.map((session) => (
+                <option key={session.id} value={session.id}>
+                  {session.name || session.id}
+                </option>
+              ))}
+            </select>
           </div>
           
-          <div className="text-center">
-            <p className="text-3xl font-bold text-gray-900 mb-2">
-              {stats?.totalMessages || 0}
-            </p>
-            <p className="text-sm text-gray-500">Total de mensajes procesados</p>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Fecha Inicio
+            </label>
+            <input
+              type="date"
+              value={dateRange.startDate}
+              onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Fecha Fin
+            </label>
+            <input
+              type="date"
+              value={dateRange.endDate}
+              onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
         </div>
       </Card>
+
+      {/* Analytics */}
+      {analytics && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Send className="h-6 w-6 text-blue-600" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Enviados</p>
+                <p className="text-2xl font-bold text-gray-900">{analytics.totalSent || 0}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <MessageSquare className="h-6 w-6 text-green-600" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Recibidos</p>
+                <p className="text-2xl font-bold text-gray-900">{analytics.totalReceived || 0}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Phone className="h-6 w-6 text-purple-600" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Contactos</p>
+                <p className="text-2xl font-bold text-gray-900">{analytics.topContacts?.length || 0}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center">
+              <div className="p-2 bg-yellow-100 rounded-lg">
+                <Activity className="h-6 w-6 text-yellow-600" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Total</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {(analytics.totalSent || 0) + (analytics.totalReceived || 0)}
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Top Contacts */}
+      {analytics?.topContacts && analytics.topContacts.length > 0 && (
+        <Card className="p-6">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">
+            Contactos Principales
+          </h3>
+          <div className="space-y-3">
+            {analytics.topContacts.map((contact: any, index: number) => (
+              <div key={contact.phone} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                <div>
+                  <p className="font-medium text-gray-900">{contact.phone}</p>
+                  <p className="text-sm text-gray-500 truncate max-w-xs">
+                    {contact.lastMessage}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <Badge variant="secondary">
+                    {contact.count} mensajes
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   )
 }

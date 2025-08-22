@@ -98,3 +98,46 @@ export const STATUS_LABELS: Record<LeadStatus, string> = {
   GANADO: 'Ganado',
   PERDIDO: 'Perdido'
 }
+
+// WhatsApp types
+export interface WhatsAppSession {
+  id: string
+  name?: string
+  status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'QR_READY'
+  qr?: string
+  phoneNumber?: string
+  createdAt: string
+  updatedAt: string
+  lastSeen?: string
+}
+
+export interface WhatsAppMessage {
+  id: string
+  sessionId: string
+  phone: string
+  content: string
+  direction: 'INBOUND' | 'OUTBOUND'
+  messageType: 'text' | 'image' | 'document' | 'audio' | 'video'
+  status: 'sent' | 'delivered' | 'read' | 'failed' | 'received'
+  timestamp: string
+  createdAt: string
+}
+
+export interface MessageAnalytics {
+  totalSent: number
+  totalReceived: number
+  byStatus: Record<string, number>
+  byHour: Record<string, number>
+  topContacts: Array<{
+    phone: string
+    count: number
+    lastMessage: string
+  }>
+}
+
+export interface SendMessageData {
+  sessionId: string
+  phone: string
+  message: string
+  type?: 'text' | 'image' | 'document' | 'audio' | 'video'
+}
