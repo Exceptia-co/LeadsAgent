@@ -134,6 +134,36 @@ class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_whitelist_logs_decision ON whatsapp_whitelist_logs(decision);
       CREATE INDEX IF NOT EXISTS idx_whitelist_logs_created ON whatsapp_whitelist_logs(created_at);
       CREATE INDEX IF NOT EXISTS idx_whitelist_logs_session ON whatsapp_whitelist_logs(session_id);
+
+      -- Tabla de knowledge base para entrenamiento IA
+      CREATE TABLE IF NOT EXISTS ai_knowledge_base (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        category VARCHAR(100) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        content TEXT NOT NULL,
+        keywords TEXT[], -- Array of keywords for search
+        priority INTEGER DEFAULT 1, -- Higher priority = more important
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Tabla de configuración IA (system prompts, etc.)
+      CREATE TABLE IF NOT EXISTS ai_configuration (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        config_key VARCHAR(100) UNIQUE NOT NULL,
+        config_value TEXT NOT NULL,
+        description TEXT,
+        updated_by VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Índices para knowledge base
+      CREATE INDEX IF NOT EXISTS idx_knowledge_category ON ai_knowledge_base(category);
+      CREATE INDEX IF NOT EXISTS idx_knowledge_active ON ai_knowledge_base(is_active);
+      CREATE INDEX IF NOT EXISTS idx_knowledge_priority ON ai_knowledge_base(priority DESC);
+      CREATE INDEX IF NOT EXISTS idx_ai_config_key ON ai_configuration(config_key);
     `;
 
     try {
@@ -1081,6 +1111,168 @@ class DatabaseService {
     ];
 
     return mockMessages.slice(0, limit);
+  }
+
+  // ============================================
+  // KNOWLEDGE BASE Y CONFIGURACIÓN IA
+  // ============================================
+
+  // Obtener knowledge base para contexto IA
+  public async getKnowledgeBase(category?: string): Promise<any[]> {
+    if (!this.pool) {
+      return this.getDefaultKnowledgeBase();
+    }
+
+    try {
+      let query = `
+        SELECT id, category, title, content, keywords, priority
+        FROM ai_knowledge_base 
+        WHERE is_active = true
+      `;
+      
+      const values: any[] = [];
+      
+      if (category) {
+        query += ` AND category = $1`;
+        values.push(category);
+      }
+      
+      query += ` ORDER BY priority DESC, created_at ASC`;
+      
+      const result = await this.pool.query(query, values);
+      return result.rows;
+    } catch (error) {
+      logger.error('Error obteniendo knowledge base:', error);
+      return this.getDefaultKnowledgeBase();
+    }
+  }
+
+  // Obtener configuración IA
+  public async getAIConfiguration(key: string): Promise<string | null> {
+    if (!this.pool) {
+      return this.getDefaultConfig(key);
+    }
+
+    try {
+      const query = `
+        SELECT config_value 
+        FROM ai_configuration 
+        WHERE config_key = $1
+      `;
+      
+      const result = await this.pool.query(query, [key]);
+      return result.rows[0]?.config_value || this.getDefaultConfig(key);
+    } catch (error) {
+      logger.error('Error obteniendo configuración IA:', error);
+      return this.getDefaultConfig(key);
+    }
+  }
+
+  // Actualizar configuración IA
+  public async updateAIConfiguration(key: string, value: string, updatedBy?: string): Promise<boolean> {
+    if (!this.pool) {
+      logger.info(`Mock update: ${key} = ${value.substring(0, 100)}...`);
+      return true;
+    }
+
+    try {
+      const query = `
+        INSERT INTO ai_configuration (config_key, config_value, updated_by, updated_at)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+        ON CONFLICT (config_key) 
+        DO UPDATE SET 
+          config_value = EXCLUDED.config_value,
+          updated_by = EXCLUDED.updated_by,
+          updated_at = CURRENT_TIMESTAMP
+      `;
+      
+      await this.pool.query(query, [key, value, updatedBy]);
+      logger.info(`✅ Configuración IA actualizada: ${key}`);
+      return true;
+    } catch (error) {
+      logger.error('Error actualizando configuración IA:', error);
+      return false;
+    }
+  }
+
+  // Buscar en knowledge base por keywords
+  public async searchKnowledgeBase(query: string): Promise<any[]> {
+    if (!this.pool) {
+      return this.getDefaultKnowledgeBase().filter(item => 
+        item.content.toLowerCase().includes(query.toLowerCase()) ||
+        item.title.toLowerCase().includes(query.toLowerCase())
+      );
+    }
+
+    try {
+      const searchQuery = `
+        SELECT id, category, title, content, keywords, priority
+        FROM ai_knowledge_base 
+        WHERE is_active = true
+          AND (
+            title ILIKE $1 OR 
+            content ILIKE $1 OR
+            EXISTS (
+              SELECT 1 FROM unnest(keywords) AS keyword 
+              WHERE keyword ILIKE $1
+            )
+          )
+        ORDER BY priority DESC, 
+          CASE 
+            WHEN title ILIKE $1 THEN 1
+            WHEN EXISTS (SELECT 1 FROM unnest(keywords) AS keyword WHERE keyword ILIKE $1) THEN 2
+            ELSE 3
+          END
+        LIMIT 5;
+      `;
+      
+      const result = await this.pool.query(searchQuery, [`%${query}%`]);
+      return result.rows;
+    } catch (error) {
+      logger.error('Error buscando en knowledge base:', error);
+      return [];
+    }
+  }
+
+  // Knowledge base por defecto con información de EscortsHub
+  private getDefaultKnowledgeBase(): any[] {
+    return [
+      {
+        id: 'default_1',
+        category: 'productos',
+        title: 'Productos Disponibles EscortsHub',
+        content: `Nuestros productos principales son:\n\n1. **ANUNCIO DOBLE**: Anuncio con visibilidad aumentada que ocupa doble espacio. Ideal para destacar entre anuncios regulares.\n\n2. **ANUNCIO TOP**: Anuncio destacado en posición superior con posicionamiento privilegiado.\n\n3. **ANUNCIO DOBLE TOP**: Combinación de anuncio doble y posición top para máxima visibilidad.\n\n4. **DISPONIBLE AHORA**: Indicador de disponibilidad inmediata en tiempo real.\n\n5. **HISTORIAS**: Función para compartir contenido temporal y mostrar actualizaciones.\n\n6. **REACTIVACIÓN**: Servicio para reactivar anuncios pausados.`,
+        keywords: ['productos', 'anuncios', 'doble', 'top', 'historias', 'disponible', 'reactivacion'],
+        priority: 10
+      },
+      {
+        id: 'default_2',
+        category: 'precios',
+        title: 'Sistema de Precios - Monedas HUB',
+        content: `Utilizamos **Monedas HUB** como moneda virtual para activar anuncios:\n\n**Precios por producto:**\n• ANUNCIO DOBLE: 1 día (20 HUB), 5 días (85 HUB), 10 días (150 HUB)\n• ANUNCIO TOP: 3 días (85 HUB), 7 días (125 HUB), 10 días (165 HUB), 30 días (450 HUB)\n• ANUNCIO DOBLE TOP: 3 días (170 HUB), 7 días (250 HUB), 10 días (330 HUB), 30 días (900 HUB)\n\n**Paquetes de Monedas:**\n• Básico: 100 HUB por 80€ (0.80€/moneda)\n• Estándar: 200 HUB por 150€ (0.75€/moneda)\n• Plus: 500 HUB por 300€ (0.60€/moneda) - Mejor precio\n• Premium: 1,000 HUB por 700€ (0.70€/moneda)`,
+        keywords: ['precios', 'monedas', 'hub', 'paquetes', 'euros', 'coste'],
+        priority: 9
+      },
+      {
+        id: 'default_3',
+        category: 'informacion_general',
+        title: 'Acerca de EscortsHub',
+        content: `EscortsHub es el sitio web original de escorts en España, una plataforma profesional para anuncios de servicios de acompañantes.\n\n**Características:**\n• Plataforma líder en el sector\n• Sistema de wallet integrado\n• Acceso solo para mayores de 18 años\n• Políticas de privacidad transparentes\n• Soporte técnico especializado\n\n**Métodos de pago:**\nTarjetas de crédito/débito, transferencia bancaria, métodos digitales y criptomonedas (consultar disponibilidad).`,
+        keywords: ['escortshub', 'plataforma', 'españa', 'escorts', 'informacion', 'que es'],
+        priority: 8
+      }
+    ];
+  }
+
+  // Configuraciones por defecto
+  private getDefaultConfig(key: string): string | null {
+    const defaultConfigs: { [key: string]: string } = {
+      'system_prompt': `Eres un asistente virtual profesional de EscortsHub, la plataforma líder de escorts en España. Tu misión es ayudar a los usuarios con información sobre nuestros productos y servicios de manera amable y profesional.\n\nSIEMPRE:\n• Mantén un tono profesional pero cercano\n• Ofrece información clara sobre productos y precios\n• Sugiere el mejor paquete según las necesidades\n• Invita a realizar compras cuando sea apropiado\n• Responde solo sobre temas relacionados con EscortsHub\n\nNUNCA:\n• Discutas temas no relacionados con nuestros servicios\n• Proporciones información incorrecta sobre precios\n• Hagas promesas que no podemos cumplir`,
+      'greeting_message': '¡Hola! 👋 Bienvenido/a a EscortsHub, la plataforma líder de escorts en España. Soy tu asistente virtual y estoy aquí para ayudarte con información sobre nuestros productos y servicios. ¿En qué puedo asistirte hoy?',
+      'fallback_message': 'Disculpa, en este momento no puedo procesar tu mensaje correctamente. Un especialista se pondrá en contacto contigo pronto para brindarte la mejor atención. 😊'
+    };
+    
+    return defaultConfigs[key] || null;
   }
 }
 

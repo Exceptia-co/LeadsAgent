@@ -285,8 +285,8 @@ class WhatsAppServiceSimple {
       // Get phone number without WhatsApp suffix
       const phoneNumber = whatsappMessage.from.replace('@c.us', '');
       
-      // Get conversation history for context
-      const conversationHistory = await DatabaseService.getRecentContext(phoneNumber, sessionId, 5);
+      // Get conversation history for context (only last message for efficiency)
+      const conversationHistory = await DatabaseService.getRecentContext(phoneNumber, sessionId, 1);
       
       // Generate AI response
       const aiResponse = await AIService.generateResponse(whatsappMessage.body, {
@@ -297,6 +297,9 @@ class WhatsAppServiceSimple {
       });
       
       if (aiResponse.success && aiResponse.content) {
+        // Add humanized delay before responding
+        await this.addHumanizedDelay(whatsappMessage.body);
+        
         // Send AI response back to WhatsApp
         await originalMessage.reply(aiResponse.content);
         
@@ -450,6 +453,22 @@ class WhatsAppServiceSimple {
         reason: 'Error en verificación - comportamiento fail-safe permitido'
       }
     }
+  }
+
+  // Add humanized delay before responding to simulate human behavior
+  private async addHumanizedDelay(messageText: string): Promise<void> {
+    // Get delay settings from environment variables
+    const minDelay = parseInt(process.env.AI_RESPONSE_DELAY_MIN || '2000') // 2 seconds default
+    const maxDelay = parseInt(process.env.AI_RESPONSE_DELAY_MAX || '6000') // 6 seconds default
+    
+    // Calculate delay based on message length (longer messages = longer thinking time)
+    const baseDelay = Math.min(messageText.length * 50, 2000) // 50ms per character, max 2s extra
+    const randomDelay = Math.random() * (maxDelay - minDelay) + minDelay
+    const totalDelay = Math.min(randomDelay + baseDelay, maxDelay)
+    
+    logger.info(`⏱️ Adding humanized delay: ${Math.round(totalDelay)}ms (message length: ${messageText.length})`)
+    
+    await new Promise(resolve => setTimeout(resolve, totalDelay))
   }
 
   // Mantener método original para compatibilidad
