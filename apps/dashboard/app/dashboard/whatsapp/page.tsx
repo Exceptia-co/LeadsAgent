@@ -20,6 +20,7 @@ import {
   AlertCircle,
   CheckCircle2
 } from 'lucide-react'
+import WhatsAppConversations from '../../../components/WhatsAppConversations'
 
 // Status variants for sessions
 const SESSION_STATUS_VARIANTS = {
@@ -37,7 +38,7 @@ const SESSION_STATUS_LABELS = {
 }
 
 export default function WhatsAppPage() {
-  const [activeTab, setActiveTab] = useState<'sessions' | 'send' | 'messages'>('sessions')
+  const [activeTab, setActiveTab] = useState<'sessions' | 'send' | 'messages' | 'conversations'>('sessions')
   const [sessions, setSessions] = useState<WhatsAppSession[]>([])
   const [messages, setMessages] = useState<WhatsAppMessage[]>([])
   const [selectedSession, setSelectedSession] = useState<string>('')
@@ -86,6 +87,7 @@ export default function WhatsAppPage() {
         <nav className="-mb-px flex space-x-8">
           {[
             { id: 'sessions', label: 'Sesiones', icon: Smartphone },
+            { id: 'conversations', label: 'Conversaciones', icon: MessageSquare },
             { id: 'send', label: 'Enviar Mensaje', icon: Send },
             { id: 'messages', label: 'Historial', icon: MessageSquare }
           ].map(({ id, label, icon: Icon }) => (
@@ -126,6 +128,10 @@ export default function WhatsAppPage() {
           isLoading={isLoading}
           error={error}
         />
+      )}
+
+      {activeTab === 'conversations' && (
+        <WhatsAppConversations />
       )}
 
       {activeTab === 'messages' && (
