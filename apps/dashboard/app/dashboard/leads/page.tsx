@@ -12,6 +12,24 @@ export default function LeadsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const { leads, pagination, isLoading, isError, refetch } = useLeads(currentPage, 20)
 
+  const handleWhatsAppToggle = async (leadId: string, authorized: boolean) => {
+    try {
+      const response = await fetch(`/api/leads/${leadId}/whatsapp`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ whatsappAuthorized: authorized })
+      })
+      
+      if (response.ok) {
+        refetch() // Refrescar la lista de leads
+      } else {
+        console.error('Error updating WhatsApp authorization')
+      }
+    } catch (error) {
+      console.error('Error updating WhatsApp authorization:', error)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -134,6 +152,9 @@ export default function LeadsPage() {
                   Fecha
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  WhatsApp IA
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Acciones
                 </th>
               </tr>
@@ -168,22 +189,48 @@ export default function LeadsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(lead.createdAt).toLocaleDateString('es-ES')}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <label className="flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={lead.whatsappAuthorized || false}
+                            onChange={(e) => handleWhatsAppToggle(lead.id, e.target.checked)}
+                            className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                          />
+                          <span className="ml-2 text-sm text-gray-900">
+                            {lead.whatsappAuthorized ? (
+                              <span className="flex items-center text-green-600">
+                                <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                </svg>
+                                Autorizado
+                              </span>
+                            ) : (
+                              <span className="text-gray-500">No autorizado</span>
+                            )}
+                          </span>
+                        </label>
+                      </div>
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button className="text-blue-600 hover:text-blue-900 mr-4">
-                        Ver
-                      </button>
-                      <button className="text-yellow-600 hover:text-yellow-900 mr-4">
-                        Editar
-                      </button>
-                      <button className="text-red-600 hover:text-red-900">
-                        Eliminar
-                      </button>
+                      <div className="flex space-x-2">
+                        <button className="text-blue-600 hover:text-blue-900">
+                          Ver
+                        </button>
+                        <button className="text-yellow-600 hover:text-yellow-900">
+                          Editar
+                        </button>
+                        <button className="text-red-600 hover:text-red-900">
+                          Eliminar
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center">
+                  <td colSpan={7} className="px-6 py-12 text-center">
                     <Users className="mx-auto h-12 w-12 text-gray-300 mb-4" />
                     <p className="text-gray-500">
                       {searchTerm ? 'No se encontraron leads con ese criterio' : 'No hay leads disponibles'}

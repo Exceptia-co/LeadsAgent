@@ -177,7 +177,7 @@ export default function DashboardPage() {
             <span className="font-medium text-gray-900">Ver todos los leads</span>
           </a>
           <a
-            href="/dashboard/conversations"
+            href="/dashboard/whatsapp/conversations"
             className="flex items-center justify-center px-4 py-6 border border-gray-300 rounded-lg hover:border-gray-400 transition-colors"
           >
             <MessageSquare className="h-6 w-6 text-gray-600 mr-2" />

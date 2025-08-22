@@ -25,6 +25,11 @@ export interface WhatsAppSession {
   qrCode?: string
   lastSeen: Date
   webhookUrl?: string
+  name?: string
+  connectedNumber?: string
+  phoneNumber?: string
+  createdAt?: Date
+  updatedAt?: Date
 }
 
 export interface WebhookPayload {

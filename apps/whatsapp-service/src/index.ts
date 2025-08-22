@@ -93,11 +93,28 @@ async function bootstrap() {
 
     logger.info('✅ Middleware configured')
 
-    logger.info('🔄 Loading WhatsApp service...')
-    // Import and initialize WhatsApp service
-    const WhatsAppServiceModule = await import('./services/WhatsAppService')
+    logger.info('🔄 Loading services...')
+    
+    // Import services
+    const WhatsAppServiceModule = await import('./services/WhatsAppServiceSimple')
+    const AIServiceModule = await import('./services/AIService')
+    const DatabaseServiceModule = await import('./services/DatabaseService')
+    
     const WhatsAppService = WhatsAppServiceModule.default
-    logger.info('✅ WhatsApp service loaded')
+    const AIService = AIServiceModule.default
+    const DatabaseService = DatabaseServiceModule.default
+    
+    logger.info('✅ Services loaded')
+    
+    logger.info('🔄 Initializing database service...')
+    await DatabaseService.testConnection()
+    await DatabaseService.initializeTable()
+    logger.info('✅ Database service initialized')
+    
+    logger.info('🔄 Initializing AI service...')
+    const aiStatus = AIService.getStatus()
+    logger.info(`IA Status: OpenRouter=${aiStatus.openrouter}, Gemini=${aiStatus.gemini}, Current=${aiStatus.current}`)
+    logger.info('✅ AI service initialized')
     
     logger.info('🔄 Initializing WhatsApp service...')
     await WhatsAppService.initialize()

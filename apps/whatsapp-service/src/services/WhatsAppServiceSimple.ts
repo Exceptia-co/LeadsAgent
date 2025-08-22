@@ -1,10 +1,9 @@
 import { Client, LocalAuth, Message } from 'whatsapp-web.js'
 import qrcode from 'qrcode-terminal'
 import { logger } from '../utils/logger'
-import { redis } from '../utils/redis'
 import { WhatsAppMessage, WhatsAppSession, WebhookPayload, SendMessageResponse } from '../types'
 
-class WhatsAppService {
+class WhatsAppServiceSimple {
   private clients: Map<string, Client> = new Map()
   private sessions: Map<string, WhatsAppSession> = new Map()
   private webhookUrl: string | undefined
@@ -14,18 +13,7 @@ class WhatsAppService {
   }
 
   async initialize(): Promise<void> {
-    try {
-      // Try to connect to Redis, but don't fail if it's not available in development
-      if (process.env.REDIS_URL && process.env.REDIS_URL !== 'redis://localhost:6379') {
-        await redis.connect()
-        logger.info('Connected to Redis')
-      } else {
-        logger.warn('Redis not configured or not available - running without Redis')
-      }
-      logger.info('WhatsApp service initialized successfully')
-    } catch (error) {
-      logger.warn('Redis connection failed, continuing without Redis:', error instanceof Error ? error.message : String(error))
-    }
+    logger.info('WhatsApp service initialized successfully (no Redis)')
   }
 
   async createSession(sessionId: string): Promise<WhatsAppSession> {
@@ -41,8 +29,9 @@ class WhatsAppService {
           dataPath: './sessions'
         }),
         puppeteer: {
-          headless: process.env.NODE_ENV === 'production',
+          headless: process.env.PUPPETEER_HEADLESS === 'true' || process.env.NODE_ENV === 'production',
           executablePath: process.env.CHROME_EXECUTABLE_PATH || undefined,
+          devtools: process.env.NODE_ENV === 'development',
           args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -73,9 +62,6 @@ class WhatsAppService {
       this.clients.set(sessionId, client)
       this.sessions.set(sessionId, session)
 
-      // Store in Redis
-      await redis.setSession(sessionId, session)
-
       // Initialize the client
       client.initialize()
 
@@ -97,9 +83,8 @@ class WhatsAppService {
         qrcode.generate(qr, { small: true })
       }
 
-      // Store QR code in Redis and session
-      await redis.setQRCode(sessionId, qr)
-      await this.updateSessionStatus(sessionId, 'connecting', { qrCode: qr })
+      // Store QR code in session
+      this.updateSessionStatus(sessionId, 'connecting', { qrCode: qr })
 
       // Send webhook
       await this.sendWebhook({
@@ -115,8 +100,7 @@ class WhatsAppService {
       logger.info(`WhatsApp client ${sessionId} is ready`)
       
       const clientInfo = client.info
-      await redis.deleteQRCode(sessionId)
-      await this.updateSessionStatus(sessionId, 'ready', { 
+      this.updateSessionStatus(sessionId, 'ready', { 
         connectedNumber: clientInfo?.wid?.user || 'unknown'
       })
 
@@ -132,14 +116,13 @@ class WhatsAppService {
     // Authenticated event
     client.on('authenticated', async () => {
       logger.info(`WhatsApp client ${sessionId} authenticated`)
-      await this.updateSessionStatus(sessionId, 'authenticated')
+      this.updateSessionStatus(sessionId, 'authenticated')
     })
 
     // Authentication failure event
     client.on('auth_failure', async (msg) => {
       logger.error(`Authentication failed for session ${sessionId}:`, msg)
-      await redis.deleteQRCode(sessionId)
-      await this.updateSessionStatus(sessionId, 'auth_failure')
+      this.updateSessionStatus(sessionId, 'auth_failure')
 
       // Send webhook
       await this.sendWebhook({
@@ -153,7 +136,7 @@ class WhatsAppService {
     // Disconnected event
     client.on('disconnected', async (reason) => {
       logger.info(`WhatsApp client ${sessionId} disconnected:`, reason)
-      await this.updateSessionStatus(sessionId, 'disconnected')
+      this.updateSessionStatus(sessionId, 'disconnected')
 
       // Send webhook
       await this.sendWebhook({
@@ -173,7 +156,18 @@ class WhatsAppService {
           body: whatsappMessage.body.substring(0, 100)
         })
 
-        // Send webhook with message
+        // Process with AI only if it's not from us AND if sender is in whitelist
+        if (!whatsappMessage.fromMe && whatsappMessage.body.trim()) {
+          const isAllowed = await this.isPhoneNumberAllowed(whatsappMessage.from)
+          if (isAllowed) {
+            logger.info(`📱 Respuesta automática permitida para: ${whatsappMessage.from}`)
+            await this.processMessageWithAI(message, whatsappMessage, sessionId)
+          } else {
+            logger.info(`🚫 Respuesta automática bloqueada para: ${whatsappMessage.from} (no está en whitelist de leads)`)
+          }
+        }
+
+        // Send webhook with message (always, regardless of AI processing)
         await this.sendWebhook({
           event: 'message',
           sessionId,
@@ -244,23 +238,12 @@ class WhatsAppService {
   }
 
   async getSessionStatus(sessionId: string): Promise<WhatsAppSession | null> {
-    return this.sessions.get(sessionId) || await redis.getSession(sessionId)
+    return this.sessions.get(sessionId) || null
   }
 
   async getAllSessions(): Promise<WhatsAppSession[]> {
     const sessions: WhatsAppSession[] = []
-    
-    // Get from memory
     this.sessions.forEach(session => sessions.push(session))
-    
-    // Get from Redis (for sessions not in memory)
-    const redisSessions = await redis.getAllSessions()
-    Object.values(redisSessions).forEach(session => {
-      if (!sessions.find(s => s.id === session.id)) {
-        sessions.push(session as WhatsAppSession)
-      }
-    })
-
     return sessions
   }
 
@@ -273,9 +256,6 @@ class WhatsAppService {
       }
 
       this.sessions.delete(sessionId)
-      await redis.deleteSession(sessionId)
-      await redis.deleteQRCode(sessionId)
-
       logger.info(`Session ${sessionId} destroyed successfully`)
     } catch (error) {
       logger.error(`Error destroying session ${sessionId}:`, error)
@@ -283,7 +263,7 @@ class WhatsAppService {
     }
   }
 
-  private async updateSessionStatus(sessionId: string, status: WhatsAppSession['status'], data?: any): Promise<void> {
+  private updateSessionStatus(sessionId: string, status: WhatsAppSession['status'], data?: any): void {
     const session = this.sessions.get(sessionId)
     if (session) {
       session.status = status
@@ -291,7 +271,120 @@ class WhatsAppService {
       if (data) {
         Object.assign(session, data)
       }
-      await redis.setSession(sessionId, session)
+    }
+  }
+
+  private async processMessageWithAI(originalMessage: Message, whatsappMessage: WhatsAppMessage, sessionId: string): Promise<void> {
+    try {
+      logger.info(`Processing message with AI for session ${sessionId}`);
+      
+      // Import AI service dynamically to avoid circular dependencies
+      const { default: AIService } = await import('./AIService');
+      const { default: DatabaseService } = await import('./DatabaseService');
+      
+      // Get phone number without WhatsApp suffix
+      const phoneNumber = whatsappMessage.from.replace('@c.us', '');
+      
+      // Get conversation history for context
+      const conversationHistory = await DatabaseService.getRecentContext(phoneNumber, sessionId, 5);
+      
+      // Generate AI response
+      const aiResponse = await AIService.generateResponse(whatsappMessage.body, {
+        from: whatsappMessage.from,
+        sessionId: sessionId,
+        conversationHistory: conversationHistory,
+        phoneNumber: phoneNumber
+      });
+      
+      if (aiResponse.success && aiResponse.content) {
+        // Send AI response back to WhatsApp
+        await originalMessage.reply(aiResponse.content);
+        
+        // Save conversation to database
+        await DatabaseService.saveConversation({
+          sessionId: sessionId,
+          phoneNumber: phoneNumber,
+          messageText: whatsappMessage.body,
+          responseText: aiResponse.content,
+          messageType: whatsappMessage.type,
+          aiProvider: aiResponse.provider,
+          tokensUsed: aiResponse.tokensUsed || 0,
+          isFromUser: true
+        });
+        
+        // Also save our response
+        await DatabaseService.saveConversation({
+          sessionId: sessionId,
+          phoneNumber: phoneNumber,
+          messageText: aiResponse.content,
+          responseText: undefined,
+          messageType: 'text',
+          aiProvider: aiResponse.provider,
+          tokensUsed: 0,
+          isFromUser: false
+        });
+        
+        logger.info(`AI response sent successfully to ${phoneNumber}:`, {
+          messageLength: aiResponse.content.length,
+          provider: aiResponse.provider,
+          tokensUsed: aiResponse.tokensUsed
+        });
+      } else {
+        logger.error('Failed to generate AI response:', aiResponse.error);
+        
+        // Send fallback message
+        await originalMessage.reply('Disculpa, en este momento no puedo procesar tu mensaje. Un agente se pondrá en contacto contigo pronto. 😊');
+      }
+    } catch (error) {
+      logger.error('Error in processMessageWithAI:', error);
+      
+      // Send fallback message on error
+      try {
+        await originalMessage.reply('Gracias por tu mensaje. Un representante te contactará pronto. 👍');
+      } catch (replyError) {
+        logger.error('Error sending fallback message:', replyError);
+      }
+    }
+  }
+
+  private async isPhoneNumberAllowed(phoneNumberWithSuffix: string): Promise<boolean> {
+    try {
+      // Remove WhatsApp suffix to get clean phone number
+      const phoneNumber = phoneNumberWithSuffix.replace('@c.us', '').replace('@g.us', '')
+      
+      // Import DatabaseService to check leads
+      const { default: DatabaseService } = await import('./DatabaseService')
+      
+      // Get all active leads from database
+      const leads = await DatabaseService.getAllLeads()
+      
+      // Check if the phone number matches any lead
+      const isAllowed = leads.some(lead => {
+        if (!lead.phone) return false
+        
+        // Clean both numbers for comparison
+        const leadPhone = lead.phone.replace(/[^0-9]/g, '')
+        const incomingPhone = phoneNumber.replace(/[^0-9]/g, '')
+        
+        // Compare last 10 digits (to handle country codes)
+        const leadLast10 = leadPhone.slice(-10)
+        const incomingLast10 = incomingPhone.slice(-10)
+        
+        return leadLast10 === incomingLast10
+      })
+      
+      if (isAllowed) {
+        logger.info(`✅ Número ${phoneNumber} encontrado en whitelist de leads`)
+      } else {
+        logger.info(`❌ Número ${phoneNumber} NO encontrado en whitelist de leads`)
+        logger.debug(`Leads disponibles: ${leads.map(l => l.phone).join(', ')}`)
+      }
+      
+      return isAllowed
+    } catch (error) {
+      logger.error('Error checking phone number whitelist:', error)
+      // En caso de error, permitir la respuesta (behavior fail-safe)
+      return true
     }
   }
 
@@ -331,10 +424,8 @@ class WhatsAppService {
     )
 
     await Promise.all(destroyPromises)
-    await redis.disconnect()
-    
     logger.info('WhatsApp service shutdown completed')
   }
 }
 
-export default new WhatsAppService()
+export default new WhatsAppServiceSimple()

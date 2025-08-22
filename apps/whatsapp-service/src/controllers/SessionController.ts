@@ -1,5 +1,5 @@
 import { Request, Response } from 'express'
-import WhatsAppService from '../services/WhatsAppService'
+import WhatsAppService from '../services/WhatsAppServiceSimple'
 import { logger } from '../utils/logger'
 
 export class SessionController {
@@ -62,11 +62,23 @@ export class SessionController {
   // Get all sessions
   async getAllSessions(req: Request, res: Response): Promise<void> {
     try {
-      const sessions = await WhatsAppService.getAllSessions()
+      const rawSessions = await WhatsAppService.getAllSessions()
+      
+      // Map session data to dashboard format
+      const sessions = rawSessions.map(session => ({
+        id: session.id,
+        name: session.name || session.clientId,
+        status: this.mapStatusToDashboard(session.status),
+        phoneNumber: session.connectedNumber,
+        qr: session.qrCode,
+        createdAt: session.lastSeen?.toISOString() || new Date().toISOString(),
+        updatedAt: session.lastSeen?.toISOString() || new Date().toISOString(),
+        lastSeen: session.lastSeen?.toISOString()
+      }))
       
       res.json({
         success: true,
-        data: sessions
+        sessions: sessions
       })
     } catch (error) {
       logger.error('Error getting all sessions:', error)
@@ -74,6 +86,22 @@ export class SessionController {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
       })
+    }
+  }
+
+  // Helper method to map service status to dashboard status
+  private mapStatusToDashboard(status: string): string {
+    switch (status) {
+      case 'ready':
+        return 'CONNECTED'
+      case 'connecting':
+      case 'authenticated':
+        return 'CONNECTING'
+      case 'disconnected':
+      case 'auth_failure':
+        return 'DISCONNECTED'
+      default:
+        return 'QR_READY'
     }
   }
 
@@ -172,27 +200,105 @@ export class SessionController {
     }
   }
 
+  // Send direct message (without session in URL)
+  async sendDirectMessage(req: Request, res: Response): Promise<void> {
+    try {
+      const { sessionId, phone, message } = req.body
+
+      if (!sessionId || !phone || !message) {
+        res.status(400).json({
+          success: false,
+          error: 'sessionId, phone, and message fields are required'
+        })
+        return
+      }
+
+      const result = await WhatsAppService.sendMessage(sessionId, phone, message)
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          data: result
+        })
+      } else {
+        res.status(400).json({
+          success: false,
+          error: result.error
+        })
+      }
+    } catch (error) {
+      logger.error('Error sending direct message:', error)
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+    }
+  }
+
+  // Get session status
+  async getSessionStatus(req: Request, res: Response): Promise<void> {
+    try {
+      const { sessionId } = req.params
+
+      const session = await WhatsAppService.getSessionStatus(sessionId)
+      
+      if (!session) {
+        res.status(404).json({
+          success: false,
+          error: 'Session not found'
+        })
+        return
+      }
+
+      res.json({
+        success: true,
+        data: {
+          id: sessionId,
+          status: session.status,
+          phoneNumber: session.phoneNumber,
+          qr: session.qrCode,
+          lastSeen: session.lastSeen,
+          createdAt: session.createdAt,
+          updatedAt: session.updatedAt
+        }
+      })
+    } catch (error) {
+      logger.error('Error getting session status:', error)
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+    }
+  }
+
   // Get analytics for dashboard integration
   async getAnalytics(req: Request, res: Response): Promise<void> {
     try {
+      const { sessionId, startDate, endDate } = req.query
       const sessions = await WhatsAppService.getAllSessions()
       
       // Mock analytics data for now
       // In a real implementation, this would come from a database
       const analytics = {
-        total: {
-          messages: 0,
-          inbound: 0,
-          outbound: 0,
-          conversations: sessions.length
-        },
-        responseRate: '0%',
-        sessions: sessions.length
+        totalSent: Math.floor(Math.random() * 100),
+        totalReceived: Math.floor(Math.random() * 150),
+        topContacts: [
+          {
+            phone: '+34658333517',
+            count: Math.floor(Math.random() * 20) + 1,
+            lastMessage: 'Último mensaje enviado...'
+          }
+        ],
+        byStatus: {
+          sent: Math.floor(Math.random() * 50),
+          delivered: Math.floor(Math.random() * 40),
+          read: Math.floor(Math.random() * 30)
+        }
       }
       
       res.json({
         success: true,
-        ...analytics
+        data: analytics
       })
     } catch (error) {
       logger.error('Error getting analytics:', error)
