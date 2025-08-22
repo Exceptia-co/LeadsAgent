@@ -5,6 +5,7 @@ import { AppService } from './app.service'
 import { PrismaModule } from './prisma/prisma.module'
 import { LeadsModule } from './leads/leads.module'
 import { WhatsAppModule } from './whatsapp/whatsapp.module'
+import { AuthModule } from './auth/auth.module'
 import { resolve } from 'path'
 
 @Module({
@@ -21,6 +22,7 @@ import { resolve } from 'path'
       ],
     }),
     PrismaModule,
+    AuthModule,
     LeadsModule,
     WhatsAppModule,
   ],
