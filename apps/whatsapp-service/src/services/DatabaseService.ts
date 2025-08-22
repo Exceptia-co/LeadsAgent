@@ -90,7 +90,8 @@ class DatabaseService {
       return;
     }
 
-    const createTableQuery = `
+    const createTablesQuery = `
+      -- Tabla de conversaciones de WhatsApp
       CREATE TABLE IF NOT EXISTS whatsapp_conversations (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         session_id VARCHAR(255) NOT NULL,
@@ -108,17 +109,38 @@ class DatabaseService {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
-      -- Crear índices para consultas frecuentes
+      -- Tabla de logs de decisiones de whitelist
+      CREATE TABLE IF NOT EXISTS whatsapp_whitelist_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        phone_number VARCHAR(50) NOT NULL,
+        session_id VARCHAR(255),
+        decision VARCHAR(20) NOT NULL CHECK (decision IN ('ALLOWED', 'BLOCKED')),
+        reason TEXT,
+        lead_id VARCHAR(255),
+        lead_name VARCHAR(255),
+        message_preview TEXT,
+        ai_provider VARCHAR(50),
+        ip_address VARCHAR(45),
+        user_agent TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Índices para consultas frecuentes
       CREATE INDEX IF NOT EXISTS idx_whatsapp_phone ON whatsapp_conversations(phone_number);
       CREATE INDEX IF NOT EXISTS idx_whatsapp_session ON whatsapp_conversations(session_id);
       CREATE INDEX IF NOT EXISTS idx_whatsapp_created ON whatsapp_conversations(created_at);
+      
+      CREATE INDEX IF NOT EXISTS idx_whitelist_logs_phone ON whatsapp_whitelist_logs(phone_number);
+      CREATE INDEX IF NOT EXISTS idx_whitelist_logs_decision ON whatsapp_whitelist_logs(decision);
+      CREATE INDEX IF NOT EXISTS idx_whitelist_logs_created ON whatsapp_whitelist_logs(created_at);
+      CREATE INDEX IF NOT EXISTS idx_whitelist_logs_session ON whatsapp_whitelist_logs(session_id);
     `;
 
     try {
-      await this.pool.query(createTableQuery);
-      logger.info('Tabla whatsapp_conversations verificada/creada correctamente');
+      await this.pool.query(createTablesQuery);
+      logger.info('Tablas whatsapp_conversations y whatsapp_whitelist_logs verificadas/creadas correctamente');
     } catch (error) {
-      logger.error('Error creando tabla whatsapp_conversations:', error);
+      logger.error('Error creando tablas:', error);
     }
   }
 
@@ -475,6 +497,295 @@ class DatabaseService {
     
     logger.info(`🔧 Usando ${mockLeads.length} leads mockeados para desarrollo`);
     return mockLeads;
+  }
+
+  // Update WhatsApp authorization for a lead
+  public async updateLeadWhatsAppAuth(leadId: string, whatsappAuthorized: boolean): Promise<boolean> {
+    if (this.pool) {
+      try {
+        const query = `
+          UPDATE leads 
+          SET whatsapp_authorized = $1, "updatedAt" = CURRENT_TIMESTAMP
+          WHERE id = $2
+          RETURNING id;
+        `;
+        
+        const result = await this.pool.query(query, [whatsappAuthorized, leadId]);
+        
+        if (result.rows.length > 0) {
+          logger.info(`✅ Lead ${leadId} WhatsApp authorization updated to: ${whatsappAuthorized}`);
+          return true;
+        } else {
+          logger.warn(`⚠️ Lead ${leadId} not found for WhatsApp authorization update`);
+          return false;
+        }
+      } catch (error) {
+        logger.error('Error updating lead WhatsApp authorization:', error);
+        return false;
+      }
+    }
+    
+    // For mock data, we can't actually update, so just log and return true
+    logger.info(`🔧 Mock update: Lead ${leadId} WhatsApp authorization would be set to: ${whatsappAuthorized}`);
+    return true;
+  }
+
+  // Get recent conversations across all phone numbers
+  public async getRecentConversations(
+    sessionId?: string,
+    limit: number = 50
+  ): Promise<ConversationHistory[]> {
+    if (!this.pool) {
+      logger.warn('No hay conexión a base de datos');
+      return [];
+    }
+
+    let query = `
+      SELECT * FROM whatsapp_conversations
+    `;
+    
+    const values: any[] = [];
+    
+    if (sessionId) {
+      query += ' WHERE session_id = $1';
+      values.push(sessionId);
+      query += ' ORDER BY created_at DESC LIMIT $2';
+      values.push(limit);
+    } else {
+      query += ' ORDER BY created_at DESC LIMIT $1';
+      values.push(limit);
+    }
+
+    try {
+      const result = await this.pool.query(query, values);
+      return result.rows.map(row => ({
+        id: row.id,
+        sessionId: row.session_id,
+        phoneNumber: row.phone_number,
+        contactName: row.contact_name,
+        messageText: row.message_text,
+        responseText: row.response_text,
+        messageType: row.message_type,
+        intent: row.intent,
+        sentiment: row.sentiment,
+        aiProvider: row.ai_provider,
+        tokensUsed: row.tokens_used || 0,
+        isFromUser: row.is_from_user,
+        createdAt: new Date(row.created_at),
+        updatedAt: new Date(row.updated_at)
+      }));
+    } catch (error) {
+      logger.error('Error obteniendo conversaciones recientes:', error);
+      return [];
+    }
+  }
+
+  // Registrar decisión de whitelist en logs
+  public async logWhitelistDecision(data: {
+    phoneNumber: string;
+    sessionId?: string;
+    decision: 'ALLOWED' | 'BLOCKED';
+    reason?: string;
+    leadId?: string;
+    leadName?: string;
+    messagePreview?: string;
+    aiProvider?: string;
+    ipAddress?: string;
+    userAgent?: string;
+  }): Promise<string | null> {
+    if (!this.pool) {
+      logger.warn('No hay conexión a base de datos, log de whitelist no guardado');
+      return null;
+    }
+
+    const query = `
+      INSERT INTO whatsapp_whitelist_logs (
+        phone_number, session_id, decision, reason, lead_id, lead_name,
+        message_preview, ai_provider, ip_address, user_agent
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING id;
+    `;
+
+    const values = [
+      data.phoneNumber,
+      data.sessionId || null,
+      data.decision,
+      data.reason || null,
+      data.leadId || null,
+      data.leadName || null,
+      data.messagePreview ? data.messagePreview.substring(0, 200) : null, // Limit preview length
+      data.aiProvider || null,
+      data.ipAddress || null,
+      data.userAgent || null
+    ];
+
+    try {
+      const result = await this.pool.query(query, values);
+      const logId = result.rows[0]?.id;
+      
+      logger.debug('Whitelist decision logged:', {
+        id: logId,
+        phoneNumber: data.phoneNumber,
+        decision: data.decision
+      });
+      
+      return logId;
+    } catch (error) {
+      logger.error('Error logging whitelist decision:', error);
+      return null;
+    }
+  }
+
+  // Obtener logs de whitelist con filtros
+  public async getWhitelistLogs(options: {
+    limit?: number;
+    offset?: number;
+    phoneNumber?: string;
+    sessionId?: string;
+    decision?: 'ALLOWED' | 'BLOCKED';
+    startDate?: Date;
+    endDate?: Date;
+  } = {}): Promise<any[]> {
+    if (!this.pool) {
+      return [];
+    }
+
+    const { limit = 50, offset = 0, phoneNumber, sessionId, decision, startDate, endDate } = options;
+    
+    let query = `
+      SELECT 
+        id, phone_number, session_id, decision, reason, lead_id, lead_name,
+        message_preview, ai_provider, ip_address, created_at
+      FROM whatsapp_whitelist_logs
+      WHERE 1=1
+    `;
+    
+    const values: any[] = [];
+    let valueIndex = 1;
+
+    if (phoneNumber) {
+      query += ` AND phone_number = $${valueIndex++}`;
+      values.push(phoneNumber);
+    }
+
+    if (sessionId) {
+      query += ` AND session_id = $${valueIndex++}`;
+      values.push(sessionId);
+    }
+
+    if (decision) {
+      query += ` AND decision = $${valueIndex++}`;
+      values.push(decision);
+    }
+
+    if (startDate) {
+      query += ` AND created_at >= $${valueIndex++}`;
+      values.push(startDate);
+    }
+
+    if (endDate) {
+      query += ` AND created_at <= $${valueIndex++}`;
+      values.push(endDate);
+    }
+
+    query += ` ORDER BY created_at DESC LIMIT $${valueIndex++} OFFSET $${valueIndex++}`;
+    values.push(limit, offset);
+
+    try {
+      const result = await this.pool.query(query, values);
+      return result.rows.map(row => ({
+        id: row.id,
+        phoneNumber: row.phone_number,
+        sessionId: row.session_id,
+        decision: row.decision,
+        reason: row.reason,
+        leadId: row.lead_id,
+        leadName: row.lead_name,
+        messagePreview: row.message_preview,
+        aiProvider: row.ai_provider,
+        ipAddress: row.ip_address,
+        createdAt: new Date(row.created_at)
+      }));
+    } catch (error) {
+      logger.error('Error getting whitelist logs:', error);
+      return [];
+    }
+  }
+
+  // Obtener estadísticas de whitelist
+  public async getWhitelistStats(options: {
+    sessionId?: string;
+    startDate?: Date;
+    endDate?: Date;
+  } = {}): Promise<any> {
+    if (!this.pool) {
+      return {
+        totalDecisions: 0,
+        allowedCount: 0,
+        blockedCount: 0,
+        allowedPercentage: 0,
+        blockedPercentage: 0,
+        uniquePhones: 0
+      };
+    }
+
+    const { sessionId, startDate, endDate } = options;
+    
+    let query = `
+      SELECT 
+        COUNT(*) as total_decisions,
+        COUNT(CASE WHEN decision = 'ALLOWED' THEN 1 END) as allowed_count,
+        COUNT(CASE WHEN decision = 'BLOCKED' THEN 1 END) as blocked_count,
+        COUNT(DISTINCT phone_number) as unique_phones
+      FROM whatsapp_whitelist_logs
+      WHERE 1=1
+    `;
+    
+    const values: any[] = [];
+    let valueIndex = 1;
+
+    if (sessionId) {
+      query += ` AND session_id = $${valueIndex++}`;
+      values.push(sessionId);
+    }
+
+    if (startDate) {
+      query += ` AND created_at >= $${valueIndex++}`;
+      values.push(startDate);
+    }
+
+    if (endDate) {
+      query += ` AND created_at <= $${valueIndex++}`;
+      values.push(endDate);
+    }
+
+    try {
+      const result = await this.pool.query(query, values);
+      const stats = result.rows[0];
+      
+      const totalDecisions = parseInt(stats.total_decisions) || 0;
+      const allowedCount = parseInt(stats.allowed_count) || 0;
+      const blockedCount = parseInt(stats.blocked_count) || 0;
+      
+      return {
+        totalDecisions,
+        allowedCount,
+        blockedCount,
+        allowedPercentage: totalDecisions > 0 ? (allowedCount / totalDecisions * 100).toFixed(1) : '0',
+        blockedPercentage: totalDecisions > 0 ? (blockedCount / totalDecisions * 100).toFixed(1) : '0',
+        uniquePhones: parseInt(stats.unique_phones) || 0
+      };
+    } catch (error) {
+      logger.error('Error getting whitelist statistics:', error);
+      return {
+        totalDecisions: 0,
+        allowedCount: 0,
+        blockedCount: 0,
+        allowedPercentage: '0',
+        blockedPercentage: '0',
+        uniquePhones: 0
+      };
+    }
   }
 }
 

@@ -1,7 +1,7 @@
 import useSWR from 'swr'
 import { useAuth } from '@clerk/nextjs'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
 // Helper para obtener el token de Clerk
 const getAuthHeaders = async (getToken?: () => Promise<string | null>) => {
@@ -61,9 +61,9 @@ const createMutate = (getToken?: () => Promise<string | null>) => async (url: st
 export const useLeads = (page = 1, limit = 20) => {
   // Temporalmente usar endpoint público hasta arreglar autenticación
   const { data, error, mutate: refetch } = useSWR(
-    `/public/leads?page=${page}&limit=${limit}`,
+    `/api/public/leads?page=${page}&limit=${limit}`,
     async (url: string) => {
-      const response = await fetch(`${API_BASE_URL}${url}`)
+      const response = await fetch(url)
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
@@ -82,8 +82,8 @@ export const useLeads = (page = 1, limit = 20) => {
 
 export const useLeadStats = () => {
   // Temporalmente usar endpoint público hasta arreglar autenticación
-  const { data, error, mutate: refetch } = useSWR('/public/leads/stats', async (url: string) => {
-    const response = await fetch(`${API_BASE_URL}${url}`)
+  const { data, error, mutate: refetch } = useSWR('/api/public/leads/stats', async (url: string) => {
+    const response = await fetch(url)
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body } from '@nestjs/common'
+import { Controller, Get, Post, Body, Patch, Param } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger'
 import { LeadsService } from './leads.service'
 import { CreateLeadDto } from './dto/create-lead.dto'
@@ -27,5 +27,16 @@ export class PublicLeadsController {
   @ApiResponse({ status: 201, description: 'The lead has been successfully created.' })
   create(@Body() createLeadDto: CreateLeadDto) {
     return this.leadsService.create(createLeadDto)
+  }
+
+  @Patch(':id/whatsapp')
+  @ApiOperation({ summary: 'Update WhatsApp authorization for a lead (public for testing)' })
+  @ApiResponse({ status: 200, description: 'The lead WhatsApp authorization has been updated.' })
+  @ApiResponse({ status: 404, description: 'Lead not found.' })
+  updateWhatsAppAuth(
+    @Param('id') id: string,
+    @Body('whatsappAuthorized') whatsappAuthorized: boolean
+  ) {
+    return this.leadsService.updateWhatsAppAuth(id, whatsappAuthorized)
   }
 }

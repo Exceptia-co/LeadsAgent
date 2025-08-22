@@ -158,12 +158,12 @@ class WhatsAppServiceSimple {
 
         // Process with AI only if it's not from us AND if sender is in whitelist
         if (!whatsappMessage.fromMe && whatsappMessage.body.trim()) {
-          const isAllowed = await this.isPhoneNumberAllowed(whatsappMessage.from)
-          if (isAllowed) {
+          const whitelistResult = await this.checkPhoneNumberAllowedWithLog(whatsappMessage.from, sessionId, whatsappMessage.body)
+          if (whitelistResult.allowed) {
             logger.info(`📱 Respuesta automática permitida para: ${whatsappMessage.from}`)
             await this.processMessageWithAI(message, whatsappMessage, sessionId)
           } else {
-            logger.info(`🚫 Respuesta automática bloqueada para: ${whatsappMessage.from} (no está en whitelist de leads)`)
+            logger.info(`🚫 Respuesta automática bloqueada para: ${whatsappMessage.from} - ${whitelistResult.reason}`)
           }
         }
 
@@ -347,7 +347,11 @@ class WhatsAppServiceSimple {
     }
   }
 
-  private async isPhoneNumberAllowed(phoneNumberWithSuffix: string): Promise<boolean> {
+  private async checkPhoneNumberAllowedWithLog(
+    phoneNumberWithSuffix: string,
+    sessionId: string,
+    messagePreview?: string
+  ): Promise<{ allowed: boolean; reason: string; leadInfo?: any }> {
     try {
       // Remove WhatsApp suffix to get clean phone number
       const phoneNumber = phoneNumberWithSuffix.replace('@c.us', '').replace('@g.us', '')
@@ -359,8 +363,9 @@ class WhatsAppServiceSimple {
       const leads = await DatabaseService.getAllLeads()
       
       // Check if the phone number matches any lead
+      let matchedLead: any = null
       const isAllowed = leads.some(lead => {
-        if (!lead.phone) return false
+        if (!lead.phone || !lead.whatsappAuthorized) return false
         
         // Clean both numbers for comparison
         const leadPhone = lead.phone.replace(/[^0-9]/g, '')
@@ -370,22 +375,87 @@ class WhatsAppServiceSimple {
         const leadLast10 = leadPhone.slice(-10)
         const incomingLast10 = incomingPhone.slice(-10)
         
-        return leadLast10 === incomingLast10
+        if (leadLast10 === incomingLast10) {
+          matchedLead = lead
+          return true
+        }
+        return false
       })
       
-      if (isAllowed) {
-        logger.info(`✅ Número ${phoneNumber} encontrado en whitelist de leads`)
+      let decision: 'ALLOWED' | 'BLOCKED'
+      let reason: string
+      
+      if (isAllowed && matchedLead) {
+        decision = 'ALLOWED'
+        reason = `Lead autorizado: ${matchedLead.name || 'Sin nombre'} (ID: ${matchedLead.id})`
+        logger.info(`✅ Número ${phoneNumber} PERMITIDO - ${reason}`)
       } else {
-        logger.info(`❌ Número ${phoneNumber} NO encontrado en whitelist de leads`)
-        logger.debug(`Leads disponibles: ${leads.map(l => l.phone).join(', ')}`)
+        decision = 'BLOCKED'
+        const leadExists = leads.some(lead => {
+          if (!lead.phone) return false
+          const leadPhone = lead.phone.replace(/[^0-9]/g, '')
+          const incomingPhone = phoneNumber.replace(/[^0-9]/g, '')
+          const leadLast10 = leadPhone.slice(-10)
+          const incomingLast10 = incomingPhone.slice(-10)
+          return leadLast10 === incomingLast10
+        })
+        
+        if (leadExists) {
+          reason = 'Lead existe pero WhatsApp no autorizado'
+        } else {
+          reason = 'Número no encontrado en whitelist de leads'
+        }
+        
+        logger.info(`❌ Número ${phoneNumber} BLOQUEADO - ${reason}`)
       }
       
-      return isAllowed
+      // Log the decision to database
+      await DatabaseService.logWhitelistDecision({
+        phoneNumber,
+        sessionId,
+        decision,
+        reason,
+        leadId: matchedLead?.id,
+        leadName: matchedLead?.name,
+        messagePreview: messagePreview?.substring(0, 200),
+        aiProvider: process.env.AI_PROVIDER || 'unknown'
+      })
+      
+      return {
+        allowed: isAllowed,
+        reason,
+        leadInfo: matchedLead
+      }
     } catch (error) {
       logger.error('Error checking phone number whitelist:', error)
+      
+      // Log the error decision
+      try {
+        const { default: DatabaseService } = await import('./DatabaseService')
+        await DatabaseService.logWhitelistDecision({
+          phoneNumber: phoneNumberWithSuffix.replace('@c.us', '').replace('@g.us', ''),
+          sessionId,
+          decision: 'ALLOWED',
+          reason: 'Error en verificación - comportamiento fail-safe',
+          messagePreview: messagePreview?.substring(0, 200),
+          aiProvider: process.env.AI_PROVIDER || 'unknown'
+        })
+      } catch (logError) {
+        logger.error('Error logging whitelist decision:', logError)
+      }
+      
       // En caso de error, permitir la respuesta (behavior fail-safe)
-      return true
+      return {
+        allowed: true,
+        reason: 'Error en verificación - comportamiento fail-safe permitido'
+      }
     }
+  }
+
+  // Mantener método original para compatibilidad
+  private async isPhoneNumberAllowed(phoneNumberWithSuffix: string): Promise<boolean> {
+    const result = await this.checkPhoneNumberAllowedWithLog(phoneNumberWithSuffix, 'unknown', undefined)
+    return result.allowed
   }
 
   private async sendWebhook(payload: WebhookPayload): Promise<void> {
