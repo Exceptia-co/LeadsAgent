@@ -17,6 +17,7 @@ import {
   X,
   Brain,
   Phone,
+  Shield,
 } from 'lucide-react'
 
 const navigation = [
@@ -24,6 +25,7 @@ const navigation = [
   { name: 'Leads', href: '/dashboard/leads', icon: Users },
   { name: 'Conversaciones', href: '/dashboard/conversations', icon: MessageSquare },
   { name: 'WhatsApp', href: '/dashboard/whatsapp', icon: Phone },
+  { name: 'Estadísticas IA', href: '/dashboard/whatsapp-stats', icon: Shield },
   { name: 'IA Assistant', href: '/dashboard/ai', icon: Brain },
   { name: 'Configuración', href: '/dashboard/settings', icon: Settings },
 ]

@@ -123,34 +123,29 @@ router.post('/ai/test', async (req, res) => {
   }
 })
 
-// Leads endpoint for dashboard
+// Leads management endpoints
 router.get('/leads', async (req, res) => {
   try {
-    const { limit = 50 } = req.query
+    const { limit = 50, page = 1 } = req.query
     
-    // Simple in-memory leads for testing
-    const mockLeads = [
-      {
-        id: '1',
-        name: 'Dianita',
-        phone: '+34658333517',
-        status: 'NUEVO',
-        email: 'dianita@test.com',
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: '2',
-        name: 'Test Lead',
-        phone: '+34123456789',
-        status: 'CONTACTADO',
-        email: 'test@example.com',
-        createdAt: new Date(Date.now() - 24*60*60*1000).toISOString()
-      }
-    ]
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const leads = await DatabaseService.getAllLeads()
+    
+    // Simple pagination
+    const offset = (Number(page) - 1) * Number(limit)
+    const paginatedLeads = leads.slice(offset, offset + Number(limit))
     
     res.json({
       success: true,
-      leads: mockLeads.slice(0, Number(limit))
+      leads: paginatedLeads,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: leads.length,
+        totalPages: Math.ceil(leads.length / Number(limit)),
+        hasPrev: Number(page) > 1,
+        hasNext: Number(page) < Math.ceil(leads.length / Number(limit))
+      }
     })
   } catch (error) {
     res.status(500).json({
@@ -160,7 +155,47 @@ router.get('/leads', async (req, res) => {
   }
 })
 
-// Database and statistics endpoints
+// Toggle WhatsApp authorization for a lead
+router.patch('/leads/:leadId/whatsapp', async (req, res) => {
+  try {
+    const { leadId } = req.params
+    const { whatsappAuthorized } = req.body
+    
+    if (typeof whatsappAuthorized !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        error: 'whatsappAuthorized must be a boolean'
+      })
+    }
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const updated = await DatabaseService.updateLeadWhatsAppAuth(leadId, whatsappAuthorized)
+    
+    if (updated) {
+      // Log the authorization change
+      const { logger } = await import('../utils/logger')
+      logger.info(`📱 Lead ${leadId} WhatsApp authorization ${whatsappAuthorized ? 'enabled' : 'disabled'}`)
+      
+      res.json({
+        success: true,
+        message: `WhatsApp authorization ${whatsappAuthorized ? 'enabled' : 'disabled'} for lead`,
+        data: { leadId, whatsappAuthorized }
+      })
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Lead not found'
+      })
+    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Error updating lead WhatsApp authorization'
+    })
+  }
+})
+
+// Conversations management endpoints
 router.get('/conversations/:phoneNumber', async (req, res) => {
   try {
     const { phoneNumber } = req.params
@@ -181,6 +216,34 @@ router.get('/conversations/:phoneNumber', async (req, res) => {
   }
 })
 
+// Search conversations with filters
+router.post('/conversations', async (req, res) => {
+  try {
+    const { searchTerm, sessionId, limit = 50 } = req.body
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    let conversations
+    
+    if (searchTerm) {
+      conversations = await DatabaseService.searchConversations(searchTerm, sessionId, Number(limit))
+    } else {
+      // Get recent conversations if no search term
+      conversations = await DatabaseService.getRecentConversations(sessionId, Number(limit))
+    }
+    
+    res.json({
+      success: true,
+      conversations: conversations
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Error searching conversations'
+    })
+  }
+})
+
+// Statistics endpoints
 router.get('/stats', async (req, res) => {
   try {
     const { sessionId } = req.query
@@ -190,12 +253,97 @@ router.get('/stats', async (req, res) => {
     
     res.json({
       success: true,
-      data: stats
+      ...stats // Return stats directly instead of wrapping in data
     })
   } catch (error) {
     res.status(500).json({
       success: false,
       error: 'Error getting statistics'
+    })
+  }
+})
+
+// WhatsApp authorization statistics
+router.get('/stats/whatsapp-auth', async (req, res) => {
+  try {
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const leads = await DatabaseService.getAllLeads()
+    
+    const authorizedCount = leads.filter(lead => lead.whatsappAuthorized).length
+    const unauthorizedCount = leads.length - authorizedCount
+    
+    res.json({
+      success: true,
+      data: {
+        totalLeads: leads.length,
+        authorizedLeads: authorizedCount,
+        unauthorizedLeads: unauthorizedCount,
+        authorizationRate: leads.length > 0 ? (authorizedCount / leads.length * 100).toFixed(1) : '0'
+      }
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Error getting WhatsApp authorization statistics'
+    })
+  }
+})
+
+// Whitelist logs and statistics
+router.get('/logs/whitelist', async (req, res) => {
+  try {
+    const { 
+      limit = 50, 
+      offset = 0, 
+      phoneNumber, 
+      sessionId, 
+      decision, 
+      startDate, 
+      endDate 
+    } = req.query
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const logs = await DatabaseService.getWhitelistLogs({
+      limit: Number(limit),
+      offset: Number(offset),
+      phoneNumber: phoneNumber as string,
+      sessionId: sessionId as string,
+      decision: decision as 'ALLOWED' | 'BLOCKED',
+      startDate: startDate ? new Date(startDate as string) : undefined,
+      endDate: endDate ? new Date(endDate as string) : undefined
+    })
+    
+    res.json({
+      success: true,
+      data: logs
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Error getting whitelist logs'
+    })
+  }
+})
+
+router.get('/stats/whitelist', async (req, res) => {
+  try {
+    const { sessionId, startDate, endDate } = req.query
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const stats = await DatabaseService.getWhitelistStats({
+      sessionId: sessionId as string,
+      startDate: startDate ? new Date(startDate as string) : undefined,
+      endDate: endDate ? new Date(endDate as string) : undefined
+    })
+    
+    res.json({
+      success: true,
+      ...stats
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Error getting whitelist statistics'
     })
   }
 })

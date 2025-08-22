@@ -22,20 +22,21 @@ model User {
 }
 
 model Lead {
-  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  phone         String         @unique
-  name          String?
-  email         String?
-  tags          String[]       @default([])
-  status        LeadStatus     @default(NUEVO)
-  moodScore     Float?
-  lastContact   DateTime?
-  assignedTo    String?
-  source        String         @default("whatsapp")
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @default(now()) @updatedAt
-  campaignLeads CampaignLead[]
-  messages      Message[]
+  id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone              String         @unique
+  name               String?
+  email              String?
+  tags               String[]       @default([])
+  status             LeadStatus     @default(NUEVO)
+  moodScore          Float?
+  lastContact        DateTime?
+  assignedTo         String?
+  source             String         @default("whatsapp")
+  whatsappAuthorized Boolean        @default(false)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @default(now()) @updatedAt
+  campaignLeads      CampaignLead[]
+  messages           Message[]
 
   @@map("leads")
 }

@@ -121,4 +121,17 @@ export class LeadsService {
       data: { status },
     });
   }
+
+  async updateWhatsAppAuth(id: string, whatsappAuthorized: boolean) {
+    const lead = await this.prisma.lead.update({
+      where: { id },
+      data: { whatsappAuthorized },
+    });
+    
+    return {
+      success: true,
+      message: `WhatsApp authorization ${whatsappAuthorized ? 'enabled' : 'disabled'} for lead`,
+      data: { leadId: id, whatsappAuthorized }
+    };
+  }
 }
