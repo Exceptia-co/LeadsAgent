@@ -43,6 +43,8 @@ Esta guía consolida las soluciones para problemas comunes del proyecto LeadsCRM
 
 #### **Soluciones**
 
+**⭐ Para problemas específicos de PostgreSQL y prepared statements, ver [DEBUG_SOLUTIONS.md](./DEBUG_SOLUTIONS.md)**
+
 **1. Reinicio Completo del Stack**
 ```bash
 # Detener todos los servicios

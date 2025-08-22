@@ -1,24 +1,29 @@
-# AGENTS.md - LeadsCRM Development Guide
+# AGENTS.md - LeadsCRM Agent Quick Reference
 
-## Project Overview
+<!-- ~20 line concise reference for autonomous coding agents. Keep terse. -->
 
-LeadsCRM es un sistema integral de gestión de leads que automatiza la recepción y procesamiento de mensajes de WhatsApp mediante inteligencia artificial.
+## Scope
 
-**Stack:** Next.js 15.4.2 + NestJS + PostgreSQL/Supabase + Prisma + Clerk Auth + Turborepo + pnpm  
-**Estado:** ✅ MVP Dashboard + API + DB | 🔄 Integración WhatsApp + IA
+LeadsCRM: Next.js dashboard, NestJS API, WhatsApp svc, PostgreSQL (Prisma), Clerk auth, Turborepo.
 
-## Build/Test Commands
+Stack: Next.js 15.4.2 / NestJS / Supabase Postgres / Prisma / Clerk / pnpm.
+Status: MVP (dashboard+api+db); WhatsApp+AI integrating.
 
-**Development:**
+## Commands
 
-- `pnpm dev` (all services) | `pnpm dev:dashboard/api/whatsapp` (specific service)
-- `pnpm build` | `pnpm build:fast` (parallel) | `pnpm build:production`
+Run order: retrieve knowledge -> task -> store knowledge (see .github/copilot-instructions.md). Dev: pnpm dev | pnpm dev:dashboard | dev:api | dev:whatsapp
 
-**Testing:**
+Build: pnpm build | pnpm build:fast | pnpm build:production
 
-- `pnpm test` (all) | `cd apps/api && pnpm test:watch` (watch mode)
-- `cd apps/api && pnpm test -- --testNamePattern="specific test"` (single test)
-- `pnpm test:e2e` | `pnpm test:cov` (coverage)
+Single backend test: cd apps/api && pnpm test -- --testNamePattern "Name|Regex"
+
+Test watch (API): cd apps/api && pnpm test:watch
+
+All tests: pnpm test | E2E: pnpm test:e2e | Coverage: pnpm test:cov
+
+Quality: pnpm lint | lint:fix | typecheck | format | clean:cache | rebuild
+
+DB: pnpm db:generate | db:migrate:dev | db:studio
 
 **Quality & DB:**
 
@@ -57,11 +62,13 @@ packages/config-*/  # Shared ESLint/TypeScript configs
 - Frontend: Error boundaries, client-side validation before API calls
 - API responses: `{ success: boolean, data?: any, error?: string }`
 
-**Architecture Patterns:**
+**Architecture & Formatting:**
 
-- Backend: NestJS modules (AuthModule, LeadsModule, MessagingModule)
-- Frontend: Next.js App Router, React components with TypeScript
-- Database: Prisma with PostgreSQL, UUIDs as PKs, proper indexes
+- Prettier + ESLint; order imports: node, external, @leadcrm/\*, relative; no unused. Backend: NestJS modules (AuthModule, LeadsModule, MessagingModule)
+- Types first: prefer explicit return types on public funcs; narrow unknown -> validate. Frontend: Next.js App Router, React components with TypeScript
+- Error pattern: throw typed errors, log context once; client returns { success:false,error }. Database: Prisma with PostgreSQL, UUIDs as PKs, proper indexes
+
+<!-- Copilot / Cursor rules integrated above (see .github/copilot-instructions.md) -->
 
 ## Database Schema (PostgreSQL)
 
