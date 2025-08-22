@@ -195,7 +195,104 @@ router.patch('/leads/:leadId/whatsapp', async (req, res) => {
   }
 })
 
-// Conversations management endpoints
+// ============================================
+// ENDPOINTS DE CONVERSACIONES (NUEVOS)
+// ============================================
+
+// Obtener todas las conversaciones con paginación
+router.get('/conversations', async (req, res) => {
+  try {
+    const { limit = 50, offset = 0 } = req.query
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const conversations = await DatabaseService.getConversations(Number(limit), Number(offset))
+    
+    res.json(conversations) // Retornar directamente el array para compatibilidad
+  } catch (error) {
+    console.error('Error getting conversations:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Error getting conversations'
+    })
+  }
+})
+
+// Obtener mensajes de una conversación específica
+router.get('/conversations/:conversationId/messages', async (req, res) => {
+  try {
+    const { conversationId } = req.params
+    const { limit = 50, offset = 0 } = req.query
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const result = await DatabaseService.getConversationMessages(
+      conversationId, 
+      Number(limit), 
+      Number(offset)
+    )
+    
+    if (!result.conversation) {
+      return res.status(404).json({
+        success: false,
+        error: 'Conversation not found'
+      })
+    }
+    
+    res.json(result)
+  } catch (error) {
+    console.error('Error getting conversation messages:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Error getting conversation messages'
+    })
+  }
+})
+
+// Enviar mensaje en una conversación específica
+router.post('/conversations/:conversationId/send', async (req, res) => {
+  try {
+    const { conversationId } = req.params
+    const { sessionId, message, type = 'text' } = req.body
+    
+    if (!sessionId || !message) {
+      return res.status(400).json({
+        success: false,
+        error: 'sessionId and message are required'
+      })
+    }
+
+    // Extraer número de teléfono del ID de conversación
+    const phoneNumber = conversationId.replace('conv_', '')
+    
+    // Importar el servicio de WhatsApp
+    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple')
+    
+    // Formatear número para WhatsApp
+    const formattedNumber = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`
+    
+    // Enviar mensaje
+    const result = await WhatsAppService.sendMessage(sessionId, formattedNumber, message)
+    
+    if (result.success) {
+      res.json({
+        success: true,
+        messageId: result.messageId
+      })
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error || 'Failed to send message'
+      })
+    }
+  } catch (error) {
+    console.error('Error sending message in conversation:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Error sending message'
+    })
+  }
+})
+
+// Conversations management endpoints (ORIGINALES - mantener para compatibilidad)
 router.get('/conversations/:phoneNumber', async (req, res) => {
   try {
     const { phoneNumber } = req.params

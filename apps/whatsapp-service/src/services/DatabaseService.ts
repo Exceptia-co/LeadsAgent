@@ -408,7 +408,7 @@ class DatabaseService {
           const query = `
             SELECT 
               id, name, phone, email, tags, status, "moodScore", 
-              "lastContact", "assignedTo", source, whatsapp_authorized,
+              "lastContact", "assignedTo", source, "whatsappAuthorized",
               "createdAt", "updatedAt"
             FROM leads 
             ORDER BY "createdAt" DESC;
@@ -426,7 +426,7 @@ class DatabaseService {
             lastContact: row.lastContact ? new Date(row.lastContact) : undefined,
             assignedTo: row.assignedTo,
             source: row.source,
-            whatsappAuthorized: row.whatsapp_authorized,
+            whatsappAuthorized: row.whatsappAuthorized,
             createdAt: new Date(row.createdAt),
             updatedAt: new Date(row.updatedAt)
           }));
@@ -505,7 +505,7 @@ class DatabaseService {
       try {
         const query = `
           UPDATE leads 
-          SET whatsapp_authorized = $1, "updatedAt" = CURRENT_TIMESTAMP
+          SET "whatsappAuthorized" = $1, "updatedAt" = CURRENT_TIMESTAMP
           WHERE id = $2
           RETURNING id;
         `;
@@ -786,6 +786,301 @@ class DatabaseService {
         uniquePhones: 0
       };
     }
+  }
+
+  // ============================================
+  // NUEVOS MÉTODOS PARA CONVERSACIONES
+  // ============================================
+
+  // Obtener conversaciones estructuradas con información de leads
+  public async getConversations(
+    limit: number = 50, 
+    offset: number = 0
+  ): Promise<any[]> {
+    if (!this.pool) {
+      logger.warn('No hay conexión a base de datos para obtener conversaciones');
+      return this.getMockConversations(limit, offset);
+    }
+
+    try {
+      // Obtener conversaciones agrupadas por número de teléfono con el último mensaje
+      const query = `
+        WITH latest_messages AS (
+          SELECT DISTINCT ON (phone_number) 
+            phone_number,
+            session_id,
+            contact_name,
+            COALESCE(message_text, response_text) as last_message_content,
+            message_type,
+            is_from_user,
+            created_at,
+            updated_at
+          FROM whatsapp_conversations 
+          ORDER BY phone_number, created_at DESC
+        ),
+        unread_counts AS (
+          SELECT 
+            phone_number,
+            COUNT(*) as unread_count
+          FROM whatsapp_conversations 
+          WHERE is_from_user = true
+          GROUP BY phone_number
+        )
+        SELECT 
+          lm.*,
+          COALESCE(uc.unread_count, 0) as unread_count
+        FROM latest_messages lm
+        LEFT JOIN unread_counts uc ON lm.phone_number = uc.phone_number
+        ORDER BY lm.created_at DESC
+        LIMIT $1 OFFSET $2;
+      `;
+
+      const result = await this.pool.query(query, [limit, offset]);
+      const leads = await this.getAllLeads();
+
+      // Mapear conversaciones con información de leads
+      const conversations = result.rows.map(row => {
+        // Buscar lead correspondiente
+        const lead = leads.find(l => {
+          if (!l.phone) return false;
+          const leadPhone = l.phone.replace(/[^0-9]/g, '');
+          const conversationPhone = row.phone_number.replace(/[^0-9]/g, '');
+          return leadPhone.slice(-10) === conversationPhone.slice(-10);
+        });
+
+        return {
+          id: `conv_${row.phone_number}`, // ID único para la conversación
+          leadId: lead?.id || null,
+          lead: lead || {
+            id: 'unknown',
+            name: row.contact_name || 'Desconocido',
+            phone: row.phone_number,
+            status: 'NUEVO'
+          },
+          lastMessage: {
+            id: `msg_${Date.now()}`,
+            content: row.last_message_content || '',
+            direction: row.is_from_user ? 'INBOUND' : 'OUTBOUND',
+            messageType: row.message_type || 'text',
+            status: 'delivered',
+            createdAt: row.created_at
+          },
+          unreadCount: parseInt(row.unread_count) || 0,
+          updatedAt: row.updated_at
+        };
+      });
+
+      logger.info(`✅ Obtenidas ${conversations.length} conversaciones de la base de datos`);
+      return conversations;
+    } catch (error) {
+      logger.error('Error obteniendo conversaciones:', error);
+      return this.getMockConversations(limit, offset);
+    }
+  }
+
+  // Obtener conversación específica por ID
+  public async getConversationById(conversationId: string): Promise<any | null> {
+    try {
+      // Extraer número de teléfono del ID de conversación
+      const phoneNumber = conversationId.replace('conv_', '');
+      const leads = await this.getAllLeads();
+      
+      // Buscar lead correspondiente
+      const lead = leads.find(l => {
+        if (!l.phone) return false;
+        const leadPhone = l.phone.replace(/[^0-9]/g, '');
+        const conversationPhone = phoneNumber.replace(/[^0-9]/g, '');
+        return leadPhone.slice(-10) === conversationPhone.slice(-10);
+      });
+
+      if (!lead) {
+        return null;
+      }
+
+      return {
+        id: conversationId,
+        leadId: lead.id,
+        lead: lead
+      };
+    } catch (error) {
+      logger.error('Error obteniendo conversación por ID:', error);
+      return null;
+    }
+  }
+
+  // Obtener mensajes de una conversación con paginación
+  public async getConversationMessages(
+    conversationId: string, 
+    limit: number = 50, 
+    offset: number = 0
+  ): Promise<{ conversation: any; messages?: any[] }> {
+    try {
+      // Extraer número de teléfono del ID de conversación
+      const phoneNumber = conversationId.replace('conv_', '');
+      
+      // Obtener información de la conversación
+      const conversation = await this.getConversationById(conversationId);
+      if (!conversation) {
+        return { conversation: null };
+      }
+
+      if (!this.pool) {
+        return {
+          conversation: {
+            id: conversationId,
+            lead: conversation.lead,
+            messages: this.getMockMessages(phoneNumber, limit)
+          }
+        };
+      }
+
+      // Obtener mensajes de la base de datos
+      const query = `
+        SELECT 
+          id, session_id, phone_number, contact_name,
+          message_text, response_text, message_type,
+          is_from_user, created_at, updated_at
+        FROM whatsapp_conversations 
+        WHERE phone_number = $1 
+        ORDER BY created_at ASC
+        LIMIT $2 OFFSET $3;
+      `;
+
+      const result = await this.pool.query(query, [phoneNumber, limit, offset]);
+      
+      // Convertir mensajes al formato esperado
+      const messages = result.rows.map(row => ({
+        id: row.id,
+        content: row.message_text || row.response_text || '',
+        direction: row.is_from_user ? 'INBOUND' : 'OUTBOUND',
+        messageType: row.message_type || 'text',
+        status: 'delivered',
+        createdAt: row.created_at
+      }));
+
+      return {
+        conversation: {
+          id: conversationId,
+          lead: conversation.lead,
+          messages: messages
+        }
+      };
+    } catch (error) {
+      logger.error('Error obteniendo mensajes de conversación:', error);
+      return { conversation: null };
+    }
+  }
+
+  // Crear o actualizar conversación
+  public async createOrUpdateConversation(
+    leadId: string, 
+    sessionId: string
+  ): Promise<string | null> {
+    try {
+      const leads = await this.getAllLeads();
+      const lead = leads.find(l => l.id === leadId);
+      
+      if (!lead || !lead.phone) {
+        logger.warn(`Lead ${leadId} no encontrado o sin teléfono`);
+        return null;
+      }
+
+      // Crear ID de conversación basado en el número de teléfono
+      const conversationId = `conv_${lead.phone.replace(/[^0-9]/g, '')}`;
+      
+      logger.info(`Conversación ${conversationId} creada/actualizada para lead ${leadId}`);
+      return conversationId;
+    } catch (error) {
+      logger.error('Error creando/actualizando conversación:', error);
+      return null;
+    }
+  }
+
+  // Datos mockeados para desarrollo
+  private getMockConversations(limit: number, offset: number): any[] {
+    const mockConversations = [
+      {
+        id: 'conv_5491123456789',
+        leadId: '1',
+        lead: {
+          id: '1',
+          name: 'Juan Pérez',
+          phone: '+5491123456789',
+          status: 'NUEVO'
+        },
+        lastMessage: {
+          id: 'msg_1',
+          content: '¡Hola! Me interesa conocer más sobre sus servicios',
+          direction: 'INBOUND',
+          messageType: 'text',
+          status: 'delivered',
+          createdAt: new Date().toISOString()
+        },
+        unreadCount: 2,
+        updatedAt: new Date().toISOString()
+      },
+      {
+        id: 'conv_5491187654321',
+        leadId: '2',
+        lead: {
+          id: '2',
+          name: 'María García',
+          phone: '+5491187654321',
+          status: 'QUALIFIED'
+        },
+        lastMessage: {
+          id: 'msg_2',
+          content: 'Perfecto, gracias por la información. ¿Cuándo podemos agendar una reunión?',
+          direction: 'INBOUND',
+          messageType: 'text',
+          status: 'delivered',
+          createdAt: new Date(Date.now() - 3600000).toISOString()
+        },
+        unreadCount: 0,
+        updatedAt: new Date(Date.now() - 3600000).toISOString()
+      }
+    ];
+
+    return mockConversations.slice(offset, offset + limit);
+  }
+
+  private getMockMessages(phoneNumber: string, limit: number): any[] {
+    const mockMessages = [
+      {
+        id: 'msg_1',
+        content: '¡Hola! Me interesa conocer más sobre sus servicios',
+        direction: 'INBOUND',
+        messageType: 'text',
+        status: 'delivered',
+        createdAt: new Date(Date.now() - 7200000).toISOString()
+      },
+      {
+        id: 'msg_2',
+        content: '¡Hola! 👋 Gracias por contactarnos. Soy tu asistente virtual y estoy aquí para ayudarte. ¿En qué puedo asistirte hoy?',
+        direction: 'OUTBOUND',
+        messageType: 'text',
+        status: 'delivered',
+        createdAt: new Date(Date.now() - 7190000).toISOString()
+      },
+      {
+        id: 'msg_3',
+        content: '¿Podrían enviarme información sobre precios?',
+        direction: 'INBOUND',
+        messageType: 'text',
+        status: 'delivered',
+        createdAt: new Date(Date.now() - 3600000).toISOString()
+      },
+      {
+        id: 'msg_4',
+        content: 'Te ayudo con información sobre precios. 💰\n\n¿Podrías decirme qué producto o servicio específico te interesa? Así podremos darte la información más precisa.',
+        direction: 'OUTBOUND',
+        messageType: 'text',
+        status: 'delivered',
+        createdAt: new Date(Date.now() - 3590000).toISOString()
+      }
+    ];
+
+    return mockMessages.slice(0, limit);
   }
 }
 

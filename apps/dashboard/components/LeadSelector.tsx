@@ -6,11 +6,21 @@ import { Search, User, Phone, Loader2 } from 'lucide-react'
 
 interface LeadSelectorProps {
   selectedLead?: Lead | null
-  onSelectLead: (lead: Lead) => void
+  selectedLeads?: Lead[]
+  onSelectLead?: (lead: Lead) => void
+  onSelectMultiple?: (leads: Lead[]) => void
+  multiple?: boolean
   className?: string
 }
 
-export function LeadSelector({ selectedLead, onSelectLead, className = '' }: LeadSelectorProps) {
+export function LeadSelector({ 
+  selectedLead, 
+  selectedLeads = [], 
+  onSelectLead, 
+  onSelectMultiple, 
+  multiple = false, 
+  className = '' 
+}: LeadSelectorProps) {
   const { leads, isLoading, error, loadLeads } = useLeads()
   const [searchTerm, setSearchTerm] = useState('')
   const [isOpen, setIsOpen] = useState(false)
@@ -26,10 +36,56 @@ export function LeadSelector({ selectedLead, onSelectLead, className = '' }: Lea
   )
 
   const handleSelectLead = (lead: Lead) => {
-    onSelectLead(lead)
-    setIsOpen(false)
-    setSearchTerm('')
+    if (multiple && onSelectMultiple) {
+      // Toggle selection for multiple mode
+      const isSelected = selectedLeads.some(l => l.id === lead.id)
+      let updatedSelection: Lead[]
+      
+      if (isSelected) {
+        updatedSelection = selectedLeads.filter(l => l.id !== lead.id)
+      } else {
+        updatedSelection = [...selectedLeads, lead]
+      }
+      
+      onSelectMultiple(updatedSelection)
+    } else if (onSelectLead) {
+      // Single selection mode
+      onSelectLead(lead)
+      setIsOpen(false)
+      setSearchTerm('')
+    }
   }
+
+  const handleSelectAll = () => {
+    if (multiple && onSelectMultiple) {
+      const allSelected = filteredLeads.every(lead => 
+        selectedLeads.some(selected => selected.id === lead.id)
+      )
+      
+      if (allSelected) {
+        // Deselect all filtered leads
+        const updatedSelection = selectedLeads.filter(selected => 
+          !filteredLeads.some(filtered => filtered.id === selected.id)
+        )
+        onSelectMultiple(updatedSelection)
+      } else {
+        // Select all filtered leads that aren't already selected
+        const toAdd = filteredLeads.filter(lead => 
+          !selectedLeads.some(selected => selected.id === lead.id)
+        )
+        onSelectMultiple([...selectedLeads, ...toAdd])
+      }
+    }
+  }
+
+  const isLeadSelected = (leadId: string) => {
+    return multiple 
+      ? selectedLeads.some(lead => lead.id === leadId)
+      : selectedLead?.id === leadId
+  }
+
+  const allFilteredSelected = filteredLeads.length > 0 && 
+    filteredLeads.every(lead => selectedLeads.some(selected => selected.id === lead.id))
 
   return (
     <div className={`relative ${className}`}>
@@ -37,25 +93,53 @@ export function LeadSelector({ selectedLead, onSelectLead, className = '' }: Lea
         Seleccionar Lead
       </label>
       
-      {/* Selected Lead Display */}
+      {/* Selected Display */}
       <div
         onClick={() => setIsOpen(!isOpen)}
         className="w-full px-3 py-2 border border-gray-300 rounded-md cursor-pointer bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between"
       >
-        {selectedLead ? (
+        {multiple ? (
+          // Multiple selection display
           <div className="flex items-center space-x-2">
             <User className="h-4 w-4 text-gray-500" />
-            <span className="font-medium">{selectedLead.name || 'Sin nombre'}</span>
-            <span className="text-gray-500">{selectedLead.phone}</span>
-            <Badge variant={STATUS_VARIANTS[selectedLead.status as keyof typeof STATUS_VARIANTS]}>
-              {STATUS_LABELS[selectedLead.status as keyof typeof STATUS_LABELS]}
-            </Badge>
+            {selectedLeads.length > 0 ? (
+              <div className="flex items-center space-x-1">
+                <span className="font-medium">{selectedLeads.length} lead{selectedLeads.length !== 1 ? 's' : ''} seleccionado{selectedLeads.length !== 1 ? 's' : ''}</span>
+                {selectedLeads.length <= 3 ? (
+                  <div className="flex space-x-1">
+                    {selectedLeads.map(lead => (
+                      <Badge key={lead.id} variant="secondary" className="text-xs">
+                        {lead.name || 'Sin nombre'}
+                      </Badge>
+                    ))}
+                  </div>
+                ) : (
+                  <Badge variant="secondary" className="text-xs">
+                    +{selectedLeads.length - 3} más
+                  </Badge>
+                )}
+              </div>
+            ) : (
+              <span className="text-gray-500">Seleccionar leads...</span>
+            )}
           </div>
         ) : (
-          <div className="flex items-center space-x-2 text-gray-500">
-            <User className="h-4 w-4" />
-            <span>Seleccionar un lead...</span>
-          </div>
+          // Single selection display
+          selectedLead ? (
+            <div className="flex items-center space-x-2">
+              <User className="h-4 w-4 text-gray-500" />
+              <span className="font-medium">{selectedLead.name || 'Sin nombre'}</span>
+              <span className="text-gray-500">{selectedLead.phone}</span>
+              <Badge variant={STATUS_VARIANTS[selectedLead.status as keyof typeof STATUS_VARIANTS]}>
+                {STATUS_LABELS[selectedLead.status as keyof typeof STATUS_LABELS]}
+              </Badge>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-2 text-gray-500">
+              <User className="h-4 w-4" />
+              <span>Seleccionar un lead...</span>
+            </div>
+          )
         )}
         <div className="text-gray-400">
           {isOpen ? '▲' : '▼'}
@@ -67,7 +151,7 @@ export function LeadSelector({ selectedLead, onSelectLead, className = '' }: Lea
         <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-96 overflow-y-auto">
           {/* Search Input */}
           <div className="p-3 border-b border-gray-200">
-            <div className="relative">
+            <div className="relative mb-2">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
                 type="text"
@@ -77,6 +161,15 @@ export function LeadSelector({ selectedLead, onSelectLead, className = '' }: Lea
                 className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            {/* Select All Button (only in multiple mode) */}
+            {multiple && onSelectMultiple && filteredLeads.length > 0 && (
+              <button
+                onClick={handleSelectAll}
+                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+              >
+                {allFilteredSelected ? 'Deseleccionar todos' : 'Seleccionar todos'}
+              </button>
+            )}
           </div>
 
           {/* Loading State */}
@@ -108,9 +201,21 @@ export function LeadSelector({ selectedLead, onSelectLead, className = '' }: Lea
                     <div
                       key={lead.id}
                       onClick={() => handleSelectLead(lead)}
-                      className="flex items-center justify-between p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                      className={`flex items-center justify-between p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 ${
+                        isLeadSelected(lead.id) ? 'bg-blue-50 border-blue-200' : ''
+                      }`}
                     >
                       <div className="flex items-center space-x-3">
+                        {/* Checkbox for multiple mode */}
+                        {multiple && (
+                          <input
+                            type="checkbox"
+                            checked={isLeadSelected(lead.id)}
+                            onChange={() => handleSelectLead(lead)}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        )}
                         <User className="h-4 w-4 text-gray-500" />
                         <div>
                           <p className="font-medium text-gray-900">

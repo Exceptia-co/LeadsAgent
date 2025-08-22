@@ -219,10 +219,16 @@ export function validateSessionId(req: Request, res: Response, next: NextFunctio
 // Rate limiting middleware (simple in-memory implementation)
 const rateLimitStore = new Map<string, { count: number; resetTime: number }>()
 const RATE_LIMIT_WINDOW = 60 * 1000 // 1 minute
-const RATE_LIMIT_MAX_REQUESTS = 60 // 60 requests per minute
+const RATE_LIMIT_MAX_REQUESTS = 300 // 300 requests per minute (más permisivo para desarrollo)
 
 export function rateLimit(req: Request, res: Response, next: NextFunction): void {
   try {
+    // Deshabilitar rate limiting en desarrollo
+    if (process.env.NODE_ENV === 'development') {
+      next()
+      return
+    }
+    
     const clientId = req.ip || 'unknown'
     const now = Date.now()
     
