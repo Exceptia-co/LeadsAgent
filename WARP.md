@@ -2,7 +2,37 @@
 
 This file provides guidance to WARP (warp.dev) when working with code in this repository.
 
-*Version: 3.0 | Last Updated: August 21, 2025*
+*Version: 3.1 | Last Updated: August 22, 2025*
+
+## 📚 Tabla de Contenidos
+
+1. [Estado del Proyecto](#-estado-del-proyecto)
+2. [Stack Tecnológico](#stack-tecnológico)
+3. [Estructura del Proyecto](#estructura-del-proyecto)
+4. [Comandos de Desarrollo](#comandos-de-desarrollo)
+5. [Arquitectura del Sistema](#arquitectura-del-sistema)
+6. [Modelo de Datos (Prisma)](#modelo-de-datos-prisma)
+7. [API Endpoints](#api-endpoints)
+8. [Desarrollo y Mejores Prácticas](#desarrollo-y-mejores-prácticas)
+   - [Integración MCP (OBLIGATORIO)](#integración-mcp-para-asistentes-obligatorio)
+   - [Convenciones de Código](#convenciones-de-código-typescript)
+   - [Seguridad](#seguridad)
+   - [Testing](#testing)
+9. [Proveedores de IA](#proveedores-de-ia-y-configuración)
+10. [Configuración de WhatsApp](#configuración-de-whatsapp)
+11. [API del servicio de WhatsApp](#api-del-servicio-de-whatsapp-resumen)
+12. [Troubleshooting](#troubleshooting)
+13. [Hoja de Ruta](#hoja-de-ruta-de-implementación)
+14. [Despliegue](#despliegue)
+
+## 🔗 Documentación Adicional
+
+- [AI Development Guidelines](./docs/AI_DEVELOPMENT_GUIDELINES.md) - Guías completas para desarrollo con IA
+- [Architecture Diagrams](./docs/ARCHITECTURE_DIAGRAMS.md) - Diagramas visuales del sistema
+- [Practical Examples](./docs/PRACTICAL_EXAMPLES.md) - Ejemplos prácticos y troubleshooting
+- [Project Status](./docs/PROJECT_STATUS.md) - Estado detallado de implementación
+
+---
 
 # LeadsCRM - Dashboard de Gestión de Leads con WhatsApp e IA
 
@@ -10,11 +40,11 @@ LeadsCRM es un sistema integral de gestión de leads que automatiza la recepció
 
 ## 📊 Estado del Proyecto
 
-**Actual:** ✅ **Funcional con MVP Dashboard + API + DB**  
-**En desarrollo:** 🔄 **Integración WhatsApp + Servicios IA**
+**Actual:** ✅ **Production Ready + New Features**  
+**En desarrollo:** 🔄 **Optimización de Integración WhatsApp + Servicios IA avanzados**
 
 ### 🎯 Objetivo Principal
-Validar el flujo: **recepción de leads por WhatsApp → persistencia y visualización → sugerencias de respuesta con IA → envío manual por agentes**.
+Validar y escalar el flujo: **recepción de leads por WhatsApp → persistencia y visualización → sugerencias de respuesta con IA → envío manual/automatizado por agentes**.
 
 ### 📚 Documentación Clave
 - [`README.md`](./README.md) - Estado actual del proyecto y características
@@ -38,8 +68,8 @@ Validar el flujo: **recepción de leads por WhatsApp → persistencia y visualiz
 ### 🔄 En Desarrollo
 | Componente | Tecnología | Estado | Propósito |
 |------------|------------|--------|-----------|
-| **Mensajería** | whatsapp-web.js | 🔄 En integración | Integración con WhatsApp Web |
-| **IA** | OpenAI API | 🔄 En integración | Clasificación y generación de respuestas |
+| **Mensajería** | whatsapp-web.js | 🔄 En mejora continua | Integración con WhatsApp Web (multi-sesión, QR, métricas) |
+| **IA** | OpenRouter + Google Gemini | 🔄 En mejora continua | Clasificación y generación de respuestas |
 
 ### 📋 Planificado
 | Componente | Tecnología | Estado | Propósito |
@@ -453,6 +483,24 @@ Todos los endpoints excepto `/api/webhooks/*` requieren token JWT de Clerk.
 
 ## Desarrollo y Mejores Prácticas
 
+### Integración MCP para asistentes (OBLIGATORIO)
+Para todas las sesiones de chat con IA relacionadas a este repositorio, los asistentes deben activar SIEMPRE los siguientes servidores MCP al inicio de la conversación (según la política de invocación global del usuario):
+- context7: acceso a documentación y contexto actualizados
+- perplexity-ask: recuperación de conocimiento externo en tiempo real
+- serena: recuperación semántica de código y edición vía LSP (navegación por símbolos)
+- sequential-thinking: estructuración de solución en pasos con reflexión y verificación
+
+Recomendaciones de uso:
+- Antes de realizar cambios, recuperar contexto relevante (context7) y mapa de símbolos (serena)
+- Para dudas conceptuales o estado del arte, consultar perplexity-ask y citar fuentes cuando aplique
+- Para problemas complejos, estructurar el razonamiento con sequential-thinking y verificar hipótesis antes de ejecutar cambios
+- Seguir las reglas de seguridad: no revelar secretos; usar variables de entorno; evitar comandos interactivos/paginados
+
+Guía rápida para asistentes:
+- Indexar código con navegación por símbolos (serena) y validar dependencias antes de ediciones
+- Confirmar tareas de 3+ pasos con un plan y marcar progreso al completar cada paso
+- Al usar VCS/CLI, deshabilitar pager (por ejemplo, git --no-pager)
+
 ### Convenciones de Código TypeScript
 
 - **Variables/Funciones**: `camelCase`
@@ -500,28 +548,46 @@ Todos los endpoints excepto `/api/webhooks/*` requieren token JWT de Clerk.
 
 ### Desarrollo con AI Assistants
 
-**ByteRover MCP Tools Integration:**
-Este proyecto está configurado para trabajar con asistentes de IA que utilizan herramientas MCP (Model Context Protocol) para mantener el contexto del proyecto.
+Este repositorio está optimizado para asistentes con MCP activo. Ver sección "Integración MCP para asistentes (OBLIGATORIO)" arriba. Usa siempre variables de entorno y evita exponer secretos.
 
-**Importante para Desarrolladores:**
+Beneficios:
+- Contexto Persistente: decisiones y estado del proyecto accesibles
+- Colaboración: conocimiento compartido entre sesiones de desarrollo
+- Reducción de Errores: acceso a patrones y convenciones comunes
+- Agilidad: menos tiempo explicando contexto, más tiempo ejecutando
 
+Configuración relacionada:
+- Archivos: `CLAUDE.md`, `.github/copilot-instructions.md`
+- Alcance: Arquitectura, decisiones técnicas, patrones, troubleshooting
+
+## Proveedores de IA y configuración
+
+Soporta múltiples proveedores conmutables en tiempo de ejecución desde el servicio de WhatsApp.
+
+Variables de entorno (usar valores reales en `.env`, no compartir secretos):
 ```bash
-# Antes de iniciar cualquier tarea:
-# 1. Usar byterover-retrieve-knowledge para obtener contexto
-# 2. Realizar la tarea o desarrollo
-# 3. Usar byterover-store-knowledge para almacenar información crítica
+# Proveedor activo por defecto: openrouter | gemini
+AI_PROVIDER=openrouter
+
+# OpenRouter
+OPENROUTER_API_KEY="{{OPENROUTER_API_KEY}}"
+OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
+OPENROUTER_MODEL="anthropic/claude-3.5-sonnet"
+
+# Google Gemini
+GEMINI_API_KEY="{{GEMINI_API_KEY}}"
+GEMINI_MODEL="gemini-1.5-pro"
 ```
 
-**Beneficios:**
-- **Contexto Persistente**: Los asistentes mantienen información sobre el estado del proyecto
-- **Mejor Colaboración**: Conocimiento compartido entre sesiones de desarrollo
-- **Reducción de Errores**: Acceso a decisiones arquitectónicas previas
-- **Aceleración del Desarrollo**: Menos tiempo explicando el contexto del proyecto
+Endpoints de gestión IA (apps/whatsapp-service):
+- GET `/ai/status` → estado de proveedores y proveedor actual
+- POST `/ai/switch` body: `{ "provider": "openrouter" | "gemini" }` → cambia proveedor
+- POST `/ai/test` body: `{ "message": "..." }` → prueba de respuesta IA
 
-**Configuración Actual:**
-- Archivos de configuración: `CLAUDE.md`, `.github/copilot-instructions.md`
-- Herramientas habilitadas: byterover-retrieve-knowledge, byterover-store-knowledge
-- Scope: Arquitectura, decisiones técnicas, patterns, troubleshooting
+Buenas prácticas:
+- Limitar tokens y usar temperatura conservadora para clasificación
+- Registrar costes y latencia por proveedor; aplicar backoff exponencial
+- Implementar fallback entre proveedores en errores transitorios
 
 ## Configuración de WhatsApp
 
@@ -538,6 +604,35 @@ Este proyecto está configurado para trabajar con asistentes de IA que utilizan 
 - **Expiración**: Monitorear logs por errores `auth`
 - **Recuperación**: Re-escanear QR si sesión expira
 - **Backup**: Respaldar directorio `/sessions` regularmente
+
+## API del servicio de WhatsApp (resumen)
+
+Base: apps/whatsapp-service
+
+- Salud: GET `/health`
+- Sesiones:
+  - POST `/sessions` (crear)
+  - GET `/sessions` (listar)
+  - GET `/sessions/:sessionId` (detalle)
+  - DELETE `/sessions/:sessionId` (eliminar)
+  - GET `/sessions/:sessionId/qr` (QR actual)
+  - GET `/sessions/:sessionId/status` (estado)
+- Mensajes:
+  - POST `/sessions/:sessionId/send` (enviar con sesión)
+  - POST `/messages/send` (enviar directo)
+- Conversaciones y analytics:
+  - GET `/conversations/:phoneNumber` (historial)
+  - POST `/conversations` (búsqueda)
+  - GET `/analytics/messages` (analytics)
+  - GET `/stats` (estadísticas)
+  - GET `/logs/whitelist` (logs whitelist)
+  - GET `/stats/whitelist` (stats whitelist)
+- Leads:
+  - PATCH `/leads/:leadId/whatsapp` body: `{ whatsappAuthorized: boolean }`
+
+Notas:
+- Persistencia de sesiones en `apps/whatsapp-service/sessions`
+- Filtrado automático por whitelist antes de respuestas IA
 
 ## Troubleshooting
 
@@ -643,12 +738,16 @@ pnpm clean:cache
 DATABASE_URL="postgresql://user:pass@host:5432/dbname"
 DIRECT_URL="postgresql://user:pass@host:5432/dbname"
 
-# Autenticación
-CLERK_SECRET_KEY="sk_test_..."
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
+# Autenticación (Clerk)
+CLERK_SECRET_KEY="{{CLERK_SECRET_KEY}}"
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="{{CLERK_PUBLISHABLE_KEY}}"
 
-# Opcional para desarrollo futuro
-OPENAI_API_KEY="sk-..."
+# IA (selecciona proveedor)
+AI_PROVIDER=openrouter  # o gemini
+OPENROUTER_API_KEY="{{OPENROUTER_API_KEY}}"
+OPENROUTER_MODEL="anthropic/claude-3.5-sonnet"
+GEMINI_API_KEY="{{GEMINI_API_KEY}}"
+GEMINI_MODEL="gemini-1.5-pro"
 ```
 
 **Producción:**
@@ -657,18 +756,22 @@ OPENAI_API_KEY="sk-..."
 DATABASE_URL="postgresql://user:pass@host:5432/dbname"
 DIRECT_URL="postgresql://user:pass@host:5432/dbname"
 
-# Autenticación
-CLERK_SECRET_KEY="sk_live_..."
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_live_..."
+# Autenticación (Clerk)
+CLERK_SECRET_KEY="{{CLERK_SECRET_KEY}}"
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="{{CLERK_PUBLISHABLE_KEY}}"
 
-# IA
-OPENAI_API_KEY="sk-..."
+# IA (usar claves de producción)
+AI_PROVIDER=openrouter  # o gemini
+OPENROUTER_API_KEY="{{OPENROUTER_API_KEY}}"
+OPENROUTER_MODEL="anthropic/claude-3.5-sonnet"
+GEMINI_API_KEY="{{GEMINI_API_KEY}}"
+GEMINI_MODEL="gemini-1.5-pro"
 
 # Cache y colas (cuando se implemente)
 REDIS_URL="redis://..."
 
-# WhatsApp Service (cuando esté listo)
-WHATSAPP_WEBHOOK_SECRET="..."
+# WhatsApp Service
+WHATSAPP_WEBHOOK_SECRET="{{WHATSAPP_WEBHOOK_SECRET}}"
 ```
 
 ### CI/CD Pipeline
@@ -689,8 +792,62 @@ GitHub Actions ejecuta automáticamente:
 
 ---
 
-Para más detalles técnicos, consultar:
-- [docs/PROJECT_STATUS.md](./docs/PROJECT_STATUS.md) - Estado detallado de implementación
-- [docs/coding-guidelines.md](./docs/coding-guidelines.md) - Guías detalladas de código
-- [apps/docs/](./apps/docs/) - Aplicación de documentación completa
-- API Documentation: `/api/docs` (Swagger) - Cuando se implemente
+## 🚀 Quick Start para Nuevos Desarrolladores
+
+### Configuración Inicial (5 minutos)
+```bash
+# 1. Clonar e instalar
+git clone <repo-url>
+cd LeadsAgent
+pnpm install
+
+# 2. Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tus credenciales
+
+# 3. Preparar base de datos
+pnpm db:generate
+pnpm db:migrate:dev
+
+# 4. Iniciar todos los servicios
+pnpm dev
+```
+
+### Verificación Rápida
+- **Dashboard**: http://localhost:3000 (Next.js)
+- **API**: http://localhost:3003/health (NestJS)
+- **WhatsApp Service**: http://localhost:3002/health
+- **Prisma Studio**: `pnpm db:studio`
+
+### Para Asistentes de IA
+Recuerda activar **SIEMPRE** los servidores MCP requeridos:
+- `context7` + `perplexity-ask` + `serena` + `sequential-thinking`
+
+---
+
+## 📚 Documentación Completa
+
+### 📋 Documentación Principal
+- [AI Configuration](./docs/AI_CONFIGURATION.md) - Configuración de proveedores de IA (OpenRouter, Gemini, OpenAI)
+- [Authentication Guide](./docs/AUTHENTICATION.md) - Arquitectura de autenticación híbrida (Clerk + NestJS + Supabase)
+- [Security Guide](./docs/SECURITY.md) - Row Level Security y políticas de base de datos
+- [Coding Guidelines](./docs/coding-guidelines.md) - Estándares de código y convenciones del proyecto
+
+### 🔧 Guías de Desarrollo  
+- [AI Development Guidelines](./docs/AI_DEVELOPMENT_GUIDELINES.md) - Pautas completas para desarrollo con IA
+- [Supabase Setup](./docs/supabase-setup-instructions.md) - Configuración paso a paso de Supabase
+- [Practical Examples](./docs/PRACTICAL_EXAMPLES.md) - Ejemplos de código y casos de uso
+- [Troubleshooting Guide](./docs/TROUBLESHOOTING.md) - **NUEVO** - Soluciones consolidadas para problemas comunes
+
+### 📊 Referencias y Estado
+- [Architecture Diagrams](./docs/ARCHITECTURE_DIAGRAMS.md) - Diagramas visuales del sistema
+- [Project Status](./docs/PROJECT_STATUS.md) - Estado actual del proyecto y métricas
+- [Build Optimizations](./docs/OPTIMIZATIONS.md) - Guía técnica de optimizaciones (19min → 3min)
+
+### 📁 Documentación Técnica Avanzada
+- [Project History](./docs/technical/PROJECT_HISTORY.md) - **NUEVO** - Historial completo de desarrollo
+- [Implementation Plan](./docs/technical/implementation-plan.md) - Plan detallado de mejoras futuras
+
+### 🚀 Aplicaciones
+- [Documentation App](./apps/docs/) - Aplicación de documentación integrada con Turborepo
+- API Documentation: `http://localhost:3003/api/docs` (Swagger) - Documentación interactiva de la API
