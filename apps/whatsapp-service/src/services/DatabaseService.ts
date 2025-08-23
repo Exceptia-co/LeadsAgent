@@ -220,16 +220,29 @@ class DatabaseService {
 
   // Guardar conversación
   public async saveConversation(data: ConversationData): Promise<string | null> {
+    // LOG DETALLADO: Estado inicial
+    logger.info('🔍 [DIAGNOSTIC] saveConversation called with data:', {
+      sessionId: data.sessionId,
+      phoneNumber: data.phoneNumber,
+      messageText: data.messageText ? data.messageText.substring(0, 50) + '...' : null,
+      responseText: data.responseText ? data.responseText.substring(0, 50) + '...' : null,
+      isFromUser: data.isFromUser
+    });
+
+    // LOG DETALLADO: Estado de la conexión
     if (!this.pool) {
-      logger.warn('No hay conexión a base de datos, conversación no guardada');
+      logger.error('❌ [DIAGNOSTIC] No database connection available!');
+      logger.error('❌ [DIAGNOSTIC] DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
       return null;
     }
+    
+    logger.info('✅ [DIAGNOSTIC] Database pool connection available');
 
     const query = `
       INSERT INTO whatsapp_conversations (
         session_id, phone_number, contact_name, message_text, response_text,
-        message_type, intent, sentiment, ai_provider, tokens_used, is_from_user
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        intent, sentiment, ai_provider, tokens_used, is_from_user
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING id;
     `;
 
@@ -239,7 +252,6 @@ class DatabaseService {
       data.contactName || null,
       data.messageText || null,
       data.responseText || null,
-      data.messageType || 'text',
       data.intent || null,
       data.sentiment || null,
       data.aiProvider || null,
@@ -247,11 +259,28 @@ class DatabaseService {
       data.isFromUser !== undefined ? data.isFromUser : true
     ];
 
+    // LOG DETALLADO: Valores que se van a insertar
+    logger.info('📝 [DIAGNOSTIC] Query values prepared:', {
+      sessionId: values[0],
+      phoneNumber: values[1],
+      contactName: values[2],
+      intent: values[5],
+      isFromUser: values[9]
+    });
+
     try {
+      logger.info('🔄 [DIAGNOSTIC] Executing database query...');
       const result = await this.pool.query(query, values);
+      
       const conversationId = result.rows[0]?.id;
       
-      logger.info('Conversación guardada:', {
+      logger.info('✅ [DIAGNOSTIC] Query executed successfully!', {
+        conversationId,
+        rowsAffected: result.rowCount,
+        returningId: result.rows[0]?.id
+      });
+      
+      logger.info('💾 Conversación guardada correctamente:', {
         id: conversationId,
         phoneNumber: data.phoneNumber,
         sessionId: data.sessionId
@@ -259,7 +288,15 @@ class DatabaseService {
       
       return conversationId;
     } catch (error) {
-      logger.error('Error guardando conversación:', error);
+      logger.error('❌ [DIAGNOSTIC] Error executing database query:', {
+        error: error.message,
+        code: error.code,
+        detail: error.detail,
+        hint: error.hint,
+        position: error.position,
+        stack: error.stack?.substring(0, 200) + '...'
+      });
+      logger.error('❌ Error guardando conversación (legacy):', error);
       return null;
     }
   }
