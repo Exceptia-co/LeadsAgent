@@ -5,6 +5,7 @@ export interface Lead {
   phone: string
   status: LeadStatus
   score: number | null
+  whatsappAuthorized?: boolean | null
   createdAt: string
   updatedAt: string
   conversation?: Conversation | null

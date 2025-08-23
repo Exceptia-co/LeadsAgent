@@ -39,7 +39,7 @@ export class LeadsService {
         orderBy: { createdAt: 'desc' },
         include: {
           messages: {
-            orderBy: { timestamp: 'desc' },
+            orderBy: { createdAt: 'desc' },
             take: 1, // Get latest message
           },
         },

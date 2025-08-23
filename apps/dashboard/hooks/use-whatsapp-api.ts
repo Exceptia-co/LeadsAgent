@@ -5,7 +5,9 @@ const MAX_RETRIES = 3
 const BASE_RETRY_DELAY = 1000 // 1 second
 
 interface ApiResponse<T = any> {
+  success?: boolean
   data?: T
+  sessions?: any[]
   error?: string
   isLoading: boolean
 }
@@ -188,7 +190,7 @@ export function useWhatsAppApi() {
           message,
           type
         })
-      })
+      }) as { success?: boolean }
       return result.success || false
     } catch (error) {
       console.error('Error sending message:', error)

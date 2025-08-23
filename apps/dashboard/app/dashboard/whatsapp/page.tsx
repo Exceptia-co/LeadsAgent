@@ -60,9 +60,9 @@ export default function WhatsAppPage() {
 
   const loadSessions = async () => {
     try {
-      const data = await getSessions()
+      const data = await getSessions() as { sessions?: WhatsAppSession[] }
       setSessions(data.sessions || [])
-      if (data.sessions?.length > 0 && !selectedSession) {
+      if (data.sessions && data.sessions.length > 0 && !selectedSession) {
         setSelectedSession(data.sessions[0].id)
       }
     } catch (err) {

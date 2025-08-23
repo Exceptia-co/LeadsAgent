@@ -42,7 +42,7 @@ export class WhatsAppService {
         where: { phone: phoneNumber },
         include: {
           messages: {
-            orderBy: { timestamp: 'desc' },
+            orderBy: { createdAt: 'desc' },
             take: 1
           }
         }
@@ -69,12 +69,11 @@ export class WhatsAppService {
         data: {
           leadId: lead.id,
           content: messageData.body,
-          type: MessageType.TEXT,
+          messageType: MessageType.TEXT,
           direction: MessageDirection.INBOUND,
           status: MessageStatus.READ,
-          timestamp: new Date(messageData.timestamp),
-          externalId: messageData.id,
-          vendor: 'whatsapp'
+          whatsappMessageId: messageData.id,
+          createdAt: new Date(messageData.timestamp)
         }
       })
 
@@ -150,11 +149,10 @@ export class WhatsAppService {
             data: {
               leadId: lead.id,
               content: message,
-              type: MessageType.TEXT,
+              messageType: MessageType.TEXT,
               direction: MessageDirection.OUTBOUND,
               status: MessageStatus.SENT,
-              timestamp: new Date(),
-              vendor: 'whatsapp'
+              createdAt: new Date()
             }
           })
 

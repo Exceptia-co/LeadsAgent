@@ -253,13 +253,15 @@ export function LeadSelector({
             <button
               onClick={() => {
                 setIsOpen(false)
-                onSelectLead({
-                  id: 'manual',
-                  name: 'Número manual',
-                  phone: '',
-                  status: 'NUEVO',
-                  createdAt: new Date().toISOString()
-                })
+                if (onSelectLead) {
+                  onSelectLead({
+                    id: 'manual',
+                    name: 'Número manual',
+                    phone: '',
+                    status: 'NUEVO',
+                    createdAt: new Date().toISOString()
+                  })
+                }
               }}
               className="w-full text-left text-sm text-blue-600 hover:text-blue-800 flex items-center space-x-2"
             >

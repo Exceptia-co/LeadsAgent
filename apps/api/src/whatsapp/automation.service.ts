@@ -357,7 +357,8 @@ No te preocupes, estaremos aquí cuando estés listo. ¿Te gustaría recibir inf
       })
       
       if (lead) {
-        const currentTags = lead.tags || []
+        // Handle tags as JSON array
+        const currentTags = Array.isArray(lead.tags) ? lead.tags : []
         if (!currentTags.includes(tag)) {
           const updatedTags = [...currentTags, tag]
           
