@@ -20,12 +20,32 @@ import {
   AlertTriangle,
   Bot,
   Trash2,
-  Play
+  Play,
+  Settings,
+  BookOpen,
+  MessageSquare,
+  Save,
+  Plus,
+  Edit,
+  Search
 } from 'lucide-react'
 
 export default function AIAssistantPage() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'test' | 'history' | 'analytics'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'test' | 'history' | 'analytics' | 'config' | 'knowledge'>('overview')
   const [testMessage, setTestMessage] = useState('')
+  
+  // Configuration states
+  const [systemPrompt, setSystemPrompt] = useState('')
+  const [temperature, setTemperature] = useState(0.7)
+  const [maxTokens, setMaxTokens] = useState(150)
+  const [minDelay, setMinDelay] = useState(2)
+  const [maxDelay, setMaxDelay] = useState(6)
+  
+  // Knowledge base states
+  const [knowledgeEntries, setKnowledgeEntries] = useState<any[]>([])
+  const [newEntry, setNewEntry] = useState({ category: '', title: '', content: '', keywords: '' })
+  const [editingEntry, setEditingEntry] = useState<any>(null)
+  const [searchTerm, setSearchTerm] = useState('')
   
   const {
     status,
@@ -110,6 +130,8 @@ export default function AIAssistantPage() {
         <nav className="-mb-px flex space-x-8">
           {[
             { id: 'overview', label: 'Resumen', icon: Brain },
+            { id: 'config', label: 'Configuración', icon: Settings },
+            { id: 'knowledge', label: 'Knowledge Base', icon: BookOpen },
             { id: 'test', label: 'Probar IA', icon: Play },
             { id: 'history', label: 'Historial', icon: Clock },
             { id: 'analytics', label: 'Analíticas', icon: BarChart3 }
@@ -469,6 +491,302 @@ export default function AIAssistantPage() {
               </div>
             </div>
           </Card>
+        </div>
+      )}
+
+      {activeTab === 'config' && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* System Prompt Configuration */}
+            <Card className="p-6">
+              <h2 className="text-lg font-medium text-gray-900 mb-4">
+                <Settings className="inline h-5 w-5 mr-2" />
+                System Prompt
+              </h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Prompt del Sistema
+                  </label>
+                  <textarea
+                    value={systemPrompt}
+                    onChange={(e) => setSystemPrompt(e.target.value)}
+                    placeholder="Eres un asistente virtual especializado en EscortsHub. Responde de manera profesional y útil..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                    rows={6}
+                  />
+                </div>
+                
+                <button className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                  <Save className="h-4 w-4 mr-2" />
+                  Guardar Prompt
+                </button>
+              </div>
+            </Card>
+
+            {/* AI Parameters */}
+            <Card className="p-6">
+              <h2 className="text-lg font-medium text-gray-900 mb-4">
+                <Zap className="inline h-5 w-5 mr-2" />
+                Parámetros de IA
+              </h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Temperatura ({temperature})
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={temperature}
+                    onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>Conservador</span>
+                    <span>Creativo</span>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Máximo de Tokens
+                  </label>
+                  <input
+                    type="number"
+                    min="50"
+                    max="500"
+                    value={maxTokens}
+                    onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+            </Card>
+          </div>
+          
+          {/* Humanization Settings */}
+          <Card className="p-6">
+            <h2 className="text-lg font-medium text-gray-900 mb-4">
+              <Clock className="inline h-5 w-5 mr-2" />
+              Configuración de Humanización
+            </h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Delay Mínimo (segundos)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={minDelay}
+                  onChange={(e) => setMinDelay(parseInt(e.target.value))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Delay Máximo (segundos)
+                </label>
+                <input
+                  type="number"
+                  min="2"
+                  max="15"
+                  value={maxDelay}
+                  onChange={(e) => setMaxDelay(parseInt(e.target.value))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+            </div>
+            
+            <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+              <p className="text-sm text-gray-600">
+                El delay se calcula automáticamente basado en la longitud del mensaje, 
+                entre {minDelay} y {maxDelay} segundos para simular escritura humana.
+              </p>
+            </div>
+            
+            <div className="flex justify-end mt-4">
+              <button className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                <Save className="h-4 w-4 mr-2" />
+                Guardar Configuración
+              </button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === 'knowledge' && (
+        <div className="space-y-6">
+          {/* Search and Add */}
+          <Card className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-medium text-gray-900">
+                <BookOpen className="inline h-5 w-5 mr-2" />
+                Base de Conocimiento
+              </h2>
+              
+              <div className="flex items-center space-x-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <input
+                    type="text"
+                    placeholder="Buscar entradas..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                <button 
+                  onClick={() => setEditingEntry({ category: '', title: '', content: '', keywords: '', priority: 1 })}
+                  className="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Agregar
+                </button>
+              </div>
+            </div>
+            
+            {/* Knowledge entries list */}
+            <div className="space-y-3">
+              {[
+                { id: 1, category: 'Productos', title: 'Anuncio Doble', content: 'El Anuncio Doble permite mayor visibilidad...', keywords: ['anuncio', 'doble', 'visibilidad'] },
+                { id: 2, category: 'Precios', title: 'Moneda HUB', content: 'La moneda HUB se usa para todos los pagos...', keywords: ['hub', 'moneda', 'pago'] },
+                { id: 3, category: 'General', title: 'Soporte al Cliente', content: 'Nuestro equipo de soporte está disponible...', keywords: ['soporte', 'ayuda', 'contacto'] }
+              ].filter(entry => 
+                searchTerm === '' || 
+                entry.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                entry.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                entry.keywords.some(k => k.toLowerCase().includes(searchTerm.toLowerCase()))
+              ).map((entry) => (
+                <div key={entry.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Badge variant="outline" className="text-xs">
+                          {entry.category}
+                        </Badge>
+                        <h3 className="font-medium text-gray-900">{entry.title}</h3>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-2">
+                        {entry.content.substring(0, 100)}...
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {entry.keywords.map((keyword) => (
+                          <Badge key={keyword} variant="secondary" className="text-xs">
+                            {keyword}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2 ml-4">
+                      <button 
+                        onClick={() => setEditingEntry(entry)}
+                        className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                      <button className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+          
+          {/* Add/Edit Form */}
+          {editingEntry && (
+            <Card className="p-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">
+                {editingEntry.id ? 'Editar Entrada' : 'Nueva Entrada'}
+              </h3>
+              
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Categoría
+                    </label>
+                    <select
+                      value={editingEntry.category}
+                      onChange={(e) => setEditingEntry({...editingEntry, category: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Seleccionar categoría...</option>
+                      <option value="Productos">Productos</option>
+                      <option value="Precios">Precios</option>
+                      <option value="Políticas">Políticas</option>
+                      <option value="Soporte">Soporte</option>
+                      <option value="General">General</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Título
+                    </label>
+                    <input
+                      type="text"
+                      value={editingEntry.title}
+                      onChange={(e) => setEditingEntry({...editingEntry, title: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Título de la entrada..."
+                    />
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Contenido
+                  </label>
+                  <textarea
+                    value={editingEntry.content}
+                    onChange={(e) => setEditingEntry({...editingEntry, content: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                    rows={5}
+                    placeholder="Contenido detallado de la entrada..."
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Palabras Clave (separadas por comas)
+                  </label>
+                  <input
+                    type="text"
+                    value={editingEntry.keywords}
+                    onChange={(e) => setEditingEntry({...editingEntry, keywords: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="palabra1, palabra2, palabra3..."
+                  />
+                </div>
+                
+                <div className="flex items-center justify-between pt-4 border-t">
+                  <button
+                    onClick={() => setEditingEntry(null)}
+                    className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancelar
+                  </button>
+                  
+                  <button className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                    <Save className="h-4 w-4 mr-2" />
+                    {editingEntry.id ? 'Actualizar' : 'Crear'}
+                  </button>
+                </div>
+              </div>
+            </Card>
+          )}
         </div>
       )}
     </div>

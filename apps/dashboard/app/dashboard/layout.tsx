@@ -18,15 +18,20 @@ import {
   Brain,
   Phone,
   Shield,
+  FileText,
+  Send,
+  MessageCircle,
+  Mail,
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: BarChart3 },
   { name: 'Leads', href: '/dashboard/leads', icon: Users },
-  { name: 'Conversaciones', href: '/dashboard/conversations', icon: MessageSquare },
+  { name: 'Conversaciones', href: '/dashboard/conversations', icon: MessageCircle },
   { name: 'WhatsApp', href: '/dashboard/whatsapp', icon: Phone },
   { name: 'Estadísticas IA', href: '/dashboard/whatsapp-stats', icon: Shield },
   { name: 'IA Assistant', href: '/dashboard/ai', icon: Brain },
+  { name: 'Mensajería', href: '/dashboard/messaging', icon: Mail },
   { name: 'Configuración', href: '/dashboard/settings', icon: Settings },
 ]
 

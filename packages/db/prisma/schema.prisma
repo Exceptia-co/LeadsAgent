@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   previewFeatures = ["driverAdapters"]
 }
 
@@ -9,136 +9,220 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
-model User {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clerkId   String   @unique
-  email     String   @unique
-  name      String
-  role      UserRole @default(AGENT)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+// Enums
+enum LeadStatus {
+  NUEVO      @map("new")
+  CONTACTADO @map("contacted")
+  QUALIFIED  @map("qualified")
+  GANADO     @map("won")
+  PERDIDO    @map("lost")
 
+  @@map("lead_status")
+}
+
+enum MessageType {
+  TEXT     @map("text")
+  IMAGE    @map("image")
+  AUDIO    @map("audio")
+  VIDEO    @map("video")
+  DOCUMENT @map("document")
+
+  @@map("message_type")
+}
+
+enum MessageDirection {
+  INBOUND  @map("incoming")
+  OUTBOUND @map("outgoing")
+
+  @@map("message_direction")
+}
+
+enum MessageStatus {
+  PENDING   @map("pending")
+  SENT      @map("sent")
+  DELIVERED @map("delivered")
+  READ      @map("read")
+  FAILED    @map("failed")
+
+  @@map("message_status")
+}
+
+model User {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clerk_id          String    @unique @db.VarChar(255)
+  email             String    @db.VarChar(255)
+  first_name        String?   @db.VarChar(255)
+  last_name         String?   @db.VarChar(255)
+  profile_image_url String?   @db.VarChar(500)
+  role              String?   @default("user") @db.VarChar(50)
+  is_active         Boolean?  @default(true)
+  last_login_at     DateTime? @db.Timestamptz(6)
+  settings          Json?     @default("{}")
+  created_at        DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([clerk_id], map: "idx_users_clerk_id")
+  @@index([created_at], map: "idx_users_created_at")
+  @@index([email], map: "idx_users_email")
+  @@index([is_active], map: "idx_users_is_active")
+  @@index([role], map: "idx_users_role")
   @@map("users")
 }
 
 model Lead {
-  id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  phone              String         @unique
-  name               String?
-  email              String?
-  tags               String[]       @default([])
-  status             LeadStatus     @default(NUEVO)
-  moodScore          Float?
-  lastContact        DateTime?
-  assignedTo         String?
-  source             String         @default("whatsapp")
-  whatsappAuthorized Boolean        @default(false)
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @default(now()) @updatedAt
-  campaignLeads      CampaignLead[]
-  messages           Message[]
+  id                   String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                 String?                  @db.VarChar(255)
+  email                String?                  @db.VarChar(255)
+  phone                String                   @unique @db.VarChar(50)
+  status               LeadStatus?              @default(NUEVO)
+  source               String?                  @db.VarChar(255)
+  tags                 Json?                    @default("[]")
+  whatsappAuthorized   Boolean?                 @default(true) @map("whatsapp_authorized")
+  moodScore            Decimal?                 @map("mood_score") @db.Decimal(3, 2)
+  lastContact          DateTime?                @map("last_contact") @db.Timestamptz(6)
+  assignedTo           String?                  @map("assigned_to") @db.VarChar(255)
+  createdAt            DateTime?                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime?                @default(now()) @map("updated_at") @db.Timestamptz(6)
+  messages             Message[]
+  proactiveMessages    ProactiveMessage[]
+  whatsappConversations WhatsAppConversation[]
 
+  @@index([createdAt], map: "idx_leads_created_at")
+  @@index([phone], map: "idx_leads_phone")
+  @@index([status], map: "idx_leads_status")
   @@map("leads")
 }
 
-model Campaign {
-  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name          String
-  description   String?
-  status        CampaignStatus @default(ACTIVE)
-  template      String?
-  createdBy     String
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @default(now()) @updatedAt
-  campaignLeads CampaignLead[]
-
-  @@map("campaigns")
-}
-
 model Message {
-  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  leadId       String           @db.Uuid
-  content      String
-  type         MessageType      @default(TEXT)
-  direction    MessageDirection
-  status       MessageStatus    @default(SENT)
-  timestamp    DateTime         @default(now())
-  aiAnalyzed   Boolean          @default(false)
-  sentiment    String?
-  confidence   Float?
-  autoResponse Boolean          @default(false)
-  externalId   String?          @unique
-  vendor       String           @default("whatsapp")
-  lead         Lead             @relation(fields: [leadId], references: [id])
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId            String?           @map("lead_id") @db.Uuid
+  content           String
+  direction         MessageDirection  @map("direction")
+  messageType       MessageType?      @default(TEXT) @map("message_type")
+  status            MessageStatus?    @default(PENDING) @map("status")
+  sessionId         String?           @map("session_id") @db.VarChar(255)
+  whatsappMessageId String?           @map("whatsapp_message_id") @db.VarChar(255)
+  metadata          Json?             @default("{}")
+  createdAt         DateTime?         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime?         @default(now()) @map("updated_at") @db.Timestamptz(6)
+  lead              Lead?             @relation(fields: [leadId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  @@index([leadId])
-  @@index([direction])
-  @@index([timestamp])
+  @@index([createdAt], map: "idx_messages_created_at")
+  @@index([direction], map: "idx_messages_direction")
+  @@index([leadId], map: "idx_messages_lead_id")
   @@map("messages")
 }
 
-model CampaignLead {
+model ai_configuration {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  config_key   String    @unique @db.VarChar(100)
+  config_value String
+  description  String?
+  updated_by   String?   @db.VarChar(255)
+  created_at   DateTime? @default(now()) @db.Timestamp(6)
+  updated_at   DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([config_key], map: "idx_ai_config_key")
+}
+
+model ai_knowledge_base {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  category   String    @db.VarChar(100)
+  title      String    @db.VarChar(255)
+  content    String
+  keywords   String[]
+  priority   Int?      @default(1)
+  is_active  Boolean?  @default(true)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  updated_at DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([is_active], map: "idx_knowledge_active")
+  @@index([category], map: "idx_knowledge_category")
+  @@index([priority(sort: Desc)], map: "idx_knowledge_priority")
+}
+
+model MessageTemplate {
+  id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String             @db.VarChar(255)
+  category          String             @db.VarChar(100)
+  subject           String?            @db.VarChar(500)
+  content           String
+  variables         Json?              @default("[]")
+  isActive          Boolean?           @default(true) @map("is_active")
+  usageCount        Int?               @default(0) @map("usage_count")
+  createdBy         String?            @map("created_by") @db.VarChar(255)
+  createdAt         DateTime?          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime?          @default(now()) @map("updated_at") @db.Timestamptz(6)
+  proactiveMessages ProactiveMessage[]
+
+  @@index([isActive], map: "idx_templates_active")
+  @@index([category], map: "idx_templates_category")
+  @@index([usageCount(sort: Desc)], map: "idx_templates_usage")
+  @@map("message_templates")
+}
+
+model ProactiveMessage {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId        String?          @map("lead_id") @db.Uuid
+  templateId    String?          @map("template_id") @db.Uuid
+  templateName  String?          @map("template_name") @db.VarChar(255)
+  phoneNumber   String           @map("phone_number") @db.VarChar(50)
+  content       String
+  status        String?          @default("pending") @db.VarChar(50)
+  variables     Json?
+  sessionId     String?          @map("session_id") @db.VarChar(255)
+  sentAt        DateTime?        @map("sent_at") @db.Timestamptz(6)
+  deliveredAt   DateTime?        @map("delivered_at") @db.Timestamptz(6)
+  errorMessage  String?          @map("error_message")
+  createdBy     String?          @map("created_by") @db.VarChar(255)
+  createdAt     DateTime?        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime?        @default(now()) @map("updated_at") @db.Timestamptz(6)
+  lead          Lead?            @relation(fields: [leadId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  template      MessageTemplate? @relation(fields: [templateId], references: [id], onUpdate: NoAction)
+
+  @@index([createdAt], map: "idx_proactive_created")
+  @@index([leadId], map: "idx_proactive_lead")
+  @@index([createdAt], map: "idx_proactive_messages_created_at")
+  @@index([leadId], map: "idx_proactive_messages_lead_id")
+  @@index([status], map: "idx_proactive_messages_status")
+  @@index([phoneNumber], map: "idx_proactive_phone")
+  @@index([status], map: "idx_proactive_status")
+  @@map("proactive_messages")
+}
+
+model WhatsAppConversation {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId        String?   @map("lead_id") @db.Uuid
+  sessionId     String    @map("session_id") @db.VarChar(255)
+  phoneNumber   String    @map("phone_number") @db.VarChar(50)
+  lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz(6)
+  messageCount  Int?      @default(0) @map("message_count")
+  status        String?   @default("active") @db.VarChar(50)
+  metadata      Json?     @default("{}")
+  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime? @default(now()) @map("updated_at") @db.Timestamptz(6)
+  aiProvider    String?   @default("gemini") @map("ai_provider") @db.VarChar(50)
+  lead          Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([createdAt], map: "idx_whatsapp_created")
+  @@index([phoneNumber], map: "idx_whatsapp_phone")
+  @@index([sessionId], map: "idx_whatsapp_session")
+  @@map("whatsapp_conversations")
+}
+
+model WhatsAppWhitelistLog {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  leadId      String    @db.Uuid
-  campaignId  String    @db.Uuid
-  status      String    @default("PENDING")
-  sentAt      DateTime?
-  deliveredAt DateTime?
-  campaign    Campaign  @relation(fields: [campaignId], references: [id])
-  lead        Lead      @relation(fields: [leadId], references: [id])
+  phoneNumber String    @map("phone_number") @db.VarChar(50)
+  action      String    @db.VarChar(50)
+  reason      String?
+  createdBy   String?   @map("created_by") @db.VarChar(255)
+  createdAt   DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  decision    String?   @db.VarChar(50)
+  sessionId   String?   @map("session_id") @db.VarChar(255)
 
-  @@index([leadId])
-  @@index([campaignId])
-  @@map("campaign_leads")
-}
-
-enum UserRole {
-  ADMIN
-  AGENT
-
-  @@map("UserRole")
-}
-
-enum LeadStatus {
-  NUEVO
-  CONTACTADO
-  QUALIFIED
-  GANADO
-  PERDIDO
-
-  @@map("LeadStatus")
-}
-
-enum CampaignStatus {
-  ACTIVE
-  PAUSED
-  COMPLETED
-
-  @@map("CampaignStatus")
-}
-
-enum MessageType {
-  TEXT
-  IMAGE
-  AUDIO
-  VIDEO
-  DOCUMENT
-
-  @@map("MessageType")
-}
-
-enum MessageDirection {
-  INBOUND
-  OUTBOUND
-
-  @@map("MessageDirection")
-}
-
-enum MessageStatus {
-  SENT
-  DELIVERED
-  READ      @map("READ")
-  FAILED
-
-  @@map("MessageStatus")
+  @@index([createdAt], map: "idx_whitelist_logs_created")
+  @@index([decision], map: "idx_whitelist_logs_decision")
+  @@index([phoneNumber], map: "idx_whitelist_logs_phone")
+  @@index([sessionId], map: "idx_whitelist_logs_session")
+  @@map("whatsapp_whitelist_logs")
 }

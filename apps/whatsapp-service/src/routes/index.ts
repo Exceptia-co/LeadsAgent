@@ -445,4 +445,373 @@ router.get('/stats/whitelist', async (req, res) => {
   }
 })
 
+// ============================================
+// ENDPOINTS DE TEMPLATES DE MENSAJES
+// ============================================
+
+// Obtener todos los templates
+router.get('/templates', async (req, res) => {
+  try {
+    const { category, activeOnly = 'true' } = req.query
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const templates = await DatabaseService.getMessageTemplates(
+      category as string,
+      activeOnly === 'true'
+    )
+    
+    res.json({
+      success: true,
+      data: templates
+    })
+  } catch (error) {
+    console.error('Error getting templates:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Error getting templates'
+    })
+  }
+})
+
+// Crear nuevo template
+router.post('/templates', async (req, res) => {
+  try {
+    const { name, category, subject, content, variables } = req.body
+    
+    if (!name || !category || !content) {
+      return res.status(400).json({
+        success: false,
+        error: 'Name, category, and content are required'
+      })
+    }
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const templateId = await DatabaseService.createMessageTemplate({
+      name,
+      category,
+      subject,
+      content,
+      variables: Array.isArray(variables) ? variables : [],
+      createdBy: 'admin' // TODO: Get from auth
+    })
+    
+    if (templateId) {
+      res.status(201).json({
+        success: true,
+        data: { id: templateId }
+      })
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to create template'
+      })
+    }
+  } catch (error) {
+    console.error('Error creating template:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Error creating template'
+    })
+  }
+})
+
+// Actualizar template
+router.put('/templates/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { name, category, subject, content, variables, isActive } = req.body
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const updated = await DatabaseService.updateMessageTemplate(id, {
+      name,
+      category,
+      subject,
+      content,
+      variables: Array.isArray(variables) ? variables : undefined,
+      isActive
+    })
+    
+    if (updated) {
+      res.json({
+        success: true,
+        message: 'Template updated successfully'
+      })
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Template not found'
+      })
+    }
+  } catch (error) {
+    console.error('Error updating template:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Error updating template'
+    })
+  }
+})
+
+// Eliminar template
+router.delete('/templates/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const deleted = await DatabaseService.deleteMessageTemplate(id)
+    
+    if (deleted) {
+      res.json({
+        success: true,
+        message: 'Template deleted successfully'
+      })
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Template not found'
+      })
+    }
+  } catch (error) {
+    console.error('Error deleting template:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Error deleting template'
+    })
+  }
+})
+
+// Preview template con variables
+router.post('/templates/:id/preview', async (req, res) => {
+  try {
+    const { id } = req.params
+    const { variables = {} } = req.body
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const templates = await DatabaseService.getMessageTemplates()
+    const template = templates.find(t => t.id === id)
+    
+    if (!template) {
+      return res.status(404).json({
+        success: false,
+        error: 'Template not found'
+      })
+    }
+    
+    const previewContent = DatabaseService.replaceTemplateVariables(template.content, variables)
+    
+    res.json({
+      success: true,
+      data: {
+        originalContent: template.content,
+        previewContent,
+        variables: template.variables
+      }
+    })
+  } catch (error) {
+    console.error('Error previewing template:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Error previewing template'
+    })
+  }
+})
+
+// ============================================
+// ENDPOINTS DE MENSAJES PROACTIVOS
+// ============================================
+
+// Crear y enviar mensaje proactivo
+router.post('/proactive-messages', async (req, res) => {
+  try {
+    const { leadId, templateId, sessionId = 'default-session', content, variables = {} } = req.body
+    
+    if (!leadId || !content) {
+      return res.status(400).json({
+        success: false,
+        error: 'leadId and content are required'
+      })
+    }
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple')
+    
+    // Obtener información del lead
+    const leads = await DatabaseService.getAllLeads()
+    const lead = leads.find(l => l.id === leadId)
+    
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        error: 'Lead not found'
+      })
+    }
+    
+    if (!lead.whatsappAuthorized) {
+      return res.status(400).json({
+        success: false,
+        error: 'Lead has not authorized WhatsApp messages'
+      })
+    }
+    
+    // Procesar content con variables si es necesario
+    let finalContent = content
+    if (templateId) {
+      // Si se usa un template, reemplazar variables
+      const leadVariables = {
+        nombre: lead.name || 'Usuario',
+        telefono: lead.phone,
+        email: lead.email || '',
+        ...variables
+      }
+      
+      finalContent = DatabaseService.replaceTemplateVariables(content, leadVariables)
+      
+      // Incrementar contador de uso del template
+      await DatabaseService.incrementTemplateUsage(templateId)
+    }
+    
+    // Crear registro del mensaje proactivo
+    const proactiveMessageId = await DatabaseService.createProactiveMessage({
+      leadId,
+      templateId,
+      sessionId,
+      phoneNumber: lead.phone,
+      content: finalContent,
+      createdBy: 'admin' // TODO: Get from auth
+    })
+    
+    if (!proactiveMessageId) {
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to create proactive message record'
+      })
+    }
+    
+    // Formatear número para WhatsApp
+    const formattedNumber = lead.phone.includes('@c.us') ? lead.phone : `${lead.phone}@c.us`
+    
+    // Log para debugging
+    console.log('Sending proactive message:', {
+      sessionId,
+      formattedNumber,
+      contentLength: finalContent.length
+    })
+    
+    // Check if we're in demo mode (no real WhatsApp session required)
+    const isDemoMode = sessionId === 'demo-session' || process.env.DEMO_MODE === 'true'
+    
+    let sendResult
+    
+    if (isDemoMode) {
+      // Simulate successful sending in demo mode
+      console.log('DEMO MODE: Simulating message send to', formattedNumber)
+      sendResult = {
+        success: true,
+        messageId: `demo_msg_${Date.now()}`
+      }
+      
+      // Add a small delay to simulate real sending
+      await new Promise(resolve => setTimeout(resolve, 1000))
+    } else {
+      // Real WhatsApp sending
+      sendResult = await WhatsAppService.sendMessage(sessionId, formattedNumber, finalContent)
+    }
+    
+    console.log('Send result:', sendResult)
+    
+    if (sendResult.success) {
+      // Actualizar estado a enviado
+      await DatabaseService.updateProactiveMessageStatus(proactiveMessageId, 'sent')
+      
+      res.status(201).json({
+        success: true,
+        data: {
+          proactiveMessageId,
+          messageId: sendResult.messageId,
+          content: finalContent,
+          lead: {
+            id: lead.id,
+            name: lead.name,
+            phone: lead.phone
+          }
+        }
+      })
+    } else {
+      // Actualizar estado a fallido
+      await DatabaseService.updateProactiveMessageStatus(
+        proactiveMessageId, 
+        'failed', 
+        sendResult.error || 'Unknown error'
+      )
+      
+      res.status(500).json({
+        success: false,
+        error: sendResult.error || 'Failed to send WhatsApp message'
+      })
+    }
+  } catch (error) {
+    console.error('Error sending proactive message:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Error sending proactive message'
+    })
+  }
+})
+
+// Obtener mensajes proactivos
+router.get('/proactive-messages', async (req, res) => {
+  try {
+    const { leadId, status, limit = 50, offset = 0 } = req.query
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const messages = await DatabaseService.getProactiveMessages({
+      leadId: leadId as string,
+      status: status as string,
+      limit: parseInt(limit as string),
+      offset: parseInt(offset as string)
+    })
+    
+    res.json({
+      success: true,
+      data: messages
+    })
+  } catch (error) {
+    console.error('Error getting proactive messages:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Error getting proactive messages'
+    })
+  }
+})
+
+// Obtener estadísticas de mensajes proactivos
+router.get('/proactive-messages/stats', async (req, res) => {
+  try {
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    
+    // Obtener mensajes de todos los estados
+    const allMessages = await DatabaseService.getProactiveMessages({ limit: 1000 })
+    
+    const stats = {
+      total: allMessages.length,
+      pending: allMessages.filter(m => m.status === 'pending').length,
+      sent: allMessages.filter(m => m.status === 'sent').length,
+      delivered: allMessages.filter(m => m.status === 'delivered').length,
+      failed: allMessages.filter(m => m.status === 'failed').length,
+      successRate: allMessages.length > 0 ? 
+        ((allMessages.filter(m => ['sent', 'delivered'].includes(m.status)).length / allMessages.length) * 100).toFixed(1) : '0'
+    }
+    
+    res.json({
+      success: true,
+      data: stats
+    })
+  } catch (error) {
+    console.error('Error getting proactive messages stats:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Error getting proactive messages stats'
+    })
+  }
+})
+
 export default router

@@ -122,6 +122,7 @@ class DatabaseService {
         ai_provider VARCHAR(50),
         ip_address VARCHAR(45),
         user_agent TEXT,
+        created_by VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -164,6 +165,49 @@ class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_knowledge_active ON ai_knowledge_base(is_active);
       CREATE INDEX IF NOT EXISTS idx_knowledge_priority ON ai_knowledge_base(priority DESC);
       CREATE INDEX IF NOT EXISTS idx_ai_config_key ON ai_configuration(config_key);
+
+      -- Tabla de templates de mensajes
+      CREATE TABLE IF NOT EXISTS message_templates (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(255) NOT NULL,
+        category VARCHAR(100) NOT NULL,
+        subject VARCHAR(255),
+        content TEXT NOT NULL,
+        variables JSON DEFAULT '[]', -- Array de variables disponibles
+        is_active BOOLEAN DEFAULT true,
+        created_by VARCHAR(255),
+        usage_count INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Tabla de mensajes proactivos enviados
+      CREATE TABLE IF NOT EXISTS proactive_messages (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        lead_id VARCHAR(255) NOT NULL,
+        template_id UUID,
+        session_id VARCHAR(255),
+        phone_number VARCHAR(50) NOT NULL,
+        content TEXT NOT NULL,
+        status VARCHAR(50) DEFAULT 'pending', -- pending, sent, delivered, failed
+        sent_at TIMESTAMP,
+        delivered_at TIMESTAMP,
+        error_message TEXT,
+        created_by VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Índices para templates
+      CREATE INDEX IF NOT EXISTS idx_templates_category ON message_templates(category);
+      CREATE INDEX IF NOT EXISTS idx_templates_active ON message_templates(is_active);
+      CREATE INDEX IF NOT EXISTS idx_templates_usage ON message_templates(usage_count DESC);
+      
+      -- Índices para mensajes proactivos
+      CREATE INDEX IF NOT EXISTS idx_proactive_lead ON proactive_messages(lead_id);
+      CREATE INDEX IF NOT EXISTS idx_proactive_status ON proactive_messages(status);
+      CREATE INDEX IF NOT EXISTS idx_proactive_created ON proactive_messages(created_at);
+      CREATE INDEX IF NOT EXISTS idx_proactive_phone ON proactive_messages(phone_number);
     `;
 
     try {
@@ -315,8 +359,7 @@ class DatabaseService {
       SELECT 
         COUNT(*) as total_conversations,
         COUNT(DISTINCT phone_number) as unique_contacts,
-        COUNT(CASE WHEN ai_provider IS NOT NULL THEN 1 END) as ai_responses,
-        AVG(tokens_used) as avg_tokens
+        COUNT(CASE WHEN ai_provider IS NOT NULL THEN 1 END) as ai_responses
       FROM whatsapp_conversations
     `;
 
@@ -334,7 +377,7 @@ class DatabaseService {
         totalConversations: parseInt(stats.total_conversations) || 0,
         uniqueContacts: parseInt(stats.unique_contacts) || 0,
         aiResponses: parseInt(stats.ai_responses) || 0,
-        averageTokens: parseFloat(stats.avg_tokens) || 0
+        averageTokens: 0 // tokens_used functionality not implemented yet
       };
     } catch (error) {
       logger.error('Error obteniendo estadísticas:', error);
@@ -437,11 +480,11 @@ class DatabaseService {
           // La tabla existe, obtener leads reales con estructura de Supabase
           const query = `
             SELECT 
-              id, name, phone, email, tags, status, "moodScore", 
-              "lastContact", "assignedTo", source, "whatsappAuthorized",
-              "createdAt", "updatedAt"
+              id, name, phone, email, tags, status, mood_score, 
+              last_contact, assigned_to, source, whatsapp_authorized,
+              created_at, updated_at
             FROM leads 
-            ORDER BY "createdAt" DESC;
+            ORDER BY created_at DESC;
           `;
           
           const result = await this.pool.query(query);
@@ -452,13 +495,13 @@ class DatabaseService {
             email: row.email,
             tags: row.tags,
             status: row.status,
-            moodScore: row.moodScore,
-            lastContact: row.lastContact ? new Date(row.lastContact) : undefined,
-            assignedTo: row.assignedTo,
+            moodScore: row.mood_score,
+            lastContact: row.last_contact ? new Date(row.last_contact) : undefined,
+            assignedTo: row.assigned_to,
             source: row.source,
-            whatsappAuthorized: row.whatsappAuthorized,
-            createdAt: new Date(row.createdAt),
-            updatedAt: new Date(row.updatedAt)
+            whatsappAuthorized: row.whatsapp_authorized,
+            createdAt: new Date(row.created_at),
+            updatedAt: new Date(row.updated_at)
           }));
           
           logger.info(`✅ Obtenidos ${realLeads.length} leads de la base de datos`);
@@ -684,8 +727,7 @@ class DatabaseService {
     
     let query = `
       SELECT 
-        id, phone_number, session_id, decision, reason, lead_id, lead_name,
-        message_preview, ai_provider, ip_address, created_at
+        id, phone_number, session_id, decision, reason, created_by, created_at
       FROM whatsapp_whitelist_logs
       WHERE 1=1
     `;
@@ -729,11 +771,7 @@ class DatabaseService {
         sessionId: row.session_id,
         decision: row.decision,
         reason: row.reason,
-        leadId: row.lead_id,
-        leadName: row.lead_name,
-        messagePreview: row.message_preview,
-        aiProvider: row.ai_provider,
-        ipAddress: row.ip_address,
+        createdBy: row.created_by,
         createdAt: new Date(row.created_at)
       }));
     } catch (error) {
@@ -1273,6 +1311,483 @@ class DatabaseService {
     };
     
     return defaultConfigs[key] || null;
+  }
+
+  // ============================================
+  // TEMPLATES DE MENSAJES
+  // ============================================
+
+  // Obtener todos los templates
+  public async getMessageTemplates(category?: string, activeOnly = true): Promise<any[]> {
+    if (!this.pool) {
+      return this.getDefaultTemplates();
+    }
+
+    try {
+      let query = `
+        SELECT id, name, category, subject, content, variables, usage_count, is_active, created_at
+        FROM message_templates
+      `;
+      
+      const conditions: string[] = [];
+      const values: any[] = [];
+      let valueIndex = 1;
+      
+      if (activeOnly) {
+        conditions.push('is_active = true');
+      }
+      
+      if (category) {
+        conditions.push(`category = $${valueIndex++}`);
+        values.push(category);
+      }
+      
+      if (conditions.length > 0) {
+        query += ` WHERE ${conditions.join(' AND ')}`;
+      }
+      
+      query += ` ORDER BY usage_count DESC, name ASC`;
+      
+      const result = await this.pool.query(query, values);
+      return result.rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        category: row.category,
+        subject: row.subject,
+        content: row.content,
+        variables: row.variables || [],
+        usageCount: row.usage_count || 0,
+        isActive: row.is_active,
+        createdAt: row.created_at
+      }));
+    } catch (error) {
+      logger.error('Error obteniendo templates:', error);
+      return this.getDefaultTemplates();
+    }
+  }
+
+  // Crear un nuevo template
+  public async createMessageTemplate(data: {
+    name: string;
+    category: string;
+    subject?: string;
+    content: string;
+    variables?: string[];
+    createdBy?: string;
+  }): Promise<string | null> {
+    if (!this.pool) {
+      logger.info(`Mock template created: ${data.name}`);
+      return 'mock-template-id';
+    }
+
+    try {
+      const query = `
+        INSERT INTO message_templates (name, category, subject, content, variables, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id;
+      `;
+      
+      const values = [
+        data.name,
+        data.category,
+        data.subject || null,
+        data.content,
+        JSON.stringify(data.variables || []),
+        data.createdBy || null
+      ];
+      
+      const result = await this.pool.query(query, values);
+      const templateId = result.rows[0]?.id;
+      
+      logger.info(`✅ Template creado: ${data.name} (${templateId})`);
+      return templateId;
+    } catch (error) {
+      logger.error('Error creando template:', error);
+      return null;
+    }
+  }
+
+  // Actualizar template
+  public async updateMessageTemplate(id: string, updates: {
+    name?: string;
+    category?: string;
+    subject?: string;
+    content?: string;
+    variables?: string[];
+    isActive?: boolean;
+  }): Promise<boolean> {
+    if (!this.pool) {
+      logger.info(`Mock template updated: ${id}`);
+      return true;
+    }
+
+    try {
+      const setParts: string[] = [];
+      const values: any[] = [];
+      let valueIndex = 1;
+
+      if (updates.name !== undefined) {
+        setParts.push(`name = $${valueIndex++}`);
+        values.push(updates.name);
+      }
+      if (updates.category !== undefined) {
+        setParts.push(`category = $${valueIndex++}`);
+        values.push(updates.category);
+      }
+      if (updates.subject !== undefined) {
+        setParts.push(`subject = $${valueIndex++}`);
+        values.push(updates.subject);
+      }
+      if (updates.content !== undefined) {
+        setParts.push(`content = $${valueIndex++}`);
+        values.push(updates.content);
+      }
+      if (updates.variables !== undefined) {
+        setParts.push(`variables = $${valueIndex++}`);
+        values.push(JSON.stringify(updates.variables));
+      }
+      if (updates.isActive !== undefined) {
+        setParts.push(`is_active = $${valueIndex++}`);
+        values.push(updates.isActive);
+      }
+
+      if (setParts.length === 0) {
+        return true; // No updates
+      }
+
+      setParts.push(`updated_at = CURRENT_TIMESTAMP`);
+      values.push(id); // Para el WHERE
+
+      const query = `
+        UPDATE message_templates 
+        SET ${setParts.join(', ')}
+        WHERE id = $${valueIndex}
+        RETURNING id;
+      `;
+
+      const result = await this.pool.query(query, values);
+      
+      if (result.rows.length > 0) {
+        logger.info(`✅ Template actualizado: ${id}`);
+        return true;
+      } else {
+        logger.warn(`Template no encontrado: ${id}`);
+        return false;
+      }
+    } catch (error) {
+      logger.error('Error actualizando template:', error);
+      return false;
+    }
+  }
+
+  // Eliminar template
+  public async deleteMessageTemplate(id: string): Promise<boolean> {
+    if (!this.pool) {
+      logger.info(`Mock template deleted: ${id}`);
+      return true;
+    }
+
+    try {
+      const query = `DELETE FROM message_templates WHERE id = $1 RETURNING id;`;
+      const result = await this.pool.query(query, [id]);
+      
+      if (result.rows.length > 0) {
+        logger.info(`✅ Template eliminado: ${id}`);
+        return true;
+      } else {
+        logger.warn(`Template no encontrado: ${id}`);
+        return false;
+      }
+    } catch (error) {
+      logger.error('Error eliminando template:', error);
+      return false;
+    }
+  }
+
+  // Incrementar contador de uso de template
+  public async incrementTemplateUsage(id: string): Promise<boolean> {
+    if (!this.pool) {
+      return true;
+    }
+
+    try {
+      const query = `
+        UPDATE message_templates 
+        SET usage_count = usage_count + 1, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1;
+      `;
+      
+      await this.pool.query(query, [id]);
+      return true;
+    } catch (error) {
+      logger.error('Error incrementando uso de template:', error);
+      return false;
+    }
+  }
+
+  // ============================================
+  // MENSAJES PROACTIVOS
+  // ============================================
+
+  // Crear mensaje proactivo
+  public async createProactiveMessage(data: {
+    leadId: string;
+    templateId?: string;
+    sessionId?: string;
+    phoneNumber: string;
+    content: string;
+    createdBy?: string;
+  }): Promise<string | null> {
+    if (!this.pool) {
+      logger.info(`Mock proactive message created for lead: ${data.leadId}`);
+      return 'mock-proactive-id';
+    }
+
+    try {
+      const query = `
+        INSERT INTO proactive_messages (lead_id, template_id, session_id, phone_number, content, created_by)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id;
+      `;
+      
+      const values = [
+        data.leadId,
+        data.templateId || null,
+        data.sessionId || null,
+        data.phoneNumber,
+        data.content,
+        data.createdBy || null
+      ];
+      
+      const result = await this.pool.query(query, values);
+      const messageId = result.rows[0]?.id;
+      
+      logger.info(`✅ Mensaje proactivo creado para lead ${data.leadId}: ${messageId}`);
+      return messageId;
+    } catch (error) {
+      logger.error('Error creando mensaje proactivo:', error);
+      return null;
+    }
+  }
+
+  // Actualizar estado de mensaje proactivo
+  public async updateProactiveMessageStatus(
+    id: string, 
+    status: 'pending' | 'sent' | 'delivered' | 'failed',
+    errorMessage?: string
+  ): Promise<boolean> {
+    if (!this.pool) {
+      logger.info(`Mock proactive message status updated: ${id} -> ${status}`);
+      return true;
+    }
+
+    try {
+      let query = `
+        UPDATE proactive_messages 
+        SET status = $1, updated_at = CURRENT_TIMESTAMP
+      `;
+      
+      const values: any[] = [status];
+      let valueIndex = 2;
+      
+      if (status === 'sent') {
+        query += `, sent_at = CURRENT_TIMESTAMP`;
+      } else if (status === 'delivered') {
+        query += `, delivered_at = CURRENT_TIMESTAMP`;
+      }
+      
+      if (errorMessage) {
+        query += `, error_message = $${valueIndex++}`;
+        values.push(errorMessage);
+      }
+      
+      query += ` WHERE id = $${valueIndex} RETURNING id;`;
+      values.push(id);
+      
+      const result = await this.pool.query(query, values);
+      
+      if (result.rows.length > 0) {
+        logger.info(`✅ Estado de mensaje proactivo actualizado: ${id} -> ${status}`);
+        return true;
+      } else {
+        logger.warn(`Mensaje proactivo no encontrado: ${id}`);
+        return false;
+      }
+    } catch (error) {
+      logger.error('Error actualizando estado de mensaje proactivo:', error);
+      return false;
+    }
+  }
+
+  // Obtener mensajes proactivos
+  public async getProactiveMessages(options: {
+    leadId?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<any[]> {
+    if (!this.pool) {
+      return this.getMockProactiveMessages(options);
+    }
+
+    try {
+      const { leadId, status, limit = 50, offset = 0 } = options;
+      
+      let query = `
+        SELECT 
+          pm.id, pm.lead_id, pm.template_id, pm.session_id, pm.phone_number,
+          pm.content, pm.status, pm.sent_at, pm.delivered_at, pm.error_message,
+          pm.created_by, pm.created_at, pm.updated_at,
+          mt.name as template_name
+        FROM proactive_messages pm
+        LEFT JOIN message_templates mt ON pm.template_id = mt.id
+        WHERE 1=1
+      `;
+      
+      const values: any[] = [];
+      let valueIndex = 1;
+      
+      if (leadId) {
+        query += ` AND pm.lead_id = $${valueIndex++}`;
+        values.push(leadId);
+      }
+      
+      if (status) {
+        query += ` AND pm.status = $${valueIndex++}`;
+        values.push(status);
+      }
+      
+      query += ` ORDER BY pm.created_at DESC LIMIT $${valueIndex++} OFFSET $${valueIndex++}`;
+      values.push(limit, offset);
+      
+      const result = await this.pool.query(query, values);
+      return result.rows.map(row => ({
+        id: row.id,
+        leadId: row.lead_id,
+        templateId: row.template_id,
+        templateName: row.template_name,
+        sessionId: row.session_id,
+        phoneNumber: row.phone_number,
+        content: row.content,
+        status: row.status,
+        sentAt: row.sent_at,
+        deliveredAt: row.delivered_at,
+        errorMessage: row.error_message,
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }));
+    } catch (error) {
+      logger.error('Error obteniendo mensajes proactivos:', error);
+      return this.getMockProactiveMessages(options);
+    }
+  }
+
+  // Reemplazar variables en template
+  public replaceTemplateVariables(content: string, variables: { [key: string]: string }): string {
+    let result = content;
+    
+    // Reemplazar variables con formato {{variable}}
+    Object.entries(variables).forEach(([key, value]) => {
+      const regex = new RegExp(`\{\{${key}\}\}`, 'g');
+      result = result.replace(regex, value || '');
+    });
+    
+    return result;
+  }
+
+  // Templates por defecto
+  private getDefaultTemplates(): any[] {
+    return [
+      {
+        id: 'default_welcome',
+        name: 'Mensaje de Bienvenida',
+        category: 'welcome',
+        subject: 'Bienvenido/a a EscortsHub',
+        content: '¡Hola {{nombre}}! 👋\n\nBienvenido/a a EscortsHub, la plataforma líder de escorts en España.\n\nEstoy aquí para ayudarte con información sobre nuestros productos y servicios. ¿En qué puedo asistirte hoy?',
+        variables: ['nombre'],
+        usageCount: 0,
+        isActive: true,
+        createdAt: new Date()
+      },
+      {
+        id: 'default_product_intro',
+        name: 'Introducción de Productos',
+        category: 'products',
+        subject: 'Nuestros Productos',
+        content: 'Hola {{nombre}}, te cuento sobre nuestros principales productos:\n\n🔝 **ANUNCIO TOP**: Posición privilegiada\n📱 **ANUNCIO DOBLE**: Mayor visibilidad\n⭐ **DOBLE TOP**: Máxima exposición\n\n¿Te interesa conocer más detalles sobre alguno?',
+        variables: ['nombre'],
+        usageCount: 0,
+        isActive: true,
+        createdAt: new Date()
+      },
+      {
+        id: 'default_pricing',
+        name: 'Información de Precios',
+        category: 'pricing',
+        subject: 'Precios y Paquetes',
+        content: '💰 **Precios EscortsHub**\n\nUsamos **Monedas HUB** para activar anuncios:\n\n**Paquetes disponibles:**\n• Básico: 100 HUB - 80€\n• Estándar: 200 HUB - 150€ \n• Plus: 500 HUB - 300€ (¡Mejor precio!)\n\n¿Qué paquete se adapta mejor a tus necesidades, {{nombre}}?',
+        variables: ['nombre'],
+        usageCount: 0,
+        isActive: true,
+        createdAt: new Date()
+      },
+      {
+        id: 'default_follow_up',
+        name: 'Seguimiento',
+        category: 'follow_up',
+        subject: 'Seguimiento',
+        content: 'Hola {{nombre}}, \n\nEspero que estés bien. Quería hacer un seguimiento sobre {{tema}} que comentamos.\n\n¿Tienes alguna pregunta adicional o hay algo más en lo que pueda ayudarte?\n\nQuedo atento a tu respuesta.',
+        variables: ['nombre', 'tema'],
+        usageCount: 0,
+        isActive: true,
+        createdAt: new Date()
+      }
+    ];
+  }
+
+  // Mensajes proactivos mockeados
+  private getMockProactiveMessages(options: any): any[] {
+    const mockMessages = [
+      {
+        id: 'mock_proactive_1',
+        leadId: '1',
+        templateId: 'default_welcome',
+        templateName: 'Mensaje de Bienvenida',
+        sessionId: 'default-session',
+        phoneNumber: '+5491123456789',
+        content: '¡Hola Juan! 👋 Bienvenido/a a EscortsHub, la plataforma líder de escorts en España.',
+        status: 'delivered',
+        sentAt: new Date(Date.now() - 3600000),
+        deliveredAt: new Date(Date.now() - 3500000),
+        errorMessage: null,
+        createdBy: 'admin',
+        createdAt: new Date(Date.now() - 3700000),
+        updatedAt: new Date(Date.now() - 3500000)
+      },
+      {
+        id: 'mock_proactive_2',
+        leadId: '2',
+        templateId: 'default_product_intro',
+        templateName: 'Introducción de Productos',
+        sessionId: 'default-session',
+        phoneNumber: '+5491187654321',
+        content: 'Hola María, te cuento sobre nuestros principales productos: ANUNCIO TOP, ANUNCIO DOBLE...',
+        status: 'sent',
+        sentAt: new Date(Date.now() - 1800000),
+        deliveredAt: null,
+        errorMessage: null,
+        createdBy: 'admin',
+        createdAt: new Date(Date.now() - 1900000),
+        updatedAt: new Date(Date.now() - 1800000)
+      }
+    ];
+    
+    return mockMessages.filter(msg => {
+      if (options.leadId && msg.leadId !== options.leadId) return false;
+      if (options.status && msg.status !== options.status) return false;
+      return true;
+    }).slice(options.offset || 0, (options.offset || 0) + (options.limit || 50));
   }
 }
 
