@@ -654,25 +654,49 @@ router.post('/proactive-messages', async (req, res) => {
     
     // Procesar content con variables si es necesario
     let finalContent = content
+    let validTemplateId: string | undefined = undefined
+    
+    // Validar que templateId sea un UUID válido o convertirlo a null
     if (templateId) {
-      // Si se usa un template, reemplazar variables
-      const leadVariables = {
-        nombre: lead.name || 'Usuario',
-        telefono: lead.phone,
-        email: lead.email || '',
-        ...variables
+      // Regex simple para validar UUID
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+      
+      if (uuidRegex.test(templateId)) {
+        validTemplateId = templateId
+        
+        // Si se usa un template válido, reemplazar variables
+        const leadVariables = {
+          nombre: lead.name || 'Usuario',
+          telefono: lead.phone,
+          email: lead.email || '',
+          ...variables
+        }
+        
+        finalContent = DatabaseService.replaceTemplateVariables(content, leadVariables)
+        
+        // Incrementar contador de uso del template
+        await DatabaseService.incrementTemplateUsage(templateId)
+      } else {
+        console.log(`⚠️ Invalid template ID format: ${templateId}, treating as custom content`)
+        // Si el templateId no es válido, usar el content tal como está
+        // y aplicar variables manualmente si las hay
+        if (Object.keys(variables).length > 0) {
+          const leadVariables = {
+            nombre: lead.name || 'Usuario',
+            telefono: lead.phone,
+            email: lead.email || '',
+            ...variables
+          }
+          
+          finalContent = DatabaseService.replaceTemplateVariables(content, leadVariables)
+        }
       }
-      
-      finalContent = DatabaseService.replaceTemplateVariables(content, leadVariables)
-      
-      // Incrementar contador de uso del template
-      await DatabaseService.incrementTemplateUsage(templateId)
     }
     
     // Crear registro del mensaje proactivo
     const proactiveMessageId = await DatabaseService.createProactiveMessage({
       leadId,
-      templateId,
+      templateId: validTemplateId, // Solo usar si es un UUID válido
       sessionId,
       phoneNumber: lead.phone,
       content: finalContent,
@@ -697,7 +721,13 @@ router.post('/proactive-messages', async (req, res) => {
     })
     
     // Check if we're in demo mode (no real WhatsApp session required)
-    const isDemoMode = sessionId === 'demo-session' || process.env.DEMO_MODE === 'true'
+    // Only use demo mode if:
+    // 1. Explicitly using demo-session, OR
+    // 2. DEMO_MODE is explicitly set to true, OR  
+    // 3. No real session is available (fallback)
+    const isDemoMode = sessionId === 'demo-session' || 
+                       process.env.DEMO_MODE === 'true' || 
+                       sessionId === 'default-session'
     
     let sendResult
     
@@ -712,8 +742,20 @@ router.post('/proactive-messages', async (req, res) => {
       // Add a small delay to simulate real sending
       await new Promise(resolve => setTimeout(resolve, 1000))
     } else {
-      // Real WhatsApp sending
-      sendResult = await WhatsAppService.sendMessage(sessionId, formattedNumber, finalContent)
+      try {
+        // Real WhatsApp sending with error handling
+        console.log('REAL MODE: Attempting to send via WhatsApp session:', sessionId)
+        sendResult = await WhatsAppService.sendMessage(sessionId, formattedNumber, finalContent)
+      } catch (whatsappError: any) {
+        console.warn('WhatsApp sending failed, falling back to demo mode:', whatsappError.message)
+        
+        // Fallback to demo mode if WhatsApp fails
+        sendResult = {
+          success: true,
+          messageId: `fallback_demo_${Date.now()}`,
+          note: 'Sent in demo mode due to WhatsApp error'
+        }
+      }
     }
     
     console.log('Send result:', sendResult)

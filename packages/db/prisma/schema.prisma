@@ -195,6 +195,14 @@ model WhatsAppConversation {
   leadId        String?   @map("lead_id") @db.Uuid
   sessionId     String    @map("session_id") @db.VarChar(255)
   phoneNumber   String    @map("phone_number") @db.VarChar(50)
+  contactName   String?   @map("contact_name") @db.VarChar(255)
+  messageText   String?   @map("message_text") @db.Text
+  responseText  String?   @map("response_text") @db.Text
+  messageType   String?   @default("text") @map("message_type") @db.VarChar(50)
+  intent        String?   @db.VarChar(255)
+  sentiment     String?   @db.VarChar(100)
+  isFromUser    Boolean?  @default(true) @map("is_from_user")
+  tokensUsed    Int?      @default(0) @map("tokens_used")
   lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz(6)
   messageCount  Int?      @default(0) @map("message_count")
   status        String?   @default("active") @db.VarChar(50)
