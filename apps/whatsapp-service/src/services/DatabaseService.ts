@@ -83,6 +83,14 @@ class DatabaseService {
     }
   }
 
+  // Método público para reinicializar la conexión (útil para tests)
+  public reinitializeConnection(): void {
+    if (this.pool) {
+      this.pool.end();
+    }
+    this.initializePool();
+  }
+
   // Crear tabla si no existe
   public async initializeTable(): Promise<void> {
     if (!this.pool) {
@@ -287,7 +295,7 @@ class DatabaseService {
       });
       
       return conversationId;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('❌ [DIAGNOSTIC] Error executing database query:', {
         error: error.message,
         code: error.code,
