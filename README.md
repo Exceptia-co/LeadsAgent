@@ -248,4 +248,18 @@ Pendiente de definición (añadir LICENSE antes de release público).
 
 ---
 
+## 🧹 Higiene del repositorio
+
+Este proyecto mantiene una política estricta de limpieza para evitar la acumulación de archivos innecesarios:
+
+- **Ignorados**: Sesiones de WhatsApp, caches, logs y archivos temporales (ver `.gitignore`)
+- **Servicio WhatsApp**: Compila y arranca desde `dist/` (ver [apps/whatsapp-service/package.json](apps/whatsapp-service/package.json))
+- **Configuración**: Usar [.env.example](.env.example) en lugar de backups locales
+
+Para más detalles sobre la limpieza realizada, ver:
+- [docs/technical/REPO_CLEANUP.md](docs/technical/REPO_CLEANUP.md)
+- [docs/technical/REPO_CLEANUP_PR_SUMMARY.md](docs/technical/REPO_CLEANUP_PR_SUMMARY.md)
+
+---
+
 ¿Falta algo específico? Abrir issue o actualizar `PROJECT_STATUS.md`.
