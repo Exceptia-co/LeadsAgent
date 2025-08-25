@@ -1,17 +1,35 @@
-# 📱 WhatsApp Service Testing Guide
+# 💬 WhatsApp Service - Servicio de Automatización WhatsApp
 
-Este servicio permite automatizar WhatsApp Web a través de APIs REST. Aquí te explico cómo probarlo con tu móvil.
+Servicio completo de automatización de WhatsApp Web construido con Node.js, TypeScript y whatsapp-web.js. Proporciona APIs REST para gestión de sesiones múltiples, mensajería, IA conversacional y analytics avanzados.
 
-## 🚀 Inicio Rápido
+**Estado Actual:** ✅ **100% Operativo - Multi-sesión + IA integrada**
 
-### 1. Iniciar el Servicio
+## 🚀 Características Principales
+
+- 📱 **Multi-Sesión**: Gestión de múltiples números WhatsApp simultáneamente
+- 🔄 **QR Management**: Generación y renovación automática de códigos QR
+- 🤖 **IA Conversacional**: OpenRouter + Google Gemini para respuestas automáticas
+- 🎨 **Templates**: Sistema de plantillas de mensajes personalizables
+- 🛡️ **Whitelist Inteligente**: Filtrado automático con autorización por lead
+- 📈 **Analytics**: Métricas en tiempo real y estadísticas detalladas
+- 🖼️ **Multimedia**: Soporte para texto, imágenes, audio, video y documentos
+- 🔗 **Webhooks**: Integración completa con API backend (puerto 3003)
+- 💾 **Persistencia**: Almacenamiento local de sesiones y conversaciones
+
+## 🔥 Inicio Rápido
+
+### 1. Desarrollo Local
 
 ```bash
+# Desde la raíz del monorepo
+pnpm dev:whatsapp
+
+# O desde este directorio
 cd apps/whatsapp-service
 pnpm dev
-```
 
-El servicio estará disponible en: `http://localhost:3002`
+# Servicio disponible en http://localhost:3002
+```
 
 ### 2. Probar la API
 
@@ -46,31 +64,6 @@ curl -X POST http://localhost:3002/api/v1/sessions \
 curl http://localhost:3002/api/v1/sessions/mi-sesion-test/qr
 ```
 
-#### Verificar Estado de Sesión
-```bash
-curl http://localhost:3002/api/v1/sessions/mi-sesion-test
-```
-
-#### Enviar Mensaje (una vez conectado)
-```bash
-curl -X POST http://localhost:3002/api/v1/sessions/mi-sesion-test/send \
-  -H "Content-Type: application/json" \
-  -d '{
-    "to": "5491123456789",
-    "message": "¡Hola! Este es un mensaje de prueba desde LeadsCRM 🚀"
-  }'
-```
-
-#### Listar Todas las Sesiones
-```bash
-curl http://localhost:3002/api/v1/sessions
-```
-
-#### Eliminar Sesión
-```bash
-curl -X DELETE http://localhost:3002/api/v1/sessions/mi-sesion-test
-```
-
 ## 📱 Conectar tu WhatsApp
 
 ### Paso 1: Crear la Sesión
@@ -89,10 +82,67 @@ La API te devolverá un QR code en formato string. Este código se actualiza cad
 Una vez escaneado, el estado de la sesión debería cambiar:
 - `connecting` → `authenticated` → `ready`
 
-### Paso 5: Enviar Mensajes
-¡Ya puedes enviar mensajes usando la API!
+## 💾 Base de Datos SQLite
 
-## 📋 Estados de Sesión
+El servicio utiliza SQLite para almacenamiento local:
+
+- `sessions.db`: Almacena datos de sesiones WhatsApp
+- `conversations.db`: Historial de conversaciones
+- `messages.db`: Cache y estado de mensajes
+
+Rutas de acceso:
+```bash
+# En desarrollo
+./apps/whatsapp-service/data/*.db
+
+# En producción
+./data/*.db
+```
+
+## 🤖 Integración con IA
+
+El servicio utiliza dos modelos de IA para conversación automática:
+
+### OpenRouter (Claude/GPT)
+```typescript
+// Endpoint para solicitudes conversacionales complejas
+POST /api/v1/sessions/:id/ai/chat
+```
+
+### Google Gemini
+```typescript
+// Endpoint para solicitudes rápidas de clasificación
+POST /api/v1/sessions/:id/ai/classify
+```
+
+## 🛡️ Whitelist Inteligente
+
+La whitelist controla qué números pueden interactuar con el sistema:
+
+```typescript
+// Agregar número a whitelist
+POST /api/v1/whitelist
+  -d '{"phoneNumber": "5491123456789", "leadId": "lead_xyz"}'
+
+// Verificar si número está en whitelist
+GET /api/v1/whitelist/check/5491123456789
+```
+
+## 🎨 Sistema de Templates
+
+Plantillas para mensajes predefinidos:
+
+```typescript
+// Enviar mensaje usando template
+POST /api/v1/sessions/:id/send-template
+  -d '{
+    "to": "5491123456789", 
+    "templateId": "welcome",
+    "params": {"name": "Juan", "company": "ABC Corp"}
+  }'
+```
+
+## 📛 Estados de Sesión
 
 | Estado | Descripción |
 |--------|-------------|
@@ -103,13 +153,84 @@ Una vez escaneado, el estado de la sesión debería cambiar:
 | `ready` | ✅ Listo para enviar mensajes |
 | `auth_failure` | ❌ Error de autenticación |
 
-## 🔧 Formatos de Número de Teléfono
+## 💾 Formatos de Número de Teléfono
 
 El servicio acepta varios formatos y los normaliza automáticamente:
 
 - `1234567890` → Se convierte a `1234567890@c.us`
 - `+541123456789` → Se convierte a `541123456789@c.us`
 - `911234567` → Se convierte a `54911234567@c.us` (Argentina)
+
+## 📊 API Endpoints Completos
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| `GET` | `/api/v1/health` | Health check del servicio |
+| `POST` | `/api/v1/sessions` | Crear nueva sesión WhatsApp |
+| `GET` | `/api/v1/sessions` | Listar todas las sesiones |
+| `GET` | `/api/v1/sessions/:id` | Obtener estado de sesión |
+| `GET` | `/api/v1/sessions/:id/qr` | Obtener QR code de sesión |
+| `POST` | `/api/v1/sessions/:id/send` | Enviar mensaje de texto |
+| `POST` | `/api/v1/sessions/:id/send-media` | Enviar multimedia |
+| `POST` | `/api/v1/sessions/:id/send-template` | Enviar mensaje con plantilla |
+| `GET` | `/api/v1/sessions/:id/chats` | Listar chats activos |
+| `GET` | `/api/v1/sessions/:id/messages/:chatId` | Obtener mensajes de un chat |
+| `POST` | `/api/v1/sessions/:id/ai/chat` | Generar respuesta IA (OpenRouter) |
+| `POST` | `/api/v1/sessions/:id/ai/classify` | Clasificar mensaje con IA (Gemini) |
+| `POST` | `/api/v1/webhook/configure` | Configurar webhook para eventos |
+| `GET` | `/api/v1/analytics/messages` | Estadísticas de mensajes |
+| `GET` | `/api/v1/analytics/sessions` | Estadísticas de sesiones |
+| `DELETE` | `/api/v1/sessions/:id` | Eliminar sesión |
+
+## 📋 Logs y Debugging
+
+Los logs se guardan en:
+- `logs/combined.log` - Todos los logs
+- `logs/error.log` - Solo errores
+- Consola - En modo desarrollo
+
+Para más debug, configura:
+```bash
+export LOG_LEVEL=debug
+export DEBUG_WHATSAPP=true
+```
+
+## 🔧 Configuración
+
+Principales variables de entorno:
+
+```bash
+# Puerto del servicio
+PORT=3002
+
+# Base de datos
+DB_PATH=./data
+
+# Integración con API backend
+API_URL=http://localhost:3003
+API_KEY=your-secret-key
+
+# Configuración de IA
+OPENROUTER_API_KEY=your-openrouter-key
+GEMINI_API_KEY=your-gemini-key
+
+# Seguridad
+CORS_ORIGIN=http://localhost:3000
+RATE_LIMIT=60
+```
+
+## 🚀 Despliegue en Producción
+
+```bash
+# Construir la aplicación
+pnpm build
+
+# Iniciar en producción
+NODE_ENV=production pnpm start
+
+# Con PM2
+pm2 start ecosystem.config.js --env production
+```
 
 ## 🚨 Resolución de Problemas
 
@@ -134,19 +255,6 @@ pnpm add puppeteer
 - Verifica que Puppeteer se haya instalado correctamente
 - Revisa los logs del servidor para errores
 
-## 📝 Logs y Debugging
-
-Los logs se guardan en:
-- `logs/combined.log` - Todos los logs
-- `logs/error.log` - Solo errores
-- Consola - En modo desarrollo
-
-Para más debug, configura:
-```bash
-export LOG_LEVEL=debug
-export DEBUG_WHATSAPP=true
-```
-
 ## 🔐 Seguridad
 
 - Nunca expongas este servicio directamente a Internet sin autenticación
@@ -154,26 +262,10 @@ export DEBUG_WHATSAPP=true
 - Configura CORS apropiadamente
 - Implementa rate limiting más estricto si es necesario
 
-## 📊 API Endpoints
+## 📝 Documentación Adicional
 
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| `GET` | `/api/v1/health` | Health check del servicio |
-| `POST` | `/api/v1/sessions` | Crear nueva sesión WhatsApp |
-| `GET` | `/api/v1/sessions` | Listar todas las sesiones |
-| `GET` | `/api/v1/sessions/:id` | Obtener estado de sesión |
-| `GET` | `/api/v1/sessions/:id/qr` | Obtener QR code de sesión |
-| `POST` | `/api/v1/sessions/:id/send` | Enviar mensaje |
-| `DELETE` | `/api/v1/sessions/:id` | Eliminar sesión |
-
-## 🎯 Próximos Pasos
-
-Una vez que el servicio funcione correctamente:
-
-1. **Integrar con la API principal** - Conectar con apps/api
-2. **Crear webhooks** - Para recibir mensajes entrantes
-3. **Implementar IA** - Respuestas automáticas con OpenAI
-4. **Agregar multimedia** - Envío de imágenes, audios, documentos
-5. **Dashboard UI** - Interfaz gráfica para gestionar sesiones
+- [Guía de Desarrollo](/docs/whatsapp-development.md)
+- [Integración con IA](/docs/whatsapp-ai.md)
+- [Métricas y Analytics](/docs/whatsapp-analytics.md)
 
 ¡Disfruta automatizando WhatsApp! 🚀
