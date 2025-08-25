@@ -77,3 +77,69 @@ export async function GET(request: NextRequest) {
     )
   }
 }
+
+export async function POST(request: NextRequest) {
+  try {
+    // Parse the request body
+    const body = await request.json()
+    console.log('Creating new lead with data:', { ...body, phone: body.phone ? '***' : undefined })
+    
+    // Validate required fields
+    if (!body.phone) {
+      return NextResponse.json(
+        { error: 'Phone number is required' },
+        { status: 400 }
+      )
+    }
+    
+    // Forward the request to the backend service
+    const backendUrl = 'http://127.0.0.1:3001/public/leads'
+    const response = await fetch(backendUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10000) // 10 second timeout
+    })
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+      console.error(`Backend returned ${response.status}:`, errorData)
+      
+      return NextResponse.json(
+        errorData,
+        { status: response.status }
+      )
+    }
+    
+    const newLead = await response.json()
+    console.log('Successfully created lead:', { id: newLead.id, name: newLead.name })
+    
+    return NextResponse.json(newLead, { status: 201 })
+  } catch (error) {
+    console.error('Error in create lead API:', error)
+    
+    // Provide more specific error messages
+    if (error instanceof Error) {
+      if (error.message.includes('ECONNREFUSED')) {
+        return NextResponse.json(
+          { error: 'API service is not available. Please ensure the backend service is running on port 3001.' },
+          { status: 503 }
+        )
+      }
+      
+      if (error.name === 'TimeoutError') {
+        return NextResponse.json(
+          { error: 'Request timeout. The backend service is taking too long to respond.' },
+          { status: 504 }
+        )
+      }
+    }
+    
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
