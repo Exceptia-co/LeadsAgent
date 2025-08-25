@@ -25,7 +25,7 @@ LeadsCRM es una plataforma CRM moderna (monorepo Turborepo) que centraliza la ge
 ```
 LeadsCRM/
 ├─ apps/
-│  ├─ dashboard/          # Next.js 15 (App Router)
+│  ├─ dashboard/          # Next.js 14.2.15 (App Router) & React ^18.2.0
 │  ├─ api/                # NestJS (REST API)
 │  └─ whatsapp-service/   # Servicio Node (whatsapp-web.js)
 ├─ packages/

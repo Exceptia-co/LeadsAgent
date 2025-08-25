@@ -124,6 +124,111 @@ router.post('/ai/test', async (req, res) => {
 })
 
 // Leads management endpoints
+// Public endpoints (no auth required)
+router.get('/public/leads', async (req, res) => {
+  try {
+    const { limit = 50, page = 1 } = req.query
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const leads = await DatabaseService.getAllLeads()
+    
+    // Simple pagination
+    const offset = (Number(page) - 1) * Number(limit)
+    const paginatedLeads = leads.slice(offset, offset + Number(limit))
+    
+    res.json({
+      data: paginatedLeads,
+      meta: {
+        page: Number(page),
+        limit: Number(limit),
+        total: leads.length,
+        totalPages: Math.ceil(leads.length / Number(limit)),
+        hasPrev: Number(page) > 1,
+        hasNext: Number(page) < Math.ceil(leads.length / Number(limit))
+      }
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Error getting leads'
+    })
+  }
+})
+
+// Create new lead - public endpoint
+router.post('/public/leads', async (req, res) => {
+  try {
+    const { name, email, phone, status = 'NUEVO', source = 'manual' } = req.body
+    
+    // Validation
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        error: 'Phone number is required'
+      })
+    }
+    
+    // Basic phone number validation (allow various formats)
+    const phoneRegex = /^[+]?[1-9]\d{1,14}$/
+    const cleanPhone = phone.replace(/[\s\-\(\)]/g, '')
+    
+    if (!phoneRegex.test(cleanPhone)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid phone number format'
+      })
+    }
+    
+    // Validate status if provided
+    const validStatuses = ['NUEVO', 'CONTACTADO', 'QUALIFIED', 'GANADO', 'PERDIDO']
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
+      })
+    }
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const newLead = await DatabaseService.createLead({
+      name: name || null,
+      email: email || null,
+      phone: cleanPhone,
+      status,
+      source
+    })
+    
+    if (newLead) {
+      const { logger } = await import('../utils/logger')
+      logger.info(`📝 New lead created: ${newLead.name || 'Unnamed'} (${newLead.phone})`)
+      
+      // Return the lead directly (not wrapped in success/data for compatibility)
+      res.status(201).json(newLead)
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to create lead'
+      })
+    }
+  } catch (error: any) {
+    const { logger } = await import('../utils/logger')
+    logger.error('Error creating lead:', error)
+    
+    // Handle duplicate phone number error
+    if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
+      res.status(409).json({
+        success: false,
+        error: 'A lead with this phone number already exists'
+      })
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Error creating lead'
+      })
+    }
+  }
+})
+
+// Private endpoints (auth required)
 router.get('/leads', async (req, res) => {
   try {
     const { limit = 50, page = 1 } = req.query
@@ -152,6 +257,81 @@ router.get('/leads', async (req, res) => {
       success: false,
       error: 'Error getting leads'
     })
+  }
+})
+
+// Create new lead
+router.post('/leads', async (req, res) => {
+  try {
+    const { name, email, phone, status = 'NUEVO', source = 'manual' } = req.body
+    
+    // Validation
+    if (!phone) {
+      return res.status(400).json({
+        success: false,
+        error: 'Phone number is required'
+      })
+    }
+    
+    // Basic phone number validation (allow various formats)
+    const phoneRegex = /^[+]?[1-9]\d{1,14}$/
+    const cleanPhone = phone.replace(/[\s\-\(\)]/g, '')
+    
+    if (!phoneRegex.test(cleanPhone)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid phone number format'
+      })
+    }
+    
+    // Validate status if provided
+    const validStatuses = ['NUEVO', 'CONTACTADO', 'QUALIFIED', 'GANADO', 'PERDIDO']
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid status. Must be one of: ${validStatuses.join(', ')}`
+      })
+    }
+    
+    const { default: DatabaseService } = await import('../services/DatabaseService')
+    const newLead = await DatabaseService.createLead({
+      name: name || null,
+      email: email || null,
+      phone: cleanPhone,
+      status,
+      source
+    })
+    
+    if (newLead) {
+      const { logger } = await import('../utils/logger')
+      logger.info(`📝 New lead created: ${newLead.name || 'Unnamed'} (${newLead.phone})`)
+      
+      res.status(201).json({
+        success: true,
+        data: newLead
+      })
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Failed to create lead'
+      })
+    }
+  } catch (error: any) {
+    const { logger } = await import('../utils/logger')
+    logger.error('Error creating lead:', error)
+    
+    // Handle duplicate phone number error
+    if (error.code === '23505' || error.message?.includes('duplicate') || error.message?.includes('unique')) {
+      res.status(409).json({
+        success: false,
+        error: 'A lead with this phone number already exists'
+      })
+    } else {
+      res.status(500).json({
+        success: false,
+        error: 'Error creating lead'
+      })
+    }
   }
 })
 

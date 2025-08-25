@@ -614,10 +614,93 @@ class DatabaseService {
     ];
     
     logger.info(`🔧 Usando ${mockLeads.length} leads mockeados para desarrollo`);
-    return mockLeads;
+    return mockLeads
   }
 
-  // Update WhatsApp authorization for a lead
+  // Create a new lead
+  public async createLead(leadData: {
+    name?: string | null;
+    email?: string | null;
+    phone: string;
+    status?: 'NUEVO' | 'CONTACTADO' | 'QUALIFIED' | 'GANADO' | 'PERDIDO';
+    source?: string;
+  }): Promise<Lead | null> {
+    if (!this.pool) {
+      logger.warn('No database connection available, cannot create lead');
+      return null;
+    }
+
+    try {
+      // Check if leads table exists
+      const checkTableQuery = `
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'leads'
+        );
+      `;
+      
+      const tableExists = await this.pool.query(checkTableQuery);
+      
+      if (!tableExists.rows[0].exists) {
+        logger.error('Leads table does not exist');
+        return null;
+      }
+
+      // Insert new lead using Supabase schema column names
+      const query = `
+        INSERT INTO leads (
+          name, email, phone, status, source, whatsapp_authorized, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING 
+          id, name, email, phone, status, source, whatsapp_authorized, 
+          mood_score, last_contact, assigned_to, created_at, updated_at;
+      `;
+      
+      const values = [
+        leadData.name || null,
+        leadData.email || null,
+        leadData.phone,
+        leadData.status || 'NUEVO',
+        leadData.source || 'manual',
+        true // Default to WhatsApp authorized
+      ];
+      
+      const result = await this.pool.query(query, values);
+      
+      if (result.rows.length > 0) {
+        const row = result.rows[0];
+        const newLead: Lead = {
+          id: row.id,
+          name: row.name,
+          email: row.email,
+          phone: row.phone,
+          status: row.status,
+          source: row.source,
+          tags: [],
+          whatsappAuthorized: row.whatsapp_authorized,
+          moodScore: row.mood_score ? parseFloat(row.mood_score) : undefined,
+          lastContact: row.last_contact ? new Date(row.last_contact) : undefined,
+          assignedTo: row.assigned_to,
+          createdAt: new Date(row.created_at),
+          updatedAt: new Date(row.updated_at)
+        };
+        
+        logger.info(`✅ Created new lead: ${newLead.name || 'Unnamed'} (${newLead.phone})`);
+        return newLead;
+      }
+      
+      logger.error('Failed to create lead - no rows returned');
+      return null;
+    } catch (error: any) {
+      logger.error('Error creating lead:', error);
+      
+      // Re-throw the error so the caller can handle it (e.g., for duplicate phone detection)
+      throw error;
+    }
+  }
+
+  // Update lead WhatsApp authorization status
   public async updateLeadWhatsAppAuth(leadId: string, whatsappAuthorized: boolean): Promise<boolean> {
     if (this.pool) {
       try {

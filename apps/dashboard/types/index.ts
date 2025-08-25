@@ -54,9 +54,11 @@ export interface LeadStatsResponse {
 
 // Form types
 export interface CreateLeadData {
-  name: string
+  name?: string
+  email?: string
   phone: string
   status?: LeadStatus
+  source?: string
 }
 
 export interface UpdateLeadData {

@@ -5,11 +5,14 @@ import { Card } from '../../../components/ui/card'
 import { Badge } from '../../../components/ui/badge'
 import { useLeads } from '../../../lib/api'
 import { STATUS_LABELS, STATUS_VARIANTS, type Lead } from '../../../types'
-import { Users, Search, Plus, Filter } from 'lucide-react'
+import { AddLeadModal } from '../../../components/AddLeadModal'
+import { Users, Search, Plus, Filter, CheckCircle } from 'lucide-react'
 
 export default function LeadsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [successMessage, setSuccessMessage] = useState('')
   const { leads, pagination, isLoading, isError, refetch } = useLeads(currentPage, 20)
 
   const handleWhatsAppToggle = async (leadId: string, authorized: boolean) => {
@@ -65,12 +68,34 @@ export default function LeadsPage() {
     lead.phone.includes(searchTerm)
   )
 
+  const handleLeadCreated = () => {
+    setIsModalOpen(false)
+    setSuccessMessage('Lead creado exitosamente')
+    refetch() // Refresh the leads list
+    
+    // Clear success message after 5 seconds
+    setTimeout(() => setSuccessMessage(''), 5000)
+  }
+
   return (
     <div className="space-y-6">
+      {/* Success Message */}
+      {successMessage && (
+        <div className="bg-green-50 border border-green-200 rounded-md p-4">
+          <div className="flex items-center">
+            <CheckCircle className="h-5 w-5 text-green-400 mr-3" />
+            <p className="text-green-800">{successMessage}</p>
+          </div>
+        </div>
+      )}
+      
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Gestión de Leads</h1>
-        <button className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
           <Plus className="h-4 w-4 mr-2" />
           Nuevo Lead
         </button>
@@ -272,6 +297,13 @@ export default function LeadsPage() {
           </div>
         )}
       </Card>
+      
+      {/* Add Lead Modal */}
+      <AddLeadModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSuccess={handleLeadCreated}
+      />
     </div>
   )
 }
