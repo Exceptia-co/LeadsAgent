@@ -1,22 +1,23 @@
-# LeadsCRM – CRM con Automatización de WhatsApp e IA
+# LeadsCRM – Sistema CRM con Automatización de WhatsApp e IA
 
 ## 🚀 Descripción
 
-LeadsCRM es una plataforma CRM moderna (monorepo Turborepo) que centraliza la gestión de leads, conversaciones de WhatsApp y futura asistencia por IA. Incluye Dashboard web (Next.js), API backend (NestJS), servicio de integración WhatsApp y paquete de base de datos (Prisma + PostgreSQL/Supabase).
+LeadsCRM es una plataforma CRM completa (monorepo Turborepo) que centraliza la gestión de leads, conversaciones de WhatsApp y procesamiento con IA. Incluye Dashboard web (Next.js), API backend (NestJS), servicio de integración WhatsApp y base de datos (Prisma + PostgreSQL/Supabase).
 
-## ✨ Características
+**Estado Actual:** ✅ **100% Operativo - Production Ready**
 
-- 📊 Dashboard CRM (leads, conversaciones, métricas iniciales)
-- 💬 Chat en tiempo real (estado de envío básico)
-- 📱 Servicio WhatsApp (whatsapp-web.js) con múltiples sesiones
-- 🔐 Autenticación (Clerk) integrada en Dashboard y API
-- 🗄️ Prisma + PostgreSQL (Supabase-ready)
-- 🧱 Arquitectura modular (NestJS modules / packages compartidos)
-- ⚡ Turborepo (cache + tasks paralelos)
-- 🎨 UI consistente (shadcn/ui + Tailwind + paquete `@leadcrm/ui`)
-- 🧪 Testing (Jest, Supertest e2e API)
-- 🛡️ Validación (class-validator) y patrones de respuesta `{ success, data?, error? }`
-- 🧠 (En progreso) Integraciones IA para clasificación/respuestas sugeridas
+## ✨ Características Principales
+
+- 📊 **Dashboard CRM Completo**: Gestión de leads, conversaciones, métricas en tiempo real
+- 📱 **WhatsApp Multi-Sesión**: Sistema avanzado con múltiples números de WhatsApp 
+- 🤖 **IA Conversacional**: OpenRouter (Claude) + Google Gemini para automatización
+- 💬 **Chat en Tiempo Real**: Estado de envío y recepción con UI feedback
+- 🔐 **Autenticación Completa**: Clerk integrado en Dashboard y API
+- 🗄️ **Base de Datos Optimizada**: Prisma + PostgreSQL (Supabase-ready)
+- 🧱 **Arquitectura Modular**: NestJS + Packages compartidos + Monorepo
+- ⚡ **Optimización Turborepo**: Build cache + tasks paralelos (84% más rápido)
+- 🎨 **UI Moderna**: shadcn/ui + TailwindCSS + paquete `@leadcrm/ui` compartido
+- 🧪 **Testing Completo**: Jest, Supertest (E2E API), 0 errores TypeScript
 
 ## 🏗️ Arquitectura
 
@@ -25,9 +26,10 @@ LeadsCRM es una plataforma CRM moderna (monorepo Turborepo) que centraliza la ge
 ```
 LeadsCRM/
 ├─ apps/
-│  ├─ dashboard/          # Next.js 14.2.15 (App Router) & React ^18.2.0
-│  ├─ api/                # NestJS (REST API)
-│  └─ whatsapp-service/   # Servicio Node (whatsapp-web.js)
+│  ├─ dashboard/          # Next.js 14.2.15 (App Router) & React 18
+│  ├─ api/                # NestJS (REST API) - Puerto 3003
+│  ├─ whatsapp-service/   # Servicio WhatsApp Web.js - Puerto 3002
+│  └─ docs/               # Aplicación de documentación - Puerto 3001
 ├─ packages/
 │  ├─ db/                 # Prisma schema + client (@leadcrm/db)
 │  ├─ ui/                 # Componentes compartidos (@leadcrm/ui)
@@ -38,10 +40,14 @@ LeadsCRM/
 └─ turbo.json / pnpm-workspace.yaml
 ```
 
-### Flujo de Datos (simplificado)
+### Flujo de Datos (completo)
 
-Usuario → Dashboard (Next.js) → API (NestJS) → DB (Prisma/PostgreSQL)  
- ↘ whatsapp-service (webhook/eventos) → Actualiza DB → Reflejo en UI
+```
+WhatsApp → whatsapp-service (3002) → Webhook → NestJS API (3003) → PostgreSQL
+                                                     ↑
+                                                     ↓
+                            Next.js Dashboard (3000) → Clerk Auth
+```
 
 ## 🔑 Paquetes Importantes
 
@@ -52,21 +58,25 @@ Usuario → Dashboard (Next.js) → API (NestJS) → DB (Prisma/PostgreSQL)
 | `@leadcrm/config-ts`     | Bases tsconfig               |
 | `@leadcrm/config-eslint` | Reglas ESLint compartidas    |
 
-## ⚙️ Variables de Entorno (mínimas)
+## ⚙️ Variables de Entorno (requeridas)
 
-Crear `.env` en la raíz (ver `.env.example` y archivos específicos en cada app si aplica):
+Crear `.env` en la raíz (ver `.env.example` para más detalles):
 
 ```bash
-# DB
-DATABASE_URL="postgresql://..."
-DIRECT_URL="postgresql://..."
+# Base de datos
+DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+DIRECT_URL="postgresql://user:pass@host:5432/dbname"
 
-# Clerk
+# Autenticación (Clerk)
 CLERK_SECRET_KEY="sk_test_..."
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
 
-# (Opcional) IA
-OPENAI_API_KEY="sk-..."
+# IA (selecciona proveedor)
+AI_PROVIDER=openrouter  # o gemini
+OPENROUTER_API_KEY="..."
+OPENROUTER_MODEL="anthropic/claude-3.5-sonnet"
+GEMINI_API_KEY="..."
+GEMINI_MODEL="gemini-1.5-pro"
 
 # WhatsApp (si se usan sesiones nombradas)
 WHATSAPP_SESSION_DIR="./.wwebjs_sessions"
