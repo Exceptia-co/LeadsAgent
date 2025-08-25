@@ -2,6 +2,8 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { ClerkProvider } from '@clerk/nextjs'
+import { SWRConfig } from 'swr'
+import { swrConfig } from '../lib/swr-config'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -21,7 +23,9 @@ export default function RootLayout({
     >
       <html lang="es">
         <body className={inter.className}>
-          {children}
+          <SWRConfig value={swrConfig}>
+            {children}
+          </SWRConfig>
         </body>
       </html>
     </ClerkProvider>
