@@ -5,12 +5,12 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useUser, UserButton } from '@clerk/nextjs'
 import { clsx } from 'clsx'
+import { ToastProvider } from '../../components/ui/toast'
 
 // Utility function for combining classes
 const cn = (...classes: any[]) => clsx(classes)
 import {
   BarChart3,
-  MessageSquare,
   Users,
   Settings,
   Menu,
@@ -18,20 +18,14 @@ import {
   Brain,
   Phone,
   Shield,
-  FileText,
-  Send,
-  MessageCircle,
-  Mail,
 } from 'lucide-react'
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: BarChart3 },
   { name: 'Leads', href: '/dashboard/leads', icon: Users },
-  { name: 'Conversaciones', href: '/dashboard/conversations', icon: MessageCircle },
   { name: 'WhatsApp', href: '/dashboard/whatsapp', icon: Phone },
   { name: 'Estadísticas IA', href: '/dashboard/whatsapp-stats', icon: Shield },
   { name: 'IA Assistant', href: '/dashboard/ai', icon: Brain },
-  { name: 'Mensajería', href: '/dashboard/messaging', icon: Mail },
   { name: 'Configuración', href: '/dashboard/settings', icon: Settings },
 ]
 
@@ -67,7 +61,8 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="h-full">
+    <ToastProvider>
+      <div className="h-full">
       {/* Mobile sidebar */}
       <div className={cn(
         'fixed inset-0 z-50 lg:hidden',
@@ -182,5 +177,6 @@ export default function DashboardLayout({
         </main>
       </div>
     </div>
+    </ToastProvider>
   )
 }

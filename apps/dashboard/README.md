@@ -60,8 +60,7 @@ apps/dashboard/
 ### Protegidas (requieren autenticación)
 - `/dashboard` - Dashboard principal con métricas
 - `/dashboard/leads` - Gestión completa de leads
-- `/dashboard/whatsapp` - Gestión de sesiones WhatsApp
-- `/dashboard/whatsapp/conversations` - Chat y conversaciones
+- `/dashboard/whatsapp` - Gestión completa de WhatsApp (sesiones, conversaciones, templates)
 - `/dashboard/whatsapp-stats` - Estadísticas de WhatsApp IA
 
 ## 🧩 Componentes Principales
