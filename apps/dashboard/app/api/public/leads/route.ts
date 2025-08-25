@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 async function fetchWithRetry(url: string, retries: number = 3, delay: number = 1000): Promise<Response> {
   for (let i = 0; i < retries; i++) {
     try {
@@ -28,8 +32,7 @@ async function fetchWithRetry(url: string, retries: number = 3, delay: number = 
 
 export async function GET(request: NextRequest) {
   try {
-    const url = new URL(request.url)
-    const searchParams = url.searchParams
+    const searchParams = request.nextUrl.searchParams
     
     // Construir la URL del backend con los parámetros de búsqueda
     const backendUrl = new URL('http://127.0.0.1:3001/public/leads') // Use 127.0.0.1 instead of localhost

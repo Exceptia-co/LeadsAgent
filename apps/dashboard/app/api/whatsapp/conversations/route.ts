@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 export async function GET(request: NextRequest) {
   try {
-    const url = new URL(request.url)
-    const searchParams = url.searchParams
+    const searchParams = request.nextUrl.searchParams
     
     // Construir la URL del backend con los parámetros de búsqueda
     const backendUrl = new URL('http://localhost:3002/api/conversations')

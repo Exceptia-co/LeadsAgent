@@ -1,5 +1,6 @@
-import useSWR from 'swr'
+import useSWR, { mutate } from 'swr'
 import { useAuth } from '@clerk/nextjs'
+import { CACHE_KEYS, createCacheKey, globalFetcher, globalErrorHandler, globalSuccessHandler, REFRESH_INTERVALS, getDynamicInterval } from './swr-config'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
@@ -57,17 +58,47 @@ const createMutate = (getToken?: () => Promise<string | null>) => async (url: st
   return response.json()
 }
 
-// Hooks para diferentes endpoints
-export const useLeads = (page = 1, limit = 20) => {
-  // Temporalmente usar endpoint público hasta arreglar autenticación
-  const { data, error, mutate: refetch } = useSWR(
-    `/api/public/leads?page=${page}&limit=${limit}`,
-    async (url: string) => {
-      const response = await fetch(url)
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      return response.json()
+// Global refresh function to invalidate all lead-related caches
+export const refreshAllLeadData = async () => {
+  console.log('🔄 Refreshing all lead data...')
+  
+  // Invalidate all lead-related cache entries
+  await Promise.all([
+    mutate(key => typeof key === 'string' && key.includes(CACHE_KEYS.LEADS)),
+    mutate(key => typeof key === 'string' && key.includes(CACHE_KEYS.LEAD_STATS))
+  ])
+  
+  console.log('✅ All lead data refreshed')
+}
+
+// Hooks para diferentes endpoints con intervalos inteligentes
+export const useLeads = (page = 1, limit = 20, options?: { 
+  refreshInterval?: number 
+  priority?: 'standard' | 'low'
+}) => {
+  const cacheKey = createCacheKey(CACHE_KEYS.LEADS, { page, limit })
+  
+  // Determine smart refresh interval
+  const baseInterval = options?.refreshInterval || 
+    (options?.priority === 'low' ? REFRESH_INTERVALS.LOW : REFRESH_INTERVALS.STANDARD)
+  
+  const smartInterval = getDynamicInterval(baseInterval)
+  
+  const { data, error, mutate: refetch, isValidating } = useSWR(
+    cacheKey,
+    globalFetcher,
+    {
+      // Smart refresh based on user activity
+      refreshInterval: smartInterval,
+      
+      // Only revalidate on mount if we don't have cached data
+      revalidateOnMount: true, // Always revalidate on mount for fresh data
+      
+      // More conservative revalidation
+      revalidateOnFocus: smartInterval > 0,
+      
+      onError: globalErrorHandler,
+      onSuccess: (data) => globalSuccessHandler(data, cacheKey),
     }
   )
   
@@ -76,25 +107,53 @@ export const useLeads = (page = 1, limit = 20) => {
     pagination: data?.meta,
     isLoading: !error && !data,
     isError: error,
+    isRefreshing: isValidating,
     refetch,
+    cacheKey, // Expose for external cache invalidation
+    refreshInterval: smartInterval, // Show current refresh rate
   }
 }
 
-export const useLeadStats = () => {
-  // Temporalmente usar endpoint público hasta arreglar autenticación
-  const { data, error, mutate: refetch } = useSWR('/api/public/leads/stats', async (url: string) => {
-    const response = await fetch(url)
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
+export const useLeadStats = (options?: { 
+  refreshInterval?: number
+  priority?: 'critical' | 'important' | 'standard'
+}) => {
+  const cacheKey = CACHE_KEYS.LEAD_STATS
+  
+  // Stats are more important - shorter refresh intervals
+  const baseInterval = options?.refreshInterval || 
+    (options?.priority === 'critical' ? REFRESH_INTERVALS.CRITICAL :
+     options?.priority === 'important' ? REFRESH_INTERVALS.IMPORTANT :
+     REFRESH_INTERVALS.STANDARD)
+  
+  const smartInterval = getDynamicInterval(baseInterval)
+  
+  const { data, error, mutate: refetch, isValidating } = useSWR(
+    cacheKey,
+    globalFetcher,
+    {
+      // Smart refresh based on user activity  
+      refreshInterval: smartInterval,
+      
+      // Stats should refresh on mount to show fresh counts
+      revalidateOnMount: true,
+      
+      // Always revalidate stats on focus (they're important)
+      revalidateOnFocus: true,
+      
+      onError: globalErrorHandler,
+      onSuccess: (data) => globalSuccessHandler(data, cacheKey),
     }
-    return response.json()
-  })
+  )
   
   return {
     stats: data,
     isLoading: !error && !data,
     isError: error,
+    isRefreshing: isValidating,
     refetch,
+    cacheKey, // Expose for external cache invalidation
+    refreshInterval: smartInterval, // Show current refresh rate
   }
 }
 
@@ -118,7 +177,7 @@ export const useLead = (id: string) => {
 // Custom hook para obtener las funciones de mutación autenticadas
 export const useAuthenticatedApi = () => {
   const { getToken } = useAuth()
-  const mutate = createMutate(getToken)
+  const mutateFn = createMutate(getToken)
   
   return {
     createLead: async (leadData: {
@@ -126,31 +185,86 @@ export const useAuthenticatedApi = () => {
       phone: string
       status?: string
     }) => {
-      return mutate('/leads', {
-        method: 'POST',
-        body: JSON.stringify(leadData),
-      })
+      try {
+        console.log('🚀 Creating new lead...', { name: leadData.name })
+        
+        const result = await mutateFn('/api/public/leads', {
+          method: 'POST',
+          body: JSON.stringify(leadData),
+        })
+        
+        // Invalidate caches after successful creation
+        console.log('✅ Lead created, refreshing caches...')
+        await refreshAllLeadData()
+        
+        return result
+      } catch (error) {
+        console.error('❌ Failed to create lead:', error)
+        throw error
+      }
     },
     
     updateLead: async (id: string, updates: Record<string, any>) => {
-      return mutate(`/leads/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(updates),
-      })
+      try {
+        console.log('🔄 Updating lead...', { id, updates })
+        
+        const result = await mutateFn(`/api/public/leads/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(updates),
+        })
+        
+        // Invalidate caches after successful update
+        console.log('✅ Lead updated, refreshing caches...')
+        await refreshAllLeadData()
+        
+        return result
+      } catch (error) {
+        console.error('❌ Failed to update lead:', error)
+        throw error
+      }
     },
     
     updateLeadStatus: async (id: string, status: string) => {
-      return mutate(`/leads/${id}/status`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status }),
-      })
+      try {
+        console.log('🔄 Updating lead status...', { id, status })
+        
+        const result = await mutateFn(`/api/public/leads/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status }),
+        })
+        
+        // Invalidate caches after successful status update
+        console.log('✅ Lead status updated, refreshing caches...')
+        await refreshAllLeadData()
+        
+        return result
+      } catch (error) {
+        console.error('❌ Failed to update lead status:', error)
+        throw error
+      }
     },
     
     deleteLead: async (id: string) => {
-      return mutate(`/leads/${id}`, {
-        method: 'DELETE',
-      })
+      try {
+        console.log('🗑️ Deleting lead...', { id })
+        
+        const result = await mutateFn(`/api/public/leads/${id}`, {
+          method: 'DELETE',
+        })
+        
+        // Invalidate caches after successful deletion
+        console.log('✅ Lead deleted, refreshing caches...')
+        await refreshAllLeadData()
+        
+        return result
+      } catch (error) {
+        console.error('❌ Failed to delete lead:', error)
+        throw error
+      }
     },
+    
+    // Manual refresh function
+    refreshAllData: refreshAllLeadData,
   }
 }
 

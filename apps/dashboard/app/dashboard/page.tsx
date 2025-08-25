@@ -2,13 +2,70 @@
 
 import { Card } from '../../components/ui/card'
 import { Badge } from '../../components/ui/badge'
-import { useLeadStats, useLeads } from '../../lib/api'
+import { useLeadStats, useLeads, refreshAllLeadData } from '../../lib/api'
 import { STATUS_LABELS, STATUS_VARIANTS, type Lead } from '../../types'
-import { Users, TrendingUp, MessageSquare, Target } from 'lucide-react'
+import { Users, TrendingUp, MessageSquare, Target, RefreshCw } from 'lucide-react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 
 export default function DashboardPage() {
-  const { stats, isLoading: statsLoading, isError: statsError } = useLeadStats()
-  const { leads, isLoading: leadsLoading, pagination } = useLeads(1, 5)
+  // Use optimized refresh intervals based on data priority
+  const { 
+    stats, 
+    isLoading: statsLoading, 
+    isError: statsError, 
+    isRefreshing: statsRefreshing, 
+    refreshInterval: statsRefreshInterval 
+  } = useLeadStats({
+    priority: 'important' // 2-minute intervals for critical stats
+  })
+  
+  const { 
+    leads, 
+    isLoading: leadsLoading, 
+    pagination, 
+    isRefreshing: leadsRefreshing,
+    refreshInterval: leadsRefreshInterval
+  } = useLeads(1, 5, {
+    priority: 'standard' // 5-minute intervals for lead list
+  })
+  
+  // State for manual refresh tracking
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false)
+  const [lastRefreshTime, setLastRefreshTime] = useState(new Date())
+  const [refreshSuccess, setRefreshSuccess] = useState(false)
+  
+  // Update last refresh time when data changes
+  useEffect(() => {
+    if (stats || leads.length > 0) {
+      setLastRefreshTime(new Date())
+    }
+  }, [stats, leads])
+  
+  // Manual refresh function
+  const handleManualRefresh = useCallback(async () => {
+    try {
+      setIsManualRefreshing(true)
+      setRefreshSuccess(false)
+      
+      console.log('🔄 Manual refresh triggered')
+      await refreshAllLeadData()
+      
+      setLastRefreshTime(new Date())
+      setRefreshSuccess(true)
+      
+      // Hide success indicator after 2 seconds
+      setTimeout(() => setRefreshSuccess(false), 2000)
+      
+      console.log('✅ Manual refresh completed')
+    } catch (error) {
+      console.error('❌ Manual refresh failed:', error)
+    } finally {
+      setIsManualRefreshing(false)
+    }
+  }, [])
+  
+  // Check if any data is currently refreshing
+  const isAnyRefreshing = statsRefreshing || leadsRefreshing || isManualRefreshing
 
   if (statsLoading || leadsLoading) {
     return (
@@ -50,8 +107,52 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <div className="text-sm text-gray-500">
-          Última actualización: {new Date().toLocaleTimeString('es-ES')}
+        <div className="flex items-center space-x-4">
+          {/* Smart refresh status indicator */}
+          <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
+              <div className={`w-2 h-2 rounded-full ${
+                isAnyRefreshing ? 'bg-yellow-500 animate-pulse' : 
+                refreshSuccess ? 'bg-green-500' :
+                statsRefreshInterval === 0 && leadsRefreshInterval === 0 ? 'bg-gray-400' :
+                'bg-green-500'
+              }`} />
+              <span className={`text-sm ${
+                refreshSuccess ? 'text-green-600 font-medium' : 'text-gray-500'
+              }`}>
+                {refreshSuccess ? '¡Datos actualizados!' : 
+                 isAnyRefreshing ? 'Actualizando datos...' :
+                 statsRefreshInterval === 0 && leadsRefreshInterval === 0 ? 'Solo manual' :
+                 `Última: ${lastRefreshTime.toLocaleTimeString('es-ES')}`
+                }
+              </span>
+            </div>
+            
+            {/* Smart refresh info tooltip */}
+            {(statsRefreshInterval > 0 || leadsRefreshInterval > 0) && (
+              <div className="text-xs text-gray-400 hidden md:block" title="Intervalos de actualización automática">
+                Stats: {statsRefreshInterval > 0 ? `${Math.round(statsRefreshInterval/1000/60)}min` : 'Manual'} |
+                Leads: {leadsRefreshInterval > 0 ? `${Math.round(leadsRefreshInterval/1000/60)}min` : 'Manual'}
+              </div>
+            )}
+          </div>
+          
+          {/* Manual refresh button */}
+          <button
+            onClick={handleManualRefresh}
+            disabled={isManualRefreshing}
+            className={`flex items-center space-x-1 px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+              isManualRefreshing
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+            }`}
+            title="Actualizar datos manualmente"
+          >
+            <RefreshCw className={`h-4 w-4 ${
+              isManualRefreshing ? 'animate-spin' : ''
+            }`} />
+            <span>{isManualRefreshing ? 'Actualizando...' : 'Actualizar'}</span>
+          </button>
         </div>
       </div>
 
