@@ -42,8 +42,8 @@ export default function DashboardPage() {
   const byStatus = stats?.byStatus || {}
 
   // Calcular métricas adicionales
-  const newLeads = byStatus['NEW'] || 0
-  const convertedLeads = byStatus['CONVERTED'] || 0
+  const newLeads = byStatus['NUEVO'] || 0
+  const convertedLeads = byStatus['GANADO'] || 0
   const conversionRate = totalLeads > 0 ? (convertedLeads / totalLeads * 100) : 0
 
   return (

@@ -94,17 +94,25 @@ export class LeadsService {
   async getStats(assignedUserId?: string) {
     const where = assignedUserId ? { assignedTo: assignedUserId } : {};
 
-    const [total, nuevos, contactados, qualified, ganados, perdidos] = await Promise.all([
+    const [total, nuevos, contactados, qualified, ganados, perdidos, averageScoreData] = await Promise.all([
       this.prisma.lead.count({ where }),
       this.prisma.lead.count({ where: { ...where, status: LeadStatus.NUEVO } }),
       this.prisma.lead.count({ where: { ...where, status: LeadStatus.CONTACTADO } }),
       this.prisma.lead.count({ where: { ...where, status: LeadStatus.QUALIFIED } }),
       this.prisma.lead.count({ where: { ...where, status: LeadStatus.GANADO } }),
       this.prisma.lead.count({ where: { ...where, status: LeadStatus.PERDIDO } }),
+      this.prisma.lead.aggregate({
+        where: { ...where, moodScore: { not: null } },
+        _avg: { moodScore: true },
+      }),
     ]);
+
+    // Calculate average score, default to 0 if no leads have scores
+    const averageScore = averageScoreData._avg.moodScore || 0;
 
     return {
       total,
+      averageScore: Number(averageScore.toFixed(1)),
       byStatus: {
         NUEVO: nuevos,
         CONTACTADO: contactados,

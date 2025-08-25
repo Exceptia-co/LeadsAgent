@@ -276,72 +276,133 @@ class WhatsAppServiceSimple {
 
   private async processMessageWithAI(originalMessage: Message, whatsappMessage: WhatsAppMessage, sessionId: string): Promise<void> {
     try {
-      logger.info(`Processing message with AI for session ${sessionId}`);
+      logger.info(`🧠 Processing message with enhanced AI thinking for session ${sessionId}`);
       
-      // Import AI service dynamically to avoid circular dependencies
-      const { default: AIService } = await import('./AIService');
+      // Import services dynamically to avoid circular dependencies
+      const { default: AIThinkingService } = await import('./AIThinkingService');
       const { default: DatabaseService } = await import('./DatabaseService');
       
       // Get phone number without WhatsApp suffix
       const phoneNumber = whatsappMessage.from.replace('@c.us', '');
       
-      // Get conversation history for context (only last message for efficiency)
-      const conversationHistory = await DatabaseService.getRecentContext(phoneNumber, sessionId, 1);
-      
-      // Generate AI response
-      const aiResponse = await AIService.generateResponse(whatsappMessage.body, {
+      // Enhanced processing with structured thinking
+      const thinkingResult = await AIThinkingService.processWithThinking(whatsappMessage.body, {
         from: whatsappMessage.from,
         sessionId: sessionId,
-        conversationHistory: conversationHistory,
         phoneNumber: phoneNumber
       });
       
-      if (aiResponse.success && aiResponse.content) {
-        // Add humanized delay before responding
-        await this.addHumanizedDelay(whatsappMessage.body);
+      logger.info(`🧠 [THINKING RESULT] Decision: ${thinkingResult.thinkingProcess.shouldRespond ? 'RESPOND' : 'NO RESPONSE'}`, {
+        confidence: thinkingResult.thinkingProcess.confidence,
+        processingTime: thinkingResult.thinkingProcess.processingTimeMs,
+        steps: thinkingResult.thinkingProcess.steps.length,
+        complexity: thinkingResult.thinkingProcess.estimatedComplexity,
+        finalDecision: thinkingResult.thinkingProcess.finalDecision
+      });
+      
+      // Log detailed thinking process for debugging
+      thinkingResult.thinkingProcess.steps.forEach((step, index) => {
+        logger.debug(`🧠 [STEP ${step.step}] ${step.title}:`, {
+          type: step.type,
+          content: step.content.substring(0, 150),
+          confidence: step.confidence
+        });
+      });
+      
+      if (thinkingResult.thinkingProcess.shouldRespond && thinkingResult.success && thinkingResult.content) {
+        // Calculate enhanced delay based on thinking complexity
+        const complexityDelayMultiplier = {
+          'simple': 1.0,
+          'medium': 1.3,
+          'complex': 1.8
+        }[thinkingResult.thinkingProcess.estimatedComplexity];
         
-        // Send AI response back to WhatsApp
-        await originalMessage.reply(aiResponse.content);
+        // Add humanized delay with complexity factor
+        await this.addHumanizedDelayEnhanced(
+          whatsappMessage.body, 
+          thinkingResult.thinkingProcess,
+          complexityDelayMultiplier
+        );
         
-        // Save conversation to database
+        // Determine sending method based on strategy
+        const strategy = thinkingResult.thinkingProcess.responseStrategy;
+        await this.sendResponseWithStrategy(
+          originalMessage,
+          thinkingResult.content,
+          strategy
+        );
+        
+        // Save enhanced conversation data to database
         await DatabaseService.saveConversation({
           sessionId: sessionId,
           phoneNumber: phoneNumber,
           messageText: whatsappMessage.body,
-          responseText: aiResponse.content,
+          responseText: undefined,
           messageType: whatsappMessage.type,
-          aiProvider: aiResponse.provider,
-          tokensUsed: aiResponse.tokensUsed || 0,
+          intent: thinkingResult.thinkingProcess.steps[0]?.data?.intent || 'unknown',
+          sentiment: thinkingResult.thinkingProcess.steps[0]?.data?.sentiment || 'neutral',
+          aiProvider: thinkingResult.provider,
+          tokensUsed: thinkingResult.tokensUsed || 0,
           isFromUser: true
         });
         
-        // Also save our response
+        // Save AI response
         await DatabaseService.saveConversation({
           sessionId: sessionId,
           phoneNumber: phoneNumber,
-          messageText: aiResponse.content,
+          messageText: thinkingResult.content,
           responseText: undefined,
           messageType: 'text',
-          aiProvider: aiResponse.provider,
+          intent: thinkingResult.thinkingProcess.steps[0]?.data?.intent || 'response',
+          sentiment: 'neutral',
+          aiProvider: thinkingResult.provider,
           tokensUsed: 0,
           isFromUser: false
         });
         
-        logger.info(`AI response sent successfully to ${phoneNumber}:`, {
-          messageLength: aiResponse.content.length,
-          provider: aiResponse.provider,
-          tokensUsed: aiResponse.tokensUsed
+        logger.info(`✅ Enhanced AI response sent successfully to ${phoneNumber}:`, {
+          messageLength: thinkingResult.content.length,
+          provider: thinkingResult.provider,
+          tokensUsed: thinkingResult.tokensUsed,
+          thinkingTime: thinkingResult.thinkingProcess.processingTimeMs,
+          confidence: thinkingResult.thinkingProcess.confidence,
+          strategy: `${strategy.type} (${strategy.tone}, ${strategy.length})`
         });
       } else {
-        logger.error('Failed to generate AI response:', aiResponse.error);
+        // No response decision or error
+        const reason = !thinkingResult.thinkingProcess.shouldRespond 
+          ? thinkingResult.thinkingProcess.finalDecision
+          : (thinkingResult.error || 'Unknown error');
+          
+        logger.info(`❌ No AI response sent to ${phoneNumber}. Reason: ${reason}`);
         
-        // Send fallback message
-        await originalMessage.reply('Disculpa, en este momento no puedo procesar tu mensaje. Un agente se pondrá en contacto contigo pronto. 😊');
+        // Still save the user message for record keeping
+        await DatabaseService.saveConversation({
+          sessionId: sessionId,
+          phoneNumber: phoneNumber,
+          messageText: whatsappMessage.body,
+          responseText: undefined,
+          messageType: whatsappMessage.type,
+          intent: thinkingResult.thinkingProcess.steps[0]?.data?.intent || 'no_response',
+          sentiment: thinkingResult.thinkingProcess.steps[0]?.data?.sentiment || 'neutral',
+          aiProvider: thinkingResult.provider,
+          tokensUsed: 0,
+          isFromUser: true
+        });
+        
+        // Send fallback message only if it's a system error (not a decision to not respond)
+        if (!thinkingResult.thinkingProcess.shouldRespond === false && thinkingResult.error) {
+          try {
+            await originalMessage.reply('Disculpa, en este momento no puedo procesar tu mensaje. Un agente se pondrá en contacto contigo pronto. 😊');
+          } catch (replyError) {
+            logger.error('Error sending fallback message:', replyError);
+          }
+        }
       }
     } catch (error) {
-      logger.error('Error in processMessageWithAI:', error);
+      logger.error('❌ Error in enhanced processMessageWithAI:', error);
       
-      // Send fallback message on error
+      // Send fallback message on critical error
       try {
         await originalMessage.reply('Gracias por tu mensaje. Un representante te contactará pronto. 👍');
       } catch (replyError) {
@@ -469,6 +530,116 @@ class WhatsAppServiceSimple {
     logger.info(`⏱️ Adding humanized delay: ${Math.round(totalDelay)}ms (message length: ${messageText.length})`)
     
     await new Promise(resolve => setTimeout(resolve, totalDelay))
+  }
+
+  // Enhanced delay with complexity-based timing
+  private async addHumanizedDelayEnhanced(
+    messageText: string, 
+    thinkingProcess: any,
+    complexityMultiplier: number = 1.0
+  ): Promise<void> {
+    // Get delay settings from environment variables
+    const minDelay = parseInt(process.env.AI_RESPONSE_DELAY_MIN || '2000')
+    const maxDelay = parseInt(process.env.AI_RESPONSE_DELAY_MAX || '8000') // Increased max for complex thinking
+    
+    // Base delay from original method
+    const baseDelay = Math.min(messageText.length * 50, 2000)
+    
+    // Add thinking complexity factor
+    const thinkingDelay = Math.min(thinkingProcess.processingTimeMs * 0.3, 2000) // 30% of thinking time, max 2s
+    
+    // Add confidence factor (lower confidence = more "hesitation")
+    const confidenceFactor = Math.max(0.5, thinkingProcess.confidence)
+    const hesitationDelay = (1 - confidenceFactor) * 1500 // Up to 1.5s hesitation
+    
+    // Random variation for human-like behavior
+    const randomVariation = Math.random() * 1000
+    
+    // Calculate total delay
+    const calculatedDelay = (
+      baseDelay + 
+      thinkingDelay + 
+      hesitationDelay + 
+      randomVariation
+    ) * complexityMultiplier
+    
+    const totalDelay = Math.max(
+      minDelay,
+      Math.min(calculatedDelay, maxDelay)
+    )
+    
+    logger.info(`🧠⏱️ Enhanced delay: ${Math.round(totalDelay)}ms`, {
+      messageLength: messageText.length,
+      complexity: thinkingProcess.estimatedComplexity,
+      confidence: thinkingProcess.confidence,
+      thinkingTime: thinkingProcess.processingTimeMs,
+      multiplier: complexityMultiplier
+    })
+    
+    await new Promise(resolve => setTimeout(resolve, totalDelay))
+  }
+
+  // Send response with intelligent quoting strategy
+  private async sendResponseWithStrategy(
+    originalMessage: Message, 
+    responseText: string, 
+    strategy: any
+  ): Promise<void> {
+    try {
+      if (strategy.shouldQuote || this.shouldQuoteBasedOnContext(originalMessage, responseText, strategy)) {
+        // Quote the original message
+        await originalMessage.reply(responseText)
+        logger.debug('📝 Response sent with quote')
+      } else {
+        // Send without quoting
+        const chat = await originalMessage.getChat()
+        await chat.sendMessage(responseText)
+        logger.debug('📝 Response sent without quote')
+      }
+    } catch (error) {
+      logger.error('Error in sendResponseWithStrategy:', error)
+      // Fallback to simple reply
+      await originalMessage.reply(responseText)
+    }
+  }
+
+  // Determine if we should quote based on message context
+  private shouldQuoteBasedOnContext(
+    originalMessage: Message, 
+    responseText: string, 
+    strategy: any
+  ): boolean {
+    // Always quote if strategy explicitly says so
+    if (strategy.shouldQuote === true) return true
+    if (strategy.shouldQuote === false) return false
+    
+    // Smart quoting logic
+    const messageText = originalMessage.body?.toLowerCase() || ''
+    
+    // Quote for direct questions
+    if (messageText.includes('?') || 
+        messageText.includes('cuánto') || 
+        messageText.includes('cómo') || 
+        messageText.includes('qué') ||
+        messageText.includes('dónde') ||
+        messageText.includes('cuándo')) {
+      return true
+    }
+    
+    // Quote for complaints or support requests
+    if (strategy.tone === 'supportive' || strategy.priority === 'high') {
+      return true
+    }
+    
+    // Don't quote for simple greetings
+    if (messageText.includes('hola') || 
+        messageText.includes('buenos') ||
+        messageText.includes('buenas')) {
+      return false
+    }
+    
+    // Don't quote for long conversations (default)
+    return false
   }
 
   // Mantener método original para compatibilidad
