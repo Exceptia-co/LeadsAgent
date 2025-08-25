@@ -2,6 +2,7 @@ import { Client, LocalAuth, Message } from 'whatsapp-web.js'
 import qrcode from 'qrcode-terminal'
 import { logger } from '../utils/logger'
 import { WhatsAppMessage, WhatsAppSession, WebhookPayload, SendMessageResponse } from '../types'
+import { SessionCleanupUtil } from '../../utils/sessionCleanup'
 
 class WhatsAppServiceSimple {
   private clients: Map<string, Client> = new Map()
@@ -249,16 +250,48 @@ class WhatsAppServiceSimple {
 
   async destroySession(sessionId: string): Promise<void> {
     try {
+      logger.info(`Starting destruction of session ${sessionId}`)
+      
       const client = this.clients.get(sessionId)
       if (client) {
-        await client.destroy()
+        try {
+          // Intentar cerrar el cliente gracefully
+          await client.destroy()
+          logger.info(`WhatsApp client for session ${sessionId} destroyed successfully`)
+        } catch (clientError) {
+          logger.warn(`Error destroying WhatsApp client for session ${sessionId}:`, clientError)
+          // Continuar con la limpieza aunque el cliente falle
+        }
         this.clients.delete(sessionId)
       }
 
+      // Remover de la lista de sesiones
       this.sessions.delete(sessionId)
+      
+      // Usar la utilidad de limpieza segura para archivos
+      try {
+        await SessionCleanupUtil.cleanupSession(sessionId, './sessions')
+        logger.info(`Session ${sessionId} files cleaned up successfully`)
+      } catch (cleanupError) {
+        logger.error(`Error cleaning up session ${sessionId} files:`, cleanupError)
+        // No lanzar el error para permitir que la aplicación continúe
+      }
+      
       logger.info(`Session ${sessionId} destroyed successfully`)
     } catch (error) {
       logger.error(`Error destroying session ${sessionId}:`, error)
+      
+      // Aún así, intentar limpiar la sesión de las estructuras de datos
+      this.clients.delete(sessionId)
+      this.sessions.delete(sessionId)
+      
+      // Intentar limpieza de archivos como último recurso
+      try {
+        await SessionCleanupUtil.cleanupSession(sessionId, './sessions')
+      } catch (cleanupError) {
+        logger.error(`Final cleanup attempt failed for session ${sessionId}:`, cleanupError)
+      }
+      
       throw error
     }
   }
