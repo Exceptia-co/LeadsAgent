@@ -184,7 +184,7 @@ export default function LeadsPage() {
                       </Badge>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {lead.score ? lead.score.toFixed(1) : '-'}
+                      {lead.score ? Number(lead.score).toFixed(1) : '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(lead.createdAt).toLocaleDateString('es-ES')}
