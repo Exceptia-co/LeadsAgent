@@ -153,7 +153,7 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
         <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-lg w-full max-w-md p-6 z-50">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-2">
             <Dialog.Title className="text-xl font-semibold text-gray-900">
               Nuevo Lead
             </Dialog.Title>
@@ -166,6 +166,10 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
               </button>
             </Dialog.Close>
           </div>
+          
+          <Dialog.Description className="text-sm text-gray-600 mb-4">
+            Completa los datos para crear un nuevo lead en el sistema.
+          </Dialog.Description>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* General Error */}
