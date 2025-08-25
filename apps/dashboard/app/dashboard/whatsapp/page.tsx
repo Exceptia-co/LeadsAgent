@@ -18,9 +18,29 @@ import {
   Phone,
   Clock,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  FileText,
+  Mail,
+  Loader2,
+  Wifi,
+  WifiOff
 } from 'lucide-react'
+import { Tooltip } from '../../../components/ui/tooltip'
+import { useToast } from '../../../components/ui/toast'
+import { 
+  Skeleton, 
+  SkeletonText, 
+  SkeletonCard, 
+  SkeletonBadge, 
+  SkeletonTabs,
+  SkeletonSessionGrid 
+} from '../../../components/ui/skeleton'
 import WhatsAppConversations from '../../../components/WhatsAppConversations'
+import TemplateManager from '../../../components/templates/TemplateManager'
+import { Template } from '../../../components/templates/TemplateCard'
+import ProactiveMessageSender from '../../../components/proactive/ProactiveMessageSender'
+import ProactiveMessageHistory from '../../../components/proactive/ProactiveMessageHistory'
+import { ProactiveMessage } from '../../../components/proactive/ProactiveMessageHistory'
 
 // Status variants for sessions
 const SESSION_STATUS_VARIANTS = {
@@ -38,10 +58,28 @@ const SESSION_STATUS_LABELS = {
 }
 
 export default function WhatsAppPage() {
-  const [activeTab, setActiveTab] = useState<'sessions' | 'send' | 'messages' | 'conversations'>('sessions')
+  const [activeTab, setActiveTab] = useState<'sessions' | 'send' | 'conversations' | 'templates' | 'proactive' | 'messages'>('sessions')
+  const [proactiveSubTab, setProactiveSubTab] = useState<'send' | 'history'>('send')
   const [sessions, setSessions] = useState<WhatsAppSession[]>([])
   const [messages, setMessages] = useState<WhatsAppMessage[]>([])
   const [selectedSession, setSelectedSession] = useState<string>('')
+  
+  // Template and proactive message states
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [proactiveMessages, setProactiveMessages] = useState<ProactiveMessage[]>([])
+  const [leads, setLeads] = useState<any[]>([])
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
+  
+  // Loading states for individual data fetching
+  const [dataLoading, setDataLoading] = useState({
+    sessions: true,
+    templates: true,
+    proactiveMessages: true,
+    leads: true,
+    initialLoad: true
+  })
+  
+  const { showToast } = useToast()
   
   const { 
     getSessions, 
@@ -53,12 +91,102 @@ export default function WhatsAppPage() {
     error 
   } = useWhatsAppApi()
 
-  // Load sessions on component mount
+  // Load sessions on component mount and data
   useEffect(() => {
-    loadSessions()
+    const loadAllData = async () => {
+      try {
+        await Promise.all([
+          loadSessions(),
+          loadTemplates(),
+          loadProactiveMessages(),
+          loadLeads()
+        ])
+        
+        // No toast for successful initial load - keep it quiet
+      } catch (error) {
+        // Only show toast for critical loading errors
+        showToast({
+          type: 'error',
+          title: 'Error de carga',
+          description: 'Hubo un problema al cargar algunos datos. Refresca la página.',
+          duration: 5000
+        })
+      } finally {
+        // Mark initial load as complete
+        setTimeout(() => {
+          setDataLoading(prev => ({ ...prev, initialLoad: false }))
+        }, 500)
+      }
+    }
+
+    loadAllData()
   }, [])
 
+  // Load templates
+  const loadTemplates = async () => {
+    setDataLoading(prev => ({ ...prev, templates: true }))
+    try {
+      const response = await fetch('http://localhost:3002/templates')
+      const result = await response.json()
+      if (result.success) {
+        setTemplates(result.data || [])
+      }
+    } catch (error) {
+      console.error('Error loading templates:', error)
+      showToast({
+        type: 'error',
+        title: 'Error cargando plantillas',
+        description: 'No se pudieron cargar las plantillas de mensaje'
+      })
+    } finally {
+      setDataLoading(prev => ({ ...prev, templates: false }))
+    }
+  }
+
+  // Load proactive messages
+  const loadProactiveMessages = async () => {
+    setDataLoading(prev => ({ ...prev, proactiveMessages: true }))
+    try {
+      const response = await fetch('http://localhost:3002/proactive-messages')
+      const result = await response.json()
+      if (result.success) {
+        setProactiveMessages(result.data || [])
+      }
+    } catch (error) {
+      console.error('Error loading proactive messages:', error)
+      showToast({
+        type: 'error',
+        title: 'Error cargando mensajes',
+        description: 'No se pudieron cargar los mensajes proactivos'
+      })
+    } finally {
+      setDataLoading(prev => ({ ...prev, proactiveMessages: false }))
+    }
+  }
+
+  // Load leads
+  const loadLeads = async () => {
+    setDataLoading(prev => ({ ...prev, leads: true }))
+    try {
+      const response = await fetch('http://localhost:3002/leads')
+      const result = await response.json()
+      if (result.success) {
+        setLeads(result.leads || result.data || [])
+      }
+    } catch (error) {
+      console.error('Error loading leads:', error)
+      showToast({
+        type: 'error',
+        title: 'Error cargando leads',
+        description: 'No se pudieron cargar la lista de leads'
+      })
+    } finally {
+      setDataLoading(prev => ({ ...prev, leads: false }))
+    }
+  }
+
   const loadSessions = async () => {
+    setDataLoading(prev => ({ ...prev, sessions: true }))
     try {
       const data = await getSessions() as { sessions?: WhatsAppSession[] }
       setSessions(data.sessions || [])
@@ -67,15 +195,116 @@ export default function WhatsAppPage() {
       }
     } catch (err) {
       console.error('Error loading sessions:', err)
+      showToast({
+        type: 'error',
+        title: 'Error cargando sesiones',
+        description: 'No se pudieron cargar las sesiones de WhatsApp'
+      })
+    } finally {
+      setDataLoading(prev => ({ ...prev, sessions: false }))
     }
+  }
+
+  // Handle template selection from TemplateManager
+  const handleUseTemplate = (template: Template) => {
+    setSelectedTemplate(template)
+    setActiveTab('proactive')
+    setProactiveSubTab('send')
+  }
+
+  // Handle proactive message sending with toast notifications
+  const handleSendProactiveMessage = async (
+    leadId: string, 
+    templateId?: string, 
+    content?: string, 
+    variables?: { [key: string]: string }
+  ) => {
+    if (!selectedSession) {
+      showToast({
+        type: 'error',
+        title: 'Sin sesión seleccionada',
+        description: 'Por favor selecciona una sesión de WhatsApp activa'
+      })
+      throw new Error('No hay sesión seleccionada')
+    }
+
+    try {
+      // Get sessions to ensure we have a valid session
+      const sessionsResponse = await fetch('http://localhost:3002/sessions')
+      const sessionsResult = await sessionsResponse.json()
+      
+      let sessionId = selectedSession
+      
+      if (sessionsResult.success && sessionsResult.sessions.length > 0) {
+        sessionId = sessionsResult.sessions[0].id
+      }
+      
+      const response = await fetch('http://localhost:3002/proactive-messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId,
+          templateId,
+          sessionId,
+          content,
+          variables
+        })
+      })
+      
+      const result = await response.json()
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Error enviando mensaje')
+      }
+      
+      showToast({
+        type: 'success',
+        title: '¡Mensaje enviado!',
+        description: 'El mensaje proactivo se envió correctamente',
+        duration: 4000
+      })
+      
+      // Refresh proactive messages count
+      loadProactiveMessages()
+    } catch (error) {
+      console.error('Error sending proactive message:', error)
+      showToast({
+        type: 'error',
+        title: 'Error enviando mensaje',
+        description: (error as Error).message || 'Ocurrió un error inesperado'
+      })
+      throw error
+    }
+  }
+
+  // Show simple loading state during initial load
+  if (dataLoading.initialLoad) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-gray-900">WhatsApp Manager</h1>
+        <div className="animate-pulse space-y-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-32 bg-gray-200 rounded-lg"></div>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-gray-900">WhatsApp Manager</h1>
         <div className="flex items-center space-x-2">
-          <Activity className="h-5 w-5 text-green-500" />
+          {sessions.filter(s => s.status === 'CONNECTED').length > 0 ? (
+            <Tooltip content="Conexión establecida con WhatsApp">
+              <Wifi className="h-5 w-5 text-green-500" />
+            </Tooltip>
+          ) : (
+            <Tooltip content="Sin conexiones activas">
+              <WifiOff className="h-5 w-5 text-gray-400" />
+            </Tooltip>
+          )}
           <span className="text-sm text-gray-600">
             {sessions.filter(s => s.status === 'CONNECTED').length} sesiones conectadas
           </span>
@@ -83,27 +312,103 @@ export default function WhatsAppPage() {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
+      <div className="border-b border-gray-200 overflow-x-auto">
+        <nav className="-mb-px flex space-x-4 sm:space-x-8 min-w-max px-1">
           {[
-            { id: 'sessions', label: 'Sesiones', icon: Smartphone },
-            { id: 'conversations', label: 'Conversaciones', icon: MessageSquare },
-            { id: 'send', label: 'Enviar Mensaje', icon: Send },
-            { id: 'messages', label: 'Historial', icon: MessageSquare }
-          ].map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => setActiveTab(id as any)}
-              className={`flex items-center py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <Icon className="h-4 w-4 mr-2" />
-              {label}
-            </button>
-          ))}
+            { 
+              id: 'sessions', 
+              label: 'Sesiones', 
+              icon: Smartphone,
+              count: sessions.length,
+              countLabel: 'activas'
+            },
+            { 
+              id: 'conversations', 
+              label: 'Conversaciones', 
+              icon: MessageSquare 
+            },
+            { 
+              id: 'templates', 
+              label: 'Templates', 
+              icon: FileText,
+              count: templates.length
+            },
+            { 
+              id: 'proactive', 
+              label: 'Mensajes Proactivos', 
+              icon: Mail,
+              count: proactiveMessages.length
+            },
+            { 
+              id: 'send', 
+              label: 'Enviar Mensaje', 
+              icon: Send 
+            },
+            { 
+              id: 'messages', 
+              label: 'Historial', 
+              icon: Activity 
+            }
+          ].map(({ id, label, icon: Icon, count, countLabel }) => {
+            const getBadgeVariant = () => {
+              if (id === 'sessions') {
+                const connectedCount = sessions.filter(s => s.status === 'CONNECTED').length
+                return connectedCount > 0 ? 'success' : 'secondary'
+              }
+              return count && count > 0 ? 'default' : 'secondary'
+            }
+
+            const getBadgeCount = () => {
+              if (id === 'sessions') {
+                return sessions.filter(s => s.status === 'CONNECTED').length
+              }
+              return count || 0
+            }
+
+            const getTooltipContent = () => {
+              if (id === 'sessions') {
+                const connectedCount = sessions.filter(s => s.status === 'CONNECTED').length
+                const totalCount = sessions.length
+                return `${connectedCount} de ${totalCount} sesiones conectadas`
+              }
+              if (id === 'templates') {
+                return `${templates.length} plantillas de mensaje disponibles`
+              }
+              if (id === 'proactive') {
+                return `${proactiveMessages.length} mensajes proactivos enviados`
+              }
+              return ''
+            }
+
+            return (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id as any)}
+                className={`flex items-center py-2 px-1 border-b-2 font-medium text-sm transition-all duration-200 hover:scale-105 ${
+                  activeTab === id
+                    ? 'border-blue-500 text-blue-600 shadow-sm'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Icon className={`h-4 w-4 mr-2 ${
+                  activeTab === id ? 'animate-pulse' : ''
+                }`} />
+                <span className="mr-2">{label}</span>
+                {count !== undefined && (
+                  <Tooltip content={getTooltipContent()} position="top">
+                    <Badge 
+                      variant={getBadgeVariant() as any}
+                      className={`ml-1 text-xs px-1.5 py-0.5 min-w-[1.5rem] h-5 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 ${
+                        activeTab === id ? 'ring-2 ring-blue-200' : ''
+                      }`}
+                    >
+                      {getBadgeCount()}
+                    </Badge>
+                  </Tooltip>
+                )}
+              </button>
+            )
+          })}
         </nav>
       </div>
 
@@ -132,6 +437,56 @@ export default function WhatsAppPage() {
 
       {activeTab === 'conversations' && (
         <WhatsAppConversations />
+      )}
+
+      {activeTab === 'templates' && (
+        <TemplateManager onUseTemplate={handleUseTemplate} />
+      )}
+
+      {activeTab === 'proactive' && (
+        <div className="space-y-6">
+          {/* Proactive Sub-navigation */}
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-8">
+              <button
+                onClick={() => setProactiveSubTab('send')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  proactiveSubTab === 'send'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <Send className="h-4 w-4 mr-2 inline" />
+                Enviar Mensaje
+              </button>
+              
+              <button
+                onClick={() => setProactiveSubTab('history')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  proactiveSubTab === 'history'
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <MessageSquare className="h-4 w-4 mr-2 inline" />
+                Historial
+              </button>
+            </nav>
+          </div>
+
+          {/* Sub-tab Content */}
+          {proactiveSubTab === 'send' && (
+            <ProactiveMessageSender
+              templates={templates}
+              onSendMessage={handleSendProactiveMessage}
+              selectedTemplate={selectedTemplate}
+            />
+          )}
+
+          {proactiveSubTab === 'history' && (
+            <ProactiveMessageHistory leads={leads} />
+          )}
+        </div>
       )}
 
       {activeTab === 'messages' && (

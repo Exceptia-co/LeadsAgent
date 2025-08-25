@@ -107,7 +107,6 @@ export const createCacheKey = (endpoint: string, params?: Record<string, any>) =
 export const CACHE_KEYS = {
   LEADS: '/api/public/leads',
   LEAD_STATS: '/api/public/leads/stats',
-  CONVERSATIONS: '/api/whatsapp/conversations',
   WHATSAPP_STATS: '/api/whatsapp/stats'
 } as const
 

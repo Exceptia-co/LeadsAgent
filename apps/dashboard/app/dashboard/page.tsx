@@ -34,12 +34,13 @@ export default function DashboardPage() {
   const [lastRefreshTime, setLastRefreshTime] = useState(new Date())
   const [refreshSuccess, setRefreshSuccess] = useState(false)
   
-  // Update last refresh time when data changes
+  // Update last refresh time when data changes (memoized to avoid unnecessary updates)
   useEffect(() => {
-    if (stats || leads.length > 0) {
+    // Only update if we actually have new data
+    if ((stats && Object.keys(stats).length > 0) || leads.length > 0) {
       setLastRefreshTime(new Date())
     }
-  }, [stats, leads])
+  }, [stats?.total, stats?.averageScore, leads.length]) // Only depend on specific stats values to avoid unnecessary re-renders
   
   // Manual refresh function
   const handleManualRefresh = useCallback(async () => {
