@@ -50,7 +50,7 @@ export class LeadsService {
     // Transform data to match frontend expectations
     const transformedLeads = leads.map(lead => ({
       ...lead,
-      score: lead.moodScore, // Map moodScore to score for frontend
+      score: lead.moodScore ? Number(lead.moodScore) : null, // Map moodScore to score for frontend and convert to number
     }));
 
     return {
@@ -74,7 +74,7 @@ export class LeadsService {
     // Transform data to match frontend expectations
     return {
       ...lead,
-      score: lead.moodScore, // Map moodScore to score for frontend
+      score: lead.moodScore ? Number(lead.moodScore) : null, // Map moodScore to score for frontend and convert to number
     };
   }
 
