@@ -10,10 +10,11 @@ OpenRouter proporciona acceso a múltiples modelos de IA a través de una sola A
 ```env
 OPENROUTER_API_KEY="OPENROUTER_API_KEY_REMOVED"
 OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
-OPENROUTER_MODEL="anthropic/claude-3.5-sonnet"
+OPENROUTER_MODEL="openai/gpt-oss-120b"
 ```
 
 **Modelos disponibles en OpenRouter:**
+- `openai/gpt-oss-120b` - **MODELO ACTUAL** - GPT Open Source 120B, optimizado para conversaciones
 - `anthropic/claude-3.5-sonnet` - Excelente para análisis y conversaciones
 - `openai/gpt-4o` - GPT-4 Omni
 - `google/gemini-pro-1.5` - Google Gemini Pro
@@ -53,10 +54,12 @@ const openrouter = new OpenAI({
 });
 
 const completion = await openrouter.chat.completions.create({
-  model: process.env.OPENROUTER_MODEL || "anthropic/claude-3.5-sonnet",
+  model: process.env.OPENROUTER_MODEL || "openai/gpt-oss-120b",
   messages: [
     { role: "user", content: "Analiza este mensaje de WhatsApp..." }
   ],
+  max_tokens: 2048,
+  temperature: 0.7
 });
 ```
 

@@ -23,6 +23,28 @@ router.get('/health', (req, res) => {
   })
 })
 
+// Enhanced session management routes (must be before parameterized routes)
+router.post('/sessions/restore', sessionController.restoreSessions.bind(sessionController))
+router.get('/sessions/health', sessionController.getSessionsHealth.bind(sessionController))
+router.get('/sessions/backup', sessionController.backupSessions.bind(sessionController))
+router.get('/sessions/enhanced', sessionController.getEnhancedSessions.bind(sessionController))
+router.get('/sessions/stats', async (req, res) => {
+  try {
+    const { default: SessionPersistenceService } = await import('../services/SessionPersistenceService')
+    const stats = await SessionPersistenceService.getSessionStats()
+    
+    res.json({
+      success: true,
+      data: stats
+    })
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Error getting session statistics'
+    })
+  }
+})
+
 // Session routes
 router.post('/sessions', validateCreateSession, sessionController.createSession.bind(sessionController))
 router.get('/sessions', sessionController.getAllSessions.bind(sessionController))
@@ -40,6 +62,8 @@ router.post('/messages/send', validateSendMessage, sessionController.sendDirectM
 // Analytics routes (for dashboard integration)
 router.get('/analytics/messages', sessionController.getAnalytics.bind(sessionController))
 router.get('/sessions/:sessionId/status', validateSessionId, sessionController.getSessionStatus.bind(sessionController))
+
+// Session monitoring endpoints
 
 // AI Management endpoints
 router.get('/ai/status', async (req, res) => {
