@@ -3,6 +3,7 @@ import qrcode from 'qrcode-terminal'
 import { logger } from '../utils/logger'
 import { WhatsAppMessage, WhatsAppSession, WebhookPayload, SendMessageResponse } from '../types'
 import { SessionCleanupUtil } from '../utils/sessionCleanup'
+import PhoneNumberService from './PhoneNumberService'
 
 class WhatsAppServiceSimple {
   private clients: Map<string, Client> = new Map()
@@ -330,8 +331,9 @@ class WhatsAppServiceSimple {
         phoneNumber: phoneNumber
       });
       
-      // Extract knowledge base IDs used (if available in thinking result)
-      knowledgeBaseIdsUsed = thinkingResult.knowledgeBaseIds || [];
+      // Extract knowledge base IDs used from knowledge retrieval step
+      const knowledgeStep = thinkingResult.thinkingProcess.steps.find(s => s.type === 'knowledge_retrieval');
+      knowledgeBaseIdsUsed = knowledgeStep?.data?.map((item: any) => item.id).filter(Boolean) || [];
       
       logger.info(`🧠 [THINKING RESULT] Decision: ${thinkingResult.thinkingProcess.shouldRespond ? 'RESPOND' : 'NO RESPONSE'}`, {
         confidence: thinkingResult.thinkingProcess.confidence,
@@ -521,7 +523,7 @@ class WhatsAppServiceSimple {
   ): Promise<void> {
     try {
       // Import services dynamically
-      const { default: AILearningService } = await import('./AILearningService');
+      const AILearningService = await import('./AILearningService');
       
       // Calculate initial success score based on response time and complexity
       const initialSuccessScore = this.calculateInitialSuccessScore(userMessage, aiResponse, responseTimeMs);
@@ -537,16 +539,24 @@ class WhatsAppServiceSimple {
       };
       
       // Log the training interaction
-      await AILearningService.saveTrainingInteraction({
+      await AILearningService.default.logInteraction({
         userMessage,
         aiResponse,
-        knowledgeBaseIds,
-        phoneNumber,
-        sessionId,
+        knowledgeBaseIdsUsed: knowledgeBaseIds,
         successScore: initialSuccessScore,
-        contextMetrics,
-        feedbackMetrics: {}, // Empty initially, can be updated later with user feedback
-        timestamp: new Date()
+        contextData: {
+          phoneNumber,
+          sessionId,
+          intent,
+          sentiment,
+          responseTime: responseTimeMs
+        },
+        feedbackMetrics: {
+          conversationContinued: false, // Will be updated later
+          responseTime: responseTimeMs,
+          followUpQuestions: 0,
+          userSatisfactionIndicators: []
+        }
       });
       
       logger.info(`📊 Logged training interaction for learning with score: ${initialSuccessScore.toFixed(2)}`, {
@@ -622,53 +632,20 @@ class WhatsAppServiceSimple {
       // Get all active leads from database
       const leads = await DatabaseService.getAllLeads()
       
-      // Check if the phone number matches any lead with improved comparison
+      // Check if the phone number matches any lead using PhoneNumberService
       let matchedLead: any = null
-      const incomingClean = phoneNumber.replace(/[^0-9]/g, '')
+      
+      // Normalize incoming phone number
+      const normalizedIncoming = PhoneNumberService.normalizePhoneNumber(phoneNumber);
       
       const isAllowed = leads.some(lead => {
         if (!lead.phone || !lead.whatsappAuthorized) return false
         
-        // Clean lead phone number
-        const leadPhoneClean = lead.phone.replace(/[^0-9]/g, '')
-        
-        // Try multiple comparison methods:
-        // 1. Exact match
-        if (leadPhoneClean === incomingClean) {
+        // Use PhoneNumberService for robust phone number comparison
+        if (PhoneNumberService.arePhoneNumbersEquivalent(phoneNumber, lead.phone)) {
           matchedLead = lead
-          logger.debug(`✅ Exact phone match: ${lead.phone} === ${phoneNumber}`);
+          logger.debug(`✅ Phone number match found: ${lead.phone} ≈ ${phoneNumber} (normalized: ${normalizedIncoming})`);
           return true
-        }
-        
-        // 2. Compare last 10 digits (for domestic numbers)
-        const leadLast10 = leadPhoneClean.slice(-10)
-        const incomingLast10 = incomingClean.slice(-10)
-        if (leadLast10 === incomingLast10 && leadLast10.length === 10) {
-          matchedLead = lead
-          logger.debug(`✅ Last 10 digits match: ${lead.phone} ≈ ${phoneNumber}`);
-          return true
-        }
-        
-        // 3. Compare last 11 digits (for numbers with country code)
-        const leadLast11 = leadPhoneClean.slice(-11)
-        const incomingLast11 = incomingClean.slice(-11)
-        if (leadLast11 === incomingLast11 && leadLast11.length === 11) {
-          matchedLead = lead
-          logger.debug(`✅ Last 11 digits match: ${lead.phone} ≈ ${phoneNumber}`);
-          return true
-        }
-        
-        // 4. Handle common international formats (remove country codes)
-        if (leadPhoneClean.length >= 10 && incomingClean.length >= 10) {
-          // Remove common country codes and compare
-          const leadWithoutCountry = leadPhoneClean.replace(/^(1|52|34|54|55)/, '')
-          const incomingWithoutCountry = incomingClean.replace(/^(1|52|34|54|55)/, '')
-          
-          if (leadWithoutCountry === incomingWithoutCountry && leadWithoutCountry.length >= 8) {
-            matchedLead = lead
-            logger.debug(`✅ Country code normalized match: ${lead.phone} ≈ ${phoneNumber}`);
-            return true
-          }
         }
         
         return false
@@ -685,11 +662,7 @@ class WhatsAppServiceSimple {
         decision = 'BLOCKED'
         const leadExists = leads.some(lead => {
           if (!lead.phone) return false
-          const leadPhone = lead.phone.replace(/[^0-9]/g, '')
-          const incomingPhone = phoneNumber.replace(/[^0-9]/g, '')
-          const leadLast10 = leadPhone.slice(-10)
-          const incomingLast10 = incomingPhone.slice(-10)
-          return leadLast10 === incomingLast10
+          return PhoneNumberService.arePhoneNumbersEquivalent(phoneNumber, lead.phone)
         })
         
         if (leadExists) {

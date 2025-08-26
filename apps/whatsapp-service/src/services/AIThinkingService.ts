@@ -925,34 +925,82 @@ class AIThinkingService {
   ): string {
     let contextualPrompt = basePrompt;
     
+    // Añadir instrucciones específicas para respuestas cohesivas
+    contextualPrompt += `\n\n🎯 INSTRUCCIÓN PRIORITARIA: RESPUESTA COMPLETA Y COHESIVA\n`;
+    contextualPrompt += `IMPORTANTE: Genera UNA SOLA respuesta completa que incluya TODA la información necesaria. `;
+    contextualPrompt += `NO dividas la respuesta en múltiples mensajes. Estructura la información de forma lógica y completa.\n\n`;
+    
     // Añadir contexto de intención
-    contextualPrompt += `\n\nCONTEXTO ACTUAL:`;
-    contextualPrompt += `\nIntención detectada: ${intentAnalysis.intent} (${(intentAnalysis.confidence * 100).toFixed(1)}% confianza)`;
-    contextualPrompt += `\nSentimiento: ${intentAnalysis.sentiment}`;
-    contextualPrompt += `\nUrgencia: ${intentAnalysis.urgency}`;
+    contextualPrompt += `CONTEXTO ACTUAL:\n`;
+    contextualPrompt += `Intención detectada: ${intentAnalysis.intent} (${(intentAnalysis.confidence * 100).toFixed(1)}% confianza)\n`;
+    contextualPrompt += `Sentimiento: ${intentAnalysis.sentiment}\n`;
+    contextualPrompt += `Urgencia: ${intentAnalysis.urgency}\n`;
     
     // Añadir estrategia de respuesta
-    contextualPrompt += `\n\nESTRATEGIA DE RESPUESTA:`;
-    contextualPrompt += `\nTono: ${strategy.tone}`;
-    contextualPrompt += `\nLongitud: ${strategy.length}`;
-    contextualPrompt += `\nPrioridad: ${strategy.priority}`;
+    contextualPrompt += `\nESTRATEGIA DE RESPUESTA:\n`;
+    contextualPrompt += `Tono: ${strategy.tone}\n`;
+    contextualPrompt += `Longitud: ${strategy.length === 'brief' ? 'completa pero eficiente' : strategy.length}\n`;
+    contextualPrompt += `Prioridad: ${strategy.priority}\n`;
     
     // Añadir conocimiento relevante
     if (knowledgeData.length > 0) {
-      contextualPrompt += `\n\nCONOCIMIENTO RELEVANTE:`;
+      contextualPrompt += `\nCONOCIMIENTO RELEVANTE - USA ESTA INFORMACIÓN PARA RESPUESTA COMPLETA:\n`;
       knowledgeData.forEach((knowledge, index) => {
-        contextualPrompt += `\n${index + 1}. ${knowledge.title}: ${knowledge.content?.substring(0, 200)}...`;
+        contextualPrompt += `\n${index + 1}. CATEGORÍA: ${knowledge.category?.toUpperCase()}\n`;
+        contextualPrompt += `TÍTULO: ${knowledge.title}\n`;
+        contextualPrompt += `CONTENIDO: ${knowledge.content}\n`;
+        contextualPrompt += `RELEVANCIA: ${knowledge.match_quality || 'alta'}\n`;
+        contextualPrompt += `---\n`;
       });
     }
     
     // Añadir contexto de conversación
     if (context.messageHistory && context.messageHistory.length > 0) {
-      contextualPrompt += `\n\nHISTORIAL RECIENTE:`;
+      contextualPrompt += `\nHISTORIAL DE CONVERSACIÓN:\n`;
       context.messageHistory.slice(-3).forEach(msg => {
         const role = msg.isFromUser ? 'Usuario' : 'Asistente';
-        contextualPrompt += `\n${role}: ${msg.message.substring(0, 100)}`;
+        contextualPrompt += `${role}: ${msg.message.substring(0, 150)}...\n`;
       });
     }
+    
+    // Añadir instrucciones de estructura para respuesta completa
+    contextualPrompt += `\n📝 ESTRUCTURA REQUERIDA PARA RESPUESTA COHESIVA:\n`;
+    
+    if (intentAnalysis.intent.includes('precio') || intentAnalysis.intent.includes('product')) {
+      contextualPrompt += `
+1. Saludo amigable con el nombre si está disponible
+2. Información COMPLETA sobre precios y productos solicitados
+3. Explicación clara del sistema de monedas HUB
+4. Recomendación específica de paquete
+5. Proceso de registro paso a paso
+6. Invitación a acción concreta
+7. Ofrecimiento de ayuda adicional`;
+    } else if (intentAnalysis.intent.includes('registro')) {
+      contextualPrompt += `
+1. Saludo y confirmación del interés
+2. Proceso COMPLETO de registro paso a paso
+3. Beneficios del registro gratuito
+4. Explicación del sistema de monedas
+5. Productos disponibles tras registro
+6. Invitación a completar el registro
+7. Ofrecimiento de soporte`;
+    } else {
+      contextualPrompt += `
+1. Saludo personalizado y empatía
+2. Respuesta COMPLETA a la consulta
+3. Información adicional útil y relacionada
+4. Productos o servicios relevantes
+5. Proceso o pasos necesarios si aplica
+6. Invitación a acción
+7. Disponibilidad para más ayuda`;
+    }
+    
+    contextualPrompt += `\n\n⚡ REGLAS DE COHESIÓN:\n`;
+    contextualPrompt += `- NUNCA uses frases como "Te cuento más detalles" o "Te explico paso a paso" sin explicar inmediatamente\n`;
+    contextualPrompt += `- INCLUYE toda la información solicitada en esta única respuesta\n`;
+    contextualPrompt += `- USA transiciones suaves entre secciones de información\n`;
+    contextualPrompt += `- TERMINA con una pregunta concreta o call-to-action claro\n`;
+    contextualPrompt += `- MÁXIMO 350 palabras pero COMPLETAS y Útiles\n`;
     
     return contextualPrompt;
   }
