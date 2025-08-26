@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { logger } from '../utils/logger';
+import { TrainingInteraction } from './AILearningService';
 
 // Interfaz para datos de conversación
 export interface ConversationData {
@@ -216,6 +217,26 @@ class DatabaseService {
       CREATE INDEX IF NOT EXISTS idx_proactive_status ON proactive_messages(status);
       CREATE INDEX IF NOT EXISTS idx_proactive_created ON proactive_messages(created_at);
       CREATE INDEX IF NOT EXISTS idx_proactive_phone ON proactive_messages(phone_number);
+
+      -- Tabla de interacciones de entrenamiento IA
+      CREATE TABLE IF NOT EXISTS ai_training_interactions (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_message TEXT NOT NULL,
+        ai_response TEXT NOT NULL,
+        knowledge_base_ids_used TEXT[] DEFAULT '{}', -- Array de IDs utilizados
+        success_score DECIMAL(3,2) DEFAULT 0.50 CHECK (success_score >= 0 AND success_score <= 1),
+        context_data JSONB NOT NULL, -- Información contextual (phoneNumber, sessionId, etc.)
+        feedback_metrics JSONB NOT NULL, -- Métricas de feedback (continuación, tiempo, etc.)
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      -- Índices para training interactions
+      CREATE INDEX IF NOT EXISTS idx_training_score ON ai_training_interactions(success_score);
+      CREATE INDEX IF NOT EXISTS idx_training_created ON ai_training_interactions(created_at);
+      CREATE INDEX IF NOT EXISTS idx_training_context_phone ON ai_training_interactions((context_data->>'phoneNumber'));
+      CREATE INDEX IF NOT EXISTS idx_training_user_message ON ai_training_interactions USING gin(to_tsvector('spanish', user_message));
+      CREATE INDEX IF NOT EXISTS idx_training_kb_used ON ai_training_interactions USING gin(knowledge_base_ids_used);
     `;
 
     try {
@@ -1361,18 +1382,38 @@ class DatabaseService {
     }
   }
 
-  // Buscar en knowledge base por keywords
+  // Buscar en knowledge base por keywords con scoring inteligente
   public async searchKnowledgeBase(query: string): Promise<any[]> {
     if (!this.pool) {
       return this.getDefaultKnowledgeBase().filter(item => 
         item.content.toLowerCase().includes(query.toLowerCase()) ||
         item.title.toLowerCase().includes(query.toLowerCase())
-      );
+      ).slice(0, 3); // Limitar resultados
     }
 
     try {
+      // Extraer palabras clave del query para mejor matching
+      const queryWords = this.extractSearchKeywords(query);
+      const searchTerms = [`%${query}%`, ...queryWords.map(word => `%${word}%`)];
+      
       const searchQuery = `
-        SELECT id, category, title, content, keywords, priority
+        SELECT 
+          id, category, title, content, keywords, priority,
+          -- Calcular relevancia score
+          (
+            -- Puntuación por match exacto en título (peso: 100)
+            CASE WHEN title ILIKE $1 THEN 100 ELSE 0 END +
+            -- Puntuación por keywords coincidentes (peso: 80)
+            (
+              SELECT COUNT(*) * 80 
+              FROM unnest(keywords) AS keyword 
+              WHERE keyword ILIKE ANY($2::text[])
+            ) +
+            -- Puntuación por match en contenido (peso: 30)
+            CASE WHEN content ILIKE $1 THEN 30 ELSE 0 END +
+            -- Bonificación por prioridad (peso: prioridad * 5)
+            (priority * 5)
+          ) AS relevance_score
         FROM ai_knowledge_base 
         WHERE is_active = true
           AND (
@@ -1380,24 +1421,47 @@ class DatabaseService {
             content ILIKE $1 OR
             EXISTS (
               SELECT 1 FROM unnest(keywords) AS keyword 
-              WHERE keyword ILIKE $1
+              WHERE keyword ILIKE ANY($2::text[])
             )
           )
-        ORDER BY priority DESC, 
-          CASE 
-            WHEN title ILIKE $1 THEN 1
-            WHEN EXISTS (SELECT 1 FROM unnest(keywords) AS keyword WHERE keyword ILIKE $1) THEN 2
-            ELSE 3
-          END
-        LIMIT 5;
+        ORDER BY relevance_score DESC, priority DESC
+        LIMIT 3;
       `;
       
-      const result = await this.pool.query(searchQuery, [`%${query}%`]);
-      return result.rows;
+      const result = await this.pool.query(searchQuery, [query, searchTerms]);
+      
+      // Agregar score calculado y filtrar por relevancia mínima
+      return result.rows
+        .filter(row => row.relevance_score >= 30) // Filtro de relevancia mínima
+        .map(row => ({
+          ...row,
+          relevance_score: row.relevance_score,
+          match_quality: this.calculateMatchQuality(row.relevance_score)
+        }));
     } catch (error) {
       logger.error('Error buscando en knowledge base:', error);
       return [];
     }
+  }
+
+  // Extraer palabras clave de una consulta
+  private extractSearchKeywords(query: string): string[] {
+    // Palabras comunes en español que no aportan valor semántico
+    const stopWords = ['el', 'la', 'de', 'que', 'y', 'en', 'un', 'es', 'se', 'no', 'te', 'lo', 'le', 'da', 'su', 'por', 'son', 'con', 'para', 'como', 'del', 'las'];
+    
+    return query
+      .toLowerCase()
+      .replace(/[^\w\sáéíóúñü]/gi, '') // Remover puntuación pero mantener acentos
+      .split(/\s+/)
+      .filter(word => word.length >= 3 && !stopWords.includes(word))
+      .slice(0, 5); // Máximo 5 palabras clave
+  }
+
+  // Calcular calidad del match
+  private calculateMatchQuality(score: number): 'high' | 'medium' | 'low' {
+    if (score >= 100) return 'high';
+    if (score >= 60) return 'medium';
+    return 'low';
   }
 
   // Knowledge base por defecto con información completa de EscortsHub
@@ -1955,6 +2019,368 @@ class DatabaseService {
       if (options.status && msg.status !== options.status) return false;
       return true;
     }).slice(options.offset || 0, (options.offset || 0) + (options.limit || 50));
+  }
+
+  // ============================================
+  // MÉTODOS DE APRENDIZAJE AUTOMÁTICO
+  // ============================================
+
+  // Guardar interacción de entrenamiento
+  public async saveTrainingInteraction(interaction: TrainingInteraction): Promise<string | null> {
+    if (!this.pool) {
+      logger.warn('No database connection available, training interaction not saved');
+      return null;
+    }
+
+    try {
+      const query = `
+        INSERT INTO ai_training_interactions (
+          user_message, ai_response, knowledge_base_ids_used, success_score,
+          context_data, feedback_metrics, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id;
+      `;
+      
+      const values = [
+        interaction.userMessage,
+        interaction.aiResponse,
+        interaction.knowledgeBaseIdsUsed,
+        interaction.successScore,
+        JSON.stringify(interaction.contextData),
+        JSON.stringify(interaction.feedbackMetrics),
+        interaction.timestamp
+      ];
+      
+      const result = await this.pool.query(query, values);
+      const interactionId = result.rows[0]?.id;
+      
+      logger.debug(`📊 Training interaction saved with ID: ${interactionId}`);
+      return interactionId;
+      
+    } catch (error) {
+      logger.error('Error saving training interaction:', error);
+      return null;
+    }
+  }
+
+  // Obtener interacciones de entrenamiento
+  public async getTrainingInteractions(limit: number = 500): Promise<TrainingInteraction[]> {
+    if (!this.pool) {
+      logger.warn('No database connection available, returning empty training interactions');
+      return [];
+    }
+
+    try {
+      const query = `
+        SELECT 
+          id, user_message, ai_response, knowledge_base_ids_used,
+          success_score, context_data, feedback_metrics, created_at
+        FROM ai_training_interactions 
+        ORDER BY created_at DESC
+        LIMIT $1;
+      `;
+      
+      const result = await this.pool.query(query, [limit]);
+      
+      return result.rows.map(row => ({
+        id: row.id,
+        userMessage: row.user_message,
+        aiResponse: row.ai_response,
+        knowledgeBaseIdsUsed: row.knowledge_base_ids_used || [],
+        successScore: parseFloat(row.success_score),
+        contextData: row.context_data,
+        feedbackMetrics: row.feedback_metrics,
+        timestamp: new Date(row.created_at)
+      }));
+      
+    } catch (error) {
+      logger.error('Error getting training interactions:', error);
+      return [];
+    }
+  }
+
+  // Añadir entrada a la knowledge base
+  public async addKnowledgeBase(entry: {
+    title: string;
+    content: string;
+    keywords: string;
+    category: string;
+    priority: 'low' | 'medium' | 'high';
+    isActive: boolean;
+    source?: string;
+    metadata?: any;
+  }): Promise<boolean> {
+    if (!this.pool) {
+      logger.info(`Mock knowledge base entry added: ${entry.title}`);
+      return true;
+    }
+
+    try {
+      // Convert priority to numeric
+      const priorityMap = { low: 1, medium: 5, high: 10 };
+      const numericPriority = priorityMap[entry.priority] || 5;
+      
+      // Convert keywords string to array
+      const keywordsArray = entry.keywords
+        .split(',')
+        .map(k => k.trim())
+        .filter(k => k.length > 0);
+
+      const query = `
+        INSERT INTO ai_knowledge_base (
+          category, title, content, keywords, priority, is_active, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        RETURNING id;
+      `;
+      
+      const values = [
+        entry.category,
+        entry.title,
+        entry.content,
+        keywordsArray,
+        numericPriority,
+        entry.isActive
+      ];
+      
+      const result = await this.pool.query(query, values);
+      const entryId = result.rows[0]?.id;
+      
+      if (entryId) {
+        logger.info(`✅ Knowledge base entry added: "${entry.title}" (${entryId})`);
+        return true;
+      }
+      
+      return false;
+      
+    } catch (error) {
+      logger.error('Error adding knowledge base entry:', error);
+      return false;
+    }
+  }
+
+  // Actualizar entrada de knowledge base
+  public async updateKnowledgeBase(id: string, updates: {
+    title?: string;
+    content?: string;
+    keywords?: string;
+    category?: string;
+    priority?: 'low' | 'medium' | 'high';
+    isActive?: boolean;
+  }): Promise<boolean> {
+    if (!this.pool) {
+      logger.info(`Mock knowledge base entry updated: ${id}`);
+      return true;
+    }
+
+    try {
+      const setParts: string[] = [];
+      const values: any[] = [];
+      let valueIndex = 1;
+
+      if (updates.title !== undefined) {
+        setParts.push(`title = $${valueIndex++}`);
+        values.push(updates.title);
+      }
+      if (updates.content !== undefined) {
+        setParts.push(`content = $${valueIndex++}`);
+        values.push(updates.content);
+      }
+      if (updates.keywords !== undefined) {
+        const keywordsArray = updates.keywords
+          .split(',')
+          .map(k => k.trim())
+          .filter(k => k.length > 0);
+        setParts.push(`keywords = $${valueIndex++}`);
+        values.push(keywordsArray);
+      }
+      if (updates.category !== undefined) {
+        setParts.push(`category = $${valueIndex++}`);
+        values.push(updates.category);
+      }
+      if (updates.priority !== undefined) {
+        const priorityMap = { low: 1, medium: 5, high: 10 };
+        const numericPriority = priorityMap[updates.priority] || 5;
+        setParts.push(`priority = $${valueIndex++}`);
+        values.push(numericPriority);
+      }
+      if (updates.isActive !== undefined) {
+        setParts.push(`is_active = $${valueIndex++}`);
+        values.push(updates.isActive);
+      }
+
+      if (setParts.length === 0) {
+        return true; // No updates
+      }
+
+      setParts.push(`updated_at = CURRENT_TIMESTAMP`);
+      values.push(id); // Para el WHERE
+
+      const query = `
+        UPDATE ai_knowledge_base 
+        SET ${setParts.join(', ')}
+        WHERE id = $${valueIndex}
+        RETURNING id;
+      `;
+
+      const result = await this.pool.query(query, values);
+      
+      if (result.rows.length > 0) {
+        logger.info(`✅ Knowledge base entry updated: ${id}`);
+        return true;
+      } else {
+        logger.warn(`Knowledge base entry not found: ${id}`);
+        return false;
+      }
+    } catch (error) {
+      logger.error('Error updating knowledge base entry:', error);
+      return false;
+    }
+  }
+
+  // Obtener estadísticas de entrenamiento
+  public async getTrainingStats(): Promise<{
+    totalInteractions: number;
+    averageSuccessScore: number;
+    interactionsLast7Days: number;
+    averageSuccessLast7Days: number;
+    topPerformingPatterns: string[];
+  }> {
+    if (!this.pool) {
+      return {
+        totalInteractions: 0,
+        averageSuccessScore: 0,
+        interactionsLast7Days: 0,
+        averageSuccessLast7Days: 0,
+        topPerformingPatterns: []
+      };
+    }
+
+    try {
+      const query = `
+        WITH recent_interactions AS (
+          SELECT success_score 
+          FROM ai_training_interactions 
+          WHERE created_at >= NOW() - INTERVAL '7 days'
+        ),
+        all_stats AS (
+          SELECT 
+            COUNT(*) as total_interactions,
+            AVG(success_score) as avg_success_score
+          FROM ai_training_interactions
+        ),
+        recent_stats AS (
+          SELECT 
+            COUNT(*) as recent_interactions,
+            AVG(success_score) as avg_recent_success
+          FROM recent_interactions
+        )
+        SELECT 
+          COALESCE(a.total_interactions, 0) as total_interactions,
+          COALESCE(a.avg_success_score, 0) as avg_success_score,
+          COALESCE(r.recent_interactions, 0) as recent_interactions,
+          COALESCE(r.avg_recent_success, 0) as avg_recent_success
+        FROM all_stats a
+        CROSS JOIN recent_stats r;
+      `;
+      
+      const result = await this.pool.query(query);
+      const stats = result.rows[0];
+      
+      return {
+        totalInteractions: parseInt(stats.total_interactions) || 0,
+        averageSuccessScore: parseFloat(stats.avg_success_score) || 0,
+        interactionsLast7Days: parseInt(stats.recent_interactions) || 0,
+        averageSuccessLast7Days: parseFloat(stats.avg_recent_success) || 0,
+        topPerformingPatterns: [] // Se puede implementar análisis más complejo
+      };
+      
+    } catch (error) {
+      logger.error('Error getting training statistics:', error);
+      return {
+        totalInteractions: 0,
+        averageSuccessScore: 0,
+        interactionsLast7Days: 0,
+        averageSuccessLast7Days: 0,
+        topPerformingPatterns: []
+      };
+    }
+  }
+
+  // Buscar patrones en interacciones de entrenamiento
+  public async searchTrainingInteractions(
+    searchQuery: string,
+    minSuccessScore?: number,
+    limit: number = 100
+  ): Promise<TrainingInteraction[]> {
+    if (!this.pool) {
+      return [];
+    }
+
+    try {
+      let query = `
+        SELECT 
+          id, user_message, ai_response, knowledge_base_ids_used,
+          success_score, context_data, feedback_metrics, created_at
+        FROM ai_training_interactions 
+        WHERE to_tsvector('spanish', user_message) @@ plainto_tsquery('spanish', $1)
+      `;
+      
+      const values: any[] = [searchQuery];
+      let valueIndex = 2;
+      
+      if (minSuccessScore !== undefined) {
+        query += ` AND success_score >= $${valueIndex++}`;
+        values.push(minSuccessScore);
+      }
+      
+      query += ` ORDER BY success_score DESC, created_at DESC LIMIT $${valueIndex}`;
+      values.push(limit);
+      
+      const result = await this.pool.query(query, values);
+      
+      return result.rows.map(row => ({
+        id: row.id,
+        userMessage: row.user_message,
+        aiResponse: row.ai_response,
+        knowledgeBaseIdsUsed: row.knowledge_base_ids_used || [],
+        successScore: parseFloat(row.success_score),
+        contextData: row.context_data,
+        feedbackMetrics: row.feedback_metrics,
+        timestamp: new Date(row.created_at)
+      }));
+      
+    } catch (error) {
+      logger.error('Error searching training interactions:', error);
+      return [];
+    }
+  }
+
+  // Eliminar interacciones de entrenamiento antiguas (limpieza de datos)
+  public async cleanupOldTrainingInteractions(daysOld: number = 90): Promise<number> {
+    if (!this.pool) {
+      return 0;
+    }
+
+    try {
+      const query = `
+        DELETE FROM ai_training_interactions 
+        WHERE created_at < NOW() - INTERVAL '${daysOld} days'
+        RETURNING id;
+      `;
+      
+      const result = await this.pool.query(query);
+      const deletedCount = result.rows.length;
+      
+      if (deletedCount > 0) {
+        logger.info(`🗑️ Cleaned up ${deletedCount} old training interactions (>${daysOld} days)`);
+      }
+      
+      return deletedCount;
+      
+    } catch (error) {
+      logger.error('Error cleaning up old training interactions:', error);
+      return 0;
+    }
   }
 }
 

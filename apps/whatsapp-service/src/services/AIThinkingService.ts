@@ -189,7 +189,7 @@ class AIThinkingService {
 
       return {
         ...aiResponse,
-        thinkingProcess
+        thinkingProcess: thoughtProcess
       };
 
     } catch (error) {
@@ -973,7 +973,8 @@ class AIThinkingService {
     
     // Aplicar emojis según estrategia
     if (!strategy.shouldUseEmojis) {
-      adjustedResponse = adjustedResponse.replace(/[😀-🙏]/g, '');
+      // Eliminar emojis con expresión regular segura
+      adjustedResponse = adjustedResponse.replace(/\p{Emoji}/gu, '');
     }
     
     // Añadir llamadas a la acción según el tono
