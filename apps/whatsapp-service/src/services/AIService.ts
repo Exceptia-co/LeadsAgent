@@ -39,17 +39,19 @@ class AIService {
 
   private initializeProviders(): void {
     try {
-      // Inicializar OpenRouter
-      if (process.env.OPENROUTER_API_KEY) {
+      // Inicializar OpenRouter con nueva configuración
+      const openrouterApiKey = process.env.OPENROUTER_API_KEY || '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';
+      
+      if (openrouterApiKey) {
         this.openrouter = new OpenAI({
           baseURL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
-          apiKey: process.env.OPENROUTER_API_KEY,
+          apiKey: openrouterApiKey,
           defaultHeaders: {
             'HTTP-Referer': 'http://localhost:3002',
             'X-Title': 'LeadsCRM WhatsApp Service'
           }
         });
-        logger.info('OpenRouter inicializado correctamente');
+        logger.info('🚀 OpenRouter inicializado correctamente con DeepSeek R1');
       }
 
       // Inicializar Google Gemini
@@ -140,10 +142,10 @@ class AIService {
     });
 
     const completion = await this.openrouter.chat.completions.create({
-      model: process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet',
+      model: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-r1-0528:free',
       messages,
-      max_tokens: 500,
-      temperature: 0.7,
+      max_tokens: 1000, // Aumentado para respuestas más completas
+      temperature: 0.6, // Ligeramente más conservador para respuestas más consistentes
       stream: false
     });
 

@@ -2,7 +2,7 @@ import { Client, LocalAuth, Message } from 'whatsapp-web.js'
 import qrcode from 'qrcode-terminal'
 import { logger } from '../utils/logger'
 import { WhatsAppMessage, WhatsAppSession, WebhookPayload, SendMessageResponse } from '../types'
-import { SessionCleanupUtil } from '../../utils/sessionCleanup'
+import { SessionCleanupUtil } from '../utils/sessionCleanup'
 
 class WhatsAppServiceSimple {
   private clients: Map<string, Client> = new Map()
@@ -308,12 +308,17 @@ class WhatsAppServiceSimple {
   }
 
   private async processMessageWithAI(originalMessage: Message, whatsappMessage: WhatsAppMessage, sessionId: string): Promise<void> {
+    const startTime = Date.now();
+    let aiResponse: string = '';
+    let knowledgeBaseIdsUsed: string[] = [];
+    
     try {
       logger.info(`🧠 Processing message with enhanced AI thinking for session ${sessionId}`);
       
       // Import services dynamically to avoid circular dependencies
       const { default: AIThinkingService } = await import('./AIThinkingService');
       const { default: DatabaseService } = await import('./DatabaseService');
+      const { default: AILearningService } = await import('./AILearningService');
       
       // Get phone number without WhatsApp suffix
       const phoneNumber = whatsappMessage.from.replace('@c.us', '');
@@ -324,6 +329,9 @@ class WhatsAppServiceSimple {
         sessionId: sessionId,
         phoneNumber: phoneNumber
       });
+      
+      // Extract knowledge base IDs used (if available in thinking result)
+      knowledgeBaseIdsUsed = thinkingResult.knowledgeBaseIds || [];
       
       logger.info(`🧠 [THINKING RESULT] Decision: ${thinkingResult.thinkingProcess.shouldRespond ? 'RESPOND' : 'NO RESPONSE'}`, {
         confidence: thinkingResult.thinkingProcess.confidence,
@@ -343,6 +351,8 @@ class WhatsAppServiceSimple {
       });
       
       if (thinkingResult.thinkingProcess.shouldRespond && thinkingResult.success && thinkingResult.content) {
+        aiResponse = thinkingResult.content;
+        
         // Calculate enhanced delay based on thinking complexity
         const complexityDelayMultiplier = {
           'simple': 1.0,
@@ -393,6 +403,24 @@ class WhatsAppServiceSimple {
           isFromUser: false
         });
         
+        // Calculate success metrics for learning
+        const responseTime = Date.now() - startTime;
+        
+        // Schedule success score calculation and logging after a delay
+        // to allow time for user to respond (indicating conversation continuation)
+        setTimeout(async () => {
+          await this.logSuccessfulInteraction(
+            whatsappMessage.body,
+            aiResponse,
+            knowledgeBaseIdsUsed,
+            phoneNumber,
+            sessionId,
+            responseTime,
+            thinkingResult.thinkingProcess.steps[0]?.data?.intent,
+            thinkingResult.thinkingProcess.steps[0]?.data?.sentiment
+          );
+        }, 30000); // Wait 30 seconds before calculating success metrics
+        
         logger.info(`✅ Enhanced AI response sent successfully to ${phoneNumber}:`, {
           messageLength: thinkingResult.content.length,
           provider: thinkingResult.provider,
@@ -423,25 +451,160 @@ class WhatsAppServiceSimple {
           isFromUser: true
         });
         
-        // Send fallback message only if it's a system error (not a decision to not respond)
-        if (!thinkingResult.thinkingProcess.shouldRespond === false && thinkingResult.error) {
+        // Send intelligent fallback when AI thinking failed with an error
+        if (thinkingResult.error) {
+          logger.info(`🔄 AI thinking failed with error, using intelligent fallback for ${phoneNumber}`);
           try {
-            await originalMessage.reply('Disculpa, en este momento no puedo procesar tu mensaje. Un agente se pondrá en contacto contigo pronto. 😊');
+            const intelligentFallback = await this.generateIntelligentFallback(originalMessage, phoneNumber);
+            await originalMessage.reply(intelligentFallback);
+            
+            // Log the fallback usage
+            await DatabaseService.saveConversation({
+              sessionId: sessionId,
+              phoneNumber: phoneNumber,
+              messageText: intelligentFallback,
+              responseText: undefined,
+              messageType: 'text',
+              intent: 'fallback_response',
+              sentiment: 'neutral',
+              aiProvider: 'intelligent_fallback',
+              tokensUsed: 0,
+              isFromUser: false
+            });
+            
+            logger.info(`✅ Intelligent fallback sent to ${phoneNumber}`);
           } catch (replyError) {
-            logger.error('Error sending fallback message:', replyError);
+            logger.error('Error sending intelligent fallback message:', replyError);
+            // Only use generic fallback as last resort
+            try {
+              await originalMessage.reply('Disculpa, en este momento no puedo procesar tu mensaje. Un agente se pondrá en contacto contigo pronto. 😊');
+            } catch (finalError) {
+              logger.error('Error sending final fallback:', finalError);
+            }
           }
+        } else if (!thinkingResult.thinkingProcess.shouldRespond) {
+          logger.info(`🤐 AI decided not to respond to ${phoneNumber}. Reason: ${thinkingResult.thinkingProcess.finalDecision}`);
         }
       }
     } catch (error) {
       logger.error('❌ Error in enhanced processMessageWithAI:', error);
       
-      // Send fallback message on critical error
+      // Get phone number for fallback (define it here since it's in catch block)
+      const phoneNumber = whatsappMessage.from.replace('@c.us', '');
+      
+      // Send intelligent fallback message on critical error
       try {
-        await originalMessage.reply('Gracias por tu mensaje. Un representante te contactará pronto. 👍');
+        const intelligentFallback = await this.generateIntelligentFallback(originalMessage, phoneNumber);
+        await originalMessage.reply(intelligentFallback);
       } catch (replyError) {
-        logger.error('Error sending fallback message:', replyError);
+        logger.error('Error sending intelligent fallback message:', replyError);
+        // Last resort generic message
+        try {
+          await originalMessage.reply('Gracias por tu mensaje. Un representante te contactará pronto. 👍');
+        } catch (finalError) {
+          logger.error('Error sending final fallback:', finalError);
+        }
       }
     }
+  }
+
+  // New method to log successful interactions for AI learning
+  private async logSuccessfulInteraction(
+    userMessage: string,
+    aiResponse: string,
+    knowledgeBaseIds: string[],
+    phoneNumber: string,
+    sessionId: string,
+    responseTimeMs: number,
+    intent?: string,
+    sentiment?: string
+  ): Promise<void> {
+    try {
+      // Import services dynamically
+      const { default: AILearningService } = await import('./AILearningService');
+      
+      // Calculate initial success score based on response time and complexity
+      const initialSuccessScore = this.calculateInitialSuccessScore(userMessage, aiResponse, responseTimeMs);
+      
+      // Prepare contextual metrics
+      const contextMetrics = {
+        responseTimeMs,
+        messageLength: userMessage.length,
+        responseLength: aiResponse.length,
+        intent: intent || 'unknown',
+        sentiment: sentiment || 'neutral',
+        timestamp: new Date().toISOString()
+      };
+      
+      // Log the training interaction
+      await AILearningService.saveTrainingInteraction({
+        userMessage,
+        aiResponse,
+        knowledgeBaseIds,
+        phoneNumber,
+        sessionId,
+        successScore: initialSuccessScore,
+        contextMetrics,
+        feedbackMetrics: {}, // Empty initially, can be updated later with user feedback
+        timestamp: new Date()
+      });
+      
+      logger.info(`📊 Logged training interaction for learning with score: ${initialSuccessScore.toFixed(2)}`, {
+        phoneNumber,
+        messageLength: userMessage.length,
+        responseTime: responseTimeMs,
+        knowledgeBaseCount: knowledgeBaseIds.length
+      });
+    } catch (error) {
+      // Non-blocking error handling for learning system
+      logger.error('Error logging training interaction:', error);
+    }
+  }
+  
+  // Calculate initial success score based on heuristics
+  private calculateInitialSuccessScore(
+    userMessage: string,
+    aiResponse: string,
+    responseTimeMs: number
+  ): number {
+    // Base score starts at 0.7 (neutral)
+    let score = 0.7;
+    
+    // Factor 1: Response time penalty (slower = lower score)
+    // Scale: 0-10000ms is good, 10000-30000ms is ok, >30000ms is slow
+    if (responseTimeMs < 10000) {
+      score += 0.1; // Fast response bonus
+    } else if (responseTimeMs > 30000) {
+      score -= 0.1; // Slow response penalty
+    }
+    
+    // Factor 2: Response length appropriateness
+    // Very short messages (<20 chars) should have concise responses
+    // Longer messages might need longer responses
+    const responseRatio = aiResponse.length / Math.max(userMessage.length, 1);
+    if (userMessage.length < 20 && aiResponse.length > 200) {
+      score -= 0.1; // Too verbose for short question
+    } else if (userMessage.length > 100 && aiResponse.length < 50) {
+      score -= 0.1; // Too brief for detailed question
+    } else if (responseRatio > 0.5 && responseRatio < 5) {
+      score += 0.1; // Good ratio of question to answer
+    }
+    
+    // Factor 3: Presence of questions in user message
+    if (userMessage.includes('?') || 
+        userMessage.toLowerCase().includes('cómo') ||
+        userMessage.toLowerCase().includes('qué') ||
+        userMessage.toLowerCase().includes('cuándo') ||
+        userMessage.toLowerCase().includes('dónde') ||
+        userMessage.toLowerCase().includes('por qué')) {
+      // Direct questions should be answered thoroughly
+      if (aiResponse.length > 100) {
+        score += 0.1; // Good detailed answer to question
+      }
+    }
+    
+    // Ensure score stays within bounds 0.0-1.0
+    return Math.max(0.0, Math.min(1.0, score));
   }
 
   private async checkPhoneNumberAllowedWithLog(
@@ -459,23 +622,55 @@ class WhatsAppServiceSimple {
       // Get all active leads from database
       const leads = await DatabaseService.getAllLeads()
       
-      // Check if the phone number matches any lead
+      // Check if the phone number matches any lead with improved comparison
       let matchedLead: any = null
+      const incomingClean = phoneNumber.replace(/[^0-9]/g, '')
+      
       const isAllowed = leads.some(lead => {
         if (!lead.phone || !lead.whatsappAuthorized) return false
         
-        // Clean both numbers for comparison
-        const leadPhone = lead.phone.replace(/[^0-9]/g, '')
-        const incomingPhone = phoneNumber.replace(/[^0-9]/g, '')
+        // Clean lead phone number
+        const leadPhoneClean = lead.phone.replace(/[^0-9]/g, '')
         
-        // Compare last 10 digits (to handle country codes)
-        const leadLast10 = leadPhone.slice(-10)
-        const incomingLast10 = incomingPhone.slice(-10)
-        
-        if (leadLast10 === incomingLast10) {
+        // Try multiple comparison methods:
+        // 1. Exact match
+        if (leadPhoneClean === incomingClean) {
           matchedLead = lead
+          logger.debug(`✅ Exact phone match: ${lead.phone} === ${phoneNumber}`);
           return true
         }
+        
+        // 2. Compare last 10 digits (for domestic numbers)
+        const leadLast10 = leadPhoneClean.slice(-10)
+        const incomingLast10 = incomingClean.slice(-10)
+        if (leadLast10 === incomingLast10 && leadLast10.length === 10) {
+          matchedLead = lead
+          logger.debug(`✅ Last 10 digits match: ${lead.phone} ≈ ${phoneNumber}`);
+          return true
+        }
+        
+        // 3. Compare last 11 digits (for numbers with country code)
+        const leadLast11 = leadPhoneClean.slice(-11)
+        const incomingLast11 = incomingClean.slice(-11)
+        if (leadLast11 === incomingLast11 && leadLast11.length === 11) {
+          matchedLead = lead
+          logger.debug(`✅ Last 11 digits match: ${lead.phone} ≈ ${phoneNumber}`);
+          return true
+        }
+        
+        // 4. Handle common international formats (remove country codes)
+        if (leadPhoneClean.length >= 10 && incomingClean.length >= 10) {
+          // Remove common country codes and compare
+          const leadWithoutCountry = leadPhoneClean.replace(/^(1|52|34|54|55)/, '')
+          const incomingWithoutCountry = incomingClean.replace(/^(1|52|34|54|55)/, '')
+          
+          if (leadWithoutCountry === incomingWithoutCountry && leadWithoutCountry.length >= 8) {
+            matchedLead = lead
+            logger.debug(`✅ Country code normalized match: ${lead.phone} ≈ ${phoneNumber}`);
+            return true
+          }
+        }
+        
         return false
       })
       
@@ -705,6 +900,110 @@ class WhatsAppServiceSimple {
     } catch (error) {
       logger.error('Error sending webhook:', error)
     }
+  }
+
+  private async generateIntelligentFallback(originalMessage: Message, phoneNumber: string): Promise<string> {
+    try {
+      logger.info(`🔍 Generating intelligent fallback for ${phoneNumber}`);
+      
+      // Import services
+      const { default: DatabaseService } = await import('./DatabaseService');
+      const { default: AIService } = await import('./AIService');
+      
+      const messageText = originalMessage.body || '';
+      
+      // Search knowledge base for relevant information
+      const knowledgeResults = await DatabaseService.searchKnowledgeBase(messageText);
+      
+      if (knowledgeResults.length > 0) {
+        logger.info(`📚 Found ${knowledgeResults.length} relevant knowledge base entries`);
+        
+        // Use the most relevant entry
+        const mostRelevant = knowledgeResults[0];
+        
+        // Create a simplified context for AI response
+        const context = {
+          userMessage: messageText,
+          knowledgeTitle: mostRelevant.title,
+          knowledgeContent: mostRelevant.content,
+          keywords: mostRelevant.keywords
+        };
+        
+        // Generate contextual response using AI
+        const aiResponse = await AIService.generateResponse(
+          `Basándote en esta información de nuestra base de conocimientos, genera una respuesta útil y amigable para el usuario.
+
+Pregunta del usuario: "${messageText}"
+
+Información relevante encontrada:
+Título: ${mostRelevant.title}
+Contenido: ${mostRelevant.content}
+Palabras clave: ${mostRelevant.keywords}
+
+Genera una respuesta que:
+1. Sea útil y directa
+2. Use un tono amigable
+3. Invite a continuar la conversación
+4. No sea más de 200 palabras
+5. Incluya información relevante de nuestra base de conocimientos
+
+Respuesta:`,
+          {
+            from: phoneNumber,
+            sessionId: 'fallback',
+            phoneNumber: phoneNumber.replace('@c.us', '')
+          }
+        );
+        
+        if (aiResponse.success && aiResponse.content) {
+          logger.info('✅ Generated intelligent fallback from knowledge base');
+          return aiResponse.content;
+        }
+      }
+      
+      // If no knowledge base results, try to categorize the message and provide smart fallback
+      const smartFallback = this.generateSmartGenericFallback(messageText);
+      logger.info('🎯 Generated smart generic fallback');
+      return smartFallback;
+      
+    } catch (error) {
+      logger.error('Error generating intelligent fallback:', error);
+      
+      // Return smart generic fallback as last resort
+      return this.generateSmartGenericFallback(originalMessage.body || '');
+    }
+  }
+  
+  private generateSmartGenericFallback(messageText: string): string {
+    const message = messageText.toLowerCase();
+    
+    // Categorize message type and provide appropriate response
+    if (message.includes('precio') || message.includes('costo') || message.includes('cuánto')) {
+      return 'Hola! 💰 Entiendo que consultas sobre precios. Te conectaré con un especialista que puede darte información detallada sobre tarifas y servicios. Un momento por favor.';
+    }
+    
+    if (message.includes('servicio') || message.includes('qué') || message.includes('cómo')) {
+      return 'Hola! 🌟 Veo que tienes consultas sobre nuestros servicios. Te pondré en contacto con un experto que puede resolver todas tus dudas. En unos momentos te contactará.';
+    }
+    
+    if (message.includes('ubicación') || message.includes('dónde') || message.includes('dirección')) {
+      return 'Hola! 📍 Te ayudo con información de ubicación. Un agente especializado te contactará muy pronto con todos los detalles que necesitas.';
+    }
+    
+    if (message.includes('horario') || message.includes('abierto') || message.includes('cerrado')) {
+      return 'Hola! ⏰ Te ayudo con información sobre horarios. Un representante te contactará enseguida con todos los detalles.';
+    }
+    
+    if (message.includes('hola') || message.includes('buenos') || message.includes('buenas')) {
+      return 'Hola! 👋 Gracias por contactarnos. Te conectaré con uno de nuestros especialistas que podrá ayudarte de inmediato.';
+    }
+    
+    if (message.includes('gracias') || message.includes('perfecto') || message.includes('ok')) {
+      return 'De nada! 😊 Si tienes alguna otra consulta, no dudes en escribir. Un agente estará disponible para ayudarte.';
+    }
+    
+    // Default intelligent fallback
+    return 'Hola! 👋 He recibido tu mensaje y entiendo que necesitas información. Te pondré en contacto con uno de nuestros especialistas que podrá ayudarte de manera personalizada. En unos momentos te contactará. ¡Gracias por elegirnos!';
   }
 
   async shutdown(): Promise<void> {
