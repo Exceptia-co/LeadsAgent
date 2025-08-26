@@ -51,7 +51,7 @@ class AIService {
             'X-Title': 'LeadsCRM WhatsApp Service'
           }
         });
-        logger.info('🚀 OpenRouter inicializado correctamente con DeepSeek R1');
+        logger.info('🚀 OpenRouter inicializado correctamente con GPT-OSS-120B');
       }
 
       // Inicializar Google Gemini
@@ -142,10 +142,10 @@ class AIService {
     });
 
     const completion = await this.openrouter.chat.completions.create({
-      model: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-r1-0528:free',
+      model: process.env.OPENROUTER_MODEL || 'openai/gpt-oss-120b',
       messages,
-      max_tokens: 1000, // Aumentado para respuestas más completas
-      temperature: 0.6, // Ligeramente más conservador para respuestas más consistentes
+      max_tokens: 2048, // Aprovechamos las capacidades del modelo GPT-OSS-120B
+      temperature: 0.7, // Optimizado para GPT-OSS-120B
       stream: false
     });
 

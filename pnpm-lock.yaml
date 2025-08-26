@@ -315,6 +315,9 @@ importers:
       '@google/generative-ai':
         specifier: ^0.24.1
         version: 0.24.1
+      '@leadcrm/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@types/pg':
         specifier: ^8.15.5
         version: 8.15.5

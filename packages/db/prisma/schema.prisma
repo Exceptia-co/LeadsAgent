@@ -218,6 +218,31 @@ model WhatsAppConversation {
   @@map("whatsapp_conversations")
 }
 
+model WhatsAppSession {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId       String    @unique @map("session_id") @db.VarChar(255)
+  name            String?   @db.VarChar(255)
+  status          String    @default("connecting") @db.VarChar(50)
+  qrCode          String?   @map("qr_code") @db.Text
+  connectedNumber String?   @map("connected_number") @db.VarChar(50)
+  authData        Json?     @map("auth_data")
+  lastSeen        DateTime  @default(now()) @map("last_seen") @db.Timestamptz(6)
+  isActive        Boolean   @default(true) @map("is_active")
+  reconnectCount  Int       @default(0) @map("reconnect_count")
+  lastError       String?   @map("last_error")
+  webhookUrl      String?   @map("webhook_url")
+  metadata        Json?     @default("{}")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@index([sessionId], map: "idx_sessions_session_id")
+  @@index([status], map: "idx_sessions_status")
+  @@index([isActive], map: "idx_sessions_active")
+  @@index([lastSeen], map: "idx_sessions_last_seen")
+  @@index([connectedNumber], map: "idx_sessions_phone")
+  @@map("whatsapp_sessions")
+}
+
 model WhatsAppWhitelistLog {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   phoneNumber String    @map("phone_number") @db.VarChar(50)

@@ -4,6 +4,8 @@ import { logger } from '../utils/logger'
 import { WhatsAppMessage, WhatsAppSession, WebhookPayload, SendMessageResponse } from '../types'
 import { SessionCleanupUtil } from '../utils/sessionCleanup'
 import PhoneNumberService from './PhoneNumberService'
+import SessionPersistenceService from './SessionPersistenceService'
+import SessionRecoveryService from './SessionRecoveryService'
 
 class WhatsAppServiceSimple {
   private clients: Map<string, Client> = new Map()
@@ -15,7 +17,24 @@ class WhatsAppServiceSimple {
   }
 
   async initialize(): Promise<void> {
-    logger.info('WhatsApp service initialized successfully (no Redis)')
+    logger.info('🚀 Iniciando WhatsApp service con persistencia mejorada...')
+    
+    // Recover existing sessions from database
+    try {
+      const recoveryResult = await SessionRecoveryService.recoverAllSessions(this)
+      logger.info(`📊 Recuperación completada: ${recoveryResult.recoveredSessions}/${recoveryResult.totalSessions} sesiones`)
+      
+      if (recoveryResult.errors.length > 0) {
+        logger.warn('⚠️ Errores durante recuperación:', recoveryResult.errors)
+      }
+    } catch (error) {
+      logger.error('❌ Error durante recuperación de sesiones:', error)
+    }
+    
+    // Start periodic health checks
+    SessionRecoveryService.scheduleHealthChecks(this)
+    
+    logger.info('✅ WhatsApp service initialized successfully with database persistence')
   }
 
   async createSession(sessionId: string): Promise<WhatsAppSession> {
@@ -60,14 +79,25 @@ class WhatsAppServiceSimple {
       // Set up event listeners
       this.setupClientEventListeners(client, sessionId)
 
-      // Store client and session
+      // Store client and session in memory
       this.clients.set(sessionId, client)
       this.sessions.set(sessionId, session)
+      
+      // Persist session to database
+      await SessionPersistenceService.saveSession({
+        sessionId: sessionId,
+        name: sessionId,
+        status: 'connecting',
+        lastSeen: new Date(),
+        webhookUrl: this.webhookUrl,
+        isActive: true,
+        reconnectCount: 0
+      })
 
       // Initialize the client
       client.initialize()
 
-      logger.info(`WhatsApp session ${sessionId} created successfully`)
+      logger.info(`📱 WhatsApp session ${sessionId} created and persisted successfully`)
       return session
     } catch (error) {
       logger.error(`Error creating session ${sessionId}:`, error)
@@ -251,7 +281,7 @@ class WhatsAppServiceSimple {
 
   async destroySession(sessionId: string): Promise<void> {
     try {
-      logger.info(`Starting destruction of session ${sessionId}`)
+      logger.info(`🗑️ Starting destruction of session ${sessionId}`)
       
       const client = this.clients.get(sessionId)
       if (client) {
@@ -266,8 +296,17 @@ class WhatsAppServiceSimple {
         this.clients.delete(sessionId)
       }
 
-      // Remover de la lista de sesiones
+      // Remover de la lista de sesiones en memoria
       this.sessions.delete(sessionId)
+      
+      // Deactivate session in database
+      try {
+        await SessionPersistenceService.deactivateSession(sessionId)
+        logger.info(`Session ${sessionId} deactivated in database`)
+      } catch (dbError) {
+        logger.error(`Error deactivating session ${sessionId} in database:`, dbError)
+        // Continue with cleanup even if database update fails
+      }
       
       // Usar la utilidad de limpieza segura para archivos
       try {
@@ -278,13 +317,20 @@ class WhatsAppServiceSimple {
         // No lanzar el error para permitir que la aplicación continúe
       }
       
-      logger.info(`Session ${sessionId} destroyed successfully`)
+      logger.info(`✅ Session ${sessionId} destroyed completely`)
     } catch (error) {
-      logger.error(`Error destroying session ${sessionId}:`, error)
+      logger.error(`❌ Error destroying session ${sessionId}:`, error)
       
       // Aún así, intentar limpiar la sesión de las estructuras de datos
       this.clients.delete(sessionId)
       this.sessions.delete(sessionId)
+      
+      // Try to deactivate in database even on error
+      try {
+        await SessionPersistenceService.deactivateSession(sessionId)
+      } catch (dbError) {
+        logger.error(`Final database cleanup failed for session ${sessionId}:`, dbError)
+      }
       
       // Intentar limpieza de archivos como último recurso
       try {
@@ -297,7 +343,8 @@ class WhatsAppServiceSimple {
     }
   }
 
-  private updateSessionStatus(sessionId: string, status: WhatsAppSession['status'], data?: any): void {
+  private async updateSessionStatus(sessionId: string, status: WhatsAppSession['status'], data?: any): Promise<void> {
+    // Update in-memory session
     const session = this.sessions.get(sessionId)
     if (session) {
       session.status = status
@@ -305,6 +352,14 @@ class WhatsAppServiceSimple {
       if (data) {
         Object.assign(session, data)
       }
+    }
+    
+    // Persist to database asynchronously
+    try {
+      await SessionPersistenceService.updateSessionStatus(sessionId, status, data)
+    } catch (error) {
+      logger.error(`Error persisting session status update for ${sessionId}:`, error)
+      // Don't throw - continue execution even if persistence fails
     }
   }
 
