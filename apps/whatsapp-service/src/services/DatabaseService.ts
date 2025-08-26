@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { logger } from '../utils/logger';
+import PhoneNumberService from './PhoneNumberService';
 import { TrainingInteraction } from './AILearningService';
 
 // Interfaz para datos de conversación
@@ -638,6 +639,31 @@ class DatabaseService {
     return mockLeads
   }
 
+  // Check if a lead with similar phone number already exists
+  public async findLeadByPhone(phoneNumber: string): Promise<Lead | null> {
+    if (!this.pool) {
+      return null;
+    }
+
+    try {
+      // Get all leads to check for duplicates
+      const allLeads = await this.getAllLeads();
+      
+      // Use PhoneNumberService to find equivalent phone numbers
+      for (const lead of allLeads) {
+        if (lead.phone && PhoneNumberService.arePhoneNumbersEquivalent(phoneNumber, lead.phone)) {
+          logger.info(`📞 Found existing lead with equivalent phone number: ${lead.phone} ≈ ${phoneNumber}`);
+          return lead;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      logger.error('Error searching for lead by phone:', error);
+      return null;
+    }
+  }
+
   // Create a new lead
   public async createLead(leadData: {
     name?: string | null;
@@ -652,6 +678,15 @@ class DatabaseService {
     }
 
     try {
+      // Normalize the phone number before processing
+      const normalizedPhone = PhoneNumberService.normalizePhoneNumber(leadData.phone);
+      
+      // Check if a lead with this phone number already exists
+      const existingLead = await this.findLeadByPhone(normalizedPhone);
+      if (existingLead) {
+        logger.warn(`⚠️ Lead with phone number ${leadData.phone} (normalized: ${normalizedPhone}) already exists with ID: ${existingLead.id}`);
+        throw new Error(`Duplicate phone number: A lead with phone ${leadData.phone} already exists`);
+      }
       // Check if leads table exists
       const checkTableQuery = `
         SELECT EXISTS (
@@ -681,7 +716,7 @@ class DatabaseService {
       const values = [
         leadData.name || null,
         leadData.email || null,
-        leadData.phone,
+        normalizedPhone, // Use normalized phone number
         leadData.status || 'NUEVO',
         leadData.source || 'manual',
         true // Default to WhatsApp authorized
@@ -2103,10 +2138,10 @@ class DatabaseService {
   public async addKnowledgeBase(entry: {
     title: string;
     content: string;
-    keywords: string;
+    keywords: string | string[];
     category: string;
-    priority: 'low' | 'medium' | 'high';
-    isActive: boolean;
+    priority?: 'low' | 'medium' | 'high' | number;
+    isActive?: boolean;
     source?: string;
     metadata?: any;
   }): Promise<boolean> {
@@ -2117,14 +2152,24 @@ class DatabaseService {
 
     try {
       // Convert priority to numeric
-      const priorityMap = { low: 1, medium: 5, high: 10 };
-      const numericPriority = priorityMap[entry.priority] || 5;
+      let numericPriority: number;
+      if (typeof entry.priority === 'number') {
+        numericPriority = entry.priority;
+      } else {
+        const priorityMap = { low: 1, medium: 5, high: 10 };
+        numericPriority = priorityMap[entry.priority || 'medium'] || 5;
+      }
       
-      // Convert keywords string to array
-      const keywordsArray = entry.keywords
-        .split(',')
-        .map(k => k.trim())
-        .filter(k => k.length > 0);
+      // Convert keywords to array if it's a string
+      let keywordsArray: string[];
+      if (typeof entry.keywords === 'string') {
+        keywordsArray = entry.keywords
+          .split(',')
+          .map(k => k.trim())
+          .filter(k => k.length > 0);
+      } else {
+        keywordsArray = entry.keywords;
+      }
 
       const query = `
         INSERT INTO ai_knowledge_base (
@@ -2139,7 +2184,7 @@ class DatabaseService {
         entry.content,
         keywordsArray,
         numericPriority,
-        entry.isActive
+        entry.isActive !== false // Default to true
       ];
       
       const result = await this.pool.query(query, values);
@@ -2155,6 +2200,80 @@ class DatabaseService {
     } catch (error) {
       logger.error('Error adding knowledge base entry:', error);
       return false;
+    }
+  }
+
+  // Limpiar toda la knowledge base
+  public async clearKnowledgeBase(): Promise<boolean> {
+    if (!this.pool) {
+      logger.info('Mock: Knowledge base cleared');
+      return true;
+    }
+
+    try {
+      const query = `DELETE FROM ai_knowledge_base`;
+      const result = await this.pool.query(query);
+      
+      logger.info(`🧹 Cleared ${result.rowCount} entries from knowledge base`);
+      return true;
+    } catch (error) {
+      logger.error('Error clearing knowledge base:', error);
+      return false;
+    }
+  }
+
+  // Obtener estadísticas de knowledge base
+  public async getKnowledgeBaseStats(): Promise<{
+    totalEntries: number;
+    activeEntries: number;
+    categoryCounts: Record<string, number>;
+    averagePriority: number;
+  }> {
+    if (!this.pool) {
+      return {
+        totalEntries: 6,
+        activeEntries: 6,
+        categoryCounts: { 'productos': 1, 'precios': 1, 'monedas': 1, 'registro': 1, 'pagos': 1, 'consejos': 1 },
+        averagePriority: 8.5
+      };
+    }
+
+    try {
+      const query = `
+        SELECT 
+          COUNT(*) as total_entries,
+          COUNT(CASE WHEN is_active = true THEN 1 END) as active_entries,
+          AVG(priority) as avg_priority,
+          json_object_agg(category, category_count) as category_counts
+        FROM (
+          SELECT 
+            category, 
+            COUNT(*) as category_count,
+            priority,
+            is_active
+          FROM ai_knowledge_base 
+          GROUP BY category, priority, is_active
+        ) subquery;
+      `;
+      
+      const result = await this.pool.query(query);
+      const stats = result.rows[0];
+      
+      return {
+        totalEntries: parseInt(stats.total_entries) || 0,
+        activeEntries: parseInt(stats.active_entries) || 0,
+        categoryCounts: stats.category_counts || {},
+        averagePriority: parseFloat(stats.avg_priority) || 0
+      };
+      
+    } catch (error) {
+      logger.error('Error getting knowledge base stats:', error);
+      return {
+        totalEntries: 0,
+        activeEntries: 0,
+        categoryCounts: {},
+        averagePriority: 0
+      };
     }
   }
 
