@@ -20,8 +20,21 @@ process.on('unhandledRejection', (reason, promise) => {
 
 logger.info('🏁 Starting bootstrap process...')
 
-// Load environment variables from project root
-dotenv.config({ path: path.resolve(process.cwd(), '../../.env') })
+// Load environment variables from project root and local
+const rootEnvPath = path.resolve(process.cwd(), '../../.env');
+const localEnvPath = path.resolve(process.cwd(), '.env');
+
+// Try to load local .env first (higher priority)
+if (fs.existsSync(localEnvPath)) {
+  dotenv.config({ path: localEnvPath });
+  logger.info(`📁 Loaded local .env from: ${localEnvPath}`);
+}
+
+// Then load root .env (will not override existing vars)
+if (fs.existsSync(rootEnvPath)) {
+  dotenv.config({ path: rootEnvPath });
+  logger.info(`📁 Loaded root .env from: ${rootEnvPath}`);
+}
 
 const app = express()
 const PORT = process.env.WHATSAPP_SERVICE_PORT || process.env.PORT || 3002

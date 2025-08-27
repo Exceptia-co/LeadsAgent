@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card } from '../../../components/ui/card'
 import { Badge } from '../../../components/ui/badge'
 import { useLeads } from '../../../lib/api'
@@ -8,9 +8,10 @@ import { STATUS_LABELS, STATUS_VARIANTS, type Lead } from '../../../types'
 import { AddLeadModal } from '../../../components/AddLeadModal'
 import { EditLeadModal } from '../../../components/EditLeadModal'
 import { DeleteConfirmDialog } from '../../../components/DeleteConfirmDialog'
-import { Users, Search, Plus, Filter, Edit2, Trash2, Eye } from 'lucide-react'
+import { Users, Search, Plus, Filter, Edit2, Trash2, Eye, X } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
 import { useToast } from '../../../hooks/use-toast'
+import { useDebounce } from '../../../hooks/use-debounce'
 
 export default function LeadsPage() {
   const [currentPage, setCurrentPage] = useState(1)
@@ -19,13 +20,63 @@ export default function LeadsPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const { leads, pagination, isLoading, isError, refetch } = useLeads(currentPage, 20)
+  const [isSearching, setIsSearching] = useState(false)
+  
+  // Ref to maintain focus on search input
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const [shouldMaintainFocus, setShouldMaintainFocus] = useState(false)
+  
+  // Debounce the search term to avoid too many API calls
+  const debouncedSearchTerm = useDebounce(searchTerm, 500)
+  
+  // Use debounced search term for API call
+  const { leads, pagination, isLoading, isError, refetch, isRefreshing } = useLeads(
+    currentPage, 
+    20, 
+    debouncedSearchTerm
+  )
+  
   const { getToken } = useAuth()
-  const toast = useToast()
+  const { success: toastSuccess, error: toastError } = useToast()
+  
+  // Reset to first page when search term changes
+  useEffect(() => {
+    if (debouncedSearchTerm !== '') {
+      setCurrentPage(1)
+    }
+  }, [debouncedSearchTerm])
+  
+  // Track when we're actively searching (for UI feedback)
+  useEffect(() => {
+    const wasSearching = isSearching
+    setIsSearching(searchTerm !== debouncedSearchTerm)
+    
+    // If we just finished searching and should maintain focus, refocus the input
+    if (wasSearching && !isSearching && shouldMaintainFocus && searchInputRef.current) {
+      searchInputRef.current.focus()
+      setShouldMaintainFocus(false)
+    }
+  }, [searchTerm, debouncedSearchTerm, isSearching, shouldMaintainFocus])
+  
+  // Maintain focus after data updates if user was typing
+  useEffect(() => {
+    if (shouldMaintainFocus && searchInputRef.current && !isLoading) {
+      // Use setTimeout to ensure focus happens after render
+      const timeoutId = setTimeout(() => {
+        if (searchInputRef.current && shouldMaintainFocus) {
+          searchInputRef.current.focus()
+          // Restore cursor position to the end
+          const len = searchInputRef.current.value.length
+          searchInputRef.current.setSelectionRange(len, len)
+        }
+      }, 0)
+      return () => clearTimeout(timeoutId)
+    }
+  }, [leads, isLoading, shouldMaintainFocus])
 
   const handleWhatsAppToggle = async (leadId: string, authorized: boolean) => {
     try {
-      const response = await fetch(`/api/leads/${leadId}/whatsapp`, {
+      const response = await fetch(`/api/public/leads/${leadId}/whatsapp`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ whatsappAuthorized: authorized })
@@ -71,14 +122,12 @@ export default function LeadsPage() {
     )
   }
 
-  const filteredLeads = leads.filter((lead: Lead) =>
-    (lead.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-    lead.phone.includes(searchTerm)
-  )
+  // No need for client-side filtering anymore, the backend handles it
+  const displayLeads = leads
 
   const handleLeadCreated = () => {
     setIsModalOpen(false)
-    toast.success('Lead creado exitosamente')
+    toastSuccess('Lead creado exitosamente')
     refetch() // Refresh the leads list
   }
 
@@ -89,7 +138,7 @@ export default function LeadsPage() {
 
   const handleEditSuccess = () => {
     setIsEditModalOpen(false)
-    toast.success('Lead actualizado exitosamente')
+    toastSuccess('Lead actualizado exitosamente')
     refetch() // Refresh the leads list
     setSelectedLead(null)
   }
@@ -112,15 +161,15 @@ export default function LeadsPage() {
       })
       
       if (response.ok) {
-        toast.success('Lead eliminado exitosamente')
+        toastSuccess('Lead eliminado exitosamente')
         refetch() // Refresh the leads list
       } else {
         const error = await response.json()
-        toast.error(error.message || 'Error al eliminar el lead')
+        toastError(error.message || 'Error al eliminar el lead')
       }
     } catch (error) {
       console.error('Error deleting lead:', error)
-      toast.error('Error al eliminar el lead')
+      toastError('Error al eliminar el lead')
     } finally {
       setIsDeleteDialogOpen(false)
       setSelectedLead(null)
@@ -147,18 +196,52 @@ export default function LeadsPage() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
             <input
+              ref={searchInputRef}
               type="text"
-              placeholder="Buscar por nombre o teléfono..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="Buscar por nombre, teléfono o email..."
+              className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value)
+                setShouldMaintainFocus(true)
+              }}
+              onBlur={() => setShouldMaintainFocus(false)}
             />
+            {/* Clear search button */}
+            {searchTerm && (
+              <button
+                onClick={() => {
+                  setSearchTerm('')
+                  setShouldMaintainFocus(true)
+                  // Focus back on input after clearing
+                  setTimeout(() => {
+                    searchInputRef.current?.focus()
+                  }, 0)
+                }}
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                tabIndex={-1} // Prevent this button from taking focus
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
+            {/* Search indicator */}
+            {isSearching && (
+              <div className="absolute right-10 top-1/2 transform -translate-y-1/2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+              </div>
+            )}
           </div>
           <button className="flex items-center px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
             <Filter className="h-4 w-4 mr-2" />
             Filtros
           </button>
         </div>
+        {/* Active search indicator */}
+        {debouncedSearchTerm && (
+          <div className="mt-3 text-sm text-gray-600">
+            Mostrando resultados para: <span className="font-medium">"{debouncedSearchTerm}"</span>
+          </div>
+        )}
       </Card>
 
       {/* Stats Summary */}
@@ -225,8 +308,8 @@ export default function LeadsPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredLeads.length > 0 ? (
-                filteredLeads.map((lead: Lead) => (
+              {displayLeads.length > 0 ? (
+                displayLeads.map((lead: Lead) => (
                   <tr key={lead.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
@@ -309,8 +392,26 @@ export default function LeadsPage() {
                   <td colSpan={7} className="px-6 py-12 text-center">
                     <Users className="mx-auto h-12 w-12 text-gray-300 mb-4" />
                     <p className="text-gray-500">
-                      {searchTerm ? 'No se encontraron leads con ese criterio' : 'No hay leads disponibles'}
+                      {debouncedSearchTerm 
+                        ? `No se encontraron leads que coincidan con "${debouncedSearchTerm}"` 
+                        : 'No hay leads disponibles'
+                      }
                     </p>
+                    {debouncedSearchTerm && (
+                      <button
+                        onClick={() => {
+                          setSearchTerm('')
+                          setShouldMaintainFocus(true)
+                          // Focus back on input after clearing
+                          setTimeout(() => {
+                            searchInputRef.current?.focus()
+                          }, 0)
+                        }}
+                        className="mt-2 text-blue-600 hover:text-blue-800 underline"
+                      >
+                        Limpiar búsqueda
+                      </button>
+                    )}
                   </td>
                 </tr>
               )}
@@ -318,7 +419,7 @@ export default function LeadsPage() {
           </table>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination - Hide if searching and no results, or if only one page */}
         {pagination && pagination.totalPages > 1 && (
           <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
             <div className="text-sm text-gray-700">

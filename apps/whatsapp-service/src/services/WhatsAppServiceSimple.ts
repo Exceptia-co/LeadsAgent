@@ -1219,15 +1219,25 @@ class WhatsAppServiceSimple {
           "X-WhatsApp-Service": "true",
         },
         body: JSON.stringify(payload),
+        // Add timeout to prevent hanging
+        signal: AbortSignal.timeout(5000) // 5 second timeout
       });
 
       if (!response.ok) {
-        throw new Error(`Webhook failed with status: ${response.status}`);
+        logger.warn(`⚠️ Webhook failed with status ${response.status} for event ${payload.event}. This won't affect WhatsApp service functionality.`);
+        return;
       }
 
-      logger.debug(`Webhook sent successfully for event ${payload.event}`);
-    } catch (error) {
-      logger.error("Error sending webhook:", error);
+      logger.debug(`🚀 Webhook sent successfully for event ${payload.event}`);
+    } catch (error: any) {
+      // Log warning instead of error to reduce noise, and include helpful context
+      logger.warn(`⚠️ Webhook delivery failed for event ${payload.event}:`, {
+        error: error.message,
+        webhookUrl: this.webhookUrl,
+        suggestion: 'Check if the webhook endpoint exists and is accessible'
+      });
+      
+      // Don't throw error - webhook failures should not interrupt WhatsApp functionality
     }
   }
 

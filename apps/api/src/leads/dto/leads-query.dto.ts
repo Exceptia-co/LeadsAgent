@@ -1,6 +1,6 @@
-import { IsOptional, IsString, IsIn, IsNumberString } from 'class-validator'
+import { IsOptional, IsString, IsIn, IsNumber } from 'class-validator'
 import { ApiPropertyOptional } from '@nestjs/swagger'
-import { Transform } from 'class-transformer'
+import { Transform, Type } from 'class-transformer'
 import { LeadStatus } from '@prisma/client'
 
 export class LeadsQueryDto {
@@ -22,19 +22,21 @@ export class LeadsQueryDto {
 
   @ApiPropertyOptional({
     description: 'Page number for pagination',
-    example: '1'
+    example: 1,
+    type: Number
   })
   @IsOptional()
-  @IsNumberString()
-  @Transform(({ value }) => parseInt(value))
+  @Type(() => Number)
+  @IsNumber()
   page?: number
 
   @ApiPropertyOptional({
     description: 'Number of items per page',
-    example: '20'
+    example: 20,
+    type: Number
   })
   @IsOptional()
-  @IsNumberString()
-  @Transform(({ value }) => parseInt(value))
+  @Type(() => Number)
+  @IsNumber()
   limit?: number
 }

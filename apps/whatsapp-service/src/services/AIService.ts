@@ -68,6 +68,10 @@ class AIService {
 
   constructor() {
     this.currentProvider = (process.env.AI_PROVIDER as 'openrouter' | 'gemini') || 'openrouter';
+    logger.info(`🔍 Environment Variables Check:`);
+    logger.info(`  - AI_PROVIDER: ${process.env.AI_PROVIDER}`);
+    logger.info(`  - OPENROUTER_MODEL: ${process.env.OPENROUTER_MODEL}`);
+    logger.info(`  - OPENROUTER_API_KEY: ${process.env.OPENROUTER_API_KEY ? 'Set (hidden)' : 'Not set'}`);
     this.initializeProviders();
   }
 
@@ -85,7 +89,8 @@ class AIService {
             'X-Title': 'LeadsCRM WhatsApp Service'
           }
         });
-        logger.info('🚀 OpenRouter inicializado correctamente con GPT-OSS-120B');
+        const modelToUse = process.env.OPENROUTER_MODEL || 'openai/gpt-oss-120b';
+        logger.info(`🚀 OpenRouter inicializado correctamente con modelo: ${modelToUse}`);
       }
 
       // Inicializar Google Gemini
@@ -175,25 +180,52 @@ class AIService {
       content: message
     });
 
-    const completion = await this.openrouter.chat.completions.create({
-      model: process.env.OPENROUTER_MODEL || 'openai/gpt-oss-120b',
-      messages,
-      max_tokens: 2048, // Aprovechamos las capacidades del modelo GPT-OSS-120B
-      temperature: 0.7, // Optimizado para GPT-OSS-120B
-      stream: false
-    });
+    // Get the model name and log it for debugging
+    const modelName = process.env.OPENROUTER_MODEL || 'openai/gpt-oss-120b';
+    logger.info(`🤖 Using OpenRouter model: ${modelName}`);
 
-    const responseContent = completion.choices[0]?.message?.content;
-    if (!responseContent) {
-      throw new Error('No se recibió respuesta del modelo');
+    try {
+      const completion = await this.openrouter.chat.completions.create({
+        model: modelName,
+        messages,
+        max_tokens: 2048,
+        temperature: 0.7,
+        stream: false
+      });
+
+      const responseContent = completion.choices[0]?.message?.content;
+      if (!responseContent) {
+        logger.error(`❌ Empty response from model ${modelName}`, {
+          choices: completion.choices,
+          model: modelName
+        });
+        throw new Error(`No se recibió respuesta del modelo ${modelName}`);
+      }
+
+      return {
+        success: true,
+        content: responseContent,
+        provider: 'openrouter',
+        tokensUsed: completion.usage?.total_tokens
+      };
+    } catch (apiError: any) {
+      // Log detailed API error information
+      logger.error('❌ OpenRouter API Error:', {
+        error: apiError.message,
+        status: apiError.status,
+        model: modelName,
+        code: apiError.code
+      });
+      
+      // Check for specific error types
+      if (apiError.status === 404 || apiError.message?.includes('model not found')) {
+        throw new Error(`Model '${modelName}' not found in OpenRouter. Please check your OPENROUTER_MODEL configuration.`);
+      }
+      
+      throw apiError;
     }
 
-    return {
-      success: true,
-      content: responseContent,
-      provider: 'openrouter',
-      tokensUsed: completion.usage?.total_tokens
-    };
+    // This section is now handled in the try block above
   }
 
   // Generar respuesta usando Google Gemini

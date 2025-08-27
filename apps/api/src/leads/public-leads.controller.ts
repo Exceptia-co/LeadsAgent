@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Body, Patch, Param, BadRequestException } from '@nestjs/common'
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger'
+import { Controller, Get, Post, Body, Patch, Param, BadRequestException, Query } from '@nestjs/common'
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger'
 import { LeadsService } from './leads.service'
 import { CreateLeadDto } from './dto/create-lead.dto'
+import { LeadsQueryDto } from './dto/leads-query.dto'
 
 @ApiTags('public')
 @Controller('public/leads')
@@ -18,8 +19,12 @@ export class PublicLeadsController {
   @Get()
   @ApiOperation({ summary: 'Get all leads (public for testing)' })
   @ApiResponse({ status: 200, description: 'Return all leads.' })
-  findAll() {
-    return this.leadsService.findAll({})
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default: 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Items per page (default: 10)' })
+  @ApiQuery({ name: 'q', required: false, type: String, description: 'Search term' })
+  @ApiQuery({ name: 'status', required: false, type: String, description: 'Filter by status' })
+  findAll(@Query() query: LeadsQueryDto) {
+    return this.leadsService.findAll(query)
   }
 
   @Post()
