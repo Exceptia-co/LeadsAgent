@@ -2,6 +2,7 @@ import { Pool, PoolClient } from 'pg';
 import { logger } from '../utils/logger';
 import PhoneNumberService from './PhoneNumberService';
 import { TrainingInteraction } from './AILearningService';
+import MigrationService from './MigrationService';
 
 // Interfaz para datos de conversación
 export interface ConversationData {
@@ -93,12 +94,32 @@ class DatabaseService {
     this.initializePool();
   }
 
+  // Ejecutar migraciones automáticamente
+  private async runMigrations(): Promise<void> {
+    if (!this.pool) {
+      logger.warn('No hay conexión a base de datos disponible para migraciones');
+      return;
+    }
+
+    try {
+      const migrationService = new MigrationService(this.pool);
+      await migrationService.runMigrations();
+      logger.info('✅ Migraciones ejecutadas correctamente');
+    } catch (error) {
+      logger.error('❌ Error ejecutando migraciones:', error);
+      throw error; // Re-throw para que falle la inicialización si hay problemas críticos
+    }
+  }
+
   // Crear tabla si no existe
   public async initializeTable(): Promise<void> {
     if (!this.pool) {
       logger.warn('No hay conexión a base de datos disponible');
       return;
     }
+
+    // Ejecutar migraciones automáticamente
+    await this.runMigrations();
 
     const createTablesQuery = `
       -- Tabla de conversaciones de WhatsApp
@@ -1546,7 +1567,7 @@ class DatabaseService {
         id: 'default_6',
         category: 'registro_compra',
         title: 'Proceso de Registro y Compra',
-        content: `**PROCESO DE REGISTRO Y COMPRA - GUÍA PASO A PASO**\n\n📝 **REGISTRO EN ESCORTSHUB:**\n1. Visita escortshub.com\n2. Haz clic en "Registrarse"\n3. Confirma que eres mayor de 18 años\n4. Completa tus datos básicos\n5. Verifica tu email\n6. Accede a tu panel de usuario\n\n💳 **PROCESO DE COMPRA DE MONEDAS HUB:**\n1. Accede a tu wallet/monedero\n2. Selecciona "Recargar Monedas"\n3. Elige el paquete que prefieras:\n   • Básico (100 HUB - 80€)\n   • Estándar (200 HUB - 150€)\n   • Plus (500 HUB - 300€) ¡Mejor precio!\n   • Premium (1,000 HUB - 700€)\n4. Selecciona método de pago\n5. Confirma la transacción\n6. Recibe tus monedas instantáneamente\n\n🛒 **ACTIVACIÓN DE PRODUCTOS:**\n1. Ve a "Mis Anuncios"\n2. Selecciona el producto deseado\n3. Elige la duración\n4. Confirma el gasto de monedas HUB\n5. Tu anuncio se activa inmediatamente\n\n💡 **RECOMENDACIONES:**\n• El Paquete Plus ofrece el mejor precio por moneda\n• Los paquetes de mayor duración son más económicos\n• Mantén siempre saldo en tu wallet para activaciones rápidas\n\n🎧 **¿NECESITAS AYUDA?**\nNuestro soporte técnico está disponible 24/7 para cualquier duda durante el proceso.`,
+        content: `**PROCESO DE REGISTRO Y COMPRA - GUÍA PASO A PASO**\n\n📝 **REGISTRO EN ESCORTSHUB:**\n1. Visita escortshub.net\n2. Haz clic en "Registrarse"\n3. Confirma que eres mayor de 18 años\n4. Completa tus datos básicos\n5. Verifica tu email\n6. Accede a tu panel de usuario\n\n💳 **PROCESO DE COMPRA DE MONEDAS HUB:**\n1. Accede a tu wallet/monedero\n2. Selecciona "Recargar Monedas"\n3. Elige el paquete que prefieras:\n   • Básico (100 HUB - 80€)\n   • Estándar (200 HUB - 150€)\n   • Plus (500 HUB - 300€) ¡Mejor precio!\n   • Premium (1,000 HUB - 700€)\n4. Selecciona método de pago\n5. Confirma la transacción\n6. Recibe tus monedas instantáneamente\n\n🛒 **ACTIVACIÓN DE PRODUCTOS:**\n1. Ve a "Mis Anuncios"\n2. Selecciona el producto deseado\n3. Elige la duración\n4. Confirma el gasto de monedas HUB\n5. Tu anuncio se activa inmediatamente\n\n💡 **RECOMENDACIONES:**\n• El Paquete Plus ofrece el mejor precio por moneda\n• Los paquetes de mayor duración son más económicos\n• Mantén siempre saldo en tu wallet para activaciones rápidas\n\n🎧 **¿NECESITAS AYUDA?**\nNuestro soporte técnico está disponible 24/7 para cualquier duda durante el proceso.`,
         keywords: ['registro', 'compra', 'proceso', 'paso a paso', 'monedas', 'wallet', 'activacion', 'productos', 'como comprar'],
         priority: 9
       },
@@ -1564,10 +1585,10 @@ class DatabaseService {
   // Configuraciones por defecto
   private getDefaultConfig(key: string): string | null {
     const defaultConfigs: { [key: string]: string } = {
-      'system_prompt': `Eres un asistente virtual profesional de EscortsHub, la plataforma líder de escorts en España. Tu misión es promocionar activamente nuestros productos y guiar a los usuarios hacia el registro y compra de paquetes de monedas HUB.\n\n🞯 **PERSONALIDAD:**\n• Profesional pero cercano y comprensivo con el sector\n• Entusiasta por ayudar sin ser agresivo en ventas\n• Directo y claro con precios e información\n• Discreto y respetuoso con consultas sensibles\n\n💎 **PRODUCTOS ESTRELLA:**\n• Anuncio Doble Top: Máxima visibilidad (30 días: 900 HUB)\n• Paquete Plus: 500 HUB por 300€ (¡MEJOR PRECIO 0,60€/moneda!)\n• Disponible Ahora: Contactos inmediatos (25 unidades: 100 HUB)\n\n🎯 **ESTRATEGIA:**\n• SIEMPRE promociona el Paquete Plus como mejor opción\n• Recomienda combinaciones de productos\n• Crea urgencia: "Las posiciones TOP se agotan rápido"\n• Personaliza preguntando el nombre\n• Incluye CTAs en cada respuesta\n\n✅ **SIEMPRE:**\n• Destaca ventajas del sistema de monedas HUB\n• Sugiere el mejor paquete según contexto\n• Invita al registro en escortshub.com\n• Explica proceso de compra paso a paso\n• Menciona soporte 24/7 disponible\n\n❌ **NUNCA:**\n• Discutas temas ajenos a EscortsHub\n• Proporciones precios incorrectos\n• Prometas resultados específicos de anuncios\n• Seas insistente si no hay interés\n• Menciones competencia`,
+      'system_prompt': `Eres un asistente virtual profesional de EscortsHub, la plataforma líder de escorts en España. Tu misión es promocionar activamente nuestros productos y guiar a los usuarios hacia el registro y compra de paquetes de monedas HUB.\n\n🞯 **PERSONALIDAD:**\n• Profesional pero cercano y comprensivo con el sector\n• Entusiasta por ayudar sin ser agresivo en ventas\n• Directo y claro con precios e información\n• Discreto y respetuoso con consultas sensibles\n\n💎 **PRODUCTOS ESTRELLA:**\n• Anuncio Doble Top: Máxima visibilidad (30 días: 900 HUB)\n• Paquete Plus: 500 HUB por 300€ (¡MEJOR PRECIO 0,60€/moneda!)\n• Disponible Ahora: Contactos inmediatos (25 unidades: 100 HUB)\n\n🎯 **ESTRATEGIA:**\n• SIEMPRE promociona el Paquete Plus como mejor opción\n• Recomienda combinaciones de productos\n• Crea urgencia: "Las posiciones TOP se agotan rápido"\n• Personaliza preguntando el nombre\n• Incluye CTAs en cada respuesta\n\n✅ **SIEMPRE:**\n• Destaca ventajas del sistema de monedas HUB\n• Sugiere el mejor paquete según contexto\n• Invita al registro en escortshub.net\n• Explica proceso de compra paso a paso\n• Menciona soporte 24/7 disponible\n\n❌ **NUNCA:**\n• Discutas temas ajenos a EscortsHub\n• Proporciones precios incorrectos\n• Prometas resultados específicos de anuncios\n• Seas insistente si no hay interés\n• Menciones competencia`,
       'greeting_message': '¡Hola! 👋\n\nBienvenido/a a **EscortsHub**, la plataforma líder de escorts en España. Soy tu asistente virtual y estoy aquí para ayudarte con:\n\n🔥 **Nuestros productos**: Anuncio Doble, TOP, Doble TOP\n💰 **Paquetes de monedas HUB** con los mejores precios\n🛒 **Proceso de registro** y compra\n🎧 **Soporte técnico** 24/7\n\n¿En qué puedo asistirte hoy? ¿Te interesa conocer nuestros precios o cómo registrarte? 😊',
       'pricing_prompt': '💰 **PRECIOS ESCORTSHUB - MONEDAS HUB**\n\n🥇 **PAQUETE PLUS - ¡MEJOR PRECIO!**\n500 HUB por 300€ (0,60€/moneda)\n\n📊 **OTROS PAQUETES:**\n• Básico: 100 HUB - 80€ (0,80€/moneda)\n• Estándar: 200 HUB - 150€ (0,75€/moneda)\n• Premium: 1,000 HUB - 700€ (0,70€/moneda)\n\n🔥 **PRODUCTOS POPULARES:**\n• Anuncio Doble: 10 días (150 HUB)\n• Anuncio TOP: 30 días (450 HUB)\n• Doble TOP: 30 días (900 HUB) - ¡Máxima visibilidad!\n\n¿Qué paquete prefieres? ¿Te ayudo con el registro?',
-      'registration_prompt': '📝 **REGISTRO EN ESCORTSHUB - GUÍA RÁPIDA**\n\n**Pasos sencillos:**\n1️⃣ Visita escortshub.com\n2️⃣ Clic en "Registrarse"\n3️⃣ Confirma +18 años\n4️⃣ Completa datos básicos\n5️⃣ Verifica tu email\n6️⃣ ¡Accede a tu panel!\n\n💳 **Después del registro:**\n• Recarga monedas HUB\n• Elige tu producto favorito\n• Activa tu anuncio\n\n🎧 **¿Necesitas ayuda?**\nSoporte 24/7 disponible\n\n¿Empezamos con tu registro ahora?',
+      'registration_prompt': '📝 **REGISTRO EN ESCORTSHUB - GUÍA RÁPIDA**\n\n**Pasos sencillos:**\n1️⃣ Visita escortshub.net\n2️⃣ Clic en "Registrarse"\n3️⃣ Confirma +18 años\n4️⃣ Completa datos básicos\n5️⃣ Verifica tu email\n6️⃣ ¡Accede a tu panel!\n\n💳 **Después del registro:**\n• Recarga monedas HUB\n• Elige tu producto favorito\n• Activa tu anuncio\n\n🎧 **¿Necesitas ayuda?**\nSoporte 24/7 disponible\n\n¿Empezamos con tu registro ahora?',
       'product_info_prompt': '🔥 **PRODUCTOS ESCORTSHUB**\n\n💎 **ANUNCIO DOBLE TOP** (Recomendado)\nMáxima visibilidad + Posición superior\n30 días: 900 HUB (con Paquete Plus = 540€)\n\n⭐ **ANUNCIO TOP**\nPosición privilegiada superior\n30 días: 450 HUB (con Paquete Plus = 270€)\n\n🔥 **ANUNCIO DOBLE**\nDoble espacio y visibilidad\n10 días: 150 HUB (con Paquete Plus = 90€)\n\n🚀 **DISPONIBLE AHORA**\nContactos inmediatos\n25 unidades: 100 HUB (60€)\n\n¿Qué producto te interesa más?',
       'business_hours': 'Soporte EscortsHub disponible 24/7 para resolver cualquier duda técnica, proceso de registro, compra de monedas HUB o activación de productos.',
       'urgency_message': '⚡ **¡ATENCIÓN!** Las posiciones TOP se agotan rápido debido a la alta demanda.\n\n🏆 **Asegúra tu visibilidad:**\n• Paquete Plus: 500 HUB por 300€\n• Anuncio Doble Top: 900 HUB (30 días)\n\n¿Te gustaría reservar tu posición ahora?',

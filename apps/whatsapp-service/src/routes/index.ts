@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import sessionController from '../controllers/SessionController'
+import healthRoutes from './health'
 import { 
   validateCreateSession, 
   validateSendMessage, 
@@ -12,7 +13,7 @@ const router = Router()
 // Apply rate limiting to all routes
 router.use(rateLimit)
 
-// Health check
+// Basic health check (legacy)
 router.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -22,6 +23,9 @@ router.get('/health', (req, res) => {
     memory: process.memoryUsage()
   })
 })
+
+// Advanced health check routes
+router.use('/health', healthRoutes)
 
 // Enhanced session management routes (must be before parameterized routes)
 router.post('/sessions/restore', sessionController.restoreSessions.bind(sessionController))
