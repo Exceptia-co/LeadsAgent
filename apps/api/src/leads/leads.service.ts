@@ -10,9 +10,43 @@ export class LeadsService {
   constructor(private prisma: PrismaService) {}
 
   async create(createLeadDto: CreateLeadDto) {
-    return this.prisma.lead.create({
-      data: createLeadDto,
-    });
+    try {
+      // Limpiar el número de teléfono - remover el símbolo + si existe
+      const cleanedPhone = createLeadDto.phone.replace(/^\+/, '');
+      
+      // Verificar si ya existe un lead con este número
+      const existingLead = await this.prisma.lead.findUnique({
+        where: { phone: cleanedPhone },
+      });
+
+      if (existingLead) {
+        throw new Error('Ya existe un lead con este número de teléfono');
+      }
+
+      // Crear el lead con el teléfono limpio (sin +)
+      const lead = await this.prisma.lead.create({
+        data: {
+          ...createLeadDto,
+          phone: cleanedPhone,
+        },
+      });
+      
+      // Devolver el lead con el formato de teléfono con +
+      return {
+        ...lead,
+        phone: lead.phone ? '+' + lead.phone : lead.phone,
+      };
+    } catch (error) {
+      // Re-lanzar el error para que sea manejado por el controlador
+      if (error.message === 'Ya existe un lead con este número de teléfono') {
+        throw error;
+      }
+      // Para errores de Prisma, proporcionar mensajes más amigables
+      if (error.code === 'P2002') {
+        throw new Error('Ya existe un lead con este número de teléfono');
+      }
+      throw error;
+    }
   }
 
   async findAll(query: LeadsQueryDto, assignedUserId?: string) {
@@ -50,6 +84,7 @@ export class LeadsService {
     // Transform data to match frontend expectations
     const transformedLeads = leads.map(lead => ({
       ...lead,
+      phone: lead.phone ? '+' + lead.phone : lead.phone, // Add + to phone number for display
       score: lead.moodScore ? Number(lead.moodScore) : null, // Map moodScore to score for frontend and convert to number
     }));
 
@@ -74,15 +109,27 @@ export class LeadsService {
     // Transform data to match frontend expectations
     return {
       ...lead,
+      phone: lead.phone ? '+' + lead.phone : lead.phone, // Add + to phone number for display
       score: lead.moodScore ? Number(lead.moodScore) : null, // Map moodScore to score for frontend and convert to number
     };
   }
 
   async update(id: string, updateLeadDto: UpdateLeadDto) {
-    return this.prisma.lead.update({
+    // Si se está actualizando el teléfono, limpiarlo primero
+    if (updateLeadDto.phone) {
+      updateLeadDto.phone = updateLeadDto.phone.replace(/^\+/, '');
+    }
+    
+    const lead = await this.prisma.lead.update({
       where: { id },
       data: updateLeadDto,
     });
+    
+    // Devolver con el formato de teléfono con +
+    return {
+      ...lead,
+      phone: lead.phone ? '+' + lead.phone : lead.phone,
+    };
   }
 
   async remove(id: string) {
@@ -124,10 +171,16 @@ export class LeadsService {
   }
 
   async updateStatus(id: string, status: LeadStatus) {
-    return this.prisma.lead.update({
+    const lead = await this.prisma.lead.update({
       where: { id },
       data: { status },
     });
+    
+    // Devolver con el formato de teléfono con +
+    return {
+      ...lead,
+      phone: lead.phone ? '+' + lead.phone : lead.phone,
+    };
   }
 
   async updateWhatsAppAuth(id: string, whatsappAuthorized: boolean) {

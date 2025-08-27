@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param } from '@nestjs/common'
+import { Controller, Get, Post, Body, Patch, Param, BadRequestException } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger'
 import { LeadsService } from './leads.service'
 import { CreateLeadDto } from './dto/create-lead.dto'
@@ -25,8 +25,16 @@ export class PublicLeadsController {
   @Post()
   @ApiOperation({ summary: 'Create a new lead (public for testing)' })
   @ApiResponse({ status: 201, description: 'The lead has been successfully created.' })
-  create(@Body() createLeadDto: CreateLeadDto) {
-    return this.leadsService.create(createLeadDto)
+  @ApiResponse({ status: 400, description: 'Bad Request - Lead with phone already exists.' })
+  async create(@Body() createLeadDto: CreateLeadDto) {
+    try {
+      return await this.leadsService.create(createLeadDto)
+    } catch (error) {
+      if (error.message === 'Ya existe un lead con este número de teléfono') {
+        throw new BadRequestException(error.message)
+      }
+      throw error
+    }
   }
 
   @Patch(':id/whatsapp')

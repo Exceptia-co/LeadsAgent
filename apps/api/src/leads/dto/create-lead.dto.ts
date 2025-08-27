@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsPhoneNumber, IsIn, IsEmail, IsArray, IsNumber, Min, Max } from 'class-validator'
+import { IsString, IsOptional, IsPhoneNumber, IsIn, IsEmail, IsArray, IsNumber, Min, Max, Matches } from 'class-validator'
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
 import { LeadStatus } from '@prisma/client'
 
@@ -7,7 +7,8 @@ export class CreateLeadDto {
     description: 'Phone number of the lead',
     example: '+1234567890'
   })
-  @IsPhoneNumber()
+  @IsString()
+  @Matches(/^[+]?[1-9]\d{1,14}$/, { message: 'Phone must be a valid phone number' })
   phone: string
 
   @ApiPropertyOptional({

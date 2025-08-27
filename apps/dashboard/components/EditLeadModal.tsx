@@ -1,16 +1,17 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import * as Select from '@radix-ui/react-select'
 import * as Label from '@radix-ui/react-label'
 import { X, ChevronDown, Loader2 } from 'lucide-react'
-import { CreateLeadData, LeadStatus, STATUS_LABELS } from '../types'
+import { Lead, LeadStatus, STATUS_LABELS } from '../types'
 
-interface AddLeadModalProps {
+interface EditLeadModalProps {
   isOpen: boolean
   onClose: () => void
-  onSuccess: (lead: any) => void
+  onSuccess: () => void
+  lead: Lead | null
 }
 
 interface FormData {
@@ -30,31 +31,31 @@ interface FormErrors {
   general?: string
 }
 
-export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) {
+export function EditLeadModal({ isOpen, onClose, onSuccess, lead }: EditLeadModalProps) {
   const [formData, setFormData] = useState<FormData>({
     name: '',
     email: '',
     phone: '',
     status: 'NUEVO',
-    source: 'manual'
+    source: ''
   })
   
   const [errors, setErrors] = useState<FormErrors>({})
   const [isLoading, setIsLoading] = useState(false)
 
-  // Reset form when modal opens/closes
-  React.useEffect(() => {
-    if (!isOpen) {
+  // Load lead data when modal opens or lead changes
+  useEffect(() => {
+    if (lead && isOpen) {
       setFormData({
-        name: '',
-        email: '',
-        phone: '',
-        status: 'NUEVO',
-        source: 'manual'
+        name: lead.name || '',
+        email: lead.email || '',
+        phone: lead.phone || '',
+        status: lead.status,
+        source: lead.source || ''
       })
       setErrors({})
     }
-  }, [isOpen])
+  }, [lead, isOpen])
 
   const validateForm = (): boolean => {
     const newErrors: FormErrors = {}
@@ -65,7 +66,7 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
     } else {
       // Basic phone validation
       const phoneRegex = /^[+]?[1-9]\d{1,14}$/
-      const cleanPhone = formData.phone.replace(/[\s\-\(\)]/g, '')
+      const cleanPhone = formData.phone.replace(/[\s\-\()]/g, '')
       if (!phoneRegex.test(cleanPhone)) {
         newErrors.phone = 'Formato de teléfono inválido'
       }
@@ -91,7 +92,7 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!validateForm()) {
+    if (!validateForm() || !lead) {
       return
     }
 
@@ -101,34 +102,27 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
     try {
       // Limpiar el número de teléfono: remover espacios, guiones, paréntesis
       // y el símbolo + para la base de datos
-      let cleanPhone = formData.phone.replace(/[\s\-\(\)]/g, '')
+      let cleanPhone = formData.phone.replace(/[\s\-\()]/g, '')
       
       // Si el número empieza con +, lo guardamos sin el +
       if (cleanPhone.startsWith('+')) {
         cleanPhone = cleanPhone.substring(1)
       }
 
-      const leadData: CreateLeadData = {
+      const updateData = {
         name: formData.name.trim() || undefined,
-        phone: cleanPhone, // Enviamos el número sin el +
+        phone: cleanPhone,
         status: formData.status,
+        email: formData.email.trim() || undefined,
+        source: formData.source.trim() || undefined
       }
 
-      // Only add optional fields if they have values
-      if (formData.email.trim()) {
-        leadData.email = formData.email.trim()
-      }
-
-      if (formData.source.trim()) {
-        leadData.source = formData.source.trim()
-      }
-
-      const response = await fetch('/api/public/leads', {
-        method: 'POST',
+      const response = await fetch(`/api/leads/${lead.id}`, {
+        method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(leadData),
+        body: JSON.stringify(updateData),
       })
 
       if (!response.ok) {
@@ -142,20 +136,13 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
           return
         }
         
-        throw new Error(errorData.message || errorData.error || 'Error al crear el lead')
+        throw new Error(errorData.message || errorData.error || 'Error al actualizar el lead')
       }
 
-      const newLead = await response.json()
-      
-      // Añadir el + al número para mostrar en la UI
-      if (newLead.phone && !newLead.phone.startsWith('+')) {
-        newLead.phone = '+' + newLead.phone
-      }
-      
-      onSuccess(newLead)
+      onSuccess()
       onClose()
     } catch (error) {
-      console.error('Error creating lead:', error)
+      console.error('Error updating lead:', error)
       
       // Si es un error de duplicado específico
       if (error instanceof Error && error.message.includes('Ya existe un lead')) {
@@ -164,7 +151,7 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
         })
       } else {
         setErrors({
-          general: error instanceof Error ? error.message : 'Error al crear el lead'
+          general: error instanceof Error ? error.message : 'Error al actualizar el lead'
         })
       }
     } finally {
@@ -180,6 +167,8 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
     }
   }
 
+  if (!lead) return null
+
   return (
     <Dialog.Root open={isOpen} onOpenChange={onClose}>
       <Dialog.Portal>
@@ -187,7 +176,7 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
         <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-lg w-full max-w-md p-6 z-50">
           <div className="flex items-center justify-between mb-2">
             <Dialog.Title className="text-xl font-semibold text-gray-900">
-              Nuevo Lead
+              Editar Lead
             </Dialog.Title>
             <Dialog.Close asChild>
               <button
@@ -200,7 +189,7 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
           </div>
           
           <Dialog.Description className="text-sm text-gray-600 mb-4">
-            Completa los datos para crear un nuevo lead en el sistema.
+            Actualiza la información del lead.
           </Dialog.Description>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -214,7 +203,7 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
             {/* Name Field */}
             <div>
               <Label.Root htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
-                Nombre (opcional)
+                Nombre
               </Label.Root>
               <input
                 id="name"
@@ -253,7 +242,7 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
             {/* Email Field */}
             <div>
               <Label.Root htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                Email (opcional)
+                Email
               </Label.Root>
               <input
                 id="email"
@@ -305,7 +294,7 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
             {/* Source Field */}
             <div>
               <Label.Root htmlFor="source" className="block text-sm font-medium text-gray-700 mb-1">
-                Fuente (opcional)
+                Fuente
               </Label.Root>
               <input
                 id="source"
@@ -334,7 +323,7 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
                 {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isLoading ? 'Creando...' : 'Crear Lead'}
+                {isLoading ? 'Actualizando...' : 'Actualizar'}
               </button>
             </div>
           </form>
