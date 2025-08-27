@@ -1,18 +1,18 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { Card } from '../../../components/ui/card'
-import { Badge } from '../../../components/ui/badge'
-import { useWhatsAppApi } from '../../../hooks/use-whatsapp-api'
-import { WhatsAppSession, WhatsAppMessage } from '../../../types'
-import { LeadSelector } from '../../../components/LeadSelector'
-import { Lead } from '../../../hooks/use-leads'
-import { 
-  Smartphone, 
-  Plus, 
-  Trash2, 
-  Send, 
-  MessageSquare, 
+import { useState, useEffect } from "react";
+import { Card } from "../../../components/ui/card";
+import { Badge } from "../../../components/ui/badge";
+import { useWhatsAppApi } from "../../../hooks/use-whatsapp-api";
+import { WhatsAppSession, WhatsAppMessage } from "../../../types";
+import { LeadSelector } from "../../../components/LeadSelector";
+import { Lead } from "../../../hooks/use-leads";
+import {
+  Smartphone,
+  Plus,
+  Trash2,
+  Send,
+  MessageSquare,
   Activity,
   QrCode,
   Phone,
@@ -23,73 +23,86 @@ import {
   Mail,
   Loader2,
   Wifi,
-  WifiOff
-} from 'lucide-react'
-import { Tooltip } from '../../../components/ui/tooltip'
-import { useToast } from '../../../components/ui/toast'
-import { 
-  Skeleton, 
-  SkeletonText, 
-  SkeletonCard, 
-  SkeletonBadge, 
+  WifiOff,
+} from "lucide-react";
+import { Tooltip } from "../../../components/ui/tooltip";
+import { useToast } from "../../../components/ui/toast";
+import {
+  Skeleton,
+  SkeletonText,
+  SkeletonCard,
+  SkeletonBadge,
   SkeletonTabs,
-  SkeletonSessionGrid 
-} from '../../../components/ui/skeleton'
-import WhatsAppConversations from '../../../components/WhatsAppConversations'
-import TemplateManager from '../../../components/templates/TemplateManager'
-import { Template } from '../../../components/templates/TemplateCard'
-import ProactiveMessageSender from '../../../components/proactive/ProactiveMessageSender'
-import ProactiveMessageHistory from '../../../components/proactive/ProactiveMessageHistory'
-import { ProactiveMessage } from '../../../components/proactive/ProactiveMessageHistory'
+  SkeletonSessionGrid,
+} from "../../../components/ui/skeleton";
+import WhatsAppConversations from "../../../components/WhatsAppConversations";
+import TemplateManager from "../../../components/templates/TemplateManager";
+import { Template } from "../../../components/templates/TemplateCard";
+import BulkProactiveMessageSender from "../../../components/proactive/BulkProactiveMessageSender";
+import ProactiveMessageHistory from "../../../components/proactive/ProactiveMessageHistory";
+import { ProactiveMessage } from "../../../components/proactive/ProactiveMessageHistory";
 
 // Status variants for sessions
 const SESSION_STATUS_VARIANTS = {
-  DISCONNECTED: 'destructive' as const,
-  CONNECTING: 'warning' as const,
-  CONNECTED: 'success' as const,
-  QR_READY: 'secondary' as const
-}
+  DISCONNECTED: "destructive" as const,
+  CONNECTING: "warning" as const,
+  CONNECTED: "success" as const,
+  QR_READY: "secondary" as const,
+};
 
 const SESSION_STATUS_LABELS = {
-  DISCONNECTED: 'Desconectado',
-  CONNECTING: 'Conectando',
-  CONNECTED: 'Conectado',
-  QR_READY: 'QR Listo'
-}
+  DISCONNECTED: "Desconectado",
+  CONNECTING: "Conectando",
+  CONNECTED: "Conectado",
+  QR_READY: "QR Listo",
+};
 
 export default function WhatsAppPage() {
-  const [activeTab, setActiveTab] = useState<'sessions' | 'send' | 'conversations' | 'templates' | 'proactive' | 'messages'>('sessions')
-  const [proactiveSubTab, setProactiveSubTab] = useState<'send' | 'history'>('send')
-  const [sessions, setSessions] = useState<WhatsAppSession[]>([])
-  const [messages, setMessages] = useState<WhatsAppMessage[]>([])
-  const [selectedSession, setSelectedSession] = useState<string>('')
-  
+  const [activeTab, setActiveTab] = useState<
+    | "sessions"
+    | "send"
+    | "conversations"
+    | "templates"
+    | "proactive"
+    | "messages"
+  >("sessions");
+  const [proactiveSubTab, setProactiveSubTab] = useState<"send" | "history">(
+    "send",
+  );
+  const [sessions, setSessions] = useState<WhatsAppSession[]>([]);
+  const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
+  const [selectedSession, setSelectedSession] = useState<string>("");
+
   // Template and proactive message states
-  const [templates, setTemplates] = useState<Template[]>([])
-  const [proactiveMessages, setProactiveMessages] = useState<ProactiveMessage[]>([])
-  const [leads, setLeads] = useState<any[]>([])
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null)
-  
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [proactiveMessages, setProactiveMessages] = useState<
+    ProactiveMessage[]
+  >([]);
+  const [leads, setLeads] = useState<any[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(
+    null,
+  );
+
   // Loading states for individual data fetching
   const [dataLoading, setDataLoading] = useState({
     sessions: true,
     templates: true,
     proactiveMessages: true,
     leads: true,
-    initialLoad: true
-  })
-  
-  const { showToast } = useToast()
-  
-  const { 
-    getSessions, 
-    createSession, 
-    deleteSession, 
+    initialLoad: true,
+  });
+
+  const { showToast } = useToast();
+
+  const {
+    getSessions,
+    createSession,
+    deleteSession,
     sendDirectMessage,
     getMessageAnalytics,
-    isLoading, 
-    error 
-  } = useWhatsAppApi()
+    isLoading,
+    error,
+  } = useWhatsAppApi();
 
   // Load sessions on component mount and data
   useEffect(() => {
@@ -99,183 +112,272 @@ export default function WhatsAppPage() {
           loadSessions(),
           loadTemplates(),
           loadProactiveMessages(),
-          loadLeads()
-        ])
-        
+          loadLeads(),
+        ]);
+
         // No toast for successful initial load - keep it quiet
       } catch (error) {
         // Only show toast for critical loading errors
         showToast({
-          type: 'error',
-          title: 'Error de carga',
-          description: 'Hubo un problema al cargar algunos datos. Refresca la página.',
-          duration: 5000
-        })
+          type: "error",
+          title: "Error de carga",
+          description:
+            "Hubo un problema al cargar algunos datos. Refresca la página.",
+          duration: 5000,
+        });
       } finally {
         // Mark initial load as complete
         setTimeout(() => {
-          setDataLoading(prev => ({ ...prev, initialLoad: false }))
-        }, 500)
+          setDataLoading((prev) => ({ ...prev, initialLoad: false }));
+        }, 500);
       }
-    }
+    };
 
-    loadAllData()
-  }, [])
+    loadAllData();
+  }, []);
 
   // Load templates
   const loadTemplates = async () => {
-    setDataLoading(prev => ({ ...prev, templates: true }))
+    setDataLoading((prev) => ({ ...prev, templates: true }));
     try {
-      const response = await fetch('http://localhost:3002/templates')
-      const result = await response.json()
+      const response = await fetch("http://localhost:3002/templates");
+      const result = await response.json();
       if (result.success) {
-        setTemplates(result.data || [])
+        setTemplates(result.data || []);
       }
     } catch (error) {
-      console.error('Error loading templates:', error)
+      console.error("Error loading templates:", error);
       showToast({
-        type: 'error',
-        title: 'Error cargando plantillas',
-        description: 'No se pudieron cargar las plantillas de mensaje'
-      })
+        type: "error",
+        title: "Error cargando plantillas",
+        description: "No se pudieron cargar las plantillas de mensaje",
+      });
     } finally {
-      setDataLoading(prev => ({ ...prev, templates: false }))
+      setDataLoading((prev) => ({ ...prev, templates: false }));
     }
-  }
+  };
 
   // Load proactive messages
   const loadProactiveMessages = async () => {
-    setDataLoading(prev => ({ ...prev, proactiveMessages: true }))
+    setDataLoading((prev) => ({ ...prev, proactiveMessages: true }));
     try {
-      const response = await fetch('http://localhost:3002/proactive-messages')
-      const result = await response.json()
+      const response = await fetch("http://localhost:3002/proactive-messages");
+      const result = await response.json();
       if (result.success) {
-        setProactiveMessages(result.data || [])
+        setProactiveMessages(result.data || []);
       }
     } catch (error) {
-      console.error('Error loading proactive messages:', error)
+      console.error("Error loading proactive messages:", error);
       showToast({
-        type: 'error',
-        title: 'Error cargando mensajes',
-        description: 'No se pudieron cargar los mensajes proactivos'
-      })
+        type: "error",
+        title: "Error cargando mensajes",
+        description: "No se pudieron cargar los mensajes proactivos",
+      });
     } finally {
-      setDataLoading(prev => ({ ...prev, proactiveMessages: false }))
+      setDataLoading((prev) => ({ ...prev, proactiveMessages: false }));
     }
-  }
+  };
 
   // Load leads
   const loadLeads = async () => {
-    setDataLoading(prev => ({ ...prev, leads: true }))
+    setDataLoading((prev) => ({ ...prev, leads: true }));
     try {
-      const response = await fetch('http://localhost:3002/leads')
-      const result = await response.json()
+      const response = await fetch("http://localhost:3002/leads");
+      const result = await response.json();
       if (result.success) {
-        setLeads(result.leads || result.data || [])
+        setLeads(result.leads || result.data || []);
       }
     } catch (error) {
-      console.error('Error loading leads:', error)
+      console.error("Error loading leads:", error);
       showToast({
-        type: 'error',
-        title: 'Error cargando leads',
-        description: 'No se pudieron cargar la lista de leads'
-      })
+        type: "error",
+        title: "Error cargando leads",
+        description: "No se pudieron cargar la lista de leads",
+      });
     } finally {
-      setDataLoading(prev => ({ ...prev, leads: false }))
+      setDataLoading((prev) => ({ ...prev, leads: false }));
     }
-  }
+  };
 
   const loadSessions = async () => {
-    setDataLoading(prev => ({ ...prev, sessions: true }))
+    setDataLoading((prev) => ({ ...prev, sessions: true }));
     try {
-      const data = await getSessions() as { sessions?: WhatsAppSession[] }
-      setSessions(data.sessions || [])
+      const data = (await getSessions()) as { sessions?: WhatsAppSession[] };
+      setSessions(data.sessions || []);
       if (data.sessions && data.sessions.length > 0 && !selectedSession) {
-        setSelectedSession(data.sessions[0].id)
+        setSelectedSession(data.sessions[0].id);
       }
     } catch (err) {
-      console.error('Error loading sessions:', err)
+      console.error("Error loading sessions:", err);
       showToast({
-        type: 'error',
-        title: 'Error cargando sesiones',
-        description: 'No se pudieron cargar las sesiones de WhatsApp'
-      })
+        type: "error",
+        title: "Error cargando sesiones",
+        description: "No se pudieron cargar las sesiones de WhatsApp",
+      });
     } finally {
-      setDataLoading(prev => ({ ...prev, sessions: false }))
+      setDataLoading((prev) => ({ ...prev, sessions: false }));
     }
-  }
+  };
 
   // Handle template selection from TemplateManager
   const handleUseTemplate = (template: Template) => {
-    setSelectedTemplate(template)
-    setActiveTab('proactive')
-    setProactiveSubTab('send')
-  }
+    setSelectedTemplate(template);
+    setActiveTab("proactive");
+    setProactiveSubTab("send");
+  };
 
   // Handle proactive message sending with toast notifications
   const handleSendProactiveMessage = async (
-    leadId: string, 
-    templateId?: string, 
-    content?: string, 
-    variables?: { [key: string]: string }
+    leadId: string,
+    templateId?: string,
+    content?: string,
+    variables?: { [key: string]: string },
   ) => {
     if (!selectedSession) {
       showToast({
-        type: 'error',
-        title: 'Sin sesión seleccionada',
-        description: 'Por favor selecciona una sesión de WhatsApp activa'
-      })
-      throw new Error('No hay sesión seleccionada')
+        type: "error",
+        title: "Sin sesión seleccionada",
+        description: "Por favor selecciona una sesión de WhatsApp activa",
+      });
+      throw new Error("No hay sesión seleccionada");
     }
 
     try {
       // Get sessions to ensure we have a valid session
-      const sessionsResponse = await fetch('http://localhost:3002/sessions')
-      const sessionsResult = await sessionsResponse.json()
-      
-      let sessionId = selectedSession
-      
+      const sessionsResponse = await fetch("http://localhost:3002/sessions");
+      const sessionsResult = await sessionsResponse.json();
+
+      let sessionId = selectedSession;
+
       if (sessionsResult.success && sessionsResult.sessions.length > 0) {
-        sessionId = sessionsResult.sessions[0].id
+        sessionId = sessionsResult.sessions[0].id;
       }
-      
-      const response = await fetch('http://localhost:3002/proactive-messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+
+      const response = await fetch("http://localhost:3002/proactive-messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           leadId,
           templateId,
           sessionId,
           content,
-          variables
-        })
-      })
-      
-      const result = await response.json()
-      
+          variables,
+        }),
+      });
+
+      const result = await response.json();
+
       if (!result.success) {
-        throw new Error(result.error || 'Error enviando mensaje')
+        throw new Error(result.error || "Error enviando mensaje");
       }
-      
+
       showToast({
-        type: 'success',
-        title: '¡Mensaje enviado!',
-        description: 'El mensaje proactivo se envió correctamente',
-        duration: 4000
-      })
-      
+        type: "success",
+        title: "¡Mensaje enviado!",
+        description: "El mensaje proactivo se envió correctamente",
+        duration: 4000,
+      });
+
       // Refresh proactive messages count
-      loadProactiveMessages()
+      loadProactiveMessages();
     } catch (error) {
-      console.error('Error sending proactive message:', error)
+      console.error("Error sending proactive message:", error);
       showToast({
-        type: 'error',
-        title: 'Error enviando mensaje',
-        description: (error as Error).message || 'Ocurrió un error inesperado'
-      })
-      throw error
+        type: "error",
+        title: "Error enviando mensaje",
+        description: (error as Error).message || "Ocurrió un error inesperado",
+      });
+      throw error;
     }
-  }
+  };
+
+  // Handle bulk proactive message sending
+  const handleBulkSendProactiveMessage = async (
+    leadIds: string[],
+    templateId?: string,
+    content?: string,
+    variables?: { [key: string]: string },
+  ) => {
+    if (!selectedSession) {
+      showToast({
+        type: "error",
+        title: "Sin sesión seleccionada",
+        description: "Por favor selecciona una sesión de WhatsApp activa",
+      });
+      throw new Error("No hay sesión seleccionada");
+    }
+
+    try {
+      // Get sessions to ensure we have a valid session
+      const sessionsResponse = await fetch("http://localhost:3002/sessions");
+      const sessionsResult = await sessionsResponse.json();
+
+      let sessionId = selectedSession;
+
+      if (sessionsResult.success && sessionsResult.sessions.length > 0) {
+        sessionId = sessionsResult.sessions[0].id;
+      }
+
+      // Use the bulk endpoint
+      const response = await fetch(
+        "http://localhost:3002/proactive-messages/bulk",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            leadIds,
+            templateId,
+            sessionId,
+            content,
+            variables,
+          }),
+        },
+      );
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || "Error enviando mensajes masivos");
+      }
+
+      const { successful, failed, total, errors } = result.data;
+
+      // Show results
+      if (successful > 0 && failed === 0) {
+        showToast({
+          type: "success",
+          title: "¡Mensajes enviados!",
+          description: `Se enviaron ${successful} mensajes correctamente`,
+          duration: 4000,
+        });
+      } else if (successful > 0 && failed > 0) {
+        showToast({
+          type: "warning",
+          title: "Envío parcial",
+          description: `${successful} enviados, ${failed} fallaron`,
+          duration: 6000,
+        });
+      } else {
+        showToast({
+          type: "error",
+          title: "Error en envío masivo",
+          description: `Fallaron todos los envíos (${failed})`,
+          duration: 6000,
+        });
+      }
+
+      // Refresh proactive messages count
+      loadProactiveMessages();
+    } catch (error) {
+      console.error("Error sending bulk proactive messages:", error);
+      showToast({
+        type: "error",
+        title: "Error enviando mensajes",
+        description: (error as Error).message || "Ocurrió un error inesperado",
+      });
+      throw error;
+    }
+  };
 
   // Show simple loading state during initial load
   if (dataLoading.initialLoad) {
@@ -288,7 +390,7 @@ export default function WhatsAppPage() {
           ))}
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -296,7 +398,7 @@ export default function WhatsAppPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-gray-900">WhatsApp Manager</h1>
         <div className="flex items-center space-x-2">
-          {sessions.filter(s => s.status === 'CONNECTED').length > 0 ? (
+          {sessions.filter((s) => s.status === "CONNECTED").length > 0 ? (
             <Tooltip content="Conexión establecida con WhatsApp">
               <Wifi className="h-5 w-5 text-green-500" />
             </Tooltip>
@@ -306,7 +408,8 @@ export default function WhatsAppPage() {
             </Tooltip>
           )}
           <span className="text-sm text-gray-600">
-            {sessions.filter(s => s.status === 'CONNECTED').length} sesiones conectadas
+            {sessions.filter((s) => s.status === "CONNECTED").length} sesiones
+            conectadas
           </span>
         </div>
       </div>
@@ -315,70 +418,74 @@ export default function WhatsAppPage() {
       <div className="border-b border-gray-200 overflow-x-auto">
         <nav className="-mb-px flex space-x-4 sm:space-x-8 min-w-max px-1">
           {[
-            { 
-              id: 'sessions', 
-              label: 'Sesiones', 
+            {
+              id: "sessions",
+              label: "Sesiones",
               icon: Smartphone,
               count: sessions.length,
-              countLabel: 'activas'
+              countLabel: "activas",
             },
-            { 
-              id: 'conversations', 
-              label: 'Conversaciones', 
-              icon: MessageSquare 
+            {
+              id: "conversations",
+              label: "Conversaciones",
+              icon: MessageSquare,
             },
-            { 
-              id: 'templates', 
-              label: 'Templates', 
+            {
+              id: "templates",
+              label: "Templates",
               icon: FileText,
-              count: templates.length
+              count: templates.length,
             },
-            { 
-              id: 'proactive', 
-              label: 'Mensajes Proactivos', 
+            {
+              id: "proactive",
+              label: "Mensajes Proactivos",
               icon: Mail,
-              count: proactiveMessages.length
+              count: proactiveMessages.length,
             },
-            { 
-              id: 'send', 
-              label: 'Enviar Mensaje', 
-              icon: Send 
+            {
+              id: "send",
+              label: "Enviar Mensaje",
+              icon: Send,
             },
-            { 
-              id: 'messages', 
-              label: 'Historial', 
-              icon: Activity 
-            }
+            {
+              id: "messages",
+              label: "Historial",
+              icon: Activity,
+            },
           ].map(({ id, label, icon: Icon, count, countLabel }) => {
             const getBadgeVariant = () => {
-              if (id === 'sessions') {
-                const connectedCount = sessions.filter(s => s.status === 'CONNECTED').length
-                return connectedCount > 0 ? 'success' : 'secondary'
+              if (id === "sessions") {
+                const connectedCount = sessions.filter(
+                  (s) => s.status === "CONNECTED",
+                ).length;
+                return connectedCount > 0 ? "success" : "secondary";
               }
-              return count && count > 0 ? 'default' : 'secondary'
-            }
+              return count && count > 0 ? "default" : "secondary";
+            };
 
             const getBadgeCount = () => {
-              if (id === 'sessions') {
-                return sessions.filter(s => s.status === 'CONNECTED').length
+              if (id === "sessions") {
+                return sessions.filter((s) => s.status === "CONNECTED").length;
               }
-              return count || 0
-            }
+              return count || 0;
+            };
 
             const getTooltipContent = () => {
-              if (id === 'sessions') {
-                const connectedCount = sessions.filter(s => s.status === 'CONNECTED').length
-                const totalCount = sessions.length
-                return `${connectedCount} de ${totalCount} sesiones conectadas`
+              if (id === "sessions") {
+                const connectedCount = sessions.filter(
+                  (s) => s.status === "CONNECTED",
+                ).length;
+                const totalCount = sessions.length;
+                return `${connectedCount} de ${totalCount} sesiones conectadas`;
               }
-              if (id === 'templates') {
-                return `${templates.length} plantillas de mensaje disponibles`
+              if (id === "templates") {
+                return `${templates.length} plantillas de mensaje disponibles`;
               }
-              if (id === 'proactive') {
-                return `${proactiveMessages.length} mensajes proactivos enviados`
+              if (id === "proactive") {
+                return `${proactiveMessages.length} mensajes proactivos enviados`;
               }
-              return ''
-            }
+              return "";
+            };
 
             return (
               <button
@@ -386,20 +493,22 @@ export default function WhatsAppPage() {
                 onClick={() => setActiveTab(id as any)}
                 className={`flex items-center py-2 px-1 border-b-2 font-medium text-sm transition-all duration-200 hover:scale-105 ${
                   activeTab === id
-                    ? 'border-blue-500 text-blue-600 shadow-sm'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? "border-blue-500 text-blue-600 shadow-sm"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                 }`}
               >
-                <Icon className={`h-4 w-4 mr-2 ${
-                  activeTab === id ? 'animate-pulse' : ''
-                }`} />
+                <Icon
+                  className={`h-4 w-4 mr-2 ${
+                    activeTab === id ? "animate-pulse" : ""
+                  }`}
+                />
                 <span className="mr-2">{label}</span>
                 {count !== undefined && (
                   <Tooltip content={getTooltipContent()} position="top">
-                    <Badge 
+                    <Badge
                       variant={getBadgeVariant() as any}
                       className={`ml-1 text-xs px-1.5 py-0.5 min-w-[1.5rem] h-5 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 ${
-                        activeTab === id ? 'ring-2 ring-blue-200' : ''
+                        activeTab === id ? "ring-2 ring-blue-200" : ""
                       }`}
                     >
                       {getBadgeCount()}
@@ -407,14 +516,14 @@ export default function WhatsAppPage() {
                   </Tooltip>
                 )}
               </button>
-            )
+            );
           })}
         </nav>
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'sessions' && (
-        <SessionManager 
+      {activeTab === "sessions" && (
+        <SessionManager
           sessions={sessions}
           onSessionsChange={loadSessions}
           createSession={createSession}
@@ -424,8 +533,8 @@ export default function WhatsAppPage() {
         />
       )}
 
-      {activeTab === 'send' && (
-        <SendMessage 
+      {activeTab === "send" && (
+        <SendMessage
           sessions={sessions}
           selectedSession={selectedSession}
           setSelectedSession={setSelectedSession}
@@ -435,37 +544,35 @@ export default function WhatsAppPage() {
         />
       )}
 
-      {activeTab === 'conversations' && (
-        <WhatsAppConversations />
-      )}
+      {activeTab === "conversations" && <WhatsAppConversations />}
 
-      {activeTab === 'templates' && (
+      {activeTab === "templates" && (
         <TemplateManager onUseTemplate={handleUseTemplate} />
       )}
 
-      {activeTab === 'proactive' && (
+      {activeTab === "proactive" && (
         <div className="space-y-6">
           {/* Proactive Sub-navigation */}
           <div className="border-b border-gray-200">
             <nav className="-mb-px flex space-x-8">
               <button
-                onClick={() => setProactiveSubTab('send')}
+                onClick={() => setProactiveSubTab("send")}
                 className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
-                  proactiveSubTab === 'send'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  proactiveSubTab === "send"
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                 }`}
               >
                 <Send className="h-4 w-4 mr-2 inline" />
                 Enviar Mensaje
               </button>
-              
+
               <button
-                onClick={() => setProactiveSubTab('history')}
+                onClick={() => setProactiveSubTab("history")}
                 className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
-                  proactiveSubTab === 'history'
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  proactiveSubTab === "history"
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                 }`}
               >
                 <MessageSquare className="h-4 w-4 mr-2 inline" />
@@ -475,22 +582,23 @@ export default function WhatsAppPage() {
           </div>
 
           {/* Sub-tab Content */}
-          {proactiveSubTab === 'send' && (
-            <ProactiveMessageSender
+          {proactiveSubTab === "send" && (
+            <BulkProactiveMessageSender
               templates={templates}
               onSendMessage={handleSendProactiveMessage}
+              onBulkSendMessage={handleBulkSendProactiveMessage}
               selectedTemplate={selectedTemplate}
             />
           )}
 
-          {proactiveSubTab === 'history' && (
+          {proactiveSubTab === "history" && (
             <ProactiveMessageHistory leads={leads} />
           )}
         </div>
       )}
 
-      {activeTab === 'messages' && (
-        <MessageHistory 
+      {activeTab === "messages" && (
+        <MessageHistory
           sessions={sessions}
           selectedSession={selectedSession}
           setSelectedSession={setSelectedSession}
@@ -500,56 +608,59 @@ export default function WhatsAppPage() {
         />
       )}
     </div>
-  )
+  );
 }
 
 // Session Manager Component
-function SessionManager({ 
-  sessions, 
-  onSessionsChange, 
-  createSession, 
-  deleteSession, 
-  isLoading, 
-  error 
+function SessionManager({
+  sessions,
+  onSessionsChange,
+  createSession,
+  deleteSession,
+  isLoading,
+  error,
 }: {
-  sessions: WhatsAppSession[]
-  onSessionsChange: () => void
-  createSession: (id: string, name?: string) => Promise<any>
-  deleteSession: (id: string) => Promise<any>
-  isLoading: boolean
-  error: string | null
+  sessions: WhatsAppSession[];
+  onSessionsChange: () => void;
+  createSession: (id: string, name?: string) => Promise<any>;
+  deleteSession: (id: string) => Promise<any>;
+  isLoading: boolean;
+  error: string | null;
 }) {
-  const [newSessionId, setNewSessionId] = useState('')
-  const [newSessionName, setNewSessionName] = useState('')
-  const [creating, setCreating] = useState(false)
+  const [newSessionId, setNewSessionId] = useState("");
+  const [newSessionName, setNewSessionName] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const handleCreateSession = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newSessionId.trim()) return
+    e.preventDefault();
+    if (!newSessionId.trim()) return;
 
-    setCreating(true)
+    setCreating(true);
     try {
-      await createSession(newSessionId.trim(), newSessionName.trim() || undefined)
-      setNewSessionId('')
-      setNewSessionName('')
-      onSessionsChange()
+      await createSession(
+        newSessionId.trim(),
+        newSessionName.trim() || undefined,
+      );
+      setNewSessionId("");
+      setNewSessionName("");
+      onSessionsChange();
     } catch (err) {
-      console.error('Error creating session:', err)
+      console.error("Error creating session:", err);
     } finally {
-      setCreating(false)
+      setCreating(false);
     }
-  }
+  };
 
   const handleDeleteSession = async (sessionId: string) => {
-    if (!confirm('¿Estás seguro de que quieres eliminar esta sesión?')) return
-    
+    if (!confirm("¿Estás seguro de que quieres eliminar esta sesión?")) return;
+
     try {
-      await deleteSession(sessionId)
-      onSessionsChange()
+      await deleteSession(sessionId);
+      onSessionsChange();
     } catch (err) {
-      console.error('Error deleting session:', err)
+      console.error("Error deleting session:", err);
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
@@ -593,13 +704,14 @@ function SessionManager({
             className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
           >
             <Plus className="h-4 w-4 mr-2" />
-            {creating ? 'Creando...' : 'Crear Sesión'}
+            {creating ? "Creando..." : "Crear Sesión"}
           </button>
         </form>
         <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
           <p className="text-sm text-blue-800">
             <QrCode className="inline h-4 w-4 mr-1" />
-            Al crear una sesión, se abrirá Chrome para escanear el código QR de WhatsApp.
+            Al crear una sesión, se abrirá Chrome para escanear el código QR de
+            WhatsApp.
           </p>
         </div>
       </Card>
@@ -610,7 +722,7 @@ function SessionManager({
           <Smartphone className="inline h-5 w-5 mr-2" />
           Sesiones Activas ({sessions.length})
         </h2>
-        
+
         {sessions.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <Smartphone className="mx-auto h-12 w-12 text-gray-300 mb-4" />
@@ -620,17 +732,22 @@ function SessionManager({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {sessions.map((session) => (
-              <div key={session.id} className="border border-gray-200 rounded-lg p-4">
+              <div
+                key={session.id}
+                className="border border-gray-200 rounded-lg p-4"
+              >
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <h3 className="font-medium text-gray-900">{session.name || session.id}</h3>
+                    <h3 className="font-medium text-gray-900">
+                      {session.name || session.id}
+                    </h3>
                     <p className="text-sm text-gray-500">{session.id}</p>
                   </div>
                   <Badge variant={SESSION_STATUS_VARIANTS[session.status]}>
                     {SESSION_STATUS_LABELS[session.status]}
                   </Badge>
                 </div>
-                
+
                 <div className="space-y-2 text-sm text-gray-600">
                   {session.phoneNumber && (
                     <div className="flex items-center">
@@ -640,12 +757,13 @@ function SessionManager({
                   )}
                   <div className="flex items-center">
                     <Clock className="h-4 w-4 mr-2" />
-                    {new Date(session.updatedAt).toLocaleString('es-ES')}
+                    {new Date(session.updatedAt).toLocaleString("es-ES")}
                   </div>
                   {session.lastSeen && (
                     <div className="flex items-center">
                       <CheckCircle2 className="h-4 w-4 mr-2" />
-                      Último contacto: {new Date(session.lastSeen).toLocaleString('es-ES')}
+                      Último contacto:{" "}
+                      {new Date(session.lastSeen).toLocaleString("es-ES")}
                     </div>
                   )}
                 </div>
@@ -665,63 +783,69 @@ function SessionManager({
         )}
       </Card>
     </div>
-  )
+  );
 }
 
 // Send Message Component
-function SendMessage({ 
-  sessions, 
-  selectedSession, 
-  setSelectedSession, 
+function SendMessage({
+  sessions,
+  selectedSession,
+  setSelectedSession,
   sendDirectMessage,
   isLoading,
-  error 
+  error,
 }: {
-  sessions: WhatsAppSession[]
-  selectedSession: string
-  setSelectedSession: (id: string) => void
-  sendDirectMessage: (sessionId: string, phone: string, message: string) => Promise<boolean>
-  isLoading: boolean
-  error: string | null
+  sessions: WhatsAppSession[];
+  selectedSession: string;
+  setSelectedSession: (id: string) => void;
+  sendDirectMessage: (
+    sessionId: string,
+    phone: string,
+    message: string,
+  ) => Promise<boolean>;
+  isLoading: boolean;
+  error: string | null;
 }) {
-  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
-  const [phone, setPhone] = useState('')
-  const [message, setMessage] = useState('')
-  const [sending, setSending] = useState(false)
-  const [success, setSuccess] = useState(false)
-  const [useManualInput, setUseManualInput] = useState(false)
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
+  const [phone, setPhone] = useState("");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [useManualInput, setUseManualInput] = useState(false);
 
-  const connectedSessions = sessions.filter(s => s.status === 'CONNECTED' || s.status === 'CONNECTING')
+  const connectedSessions = sessions.filter(
+    (s) => s.status === "CONNECTED" || s.status === "CONNECTING",
+  );
 
   const handleLeadSelect = (lead: Lead) => {
-    setSelectedLead(lead)
-    if (lead.id === 'manual') {
-      setUseManualInput(true)
-      setPhone('')
+    setSelectedLead(lead);
+    if (lead.id === "manual") {
+      setUseManualInput(true);
+      setPhone("");
     } else {
-      setUseManualInput(false)
-      setPhone(lead.phone)
+      setUseManualInput(false);
+      setPhone(lead.phone);
     }
-  }
+  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!selectedSession || !phone.trim() || !message.trim()) return
+    e.preventDefault();
+    if (!selectedSession || !phone.trim() || !message.trim()) return;
 
-    setSending(true)
-    setSuccess(false)
+    setSending(true);
+    setSuccess(false);
     try {
-      await sendDirectMessage(selectedSession, phone.trim(), message.trim())
-      setPhone('')
-      setMessage('')
-      setSuccess(true)
-      setTimeout(() => setSuccess(false), 3000)
+      await sendDirectMessage(selectedSession, phone.trim(), message.trim());
+      setPhone("");
+      setMessage("");
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
-      console.error('Error sending message:', err)
+      console.error("Error sending message:", err);
     } finally {
-      setSending(false)
+      setSending(false);
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
@@ -734,7 +858,9 @@ function SendMessage({
         {connectedSessions.length === 0 ? (
           <div className="text-center py-8">
             <AlertCircle className="mx-auto h-12 w-12 text-orange-500 mb-4" />
-            <p className="text-gray-900 font-medium">No hay sesiones conectadas</p>
+            <p className="text-gray-900 font-medium">
+              No hay sesiones conectadas
+            </p>
             <p className="text-sm text-gray-500 mt-1">
               Crea y conecta una sesión primero en la pestaña "Sesiones"
             </p>
@@ -764,7 +890,7 @@ function SendMessage({
               selectedLead={selectedLead}
               onSelectLead={handleLeadSelect}
             />
-            
+
             {/* Manual phone input (only shown if manual input is selected) */}
             {useManualInput && (
               <div>
@@ -819,59 +945,67 @@ function SendMessage({
 
             <button
               type="submit"
-              disabled={sending || !selectedSession || !phone.trim() || !message.trim()}
+              disabled={
+                sending || !selectedSession || !phone.trim() || !message.trim()
+              }
               className="w-full bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
               <Send className="h-4 w-4 mr-2" />
-              {sending ? 'Enviando...' : 'Enviar Mensaje'}
+              {sending ? "Enviando..." : "Enviar Mensaje"}
             </button>
           </form>
         )}
       </Card>
     </div>
-  )
+  );
 }
 
 // Message History Component
-function MessageHistory({ 
-  sessions, 
-  selectedSession, 
-  setSelectedSession, 
+function MessageHistory({
+  sessions,
+  selectedSession,
+  setSelectedSession,
   getMessageAnalytics,
   isLoading,
-  error 
+  error,
 }: {
-  sessions: WhatsAppSession[]
-  selectedSession: string
-  setSelectedSession: (id: string) => void
-  getMessageAnalytics: (sessionId?: string, startDate?: string, endDate?: string) => Promise<any>
-  isLoading: boolean
-  error: string | null
+  sessions: WhatsAppSession[];
+  selectedSession: string;
+  setSelectedSession: (id: string) => void;
+  getMessageAnalytics: (
+    sessionId?: string,
+    startDate?: string,
+    endDate?: string,
+  ) => Promise<any>;
+  isLoading: boolean;
+  error: string | null;
 }) {
-  const [analytics, setAnalytics] = useState<any>(null)
+  const [analytics, setAnalytics] = useState<any>(null);
   const [dateRange, setDateRange] = useState({
-    startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
-  })
+    startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0],
+    endDate: new Date().toISOString().split("T")[0],
+  });
 
   const loadAnalytics = async () => {
     try {
       const data = await getMessageAnalytics(
         selectedSession || undefined,
         dateRange.startDate,
-        dateRange.endDate
-      )
-      setAnalytics(data)
+        dateRange.endDate,
+      );
+      setAnalytics(data);
     } catch (err) {
-      console.error('Error loading analytics:', err)
+      console.error("Error loading analytics:", err);
     }
-  }
+  };
 
   useEffect(() => {
     if (sessions.length > 0) {
-      loadAnalytics()
+      loadAnalytics();
     }
-  }, [selectedSession, dateRange])
+  }, [selectedSession, dateRange]);
 
   return (
     <div className="space-y-6">
@@ -881,7 +1015,7 @@ function MessageHistory({
           <MessageSquare className="inline h-5 w-5 mr-2" />
           Historial de Mensajes
         </h2>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -900,7 +1034,7 @@ function MessageHistory({
               ))}
             </select>
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Fecha Inicio
@@ -908,11 +1042,13 @@ function MessageHistory({
             <input
               type="date"
               value={dateRange.startDate}
-              onChange={(e) => setDateRange(prev => ({ ...prev, startDate: e.target.value }))}
+              onChange={(e) =>
+                setDateRange((prev) => ({ ...prev, startDate: e.target.value }))
+              }
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Fecha Fin
@@ -920,7 +1056,9 @@ function MessageHistory({
             <input
               type="date"
               value={dateRange.endDate}
-              onChange={(e) => setDateRange(prev => ({ ...prev, endDate: e.target.value }))}
+              onChange={(e) =>
+                setDateRange((prev) => ({ ...prev, endDate: e.target.value }))
+              }
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -937,7 +1075,9 @@ function MessageHistory({
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-500">Enviados</p>
-                <p className="text-2xl font-bold text-gray-900">{analytics.totalSent || 0}</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {analytics.totalSent || 0}
+                </p>
               </div>
             </div>
           </Card>
@@ -949,7 +1089,9 @@ function MessageHistory({
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-500">Recibidos</p>
-                <p className="text-2xl font-bold text-gray-900">{analytics.totalReceived || 0}</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {analytics.totalReceived || 0}
+                </p>
               </div>
             </div>
           </Card>
@@ -961,7 +1103,9 @@ function MessageHistory({
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-500">Contactos</p>
-                <p className="text-2xl font-bold text-gray-900">{analytics.topContacts?.length || 0}</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {analytics.topContacts?.length || 0}
+                </p>
               </div>
             </div>
           </Card>
@@ -990,7 +1134,10 @@ function MessageHistory({
           </h3>
           <div className="space-y-3">
             {analytics.topContacts.map((contact: any, index: number) => (
-              <div key={contact.phone} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+              <div
+                key={contact.phone}
+                className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
+              >
                 <div>
                   <p className="font-medium text-gray-900">{contact.phone}</p>
                   <p className="text-sm text-gray-500 truncate max-w-xs">
@@ -998,9 +1145,7 @@ function MessageHistory({
                   </p>
                 </div>
                 <div className="text-right">
-                  <Badge variant="secondary">
-                    {contact.count} mensajes
-                  </Badge>
+                  <Badge variant="secondary">{contact.count} mensajes</Badge>
                 </div>
               </div>
             ))}
@@ -1008,5 +1153,5 @@ function MessageHistory({
         </Card>
       )}
     </div>
-  )
+  );
 }

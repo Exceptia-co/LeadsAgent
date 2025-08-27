@@ -19,7 +19,7 @@ Single backend test: cd apps/api && pnpm test -- --testNamePattern "Name|Regex"
 
 Test watch (API): cd apps/api && pnpm test:watch
 
-All tests: pnpm test | E2E: pnpm test:e2e | Coverage: pnpm test:cov
+All tests: pnpm test | E2E: pnpm test:e2e | Coverage: pnpm test:coverage
 
 Quality: pnpm lint | lint:fix | typecheck | format | clean:cache | rebuild
 
@@ -106,7 +106,7 @@ OPENAI_API_KEY="sk-..."               # AI services (optional)
 **Unit Tests:** Jest with `*.spec.ts` (backend) and `*.test.tsx` (frontend)  
 **Integration:** Supertest for API endpoints in `/test/` directories  
 **Coverage:** Minimum 80% for critical business logic  
-**Commands:** `pnpm test:watch` for development, `pnpm test:cov` for coverage
+**Commands:** `pnpm test:watch` for development, `pnpm test:coverage` for coverage
 
 ## Git & Development Workflow
 

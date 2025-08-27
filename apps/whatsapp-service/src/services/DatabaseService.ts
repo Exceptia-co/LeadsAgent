@@ -1,8 +1,8 @@
-import { Pool, PoolClient } from 'pg';
-import { logger } from '../utils/logger';
-import PhoneNumberService from './PhoneNumberService';
-import { TrainingInteraction } from './AILearningService';
-import MigrationService from './MigrationService';
+import { Pool, PoolClient } from "pg";
+import { logger } from "../utils/logger";
+import PhoneNumberService from "./PhoneNumberService";
+import { TrainingInteraction } from "./AILearningService";
+import MigrationService from "./MigrationService";
 
 // Interfaz para datos de conversación
 export interface ConversationData {
@@ -44,7 +44,7 @@ export interface Lead {
   phone: string;
   email?: string;
   tags?: string[];
-  status: 'NUEVO' | 'CONTACTADO' | 'QUALIFIED' | 'PERDIDO' | 'GANADO';
+  status: "NUEVO" | "CONTACTADO" | "QUALIFIED" | "PERDIDO" | "GANADO";
   moodScore?: number;
   lastContact?: Date;
   assignedTo?: string;
@@ -64,25 +64,30 @@ class DatabaseService {
   private initializePool(): void {
     try {
       if (!process.env.DATABASE_URL) {
-        logger.warn('DATABASE_URL no está configurado, funcionando sin persistencia de base de datos');
+        logger.warn(
+          "DATABASE_URL no está configurado, funcionando sin persistencia de base de datos",
+        );
         return;
       }
 
       this.pool = new Pool({
         connectionString: process.env.DATABASE_URL,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+        ssl:
+          process.env.NODE_ENV === "production"
+            ? { rejectUnauthorized: false }
+            : false,
         max: 10,
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: 2000,
       });
 
-      this.pool.on('error', (err) => {
-        logger.error('Error en el pool de conexiones PostgreSQL:', err);
+      this.pool.on("error", (err) => {
+        logger.error("Error en el pool de conexiones PostgreSQL:", err);
       });
 
-      logger.info('Pool de conexiones PostgreSQL inicializado');
+      logger.info("Pool de conexiones PostgreSQL inicializado");
     } catch (error) {
-      logger.error('Error inicializando pool de base de datos:', error);
+      logger.error("Error inicializando pool de base de datos:", error);
     }
   }
 
@@ -97,16 +102,18 @@ class DatabaseService {
   // Ejecutar migraciones automáticamente
   private async runMigrations(): Promise<void> {
     if (!this.pool) {
-      logger.warn('No hay conexión a base de datos disponible para migraciones');
+      logger.warn(
+        "No hay conexión a base de datos disponible para migraciones",
+      );
       return;
     }
 
     try {
       const migrationService = new MigrationService(this.pool);
       await migrationService.runMigrations();
-      logger.info('✅ Migraciones ejecutadas correctamente');
+      logger.info("✅ Migraciones ejecutadas correctamente");
     } catch (error) {
-      logger.error('❌ Error ejecutando migraciones:', error);
+      logger.error("❌ Error ejecutando migraciones:", error);
       throw error; // Re-throw para que falle la inicialización si hay problemas críticos
     }
   }
@@ -114,7 +121,7 @@ class DatabaseService {
   // Crear tabla si no existe
   public async initializeTable(): Promise<void> {
     if (!this.pool) {
-      logger.warn('No hay conexión a base de datos disponible');
+      logger.warn("No hay conexión a base de datos disponible");
       return;
     }
 
@@ -263,31 +270,42 @@ class DatabaseService {
 
     try {
       await this.pool.query(createTablesQuery);
-      logger.info('Tablas whatsapp_conversations y whatsapp_whitelist_logs verificadas/creadas correctamente');
+      logger.info(
+        "Tablas whatsapp_conversations y whatsapp_whitelist_logs verificadas/creadas correctamente",
+      );
     } catch (error) {
-      logger.error('Error creando tablas:', error);
+      logger.error("Error creando tablas:", error);
     }
   }
 
   // Guardar conversación
-  public async saveConversation(data: ConversationData): Promise<string | null> {
+  public async saveConversation(
+    data: ConversationData,
+  ): Promise<string | null> {
     // LOG DETALLADO: Estado inicial
-    logger.info('🔍 [DIAGNOSTIC] saveConversation called with data:', {
+    logger.info("🔍 [DIAGNOSTIC] saveConversation called with data:", {
       sessionId: data.sessionId,
       phoneNumber: data.phoneNumber,
-      messageText: data.messageText ? data.messageText.substring(0, 50) + '...' : null,
-      responseText: data.responseText ? data.responseText.substring(0, 50) + '...' : null,
-      isFromUser: data.isFromUser
+      messageText: data.messageText
+        ? data.messageText.substring(0, 50) + "..."
+        : null,
+      responseText: data.responseText
+        ? data.responseText.substring(0, 50) + "..."
+        : null,
+      isFromUser: data.isFromUser,
     });
 
     // LOG DETALLADO: Estado de la conexión
     if (!this.pool) {
-      logger.error('❌ [DIAGNOSTIC] No database connection available!');
-      logger.error('❌ [DIAGNOSTIC] DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
+      logger.error("❌ [DIAGNOSTIC] No database connection available!");
+      logger.error(
+        "❌ [DIAGNOSTIC] DATABASE_URL:",
+        process.env.DATABASE_URL ? "SET" : "NOT SET",
+      );
       return null;
     }
-    
-    logger.info('✅ [DIAGNOSTIC] Database pool connection available');
+
+    logger.info("✅ [DIAGNOSTIC] Database pool connection available");
 
     const query = `
       INSERT INTO whatsapp_conversations (
@@ -307,58 +325,58 @@ class DatabaseService {
       data.sentiment || null,
       data.aiProvider || null,
       data.tokensUsed || 0,
-      data.isFromUser !== undefined ? data.isFromUser : true
+      data.isFromUser !== undefined ? data.isFromUser : true,
     ];
 
     // LOG DETALLADO: Valores que se van a insertar
-    logger.info('📝 [DIAGNOSTIC] Query values prepared:', {
+    logger.info("📝 [DIAGNOSTIC] Query values prepared:", {
       sessionId: values[0],
       phoneNumber: values[1],
       contactName: values[2],
       intent: values[5],
-      isFromUser: values[9]
+      isFromUser: values[9],
     });
 
     try {
-      logger.info('🔄 [DIAGNOSTIC] Executing database query...');
+      logger.info("🔄 [DIAGNOSTIC] Executing database query...");
       const result = await this.pool.query(query, values);
-      
+
       const conversationId = result.rows[0]?.id;
-      
-      logger.info('✅ [DIAGNOSTIC] Query executed successfully!', {
+
+      logger.info("✅ [DIAGNOSTIC] Query executed successfully!", {
         conversationId,
         rowsAffected: result.rowCount,
-        returningId: result.rows[0]?.id
+        returningId: result.rows[0]?.id,
       });
-      
-      logger.info('💾 Conversación guardada correctamente:', {
+
+      logger.info("💾 Conversación guardada correctamente:", {
         id: conversationId,
         phoneNumber: data.phoneNumber,
-        sessionId: data.sessionId
+        sessionId: data.sessionId,
       });
-      
+
       return conversationId;
     } catch (error: any) {
-      logger.error('❌ [DIAGNOSTIC] Error executing database query:', {
+      logger.error("❌ [DIAGNOSTIC] Error executing database query:", {
         error: error.message,
         code: error.code,
         detail: error.detail,
         hint: error.hint,
         position: error.position,
-        stack: error.stack?.substring(0, 200) + '...'
+        stack: error.stack?.substring(0, 200) + "...",
       });
-      logger.error('❌ Error guardando conversación (legacy):', error);
+      logger.error("❌ Error guardando conversación (legacy):", error);
       return null;
     }
   }
 
   // Obtener historial de conversación por número de teléfono
   public async getConversationHistory(
-    phoneNumber: string, 
-    limit: number = 50
+    phoneNumber: string,
+    limit: number = 50,
   ): Promise<ConversationHistory[]> {
     if (!this.pool) {
-      logger.warn('No hay conexión a base de datos');
+      logger.warn("No hay conexión a base de datos");
       return [];
     }
 
@@ -371,7 +389,7 @@ class DatabaseService {
 
     try {
       const result = await this.pool.query(query, [phoneNumber, limit]);
-      return result.rows.map(row => ({
+      return result.rows.map((row) => ({
         id: row.id,
         sessionId: row.session_id,
         phoneNumber: row.phone_number,
@@ -385,20 +403,20 @@ class DatabaseService {
         tokensUsed: row.tokens_used || 0,
         isFromUser: row.is_from_user,
         createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at)
+        updatedAt: new Date(row.updated_at),
       }));
     } catch (error) {
-      logger.error('Error obteniendo historial de conversación:', error);
+      logger.error("Error obteniendo historial de conversación:", error);
       return [];
     }
   }
 
   // Obtener historial reciente para contexto de IA (últimos N mensajes)
   public async getRecentContext(
-    phoneNumber: string, 
-    sessionId: string, 
-    limit: number = 10
-  ): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+    phoneNumber: string,
+    sessionId: string,
+    limit: number = 10,
+  ): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
     if (!this.pool) {
       return [];
     }
@@ -412,27 +430,32 @@ class DatabaseService {
     `;
 
     try {
-      const result = await this.pool.query(query, [phoneNumber, sessionId, limit]);
-      const context: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+      const result = await this.pool.query(query, [
+        phoneNumber,
+        sessionId,
+        limit,
+      ]);
+      const context: Array<{ role: "user" | "assistant"; content: string }> =
+        [];
 
-      result.rows.forEach(row => {
+      result.rows.forEach((row) => {
         if (row.message_text && row.is_from_user) {
           context.push({
-            role: 'user',
-            content: row.message_text
+            role: "user",
+            content: row.message_text,
           });
         }
         if (row.response_text && !row.is_from_user) {
           context.push({
-            role: 'assistant',
-            content: row.response_text
+            role: "assistant",
+            content: row.response_text,
           });
         }
       });
 
       return context;
     } catch (error) {
-      logger.error('Error obteniendo contexto reciente:', error);
+      logger.error("Error obteniendo contexto reciente:", error);
       return [];
     }
   }
@@ -440,7 +463,11 @@ class DatabaseService {
   // Obtener estadísticas de conversaciones
   public async getStats(sessionId?: string): Promise<any> {
     if (!this.pool) {
-      return { totalConversations: 0, uniqueContacts: 0, averageResponseTime: 0 };
+      return {
+        totalConversations: 0,
+        uniqueContacts: 0,
+        averageResponseTime: 0,
+      };
     }
 
     let query = `
@@ -453,7 +480,7 @@ class DatabaseService {
 
     const values: any[] = [];
     if (sessionId) {
-      query += ' WHERE session_id = $1';
+      query += " WHERE session_id = $1";
       values.push(sessionId);
     }
 
@@ -465,19 +492,24 @@ class DatabaseService {
         totalConversations: parseInt(stats.total_conversations) || 0,
         uniqueContacts: parseInt(stats.unique_contacts) || 0,
         aiResponses: parseInt(stats.ai_responses) || 0,
-        averageTokens: 0 // tokens_used functionality not implemented yet
+        averageTokens: 0, // tokens_used functionality not implemented yet
       };
     } catch (error) {
-      logger.error('Error obteniendo estadísticas:', error);
-      return { totalConversations: 0, uniqueContacts: 0, aiResponses: 0, averageTokens: 0 };
+      logger.error("Error obteniendo estadísticas:", error);
+      return {
+        totalConversations: 0,
+        uniqueContacts: 0,
+        aiResponses: 0,
+        averageTokens: 0,
+      };
     }
   }
 
   // Buscar conversaciones por términos
   public async searchConversations(
-    searchTerm: string, 
+    searchTerm: string,
     sessionId?: string,
-    limit: number = 20
+    limit: number = 20,
   ): Promise<ConversationHistory[]> {
     if (!this.pool) {
       return [];
@@ -491,18 +523,18 @@ class DatabaseService {
     const values: any[] = [`%${searchTerm}%`];
 
     if (sessionId) {
-      query += ' AND session_id = $2';
+      query += " AND session_id = $2";
       values.push(sessionId);
-      query += ' ORDER BY created_at DESC LIMIT $3';
+      query += " ORDER BY created_at DESC LIMIT $3";
       values.push(limit);
     } else {
-      query += ' ORDER BY created_at DESC LIMIT $2';
+      query += " ORDER BY created_at DESC LIMIT $2";
       values.push(limit);
     }
 
     try {
       const result = await this.pool.query(query, values);
-      return result.rows.map(row => ({
+      return result.rows.map((row) => ({
         id: row.id,
         sessionId: row.session_id,
         phoneNumber: row.phone_number,
@@ -516,10 +548,10 @@ class DatabaseService {
         tokensUsed: row.tokens_used || 0,
         isFromUser: row.is_from_user,
         createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at)
+        updatedAt: new Date(row.updated_at),
       }));
     } catch (error) {
-      logger.error('Error buscando conversaciones:', error);
+      logger.error("Error buscando conversaciones:", error);
       return [];
     }
   }
@@ -528,7 +560,7 @@ class DatabaseService {
   public async close(): Promise<void> {
     if (this.pool) {
       await this.pool.end();
-      logger.info('Pool de conexiones PostgreSQL cerrado');
+      logger.info("Pool de conexiones PostgreSQL cerrado");
     }
   }
 
@@ -539,11 +571,11 @@ class DatabaseService {
     }
 
     try {
-      const result = await this.pool.query('SELECT NOW()');
-      logger.info('Conexión a base de datos verificada:', result.rows[0]);
+      const result = await this.pool.query("SELECT NOW()");
+      logger.info("Conexión a base de datos verificada:", result.rows[0]);
       return true;
     } catch (error) {
-      logger.error('Error verificando conexión a base de datos:', error);
+      logger.error("Error verificando conexión a base de datos:", error);
       return false;
     }
   }
@@ -561,9 +593,9 @@ class DatabaseService {
             AND table_name = 'leads'
           );
         `;
-        
+
         const tableExists = await this.pool.query(checkTableQuery);
-        
+
         if (tableExists.rows[0].exists) {
           // La tabla existe, obtener leads reales con estructura de Supabase
           const query = `
@@ -574,9 +606,9 @@ class DatabaseService {
             FROM leads 
             ORDER BY created_at DESC;
           `;
-          
+
           const result = await this.pool.query(query);
-          const realLeads = result.rows.map(row => ({
+          const realLeads = result.rows.map((row) => ({
             id: row.id,
             name: row.name,
             phone: row.phone,
@@ -584,80 +616,89 @@ class DatabaseService {
             tags: row.tags,
             status: row.status,
             moodScore: row.mood_score,
-            lastContact: row.last_contact ? new Date(row.last_contact) : undefined,
+            lastContact: row.last_contact
+              ? new Date(row.last_contact)
+              : undefined,
             assignedTo: row.assigned_to,
             source: row.source,
             whatsappAuthorized: row.whatsapp_authorized,
             createdAt: new Date(row.created_at),
-            updatedAt: new Date(row.updated_at)
+            updatedAt: new Date(row.updated_at),
           }));
-          
-          logger.info(`✅ Obtenidos ${realLeads.length} leads de la base de datos`);
+
+          logger.info(
+            `✅ Obtenidos ${realLeads.length} leads de la base de datos`,
+          );
           return realLeads;
         }
       } catch (error) {
-        logger.warn('Error obteniendo leads de la base de datos, usando datos mockeados:', error);
+        logger.warn(
+          "Error obteniendo leads de la base de datos, usando datos mockeados:",
+          error,
+        );
       }
     }
-    
+
     // Fallback: devolver leads mockeados para desarrollo
     const mockLeads: Lead[] = [
       {
-        id: '1',
-        name: 'Juan Pérez',
-        phone: '+5491123456789',
-        email: 'juan@example.com',
-        tags: ['interesado', 'productos'],
-        status: 'NUEVO',
+        id: "1",
+        name: "Juan Pérez",
+        phone: "+5491123456789",
+        email: "juan@example.com",
+        tags: ["interesado", "productos"],
+        status: "NUEVO",
         moodScore: 8.5,
-        source: 'website',
+        source: "website",
         whatsappAuthorized: true,
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       },
       {
-        id: '2',
-        name: 'María García',
-        phone: '+5491187654321',
-        email: 'maria@example.com',
-        tags: ['información', 'precios'],
-        status: 'QUALIFIED',
+        id: "2",
+        name: "María García",
+        phone: "+5491187654321",
+        email: "maria@example.com",
+        tags: ["información", "precios"],
+        status: "QUALIFIED",
         moodScore: 9.2,
-        source: 'referral',
+        source: "referral",
         whatsappAuthorized: true,
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       },
       {
-        id: '3',
-        name: 'Carlos López',
-        phone: '+5491155443322',
-        email: 'carlos@example.com',
-        tags: ['automatización', 'urgente'],
-        status: 'NUEVO',
+        id: "3",
+        name: "Carlos López",
+        phone: "+5491155443322",
+        email: "carlos@example.com",
+        tags: ["automatización", "urgente"],
+        status: "NUEVO",
         moodScore: 7.8,
-        source: 'social_media',
+        source: "social_media",
         whatsappAuthorized: true,
         createdAt: new Date(),
-        updatedAt: new Date()
+        updatedAt: new Date(),
       },
       {
-        id: '4',
-        name: 'Ana Martínez',
-        phone: '+5491166778899',
-        email: 'ana@example.com',
-        tags: ['chatbots', 'negocio'],
-        status: 'GANADO',
+        id: "4",
+        name: "Ana Martínez",
+        phone: "+5491166778899",
+        email: "ana@example.com",
+        tags: ["chatbots", "negocio"],
+        status: "GANADO",
         moodScore: 9.5,
-        source: 'website',
+        source: "website",
         whatsappAuthorized: false,
         createdAt: new Date(),
-        updatedAt: new Date()
-      }
+        updatedAt: new Date(),
+      },
     ];
-    
-    logger.info(`🔧 Usando ${mockLeads.length} leads mockeados para desarrollo`);
-    return mockLeads
+
+    logger.info(
+      `🔧 Usando ${mockLeads.length} leads mockeados para desarrollo`,
+    );
+    return mockLeads;
   }
 
   // Check if a lead with similar phone number already exists
@@ -669,18 +710,82 @@ class DatabaseService {
     try {
       // Get all leads to check for duplicates
       const allLeads = await this.getAllLeads();
-      
+
       // Use PhoneNumberService to find equivalent phone numbers
       for (const lead of allLeads) {
-        if (lead.phone && PhoneNumberService.arePhoneNumbersEquivalent(phoneNumber, lead.phone)) {
-          logger.info(`📞 Found existing lead with equivalent phone number: ${lead.phone} ≈ ${phoneNumber}`);
+        if (
+          lead.phone &&
+          PhoneNumberService.arePhoneNumbersEquivalent(phoneNumber, lead.phone)
+        ) {
+          logger.info(
+            `📞 Found existing lead with equivalent phone number: ${lead.phone} ≈ ${phoneNumber}`,
+          );
           return lead;
         }
       }
-      
+
       return null;
     } catch (error) {
-      logger.error('Error searching for lead by phone:', error);
+      logger.error("Error searching for lead by phone:", error);
+      return null;
+    }
+  }
+
+  // Find lead by ID
+  public async findLeadById(leadId: string): Promise<Lead | null> {
+    if (!this.pool) {
+      return null;
+    }
+
+    try {
+      // Check if the table exists first
+      const checkTableQuery = `
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'leads'
+        );
+      `;
+
+      const tableExists = await this.pool.query(checkTableQuery);
+
+      if (tableExists.rows[0].exists) {
+        const query = `
+          SELECT 
+            id, name, phone, email, tags, status, mood_score, 
+            last_contact, assigned_to, source, whatsapp_authorized,
+            created_at, updated_at
+          FROM leads 
+          WHERE id = $1;
+        `;
+
+        const result = await this.pool.query(query, [leadId]);
+
+        if (result.rows.length > 0) {
+          const row = result.rows[0];
+          return {
+            id: row.id,
+            name: row.name,
+            phone: row.phone,
+            email: row.email,
+            tags: row.tags,
+            status: row.status,
+            moodScore: row.mood_score,
+            lastContact: row.last_contact
+              ? new Date(row.last_contact)
+              : undefined,
+            assignedTo: row.assigned_to,
+            source: row.source,
+            whatsappAuthorized: row.whatsapp_authorized,
+            createdAt: new Date(row.created_at),
+            updatedAt: new Date(row.updated_at),
+          };
+        }
+      }
+
+      return null;
+    } catch (error) {
+      logger.error("Error finding lead by ID:", error);
       return null;
     }
   }
@@ -690,23 +795,29 @@ class DatabaseService {
     name?: string | null;
     email?: string | null;
     phone: string;
-    status?: 'NUEVO' | 'CONTACTADO' | 'QUALIFIED' | 'GANADO' | 'PERDIDO';
+    status?: "NUEVO" | "CONTACTADO" | "QUALIFIED" | "GANADO" | "PERDIDO";
     source?: string;
   }): Promise<Lead | null> {
     if (!this.pool) {
-      logger.warn('No database connection available, cannot create lead');
+      logger.warn("No database connection available, cannot create lead");
       return null;
     }
 
     try {
       // Normalize the phone number before processing
-      const normalizedPhone = PhoneNumberService.normalizePhoneNumber(leadData.phone);
-      
+      const normalizedPhone = PhoneNumberService.normalizePhoneNumber(
+        leadData.phone,
+      );
+
       // Check if a lead with this phone number already exists
       const existingLead = await this.findLeadByPhone(normalizedPhone);
       if (existingLead) {
-        logger.warn(`⚠️ Lead with phone number ${leadData.phone} (normalized: ${normalizedPhone}) already exists with ID: ${existingLead.id}`);
-        throw new Error(`Duplicate phone number: A lead with phone ${leadData.phone} already exists`);
+        logger.warn(
+          `⚠️ Lead with phone number ${leadData.phone} (normalized: ${normalizedPhone}) already exists with ID: ${existingLead.id}`,
+        );
+        throw new Error(
+          `Duplicate phone number: A lead with phone ${leadData.phone} already exists`,
+        );
       }
       // Check if leads table exists
       const checkTableQuery = `
@@ -716,11 +827,11 @@ class DatabaseService {
           AND table_name = 'leads'
         );
       `;
-      
+
       const tableExists = await this.pool.query(checkTableQuery);
-      
+
       if (!tableExists.rows[0].exists) {
-        logger.error('Leads table does not exist');
+        logger.error("Leads table does not exist");
         return null;
       }
 
@@ -733,18 +844,18 @@ class DatabaseService {
           id, name, email, phone, status, source, whatsapp_authorized, 
           mood_score, last_contact, assigned_to, created_at, updated_at;
       `;
-      
+
       const values = [
         leadData.name || null,
         leadData.email || null,
         normalizedPhone, // Use normalized phone number
-        leadData.status || 'NUEVO',
-        leadData.source || 'manual',
-        true // Default to WhatsApp authorized
+        leadData.status || "NUEVO",
+        leadData.source || "manual",
+        true, // Default to WhatsApp authorized
       ];
-      
+
       const result = await this.pool.query(query, values);
-      
+
       if (result.rows.length > 0) {
         const row = result.rows[0];
         const newLead: Lead = {
@@ -757,28 +868,35 @@ class DatabaseService {
           tags: [],
           whatsappAuthorized: row.whatsapp_authorized,
           moodScore: row.mood_score ? parseFloat(row.mood_score) : undefined,
-          lastContact: row.last_contact ? new Date(row.last_contact) : undefined,
+          lastContact: row.last_contact
+            ? new Date(row.last_contact)
+            : undefined,
           assignedTo: row.assigned_to,
           createdAt: new Date(row.created_at),
-          updatedAt: new Date(row.updated_at)
+          updatedAt: new Date(row.updated_at),
         };
-        
-        logger.info(`✅ Created new lead: ${newLead.name || 'Unnamed'} (${newLead.phone})`);
+
+        logger.info(
+          `✅ Created new lead: ${newLead.name || "Unnamed"} (${newLead.phone})`,
+        );
         return newLead;
       }
-      
-      logger.error('Failed to create lead - no rows returned');
+
+      logger.error("Failed to create lead - no rows returned");
       return null;
     } catch (error: any) {
-      logger.error('Error creating lead:', error);
-      
+      logger.error("Error creating lead:", error);
+
       // Re-throw the error so the caller can handle it (e.g., for duplicate phone detection)
       throw error;
     }
   }
 
   // Update lead WhatsApp authorization status
-  public async updateLeadWhatsAppAuth(leadId: string, whatsappAuthorized: boolean): Promise<boolean> {
+  public async updateLeadWhatsAppAuth(
+    leadId: string,
+    whatsappAuthorized: boolean,
+  ): Promise<boolean> {
     if (this.pool) {
       try {
         const query = `
@@ -787,56 +905,65 @@ class DatabaseService {
           WHERE id = $2
           RETURNING id;
         `;
-        
-        const result = await this.pool.query(query, [whatsappAuthorized, leadId]);
-        
+
+        const result = await this.pool.query(query, [
+          whatsappAuthorized,
+          leadId,
+        ]);
+
         if (result.rows.length > 0) {
-          logger.info(`✅ Lead ${leadId} WhatsApp authorization updated to: ${whatsappAuthorized}`);
+          logger.info(
+            `✅ Lead ${leadId} WhatsApp authorization updated to: ${whatsappAuthorized}`,
+          );
           return true;
         } else {
-          logger.warn(`⚠️ Lead ${leadId} not found for WhatsApp authorization update`);
+          logger.warn(
+            `⚠️ Lead ${leadId} not found for WhatsApp authorization update`,
+          );
           return false;
         }
       } catch (error) {
-        logger.error('Error updating lead WhatsApp authorization:', error);
+        logger.error("Error updating lead WhatsApp authorization:", error);
         return false;
       }
     }
-    
+
     // For mock data, we can't actually update, so just log and return true
-    logger.info(`🔧 Mock update: Lead ${leadId} WhatsApp authorization would be set to: ${whatsappAuthorized}`);
+    logger.info(
+      `🔧 Mock update: Lead ${leadId} WhatsApp authorization would be set to: ${whatsappAuthorized}`,
+    );
     return true;
   }
 
   // Get recent conversations across all phone numbers
   public async getRecentConversations(
     sessionId?: string,
-    limit: number = 50
+    limit: number = 50,
   ): Promise<ConversationHistory[]> {
     if (!this.pool) {
-      logger.warn('No hay conexión a base de datos');
+      logger.warn("No hay conexión a base de datos");
       return [];
     }
 
     let query = `
       SELECT * FROM whatsapp_conversations
     `;
-    
+
     const values: any[] = [];
-    
+
     if (sessionId) {
-      query += ' WHERE session_id = $1';
+      query += " WHERE session_id = $1";
       values.push(sessionId);
-      query += ' ORDER BY created_at DESC LIMIT $2';
+      query += " ORDER BY created_at DESC LIMIT $2";
       values.push(limit);
     } else {
-      query += ' ORDER BY created_at DESC LIMIT $1';
+      query += " ORDER BY created_at DESC LIMIT $1";
       values.push(limit);
     }
 
     try {
       const result = await this.pool.query(query, values);
-      return result.rows.map(row => ({
+      return result.rows.map((row) => ({
         id: row.id,
         sessionId: row.session_id,
         phoneNumber: row.phone_number,
@@ -850,10 +977,10 @@ class DatabaseService {
         tokensUsed: row.tokens_used || 0,
         isFromUser: row.is_from_user,
         createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at)
+        updatedAt: new Date(row.updated_at),
       }));
     } catch (error) {
-      logger.error('Error obteniendo conversaciones recientes:', error);
+      logger.error("Error obteniendo conversaciones recientes:", error);
       return [];
     }
   }
@@ -862,7 +989,7 @@ class DatabaseService {
   public async logWhitelistDecision(data: {
     phoneNumber: string;
     sessionId?: string;
-    decision: 'ALLOWED' | 'BLOCKED';
+    decision: "ALLOWED" | "BLOCKED";
     reason?: string;
     leadId?: string;
     leadName?: string;
@@ -872,7 +999,9 @@ class DatabaseService {
     userAgent?: string;
   }): Promise<string | null> {
     if (!this.pool) {
-      logger.warn('No hay conexión a base de datos, log de whitelist no guardado');
+      logger.warn(
+        "No hay conexión a base de datos, log de whitelist no guardado",
+      );
       return null;
     }
 
@@ -894,49 +1023,59 @@ class DatabaseService {
       data.messagePreview ? data.messagePreview.substring(0, 200) : null, // Limit preview length
       data.aiProvider || null,
       data.ipAddress || null,
-      data.userAgent || null
+      data.userAgent || null,
     ];
 
     try {
       const result = await this.pool.query(query, values);
       const logId = result.rows[0]?.id;
-      
-      logger.debug('Whitelist decision logged:', {
+
+      logger.debug("Whitelist decision logged:", {
         id: logId,
         phoneNumber: data.phoneNumber,
-        decision: data.decision
+        decision: data.decision,
       });
-      
+
       return logId;
     } catch (error) {
-      logger.error('Error logging whitelist decision:', error);
+      logger.error("Error logging whitelist decision:", error);
       return null;
     }
   }
 
   // Obtener logs de whitelist con filtros
-  public async getWhitelistLogs(options: {
-    limit?: number;
-    offset?: number;
-    phoneNumber?: string;
-    sessionId?: string;
-    decision?: 'ALLOWED' | 'BLOCKED';
-    startDate?: Date;
-    endDate?: Date;
-  } = {}): Promise<any[]> {
+  public async getWhitelistLogs(
+    options: {
+      limit?: number;
+      offset?: number;
+      phoneNumber?: string;
+      sessionId?: string;
+      decision?: "ALLOWED" | "BLOCKED";
+      startDate?: Date;
+      endDate?: Date;
+    } = {},
+  ): Promise<any[]> {
     if (!this.pool) {
       return [];
     }
 
-    const { limit = 50, offset = 0, phoneNumber, sessionId, decision, startDate, endDate } = options;
-    
+    const {
+      limit = 50,
+      offset = 0,
+      phoneNumber,
+      sessionId,
+      decision,
+      startDate,
+      endDate,
+    } = options;
+
     let query = `
       SELECT 
         id, phone_number, session_id, decision, reason, created_by, created_at
       FROM whatsapp_whitelist_logs
       WHERE 1=1
     `;
-    
+
     const values: any[] = [];
     let valueIndex = 1;
 
@@ -970,27 +1109,29 @@ class DatabaseService {
 
     try {
       const result = await this.pool.query(query, values);
-      return result.rows.map(row => ({
+      return result.rows.map((row) => ({
         id: row.id,
         phoneNumber: row.phone_number,
         sessionId: row.session_id,
         decision: row.decision,
         reason: row.reason,
         createdBy: row.created_by,
-        createdAt: new Date(row.created_at)
+        createdAt: new Date(row.created_at),
       }));
     } catch (error) {
-      logger.error('Error getting whitelist logs:', error);
+      logger.error("Error getting whitelist logs:", error);
       return [];
     }
   }
 
   // Obtener estadísticas de whitelist
-  public async getWhitelistStats(options: {
-    sessionId?: string;
-    startDate?: Date;
-    endDate?: Date;
-  } = {}): Promise<any> {
+  public async getWhitelistStats(
+    options: {
+      sessionId?: string;
+      startDate?: Date;
+      endDate?: Date;
+    } = {},
+  ): Promise<any> {
     if (!this.pool) {
       return {
         totalDecisions: 0,
@@ -998,12 +1139,12 @@ class DatabaseService {
         blockedCount: 0,
         allowedPercentage: 0,
         blockedPercentage: 0,
-        uniquePhones: 0
+        uniquePhones: 0,
       };
     }
 
     const { sessionId, startDate, endDate } = options;
-    
+
     let query = `
       SELECT 
         COUNT(*) as total_decisions,
@@ -1013,7 +1154,7 @@ class DatabaseService {
       FROM whatsapp_whitelist_logs
       WHERE 1=1
     `;
-    
+
     const values: any[] = [];
     let valueIndex = 1;
 
@@ -1035,28 +1176,34 @@ class DatabaseService {
     try {
       const result = await this.pool.query(query, values);
       const stats = result.rows[0];
-      
+
       const totalDecisions = parseInt(stats.total_decisions) || 0;
       const allowedCount = parseInt(stats.allowed_count) || 0;
       const blockedCount = parseInt(stats.blocked_count) || 0;
-      
+
       return {
         totalDecisions,
         allowedCount,
         blockedCount,
-        allowedPercentage: totalDecisions > 0 ? (allowedCount / totalDecisions * 100).toFixed(1) : '0',
-        blockedPercentage: totalDecisions > 0 ? (blockedCount / totalDecisions * 100).toFixed(1) : '0',
-        uniquePhones: parseInt(stats.unique_phones) || 0
+        allowedPercentage:
+          totalDecisions > 0
+            ? ((allowedCount / totalDecisions) * 100).toFixed(1)
+            : "0",
+        blockedPercentage:
+          totalDecisions > 0
+            ? ((blockedCount / totalDecisions) * 100).toFixed(1)
+            : "0",
+        uniquePhones: parseInt(stats.unique_phones) || 0,
       };
     } catch (error) {
-      logger.error('Error getting whitelist statistics:', error);
+      logger.error("Error getting whitelist statistics:", error);
       return {
         totalDecisions: 0,
         allowedCount: 0,
         blockedCount: 0,
-        allowedPercentage: '0',
-        blockedPercentage: '0',
-        uniquePhones: 0
+        allowedPercentage: "0",
+        blockedPercentage: "0",
+        uniquePhones: 0,
       };
     }
   }
@@ -1067,11 +1214,13 @@ class DatabaseService {
 
   // Obtener conversaciones estructuradas con información de leads
   public async getConversations(
-    limit: number = 50, 
-    offset: number = 0
+    limit: number = 50,
+    offset: number = 0,
   ): Promise<any[]> {
     if (!this.pool) {
-      logger.warn('No hay conexión a base de datos para obtener conversaciones');
+      logger.warn(
+        "No hay conexión a base de datos para obtener conversaciones",
+      );
       return this.getMockConversations(limit, offset);
     }
 
@@ -1112,12 +1261,12 @@ class DatabaseService {
       const leads = await this.getAllLeads();
 
       // Mapear conversaciones con información de leads
-      const conversations = result.rows.map(row => {
+      const conversations = result.rows.map((row) => {
         // Buscar lead correspondiente
-        const lead = leads.find(l => {
+        const lead = leads.find((l) => {
           if (!l.phone) return false;
-          const leadPhone = l.phone.replace(/[^0-9]/g, '');
-          const conversationPhone = row.phone_number.replace(/[^0-9]/g, '');
+          const leadPhone = l.phone.replace(/[^0-9]/g, "");
+          const conversationPhone = row.phone_number.replace(/[^0-9]/g, "");
           return leadPhone.slice(-10) === conversationPhone.slice(-10);
         });
 
@@ -1125,44 +1274,48 @@ class DatabaseService {
           id: `conv_${row.phone_number}`, // ID único para la conversación
           leadId: lead?.id || null,
           lead: lead || {
-            id: 'unknown',
-            name: row.contact_name || 'Desconocido',
+            id: "unknown",
+            name: row.contact_name || "Desconocido",
             phone: row.phone_number,
-            status: 'NUEVO'
+            status: "NUEVO",
           },
           lastMessage: {
             id: `msg_${Date.now()}`,
-            content: row.last_message_content || '',
-            direction: row.is_from_user ? 'INBOUND' : 'OUTBOUND',
-            messageType: row.message_type || 'text',
-            status: 'delivered',
-            createdAt: row.created_at
+            content: row.last_message_content || "",
+            direction: row.is_from_user ? "INBOUND" : "OUTBOUND",
+            messageType: row.message_type || "text",
+            status: "delivered",
+            createdAt: row.created_at,
           },
           unreadCount: parseInt(row.unread_count) || 0,
-          updatedAt: row.updated_at
+          updatedAt: row.updated_at,
         };
       });
 
-      logger.info(`✅ Obtenidas ${conversations.length} conversaciones de la base de datos`);
+      logger.info(
+        `✅ Obtenidas ${conversations.length} conversaciones de la base de datos`,
+      );
       return conversations;
     } catch (error) {
-      logger.error('Error obteniendo conversaciones:', error);
+      logger.error("Error obteniendo conversaciones:", error);
       return this.getMockConversations(limit, offset);
     }
   }
 
   // Obtener conversación específica por ID
-  public async getConversationById(conversationId: string): Promise<any | null> {
+  public async getConversationById(
+    conversationId: string,
+  ): Promise<any | null> {
     try {
       // Extraer número de teléfono del ID de conversación
-      const phoneNumber = conversationId.replace('conv_', '');
+      const phoneNumber = conversationId.replace("conv_", "");
       const leads = await this.getAllLeads();
-      
+
       // Buscar lead correspondiente
-      const lead = leads.find(l => {
+      const lead = leads.find((l) => {
         if (!l.phone) return false;
-        const leadPhone = l.phone.replace(/[^0-9]/g, '');
-        const conversationPhone = phoneNumber.replace(/[^0-9]/g, '');
+        const leadPhone = l.phone.replace(/[^0-9]/g, "");
+        const conversationPhone = phoneNumber.replace(/[^0-9]/g, "");
         return leadPhone.slice(-10) === conversationPhone.slice(-10);
       });
 
@@ -1173,24 +1326,24 @@ class DatabaseService {
       return {
         id: conversationId,
         leadId: lead.id,
-        lead: lead
+        lead: lead,
       };
     } catch (error) {
-      logger.error('Error obteniendo conversación por ID:', error);
+      logger.error("Error obteniendo conversación por ID:", error);
       return null;
     }
   }
 
   // Obtener mensajes de una conversación con paginación
   public async getConversationMessages(
-    conversationId: string, 
-    limit: number = 50, 
-    offset: number = 0
+    conversationId: string,
+    limit: number = 50,
+    offset: number = 0,
   ): Promise<{ conversation: any; messages?: any[] }> {
     try {
       // Extraer número de teléfono del ID de conversación
-      const phoneNumber = conversationId.replace('conv_', '');
-      
+      const phoneNumber = conversationId.replace("conv_", "");
+
       // Obtener información de la conversación
       const conversation = await this.getConversationById(conversationId);
       if (!conversation) {
@@ -1202,8 +1355,8 @@ class DatabaseService {
           conversation: {
             id: conversationId,
             lead: conversation.lead,
-            messages: this.getMockMessages(phoneNumber, limit)
-          }
+            messages: this.getMockMessages(phoneNumber, limit),
+          },
         };
       }
 
@@ -1220,51 +1373,53 @@ class DatabaseService {
       `;
 
       const result = await this.pool.query(query, [phoneNumber, limit, offset]);
-      
+
       // Convertir mensajes al formato esperado
-      const messages = result.rows.map(row => ({
+      const messages = result.rows.map((row) => ({
         id: row.id,
-        content: row.message_text || row.response_text || '',
-        direction: row.is_from_user ? 'INBOUND' : 'OUTBOUND',
-        messageType: row.message_type || 'text',
-        status: 'delivered',
-        createdAt: row.created_at
+        content: row.message_text || row.response_text || "",
+        direction: row.is_from_user ? "INBOUND" : "OUTBOUND",
+        messageType: row.message_type || "text",
+        status: "delivered",
+        createdAt: row.created_at,
       }));
 
       return {
         conversation: {
           id: conversationId,
           lead: conversation.lead,
-          messages: messages
-        }
+          messages: messages,
+        },
       };
     } catch (error) {
-      logger.error('Error obteniendo mensajes de conversación:', error);
+      logger.error("Error obteniendo mensajes de conversación:", error);
       return { conversation: null };
     }
   }
 
   // Crear o actualizar conversación
   public async createOrUpdateConversation(
-    leadId: string, 
-    sessionId: string
+    leadId: string,
+    sessionId: string,
   ): Promise<string | null> {
     try {
       const leads = await this.getAllLeads();
-      const lead = leads.find(l => l.id === leadId);
-      
+      const lead = leads.find((l) => l.id === leadId);
+
       if (!lead || !lead.phone) {
         logger.warn(`Lead ${leadId} no encontrado o sin teléfono`);
         return null;
       }
 
       // Crear ID de conversación basado en el número de teléfono
-      const conversationId = `conv_${lead.phone.replace(/[^0-9]/g, '')}`;
-      
-      logger.info(`Conversación ${conversationId} creada/actualizada para lead ${leadId}`);
+      const conversationId = `conv_${lead.phone.replace(/[^0-9]/g, "")}`;
+
+      logger.info(
+        `Conversación ${conversationId} creada/actualizada para lead ${leadId}`,
+      );
       return conversationId;
     } catch (error) {
-      logger.error('Error creando/actualizando conversación:', error);
+      logger.error("Error creando/actualizando conversación:", error);
       return null;
     }
   }
@@ -1273,45 +1428,46 @@ class DatabaseService {
   private getMockConversations(limit: number, offset: number): any[] {
     const mockConversations = [
       {
-        id: 'conv_5491123456789',
-        leadId: '1',
+        id: "conv_5491123456789",
+        leadId: "1",
         lead: {
-          id: '1',
-          name: 'Juan Pérez',
-          phone: '+5491123456789',
-          status: 'NUEVO'
+          id: "1",
+          name: "Juan Pérez",
+          phone: "+5491123456789",
+          status: "NUEVO",
         },
         lastMessage: {
-          id: 'msg_1',
-          content: '¡Hola! Me interesa conocer más sobre sus servicios',
-          direction: 'INBOUND',
-          messageType: 'text',
-          status: 'delivered',
-          createdAt: new Date().toISOString()
+          id: "msg_1",
+          content: "¡Hola! Me interesa conocer más sobre sus servicios",
+          direction: "INBOUND",
+          messageType: "text",
+          status: "delivered",
+          createdAt: new Date().toISOString(),
         },
         unreadCount: 2,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       },
       {
-        id: 'conv_5491187654321',
-        leadId: '2',
+        id: "conv_5491187654321",
+        leadId: "2",
         lead: {
-          id: '2',
-          name: 'María García',
-          phone: '+5491187654321',
-          status: 'QUALIFIED'
+          id: "2",
+          name: "María García",
+          phone: "+5491187654321",
+          status: "QUALIFIED",
         },
         lastMessage: {
-          id: 'msg_2',
-          content: 'Perfecto, gracias por la información. ¿Cuándo podemos agendar una reunión?',
-          direction: 'INBOUND',
-          messageType: 'text',
-          status: 'delivered',
-          createdAt: new Date(Date.now() - 3600000).toISOString()
+          id: "msg_2",
+          content:
+            "Perfecto, gracias por la información. ¿Cuándo podemos agendar una reunión?",
+          direction: "INBOUND",
+          messageType: "text",
+          status: "delivered",
+          createdAt: new Date(Date.now() - 3600000).toISOString(),
         },
         unreadCount: 0,
-        updatedAt: new Date(Date.now() - 3600000).toISOString()
-      }
+        updatedAt: new Date(Date.now() - 3600000).toISOString(),
+      },
     ];
 
     return mockConversations.slice(offset, offset + limit);
@@ -1320,37 +1476,39 @@ class DatabaseService {
   private getMockMessages(phoneNumber: string, limit: number): any[] {
     const mockMessages = [
       {
-        id: 'msg_1',
-        content: '¡Hola! Me interesa conocer más sobre sus servicios',
-        direction: 'INBOUND',
-        messageType: 'text',
-        status: 'delivered',
-        createdAt: new Date(Date.now() - 7200000).toISOString()
+        id: "msg_1",
+        content: "¡Hola! Me interesa conocer más sobre sus servicios",
+        direction: "INBOUND",
+        messageType: "text",
+        status: "delivered",
+        createdAt: new Date(Date.now() - 7200000).toISOString(),
       },
       {
-        id: 'msg_2',
-        content: '¡Hola! 👋 Gracias por contactarnos. Soy tu asistente virtual y estoy aquí para ayudarte. ¿En qué puedo asistirte hoy?',
-        direction: 'OUTBOUND',
-        messageType: 'text',
-        status: 'delivered',
-        createdAt: new Date(Date.now() - 7190000).toISOString()
+        id: "msg_2",
+        content:
+          "¡Hola! 👋 Gracias por contactarnos. Soy tu asistente virtual y estoy aquí para ayudarte. ¿En qué puedo asistirte hoy?",
+        direction: "OUTBOUND",
+        messageType: "text",
+        status: "delivered",
+        createdAt: new Date(Date.now() - 7190000).toISOString(),
       },
       {
-        id: 'msg_3',
-        content: '¿Podrían enviarme información sobre precios?',
-        direction: 'INBOUND',
-        messageType: 'text',
-        status: 'delivered',
-        createdAt: new Date(Date.now() - 3600000).toISOString()
+        id: "msg_3",
+        content: "¿Podrían enviarme información sobre precios?",
+        direction: "INBOUND",
+        messageType: "text",
+        status: "delivered",
+        createdAt: new Date(Date.now() - 3600000).toISOString(),
       },
       {
-        id: 'msg_4',
-        content: 'Te ayudo con información sobre precios. 💰\n\n¿Podrías decirme qué producto o servicio específico te interesa? Así podremos darte la información más precisa.',
-        direction: 'OUTBOUND',
-        messageType: 'text',
-        status: 'delivered',
-        createdAt: new Date(Date.now() - 3590000).toISOString()
-      }
+        id: "msg_4",
+        content:
+          "Te ayudo con información sobre precios. 💰\n\n¿Podrías decirme qué producto o servicio específico te interesa? Así podremos darte la información más precisa.",
+        direction: "OUTBOUND",
+        messageType: "text",
+        status: "delivered",
+        createdAt: new Date(Date.now() - 3590000).toISOString(),
+      },
     ];
 
     return mockMessages.slice(0, limit);
@@ -1372,20 +1530,20 @@ class DatabaseService {
         FROM ai_knowledge_base 
         WHERE is_active = true
       `;
-      
+
       const values: any[] = [];
-      
+
       if (category) {
         query += ` AND category = $1`;
         values.push(category);
       }
-      
+
       query += ` ORDER BY priority DESC, created_at ASC`;
-      
+
       const result = await this.pool.query(query, values);
       return result.rows;
     } catch (error) {
-      logger.error('Error obteniendo knowledge base:', error);
+      logger.error("Error obteniendo knowledge base:", error);
       return this.getDefaultKnowledgeBase();
     }
   }
@@ -1402,17 +1560,21 @@ class DatabaseService {
         FROM ai_configuration 
         WHERE config_key = $1
       `;
-      
+
       const result = await this.pool.query(query, [key]);
       return result.rows[0]?.config_value || this.getDefaultConfig(key);
     } catch (error) {
-      logger.error('Error obteniendo configuración IA:', error);
+      logger.error("Error obteniendo configuración IA:", error);
       return this.getDefaultConfig(key);
     }
   }
 
   // Actualizar configuración IA
-  public async updateAIConfiguration(key: string, value: string, updatedBy?: string): Promise<boolean> {
+  public async updateAIConfiguration(
+    key: string,
+    value: string,
+    updatedBy?: string,
+  ): Promise<boolean> {
     if (!this.pool) {
       logger.info(`Mock update: ${key} = ${value.substring(0, 100)}...`);
       return true;
@@ -1428,12 +1590,12 @@ class DatabaseService {
           updated_by = EXCLUDED.updated_by,
           updated_at = CURRENT_TIMESTAMP
       `;
-      
+
       await this.pool.query(query, [key, value, updatedBy]);
       logger.info(`✅ Configuración IA actualizada: ${key}`);
       return true;
     } catch (error) {
-      logger.error('Error actualizando configuración IA:', error);
+      logger.error("Error actualizando configuración IA:", error);
       return false;
     }
   }
@@ -1441,17 +1603,23 @@ class DatabaseService {
   // Buscar en knowledge base por keywords con scoring inteligente
   public async searchKnowledgeBase(query: string): Promise<any[]> {
     if (!this.pool) {
-      return this.getDefaultKnowledgeBase().filter(item => 
-        item.content.toLowerCase().includes(query.toLowerCase()) ||
-        item.title.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 3); // Limitar resultados
+      return this.getDefaultKnowledgeBase()
+        .filter(
+          (item) =>
+            item.content.toLowerCase().includes(query.toLowerCase()) ||
+            item.title.toLowerCase().includes(query.toLowerCase()),
+        )
+        .slice(0, 3); // Limitar resultados
     }
 
     try {
       // Extraer palabras clave del query para mejor matching
       const queryWords = this.extractSearchKeywords(query);
-      const searchTerms = [`%${query}%`, ...queryWords.map(word => `%${word}%`)];
-      
+      const searchTerms = [
+        `%${query}%`,
+        ...queryWords.map((word) => `%${word}%`),
+      ];
+
       const searchQuery = `
         SELECT 
           id, category, title, content, keywords, priority,
@@ -1483,19 +1651,19 @@ class DatabaseService {
         ORDER BY relevance_score DESC, priority DESC
         LIMIT 3;
       `;
-      
+
       const result = await this.pool.query(searchQuery, [query, searchTerms]);
-      
+
       // Agregar score calculado y filtrar por relevancia mínima
       return result.rows
-        .filter(row => row.relevance_score >= 30) // Filtro de relevancia mínima
-        .map(row => ({
+        .filter((row) => row.relevance_score >= 30) // Filtro de relevancia mínima
+        .map((row) => ({
           ...row,
           relevance_score: row.relevance_score,
-          match_quality: this.calculateMatchQuality(row.relevance_score)
+          match_quality: this.calculateMatchQuality(row.relevance_score),
         }));
     } catch (error) {
-      logger.error('Error buscando en knowledge base:', error);
+      logger.error("Error buscando en knowledge base:", error);
       return [];
     }
   }
@@ -1503,100 +1671,203 @@ class DatabaseService {
   // Extraer palabras clave de una consulta
   private extractSearchKeywords(query: string): string[] {
     // Palabras comunes en español que no aportan valor semántico
-    const stopWords = ['el', 'la', 'de', 'que', 'y', 'en', 'un', 'es', 'se', 'no', 'te', 'lo', 'le', 'da', 'su', 'por', 'son', 'con', 'para', 'como', 'del', 'las'];
-    
+    const stopWords = [
+      "el",
+      "la",
+      "de",
+      "que",
+      "y",
+      "en",
+      "un",
+      "es",
+      "se",
+      "no",
+      "te",
+      "lo",
+      "le",
+      "da",
+      "su",
+      "por",
+      "son",
+      "con",
+      "para",
+      "como",
+      "del",
+      "las",
+    ];
+
     return query
       .toLowerCase()
-      .replace(/[^\w\sáéíóúñü]/gi, '') // Remover puntuación pero mantener acentos
+      .replace(/[^\w\sáéíóúñü]/gi, "") // Remover puntuación pero mantener acentos
       .split(/\s+/)
-      .filter(word => word.length >= 3 && !stopWords.includes(word))
+      .filter((word) => word.length >= 3 && !stopWords.includes(word))
       .slice(0, 5); // Máximo 5 palabras clave
   }
 
   // Calcular calidad del match
-  private calculateMatchQuality(score: number): 'high' | 'medium' | 'low' {
-    if (score >= 100) return 'high';
-    if (score >= 60) return 'medium';
-    return 'low';
+  private calculateMatchQuality(score: number): "high" | "medium" | "low" {
+    if (score >= 100) return "high";
+    if (score >= 60) return "medium";
+    return "low";
   }
 
   // Knowledge base por defecto con información completa de EscortsHub
   private getDefaultKnowledgeBase(): any[] {
     return [
       {
-        id: 'default_1',
-        category: 'productos',
-        title: 'Productos Disponibles EscortsHub',
+        id: "default_1",
+        category: "productos",
+        title: "Productos Disponibles EscortsHub",
         content: `**CATÁLOGO COMPLETO DE PRODUCTOS ESCORTSHUB:**\n\n🔥 **1. ANUNCIO DOBLE**\n• Descripción: Anuncio con visibilidad aumentada que ocupa doble espacio\n• Beneficios: Mayor visibilidad en los listados, destaca entre anuncios regulares\n• Base: 11 monedas HUB\n• Precios: 1 día (20 HUB), 5 días (85 HUB), 10 días (150 HUB)\n• Ideal para: Escorts que buscan destacar entre los anuncios regulares\n\n⭐ **2. ANUNCIO TOP**\n• Descripción: Anuncio destacado en posición superior\n• Beneficios: Posicionamiento privilegiado en la parte superior de los listados\n• Base: 28 monedas HUB\n• Precios: 3 días (85 HUB), 7 días (125 HUB), 10 días (165 HUB), 30 días (450 HUB)\n• Ideal para: Escorts que buscan máxima exposición\n\n💎 **3. ANUNCIO DOBLE TOP**\n• Descripción: Combinación de anuncio doble y posición top\n• Beneficios: Máxima visibilidad y espacio destacado - PRODUCTO PREMIUM\n• Base: 59 monedas HUB\n• Precios: 3 días (170 HUB), 7 días (250 HUB), 10 días (330 HUB), 30 días (900 HUB)\n• Ideal para: Escorts premium que buscan dominar los listados\n\n🚀 **4. DISPONIBLE AHORA**\n• Descripción: Indicador de disponibilidad inmediata\n• Beneficios: Muestra a los clientes que estás disponible en tiempo real\n• Base: 100 monedas HUB\n• Precios: 10 unidades (40 HUB), 25 unidades (100 HUB), 100 unidades (400 HUB)\n• Ideal para: Escorts con disponibilidad inmediata\n\n📱 **5. HISTORIAS**\n• Descripción: Función para compartir contenido temporal\n• Beneficios: Permite mostrar actualizaciones y contenido dinámico\n• Base: 7 monedas HUB\n• Precios: 1 unidad (12 HUB), 5 unidades (60 HUB), 10 unidades (110 HUB)\n• Ideal para: Mantener el perfil actualizado y mostrar novedades\n\n🔄 **6. REACTIVACIÓN**\n• Descripción: Servicio para reactivar anuncios pausados\n• Beneficios: Permite volver a activar anuncios anteriores\n• Base: 10 monedas HUB\n• Precios: 1 unidad (25 HUB), 5 unidades (115 HUB), 10 unidades (215 HUB)\n• Ideal para: Escorts que retoman su actividad`,
-        keywords: ['productos', 'anuncios', 'doble', 'top', 'historias', 'disponible', 'reactivacion', 'servicios', 'catalogo'],
-        priority: 10
+        keywords: [
+          "productos",
+          "anuncios",
+          "doble",
+          "top",
+          "historias",
+          "disponible",
+          "reactivacion",
+          "servicios",
+          "catalogo",
+        ],
+        priority: 10,
       },
       {
-        id: 'default_2',
-        category: 'precios',
-        title: 'Sistema de Precios Completo - Monedas HUB',
+        id: "default_2",
+        category: "precios",
+        title: "Sistema de Precios Completo - Monedas HUB",
         content: `**SISTEMA DE MONEDAS HUB - PRECIOS DETALLADOS:**\n\n💰 **¿QUÉ SON LAS MONEDAS HUB?**\nMoneda virtual de EscortsHub utilizada para activar anuncios. Sistema flexible que permite gestionar múltiples anuncios con ventajas económicas por volumen.\n\n📊 **PRECIOS POR PRODUCTO Y DURACIÓN:**\n\n🔥 **ANUNCIO DOBLE** (Base: 11 HUB)\n• 1 día: 20 monedas HUB\n• 5 días: 85 monedas HUB\n• 10 días: 150 monedas HUB\n\n⭐ **ANUNCIO TOP** (Base: 28 HUB)\n• 3 días: 85 monedas HUB\n• 7 días: 125 monedas HUB\n• 10 días: 165 monedas HUB\n• 30 días: 450 monedas HUB\n\n💎 **ANUNCIO DOBLE TOP** (Base: 59 HUB)\n• 3 días: 170 monedas HUB\n• 7 días: 250 monedas HUB\n• 10 días: 330 monedas HUB\n• 30 días: 900 monedas HUB\n\n🚀 **DISPONIBLE AHORA** (Base: 100 HUB)\n• 10 unidades: 40 monedas HUB\n• 25 unidades: 100 monedas HUB\n• 100 unidades: 400 monedas HUB\n\n📱 **HISTORIAS** (Base: 7 HUB)\n• 1 unidad: 12 monedas HUB\n• 5 unidades: 60 monedas HUB\n• 10 unidades: 110 monedas HUB\n\n🔄 **REACTIVACIÓN** (Base: 10 HUB)\n• 1 unidad: 25 monedas HUB\n• 5 unidades: 115 monedas HUB\n• 10 unidades: 215 monedas HUB\n\n💳 **PAQUETES DE MONEDAS HUB:**\n• 🥉 Paquete Básico: 100 HUB por 80,00 EUR (0,80€/moneda)\n• 🥈 Paquete Estándar: 200 HUB por 150,00 EUR (0,75€/moneda)\n• 🥇 Paquete Plus: 500 HUB por 300,00 EUR (0,60€/moneda) - ¡MEJOR PRECIO!\n• 💎 Paquete Premium: 1.000 HUB por 700,00 EUR (0,70€/moneda)\n\n💡 **CONSEJOS DE COMPRA:**\n• Los paquetes de más días ofrecen mejor relación precio-beneficio\n• El Anuncio Doble Top ofrece máxima visibilidad\n• El Paquete Plus tiene el mejor precio por moneda (0,60€)`,
-        keywords: ['precios', 'monedas', 'hub', 'paquetes', 'euros', 'coste', 'tarifa', 'precio', 'dinero', 'pago'],
-        priority: 10
+        keywords: [
+          "precios",
+          "monedas",
+          "hub",
+          "paquetes",
+          "euros",
+          "coste",
+          "tarifa",
+          "precio",
+          "dinero",
+          "pago",
+        ],
+        priority: 10,
       },
       {
-        id: 'default_3',
-        category: 'informacion_general',
-        title: 'Acerca de EscortsHub - Plataforma Líder',
+        id: "default_3",
+        category: "informacion_general",
+        title: "Acerca de EscortsHub - Plataforma Líder",
         content: `**ESCORTSHUB - LA PLATAFORMA LÍDER DE ESCORTS EN ESPAÑA**\n\n🏆 **¿QUÉ ES ESCORTSHUB?**\nEscortsHub es el sitio web original de escorts en España, una plataforma profesional para anuncios de servicios de acompañantes con años de experiencia en el sector.\n\n✨ **CARACTERÍSTICAS PRINCIPALES:**\n• 🥇 Plataforma líder en el sector español\n• 💳 Sistema de wallet (monedero) integrado\n• 🔞 Acceso exclusivo para mayores de 18 años\n• 🔒 Políticas de privacidad transparentes y seguras\n• 🎧 Soporte técnico especializado 24/7\n• 🚀 Tecnología avanzada para máxima visibilidad\n• 📱 Compatible con dispositivos móviles\n• 🎯 Audiencia cualificada y segmentada\n\n💳 **MÉTODOS DE PAGO DISPONIBLES:**\n• Tarjetas de crédito y débito (Visa, Mastercard)\n• Transferencia bancaria\n• Métodos de pago digitales (PayPal, etc.)\n• Criptomonedas (consultar disponibilidad)\n• Bizum (España)\n\n🏦 **WALLET (MONEDERO DIGITAL):**\n• Acceso desde el dashboard del usuario\n• Consulta de saldo en tiempo real\n• Historial completo de transacciones\n• Recarga sencilla de monedas HUB\n• Gestión detallada de gastos\n\n🔐 **PRIVACIDAD Y SEGURIDAD:**\n• Confirmación obligatoria de mayoría de edad\n• Acceso voluntario y consciente\n• Uso de cookies para mejor experiencia\n• Políticas de cookies transparentes\n• Protección de datos personales\n\n⏰ **HORARIO DE ATENCIÓN:**\nSoporte disponible 24/7 para resolver cualquier duda o problema técnico.`,
-        keywords: ['escortshub', 'plataforma', 'españa', 'escorts', 'informacion', 'que es', 'lider', 'original', 'seguridad', 'privacidad'],
-        priority: 9
+        keywords: [
+          "escortshub",
+          "plataforma",
+          "españa",
+          "escorts",
+          "informacion",
+          "que es",
+          "lider",
+          "original",
+          "seguridad",
+          "privacidad",
+        ],
+        priority: 9,
       },
       {
-        id: 'default_4',
-        category: 'faqs',
-        title: 'Preguntas Frecuentes Generales',
+        id: "default_4",
+        category: "faqs",
+        title: "Preguntas Frecuentes Generales",
         content: `**PREGUNTAS FRECUENTES - INFORMACIÓN GENERAL**\n\n❓ **¿Qué es EscortsHub?**\nEs el sitio web original de escorts en España, una plataforma líder para anuncios de servicios de acompañantes.\n\n🔞 **¿Es necesario ser mayor de edad?**\nSí, es OBLIGATORIO ser mayor de 18 años para acceder y utilizar la plataforma.\n\n📱 **¿Cómo funciona "Disponible Ahora"?**\nEs una función que permite mostrar tu disponibilidad en tiempo real a los clientes potenciales.\n\n📸 **¿Cómo funcionan las Historias?**\nSon publicaciones temporales que permiten compartir actualizaciones y contenido dinámico para mantener el perfil actualizado.\n\n🔄 **¿Qué es la Reactivación?**\nEs un servicio que permite volver a activar anuncios que han sido pausados anteriormente.\n\n⏸️ **¿Puedo pausar y reactivar mis anuncios?**\nSí, existe la opción de reactivación para anuncios pausados utilizando el servicio correspondiente.\n\n🍪 **¿Qué políticas de privacidad aplican?**\n• El sitio utiliza cookies propias y de terceros\n• Mejora servicios y analiza tráfico\n• Política de cookies detallada disponible\n• Confirmación de edad requerida\n• Acceso voluntario y consciente\n• Políticas de cookies transparentes`,
-        keywords: ['faq', 'preguntas', 'frecuentes', 'dudas', 'ayuda', 'informacion', 'edad', 'privacidad', 'cookies'],
-        priority: 8
+        keywords: [
+          "faq",
+          "preguntas",
+          "frecuentes",
+          "dudas",
+          "ayuda",
+          "informacion",
+          "edad",
+          "privacidad",
+          "cookies",
+        ],
+        priority: 8,
       },
       {
-        id: 'default_5',
-        category: 'faqs',
-        title: 'Preguntas Frecuentes sobre Anuncios',
+        id: "default_5",
+        category: "faqs",
+        title: "Preguntas Frecuentes sobre Anuncios",
         content: `**PREGUNTAS FRECUENTES - ANUNCIOS**\n\n📢 **¿Qué tipo de anuncios puedo publicar?**\nHay varios formatos disponibles:\n• Anuncio Normal: Formato estándar\n• Anuncio Doble: Mayor espacio y visibilidad\n• Anuncio Top: Posición destacada superior\n• Anuncio Doble Top: Combina espacio doble y posición superior\n\n🆚 **¿Cuál es la diferencia entre los tipos de anuncios?**\n• **Anuncio Normal**: Formato estándar básico\n• **Anuncio Doble**: Ocupa doble espacio, mayor visibilidad\n• **Anuncio Top**: Se posiciona en la parte superior de los listados\n• **Anuncio Doble Top**: Máxima visibilidad combinando ambas ventajas\n\n💰 **¿Cómo funciona el sistema de precios?**\nUtilizamos Monedas HUB como moneda virtual. Cada producto tiene diferentes precios según la duración elegida.\n\n🎯 **¿Qué producto me recomiendas?**\n• Para empezar: Anuncio Doble (buen equilibrio precio/visibilidad)\n• Para máxima visibilidad: Anuncio Doble Top\n• Para disponibilidad inmediata: "Disponible Ahora"\n• Para contenido dinámico: Historias\n\n⏰ **¿Cuánto duran los anuncios?**\nDepende del producto y paquete elegido. Van desde 1 día hasta 30 días según el tipo de anuncio.\n\n🔄 **¿Qué pasa si pauso mi anuncio?**\nPuedes reactivarlo posteriormente usando nuestro servicio de Reactivación.`,
-        keywords: ['anuncios', 'tipos', 'diferencias', 'normal', 'doble', 'top', 'formato', 'duracion', 'recomendacion'],
-        priority: 8
+        keywords: [
+          "anuncios",
+          "tipos",
+          "diferencias",
+          "normal",
+          "doble",
+          "top",
+          "formato",
+          "duracion",
+          "recomendacion",
+        ],
+        priority: 8,
       },
       {
-        id: 'default_6',
-        category: 'registro_compra',
-        title: 'Proceso de Registro y Compra',
+        id: "default_6",
+        category: "registro_compra",
+        title: "Proceso de Registro y Compra",
         content: `**PROCESO DE REGISTRO Y COMPRA - GUÍA PASO A PASO**\n\n📝 **REGISTRO EN ESCORTSHUB:**\n1. Visita escortshub.net\n2. Haz clic en "Registrarse"\n3. Confirma que eres mayor de 18 años\n4. Completa tus datos básicos\n5. Verifica tu email\n6. Accede a tu panel de usuario\n\n💳 **PROCESO DE COMPRA DE MONEDAS HUB:**\n1. Accede a tu wallet/monedero\n2. Selecciona "Recargar Monedas"\n3. Elige el paquete que prefieras:\n   • Básico (100 HUB - 80€)\n   • Estándar (200 HUB - 150€)\n   • Plus (500 HUB - 300€) ¡Mejor precio!\n   • Premium (1,000 HUB - 700€)\n4. Selecciona método de pago\n5. Confirma la transacción\n6. Recibe tus monedas instantáneamente\n\n🛒 **ACTIVACIÓN DE PRODUCTOS:**\n1. Ve a "Mis Anuncios"\n2. Selecciona el producto deseado\n3. Elige la duración\n4. Confirma el gasto de monedas HUB\n5. Tu anuncio se activa inmediatamente\n\n💡 **RECOMENDACIONES:**\n• El Paquete Plus ofrece el mejor precio por moneda\n• Los paquetes de mayor duración son más económicos\n• Mantén siempre saldo en tu wallet para activaciones rápidas\n\n🎧 **¿NECESITAS AYUDA?**\nNuestro soporte técnico está disponible 24/7 para cualquier duda durante el proceso.`,
-        keywords: ['registro', 'compra', 'proceso', 'paso a paso', 'monedas', 'wallet', 'activacion', 'productos', 'como comprar'],
-        priority: 9
+        keywords: [
+          "registro",
+          "compra",
+          "proceso",
+          "paso a paso",
+          "monedas",
+          "wallet",
+          "activacion",
+          "productos",
+          "como comprar",
+        ],
+        priority: 9,
       },
       {
-        id: 'default_7',
-        category: 'recomendaciones',
-        title: 'Recomendaciones y Mejores Prácticas',
+        id: "default_7",
+        category: "recomendaciones",
+        title: "Recomendaciones y Mejores Prácticas",
         content: `**RECOMENDACIONES PARA MAXIMIZAR TU INVERSIÓN**\n\n🎯 **ESTRATEGIA POR TIPO DE USUARIO:**\n\n👶 **NUEVO USUARIO:**\n• Empieza con el Paquete Plus (500 HUB - 300€)\n• Prueba Anuncio Doble por 10 días (150 HUB)\n• Complementa con Historias (60 HUB por 5 unidades)\n• Total: 210 HUB - Te sobran 290 HUB para más promociones\n\n💼 **USUARIO REGULAR:**\n• Paquete Premium (1,000 HUB - 700€)\n• Anuncio Doble Top por 7 días (250 HUB)\n• "Disponible Ahora" 25 unidades (100 HUB)\n• Historias regulares (110 HUB por 10 unidades)\n• Total: 460 HUB - Te sobran 540 HUB\n\n🔥 **USUARIO PREMIUM:**\n• Combina Paquete Premium + compras adicionales\n• Anuncio Doble Top por 30 días (900 HUB)\n• "Disponible Ahora" 100 unidades (400 HUB)\n• Historias constantes y Reactivaciones según necesidad\n\n💰 **MÁXIMO AHORRO:**\n• Paquete Plus: 0,60€ por moneda (¡MEJOR PRECIO!)\n• Elige duraciones largas (mejor precio por día)\n• Anuncio Doble Top de 30 días: solo 0,54€ por día\n\n⭐ **MÁXIMA VISIBILIDAD:**\n• Anuncio Doble Top (posición superior + doble espacio)\n• "Disponible Ahora" activo\n• Historias actualizadas regularmente\n• Reactivación rápida tras pausas\n\n📈 **TIPS PROFESIONALES:**\n• Las posiciones TOP se agotan rápido\n• Historias mantienen el perfil dinámico\n• "Disponible Ahora" aumenta contactos inmediatos\n• Combinar productos multiplica la efectividad`,
-        keywords: ['recomendaciones', 'estrategia', 'tips', 'mejores practicas', 'ahorro', 'visibilidad', 'nuevo usuario', 'premium'],
-        priority: 8
-      }
+        keywords: [
+          "recomendaciones",
+          "estrategia",
+          "tips",
+          "mejores practicas",
+          "ahorro",
+          "visibilidad",
+          "nuevo usuario",
+          "premium",
+        ],
+        priority: 8,
+      },
     ];
   }
 
   // Configuraciones por defecto
   private getDefaultConfig(key: string): string | null {
     const defaultConfigs: { [key: string]: string } = {
-      'system_prompt': `Eres un asistente virtual profesional de EscortsHub, la plataforma líder de escorts en España. Tu misión es promocionar activamente nuestros productos y guiar a los usuarios hacia el registro y compra de paquetes de monedas HUB.\n\n🞯 **PERSONALIDAD:**\n• Profesional pero cercano y comprensivo con el sector\n• Entusiasta por ayudar sin ser agresivo en ventas\n• Directo y claro con precios e información\n• Discreto y respetuoso con consultas sensibles\n\n💎 **PRODUCTOS ESTRELLA:**\n• Anuncio Doble Top: Máxima visibilidad (30 días: 900 HUB)\n• Paquete Plus: 500 HUB por 300€ (¡MEJOR PRECIO 0,60€/moneda!)\n• Disponible Ahora: Contactos inmediatos (25 unidades: 100 HUB)\n\n🎯 **ESTRATEGIA:**\n• SIEMPRE promociona el Paquete Plus como mejor opción\n• Recomienda combinaciones de productos\n• Crea urgencia: "Las posiciones TOP se agotan rápido"\n• Personaliza preguntando el nombre\n• Incluye CTAs en cada respuesta\n\n✅ **SIEMPRE:**\n• Destaca ventajas del sistema de monedas HUB\n• Sugiere el mejor paquete según contexto\n• Invita al registro en escortshub.net\n• Explica proceso de compra paso a paso\n• Menciona soporte 24/7 disponible\n\n❌ **NUNCA:**\n• Discutas temas ajenos a EscortsHub\n• Proporciones precios incorrectos\n• Prometas resultados específicos de anuncios\n• Seas insistente si no hay interés\n• Menciones competencia`,
-      'greeting_message': '¡Hola! 👋\n\nBienvenido/a a **EscortsHub**, la plataforma líder de escorts en España. Soy tu asistente virtual y estoy aquí para ayudarte con:\n\n🔥 **Nuestros productos**: Anuncio Doble, TOP, Doble TOP\n💰 **Paquetes de monedas HUB** con los mejores precios\n🛒 **Proceso de registro** y compra\n🎧 **Soporte técnico** 24/7\n\n¿En qué puedo asistirte hoy? ¿Te interesa conocer nuestros precios o cómo registrarte? 😊',
-      'pricing_prompt': '💰 **PRECIOS ESCORTSHUB - MONEDAS HUB**\n\n🥇 **PAQUETE PLUS - ¡MEJOR PRECIO!**\n500 HUB por 300€ (0,60€/moneda)\n\n📊 **OTROS PAQUETES:**\n• Básico: 100 HUB - 80€ (0,80€/moneda)\n• Estándar: 200 HUB - 150€ (0,75€/moneda)\n• Premium: 1,000 HUB - 700€ (0,70€/moneda)\n\n🔥 **PRODUCTOS POPULARES:**\n• Anuncio Doble: 10 días (150 HUB)\n• Anuncio TOP: 30 días (450 HUB)\n• Doble TOP: 30 días (900 HUB) - ¡Máxima visibilidad!\n\n¿Qué paquete prefieres? ¿Te ayudo con el registro?',
-      'registration_prompt': '📝 **REGISTRO EN ESCORTSHUB - GUÍA RÁPIDA**\n\n**Pasos sencillos:**\n1️⃣ Visita escortshub.net\n2️⃣ Clic en "Registrarse"\n3️⃣ Confirma +18 años\n4️⃣ Completa datos básicos\n5️⃣ Verifica tu email\n6️⃣ ¡Accede a tu panel!\n\n💳 **Después del registro:**\n• Recarga monedas HUB\n• Elige tu producto favorito\n• Activa tu anuncio\n\n🎧 **¿Necesitas ayuda?**\nSoporte 24/7 disponible\n\n¿Empezamos con tu registro ahora?',
-      'product_info_prompt': '🔥 **PRODUCTOS ESCORTSHUB**\n\n💎 **ANUNCIO DOBLE TOP** (Recomendado)\nMáxima visibilidad + Posición superior\n30 días: 900 HUB (con Paquete Plus = 540€)\n\n⭐ **ANUNCIO TOP**\nPosición privilegiada superior\n30 días: 450 HUB (con Paquete Plus = 270€)\n\n🔥 **ANUNCIO DOBLE**\nDoble espacio y visibilidad\n10 días: 150 HUB (con Paquete Plus = 90€)\n\n🚀 **DISPONIBLE AHORA**\nContactos inmediatos\n25 unidades: 100 HUB (60€)\n\n¿Qué producto te interesa más?',
-      'business_hours': 'Soporte EscortsHub disponible 24/7 para resolver cualquier duda técnica, proceso de registro, compra de monedas HUB o activación de productos.',
-      'urgency_message': '⚡ **¡ATENCIÓN!** Las posiciones TOP se agotan rápido debido a la alta demanda.\n\n🏆 **Asegúra tu visibilidad:**\n• Paquete Plus: 500 HUB por 300€\n• Anuncio Doble Top: 900 HUB (30 días)\n\n¿Te gustaría reservar tu posición ahora?',
-      'cross_sell_message': '🔥 **MAXIMIZA TU INVERSIÓN**\n\nSi te interesa {producto}, te recomiendo:\n• Añadir "Disponible Ahora" (100 HUB)\n• Historias regulares (60 HUB por 5)\n• Considerara Doble TOP para máximos resultados\n\n🥇 Con el Paquete Plus (500 HUB - 300€) tienes monedas suficientes para varios productos.\n\n¿Te interesa alguna combinación?',
-      'welcome_back_message': '¡Hola de nuevo! 👋\n\nMe alegra verte por aquí. ¿En qué puedo ayudarte hoy?\n\n• ¿Consultar precios actualizados?\n• ¿Información sobre nuevos productos?\n• ¿Ayuda con tu cuenta?\n\nEstoy aquí para asistirte 😊',
-      'fallback_message': 'Disculpa, no he podido procesar tu consulta correctamente. 😔\n\nPero no te preocupes, nuestro soporte especializado está disponible 24/7 para ayudarte con:\n\n• Registro y compra de monedas\n• Activación de productos\n• Dudas técnicas\n\n¿Podrías reformular tu pregunta o decirme específicamente en qué necesitas ayuda? 😊'
+      system_prompt: `Eres un asistente virtual profesional de EscortsHub, la plataforma líder de escorts en España. Tu misión es promocionar activamente nuestros productos y guiar a los usuarios hacia el registro y compra de paquetes de monedas HUB.\n\n🞯 **PERSONALIDAD:**\n• Profesional pero cercano y comprensivo con el sector\n• Entusiasta por ayudar sin ser agresivo en ventas\n• Directo y claro con precios e información\n• Discreto y respetuoso con consultas sensibles\n\n💎 **PRODUCTOS ESTRELLA:**\n• Anuncio Doble Top: Máxima visibilidad (30 días: 900 HUB)\n• Paquete Plus: 500 HUB por 300€ (¡MEJOR PRECIO 0,60€/moneda!)\n• Disponible Ahora: Contactos inmediatos (25 unidades: 100 HUB)\n\n🎯 **ESTRATEGIA:**\n• SIEMPRE promociona el Paquete Plus como mejor opción\n• Recomienda combinaciones de productos\n• Crea urgencia: "Las posiciones TOP se agotan rápido"\n• Personaliza preguntando el nombre\n• Incluye CTAs en cada respuesta\n\n✅ **SIEMPRE:**\n• Destaca ventajas del sistema de monedas HUB\n• Sugiere el mejor paquete según contexto\n• Invita al registro en escortshub.net\n• Explica proceso de compra paso a paso\n• Menciona soporte 24/7 disponible\n\n❌ **NUNCA:**\n• Discutas temas ajenos a EscortsHub\n• Proporciones precios incorrectos\n• Prometas resultados específicos de anuncios\n• Seas insistente si no hay interés\n• Menciones competencia`,
+      greeting_message:
+        "¡Hola! 👋\n\nBienvenido/a a **EscortsHub**, la plataforma líder de escorts en España. Soy tu asistente virtual y estoy aquí para ayudarte con:\n\n🔥 **Nuestros productos**: Anuncio Doble, TOP, Doble TOP\n💰 **Paquetes de monedas HUB** con los mejores precios\n🛒 **Proceso de registro** y compra\n🎧 **Soporte técnico** 24/7\n\n¿En qué puedo asistirte hoy? ¿Te interesa conocer nuestros precios o cómo registrarte? 😊",
+      pricing_prompt:
+        "💰 **PRECIOS ESCORTSHUB - MONEDAS HUB**\n\n🥇 **PAQUETE PLUS - ¡MEJOR PRECIO!**\n500 HUB por 300€ (0,60€/moneda)\n\n📊 **OTROS PAQUETES:**\n• Básico: 100 HUB - 80€ (0,80€/moneda)\n• Estándar: 200 HUB - 150€ (0,75€/moneda)\n• Premium: 1,000 HUB - 700€ (0,70€/moneda)\n\n🔥 **PRODUCTOS POPULARES:**\n• Anuncio Doble: 10 días (150 HUB)\n• Anuncio TOP: 30 días (450 HUB)\n• Doble TOP: 30 días (900 HUB) - ¡Máxima visibilidad!\n\n¿Qué paquete prefieres? ¿Te ayudo con el registro?",
+      registration_prompt:
+        '📝 **REGISTRO EN ESCORTSHUB - GUÍA RÁPIDA**\n\n**Pasos sencillos:**\n1️⃣ Visita escortshub.net\n2️⃣ Clic en "Registrarse"\n3️⃣ Confirma +18 años\n4️⃣ Completa datos básicos\n5️⃣ Verifica tu email\n6️⃣ ¡Accede a tu panel!\n\n💳 **Después del registro:**\n• Recarga monedas HUB\n• Elige tu producto favorito\n• Activa tu anuncio\n\n🎧 **¿Necesitas ayuda?**\nSoporte 24/7 disponible\n\n¿Empezamos con tu registro ahora?',
+      product_info_prompt:
+        "🔥 **PRODUCTOS ESCORTSHUB**\n\n💎 **ANUNCIO DOBLE TOP** (Recomendado)\nMáxima visibilidad + Posición superior\n30 días: 900 HUB (con Paquete Plus = 540€)\n\n⭐ **ANUNCIO TOP**\nPosición privilegiada superior\n30 días: 450 HUB (con Paquete Plus = 270€)\n\n🔥 **ANUNCIO DOBLE**\nDoble espacio y visibilidad\n10 días: 150 HUB (con Paquete Plus = 90€)\n\n🚀 **DISPONIBLE AHORA**\nContactos inmediatos\n25 unidades: 100 HUB (60€)\n\n¿Qué producto te interesa más?",
+      business_hours:
+        "Soporte EscortsHub disponible 24/7 para resolver cualquier duda técnica, proceso de registro, compra de monedas HUB o activación de productos.",
+      urgency_message:
+        "⚡ **¡ATENCIÓN!** Las posiciones TOP se agotan rápido debido a la alta demanda.\n\n🏆 **Asegúra tu visibilidad:**\n• Paquete Plus: 500 HUB por 300€\n• Anuncio Doble Top: 900 HUB (30 días)\n\n¿Te gustaría reservar tu posición ahora?",
+      cross_sell_message:
+        '🔥 **MAXIMIZA TU INVERSIÓN**\n\nSi te interesa {producto}, te recomiendo:\n• Añadir "Disponible Ahora" (100 HUB)\n• Historias regulares (60 HUB por 5)\n• Considerara Doble TOP para máximos resultados\n\n🥇 Con el Paquete Plus (500 HUB - 300€) tienes monedas suficientes para varios productos.\n\n¿Te interesa alguna combinación?',
+      welcome_back_message:
+        "¡Hola de nuevo! 👋\n\nMe alegra verte por aquí. ¿En qué puedo ayudarte hoy?\n\n• ¿Consultar precios actualizados?\n• ¿Información sobre nuevos productos?\n• ¿Ayuda con tu cuenta?\n\nEstoy aquí para asistirte 😊",
+      fallback_message:
+        "Disculpa, no he podido procesar tu consulta correctamente. 😔\n\nPero no te preocupes, nuestro soporte especializado está disponible 24/7 para ayudarte con:\n\n• Registro y compra de monedas\n• Activación de productos\n• Dudas técnicas\n\n¿Podrías reformular tu pregunta o decirme específicamente en qué necesitas ayuda? 😊",
     };
-    
+
     return defaultConfigs[key] || null;
   }
 
@@ -1605,7 +1876,10 @@ class DatabaseService {
   // ============================================
 
   // Obtener todos los templates
-  public async getMessageTemplates(category?: string, activeOnly = true): Promise<any[]> {
+  public async getMessageTemplates(
+    category?: string,
+    activeOnly = true,
+  ): Promise<any[]> {
     if (!this.pool) {
       return this.getDefaultTemplates();
     }
@@ -1615,28 +1889,28 @@ class DatabaseService {
         SELECT id, name, category, subject, content, variables, usage_count, is_active, created_at
         FROM message_templates
       `;
-      
+
       const conditions: string[] = [];
       const values: any[] = [];
       let valueIndex = 1;
-      
+
       if (activeOnly) {
-        conditions.push('is_active = true');
+        conditions.push("is_active = true");
       }
-      
+
       if (category) {
         conditions.push(`category = $${valueIndex++}`);
         values.push(category);
       }
-      
+
       if (conditions.length > 0) {
-        query += ` WHERE ${conditions.join(' AND ')}`;
+        query += ` WHERE ${conditions.join(" AND ")}`;
       }
-      
+
       query += ` ORDER BY usage_count DESC, name ASC`;
-      
+
       const result = await this.pool.query(query, values);
-      return result.rows.map(row => ({
+      return result.rows.map((row) => ({
         id: row.id,
         name: row.name,
         category: row.category,
@@ -1645,11 +1919,49 @@ class DatabaseService {
         variables: row.variables || [],
         usageCount: row.usage_count || 0,
         isActive: row.is_active,
-        createdAt: row.created_at
+        createdAt: row.created_at,
       }));
     } catch (error) {
-      logger.error('Error obteniendo templates:', error);
+      logger.error("Error obteniendo templates:", error);
       return this.getDefaultTemplates();
+    }
+  }
+
+  // Get a single template by ID
+  public async getTemplate(templateId: string): Promise<any | null> {
+    if (!this.pool) {
+      // Return from default templates if no database connection
+      const defaultTemplates = this.getDefaultTemplates();
+      return (
+        defaultTemplates.find((template) => template.id === templateId) || null
+      );
+    }
+
+    try {
+      const query = `
+        SELECT id, name, category, subject, content, variables, usage_count, is_active, created_at
+        FROM message_templates 
+        WHERE id = $1;
+      `;
+
+      const result = await this.pool.query(query, [templateId]);
+
+      if (result.rows.length > 0) {
+        return result.rows[0];
+      }
+
+      // Fallback to default templates
+      const defaultTemplates = this.getDefaultTemplates();
+      return (
+        defaultTemplates.find((template) => template.id === templateId) || null
+      );
+    } catch (error) {
+      logger.error("Error getting template by ID:", error);
+      // Fallback to default templates
+      const defaultTemplates = this.getDefaultTemplates();
+      return (
+        defaultTemplates.find((template) => template.id === templateId) || null
+      );
     }
   }
 
@@ -1664,7 +1976,7 @@ class DatabaseService {
   }): Promise<string | null> {
     if (!this.pool) {
       logger.info(`Mock template created: ${data.name}`);
-      return 'mock-template-id';
+      return "mock-template-id";
     }
 
     try {
@@ -1673,36 +1985,39 @@ class DatabaseService {
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id;
       `;
-      
+
       const values = [
         data.name,
         data.category,
         data.subject || null,
         data.content,
         JSON.stringify(data.variables || []),
-        data.createdBy || null
+        data.createdBy || null,
       ];
-      
+
       const result = await this.pool.query(query, values);
       const templateId = result.rows[0]?.id;
-      
+
       logger.info(`✅ Template creado: ${data.name} (${templateId})`);
       return templateId;
     } catch (error) {
-      logger.error('Error creando template:', error);
+      logger.error("Error creando template:", error);
       return null;
     }
   }
 
   // Actualizar template
-  public async updateMessageTemplate(id: string, updates: {
-    name?: string;
-    category?: string;
-    subject?: string;
-    content?: string;
-    variables?: string[];
-    isActive?: boolean;
-  }): Promise<boolean> {
+  public async updateMessageTemplate(
+    id: string,
+    updates: {
+      name?: string;
+      category?: string;
+      subject?: string;
+      content?: string;
+      variables?: string[];
+      isActive?: boolean;
+    },
+  ): Promise<boolean> {
     if (!this.pool) {
       logger.info(`Mock template updated: ${id}`);
       return true;
@@ -1747,13 +2062,13 @@ class DatabaseService {
 
       const query = `
         UPDATE message_templates 
-        SET ${setParts.join(', ')}
+        SET ${setParts.join(", ")}
         WHERE id = $${valueIndex}
         RETURNING id;
       `;
 
       const result = await this.pool.query(query, values);
-      
+
       if (result.rows.length > 0) {
         logger.info(`✅ Template actualizado: ${id}`);
         return true;
@@ -1762,7 +2077,7 @@ class DatabaseService {
         return false;
       }
     } catch (error) {
-      logger.error('Error actualizando template:', error);
+      logger.error("Error actualizando template:", error);
       return false;
     }
   }
@@ -1777,7 +2092,7 @@ class DatabaseService {
     try {
       const query = `DELETE FROM message_templates WHERE id = $1 RETURNING id;`;
       const result = await this.pool.query(query, [id]);
-      
+
       if (result.rows.length > 0) {
         logger.info(`✅ Template eliminado: ${id}`);
         return true;
@@ -1786,7 +2101,7 @@ class DatabaseService {
         return false;
       }
     } catch (error) {
-      logger.error('Error eliminando template:', error);
+      logger.error("Error eliminando template:", error);
       return false;
     }
   }
@@ -1803,11 +2118,11 @@ class DatabaseService {
         SET usage_count = usage_count + 1, updated_at = CURRENT_TIMESTAMP
         WHERE id = $1;
       `;
-      
+
       await this.pool.query(query, [id]);
       return true;
     } catch (error) {
-      logger.error('Error incrementando uso de template:', error);
+      logger.error("Error incrementando uso de template:", error);
       return false;
     }
   }
@@ -1827,7 +2142,7 @@ class DatabaseService {
   }): Promise<string | null> {
     if (!this.pool) {
       logger.info(`Mock proactive message created for lead: ${data.leadId}`);
-      return 'mock-proactive-id';
+      return "mock-proactive-id";
     }
 
     try {
@@ -1836,32 +2151,34 @@ class DatabaseService {
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id;
       `;
-      
+
       const values = [
         data.leadId,
         data.templateId || null,
         data.sessionId || null,
         data.phoneNumber,
         data.content,
-        data.createdBy || null
+        data.createdBy || null,
       ];
-      
+
       const result = await this.pool.query(query, values);
       const messageId = result.rows[0]?.id;
-      
-      logger.info(`✅ Mensaje proactivo creado para lead ${data.leadId}: ${messageId}`);
+
+      logger.info(
+        `✅ Mensaje proactivo creado para lead ${data.leadId}: ${messageId}`,
+      );
       return messageId;
     } catch (error) {
-      logger.error('Error creando mensaje proactivo:', error);
+      logger.error("Error creando mensaje proactivo:", error);
       return null;
     }
   }
 
   // Actualizar estado de mensaje proactivo
   public async updateProactiveMessageStatus(
-    id: string, 
-    status: 'pending' | 'sent' | 'delivered' | 'failed',
-    errorMessage?: string
+    id: string,
+    status: "pending" | "sent" | "delivered" | "failed",
+    errorMessage?: string,
   ): Promise<boolean> {
     if (!this.pool) {
       logger.info(`Mock proactive message status updated: ${id} -> ${status}`);
@@ -1873,53 +2190,57 @@ class DatabaseService {
         UPDATE proactive_messages 
         SET status = $1, updated_at = CURRENT_TIMESTAMP
       `;
-      
+
       const values: any[] = [status];
       let valueIndex = 2;
-      
-      if (status === 'sent') {
+
+      if (status === "sent") {
         query += `, sent_at = CURRENT_TIMESTAMP`;
-      } else if (status === 'delivered') {
+      } else if (status === "delivered") {
         query += `, delivered_at = CURRENT_TIMESTAMP`;
       }
-      
+
       if (errorMessage) {
         query += `, error_message = $${valueIndex++}`;
         values.push(errorMessage);
       }
-      
+
       query += ` WHERE id = $${valueIndex} RETURNING id;`;
       values.push(id);
-      
+
       const result = await this.pool.query(query, values);
-      
+
       if (result.rows.length > 0) {
-        logger.info(`✅ Estado de mensaje proactivo actualizado: ${id} -> ${status}`);
+        logger.info(
+          `✅ Estado de mensaje proactivo actualizado: ${id} -> ${status}`,
+        );
         return true;
       } else {
         logger.warn(`Mensaje proactivo no encontrado: ${id}`);
         return false;
       }
     } catch (error) {
-      logger.error('Error actualizando estado de mensaje proactivo:', error);
+      logger.error("Error actualizando estado de mensaje proactivo:", error);
       return false;
     }
   }
 
   // Obtener mensajes proactivos
-  public async getProactiveMessages(options: {
-    leadId?: string;
-    status?: string;
-    limit?: number;
-    offset?: number;
-  } = {}): Promise<any[]> {
+  public async getProactiveMessages(
+    options: {
+      leadId?: string;
+      status?: string;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): Promise<any[]> {
     if (!this.pool) {
       return this.getMockProactiveMessages(options);
     }
 
     try {
       const { leadId, status, limit = 50, offset = 0 } = options;
-      
+
       let query = `
         SELECT 
           pm.id, pm.lead_id, pm.template_id, pm.session_id, pm.phone_number,
@@ -1930,25 +2251,25 @@ class DatabaseService {
         LEFT JOIN message_templates mt ON pm.template_id = mt.id
         WHERE 1=1
       `;
-      
+
       const values: any[] = [];
       let valueIndex = 1;
-      
+
       if (leadId) {
         query += ` AND pm.lead_id = $${valueIndex++}`;
         values.push(leadId);
       }
-      
+
       if (status) {
         query += ` AND pm.status = $${valueIndex++}`;
         values.push(status);
       }
-      
+
       query += ` ORDER BY pm.created_at DESC LIMIT $${valueIndex++} OFFSET $${valueIndex++}`;
       values.push(limit, offset);
-      
+
       const result = await this.pool.query(query, values);
-      return result.rows.map(row => ({
+      return result.rows.map((row) => ({
         id: row.id,
         leadId: row.lead_id,
         templateId: row.template_id,
@@ -1962,24 +2283,27 @@ class DatabaseService {
         errorMessage: row.error_message,
         createdBy: row.created_by,
         createdAt: row.created_at,
-        updatedAt: row.updated_at
+        updatedAt: row.updated_at,
       }));
     } catch (error) {
-      logger.error('Error obteniendo mensajes proactivos:', error);
+      logger.error("Error obteniendo mensajes proactivos:", error);
       return this.getMockProactiveMessages(options);
     }
   }
 
   // Reemplazar variables en template
-  public replaceTemplateVariables(content: string, variables: { [key: string]: string }): string {
+  public replaceTemplateVariables(
+    content: string,
+    variables: { [key: string]: string },
+  ): string {
     let result = content;
-    
+
     // Reemplazar variables con formato {{variable}}
     Object.entries(variables).forEach(([key, value]) => {
-      const regex = new RegExp(`\{\{${key}\}\}`, 'g');
-      result = result.replace(regex, value || '');
+      const regex = new RegExp(`\{\{${key}\}\}`, "g");
+      result = result.replace(regex, value || "");
     });
-    
+
     return result;
   }
 
@@ -1987,49 +2311,53 @@ class DatabaseService {
   private getDefaultTemplates(): any[] {
     return [
       {
-        id: 'default_welcome',
-        name: 'Mensaje de Bienvenida',
-        category: 'welcome',
-        subject: 'Bienvenido/a a EscortsHub',
-        content: '¡Hola {{nombre}}! 👋\n\nBienvenido/a a EscortsHub, la plataforma líder de escorts en España.\n\nEstoy aquí para ayudarte con información sobre nuestros productos y servicios. ¿En qué puedo asistirte hoy?',
-        variables: ['nombre'],
+        id: "default_welcome",
+        name: "Mensaje de Bienvenida",
+        category: "welcome",
+        subject: "Bienvenido/a a EscortsHub",
+        content:
+          "¡Hola {{nombre}}! 👋\n\nBienvenido/a a EscortsHub, la plataforma líder de escorts en España.\n\nEstoy aquí para ayudarte con información sobre nuestros productos y servicios. ¿En qué puedo asistirte hoy?",
+        variables: ["nombre"],
         usageCount: 0,
         isActive: true,
-        createdAt: new Date()
+        createdAt: new Date(),
       },
       {
-        id: 'default_product_intro',
-        name: 'Introducción de Productos',
-        category: 'products',
-        subject: 'Nuestros Productos',
-        content: 'Hola {{nombre}}, te cuento sobre nuestros principales productos:\n\n🔝 **ANUNCIO TOP**: Posición privilegiada\n📱 **ANUNCIO DOBLE**: Mayor visibilidad\n⭐ **DOBLE TOP**: Máxima exposición\n\n¿Te interesa conocer más detalles sobre alguno?',
-        variables: ['nombre'],
+        id: "default_product_intro",
+        name: "Introducción de Productos",
+        category: "products",
+        subject: "Nuestros Productos",
+        content:
+          "Hola {{nombre}}, te cuento sobre nuestros principales productos:\n\n🔝 **ANUNCIO TOP**: Posición privilegiada\n📱 **ANUNCIO DOBLE**: Mayor visibilidad\n⭐ **DOBLE TOP**: Máxima exposición\n\n¿Te interesa conocer más detalles sobre alguno?",
+        variables: ["nombre"],
         usageCount: 0,
         isActive: true,
-        createdAt: new Date()
+        createdAt: new Date(),
       },
       {
-        id: 'default_pricing',
-        name: 'Información de Precios',
-        category: 'pricing',
-        subject: 'Precios y Paquetes',
-        content: '💰 **Precios EscortsHub**\n\nUsamos **Monedas HUB** para activar anuncios:\n\n**Paquetes disponibles:**\n• Básico: 100 HUB - 80€\n• Estándar: 200 HUB - 150€ \n• Plus: 500 HUB - 300€ (¡Mejor precio!)\n\n¿Qué paquete se adapta mejor a tus necesidades, {{nombre}}?',
-        variables: ['nombre'],
+        id: "default_pricing",
+        name: "Información de Precios",
+        category: "pricing",
+        subject: "Precios y Paquetes",
+        content:
+          "💰 **Precios EscortsHub**\n\nUsamos **Monedas HUB** para activar anuncios:\n\n**Paquetes disponibles:**\n• Básico: 100 HUB - 80€\n• Estándar: 200 HUB - 150€ \n• Plus: 500 HUB - 300€ (¡Mejor precio!)\n\n¿Qué paquete se adapta mejor a tus necesidades, {{nombre}}?",
+        variables: ["nombre"],
         usageCount: 0,
         isActive: true,
-        createdAt: new Date()
+        createdAt: new Date(),
       },
       {
-        id: 'default_follow_up',
-        name: 'Seguimiento',
-        category: 'follow_up',
-        subject: 'Seguimiento',
-        content: 'Hola {{nombre}}, \n\nEspero que estés bien. Quería hacer un seguimiento sobre {{tema}} que comentamos.\n\n¿Tienes alguna pregunta adicional o hay algo más en lo que pueda ayudarte?\n\nQuedo atento a tu respuesta.',
-        variables: ['nombre', 'tema'],
+        id: "default_follow_up",
+        name: "Seguimiento",
+        category: "follow_up",
+        subject: "Seguimiento",
+        content:
+          "Hola {{nombre}}, \n\nEspero que estés bien. Quería hacer un seguimiento sobre {{tema}} que comentamos.\n\n¿Tienes alguna pregunta adicional o hay algo más en lo que pueda ayudarte?\n\nQuedo atento a tu respuesta.",
+        variables: ["nombre", "tema"],
         usageCount: 0,
         isActive: true,
-        createdAt: new Date()
-      }
+        createdAt: new Date(),
+      },
     ];
   }
 
@@ -2037,44 +2365,51 @@ class DatabaseService {
   private getMockProactiveMessages(options: any): any[] {
     const mockMessages = [
       {
-        id: 'mock_proactive_1',
-        leadId: '1',
-        templateId: 'default_welcome',
-        templateName: 'Mensaje de Bienvenida',
-        sessionId: 'default-session',
-        phoneNumber: '+5491123456789',
-        content: '¡Hola Juan! 👋 Bienvenido/a a EscortsHub, la plataforma líder de escorts en España.',
-        status: 'delivered',
+        id: "mock_proactive_1",
+        leadId: "1",
+        templateId: "default_welcome",
+        templateName: "Mensaje de Bienvenida",
+        sessionId: "default-session",
+        phoneNumber: "+5491123456789",
+        content:
+          "¡Hola Juan! 👋 Bienvenido/a a EscortsHub, la plataforma líder de escorts en España.",
+        status: "delivered",
         sentAt: new Date(Date.now() - 3600000),
         deliveredAt: new Date(Date.now() - 3500000),
         errorMessage: null,
-        createdBy: 'admin',
+        createdBy: "admin",
         createdAt: new Date(Date.now() - 3700000),
-        updatedAt: new Date(Date.now() - 3500000)
+        updatedAt: new Date(Date.now() - 3500000),
       },
       {
-        id: 'mock_proactive_2',
-        leadId: '2',
-        templateId: 'default_product_intro',
-        templateName: 'Introducción de Productos',
-        sessionId: 'default-session',
-        phoneNumber: '+5491187654321',
-        content: 'Hola María, te cuento sobre nuestros principales productos: ANUNCIO TOP, ANUNCIO DOBLE...',
-        status: 'sent',
+        id: "mock_proactive_2",
+        leadId: "2",
+        templateId: "default_product_intro",
+        templateName: "Introducción de Productos",
+        sessionId: "default-session",
+        phoneNumber: "+5491187654321",
+        content:
+          "Hola María, te cuento sobre nuestros principales productos: ANUNCIO TOP, ANUNCIO DOBLE...",
+        status: "sent",
         sentAt: new Date(Date.now() - 1800000),
         deliveredAt: null,
         errorMessage: null,
-        createdBy: 'admin',
+        createdBy: "admin",
         createdAt: new Date(Date.now() - 1900000),
-        updatedAt: new Date(Date.now() - 1800000)
-      }
+        updatedAt: new Date(Date.now() - 1800000),
+      },
     ];
-    
-    return mockMessages.filter(msg => {
-      if (options.leadId && msg.leadId !== options.leadId) return false;
-      if (options.status && msg.status !== options.status) return false;
-      return true;
-    }).slice(options.offset || 0, (options.offset || 0) + (options.limit || 50));
+
+    return mockMessages
+      .filter((msg) => {
+        if (options.leadId && msg.leadId !== options.leadId) return false;
+        if (options.status && msg.status !== options.status) return false;
+        return true;
+      })
+      .slice(
+        options.offset || 0,
+        (options.offset || 0) + (options.limit || 50),
+      );
   }
 
   // ============================================
@@ -2082,9 +2417,13 @@ class DatabaseService {
   // ============================================
 
   // Guardar interacción de entrenamiento
-  public async saveTrainingInteraction(interaction: TrainingInteraction): Promise<string | null> {
+  public async saveTrainingInteraction(
+    interaction: TrainingInteraction,
+  ): Promise<string | null> {
     if (!this.pool) {
-      logger.warn('No database connection available, training interaction not saved');
+      logger.warn(
+        "No database connection available, training interaction not saved",
+      );
       return null;
     }
 
@@ -2096,7 +2435,7 @@ class DatabaseService {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id;
       `;
-      
+
       const values = [
         interaction.userMessage,
         interaction.aiResponse,
@@ -2104,25 +2443,28 @@ class DatabaseService {
         interaction.successScore,
         JSON.stringify(interaction.contextData),
         JSON.stringify(interaction.feedbackMetrics),
-        interaction.timestamp
+        interaction.timestamp,
       ];
-      
+
       const result = await this.pool.query(query, values);
       const interactionId = result.rows[0]?.id;
-      
+
       logger.debug(`📊 Training interaction saved with ID: ${interactionId}`);
       return interactionId;
-      
     } catch (error) {
-      logger.error('Error saving training interaction:', error);
+      logger.error("Error saving training interaction:", error);
       return null;
     }
   }
 
   // Obtener interacciones de entrenamiento
-  public async getTrainingInteractions(limit: number = 500): Promise<TrainingInteraction[]> {
+  public async getTrainingInteractions(
+    limit: number = 500,
+  ): Promise<TrainingInteraction[]> {
     if (!this.pool) {
-      logger.warn('No database connection available, returning empty training interactions');
+      logger.warn(
+        "No database connection available, returning empty training interactions",
+      );
       return [];
     }
 
@@ -2135,10 +2477,10 @@ class DatabaseService {
         ORDER BY created_at DESC
         LIMIT $1;
       `;
-      
+
       const result = await this.pool.query(query, [limit]);
-      
-      return result.rows.map(row => ({
+
+      return result.rows.map((row) => ({
         id: row.id,
         userMessage: row.user_message,
         aiResponse: row.ai_response,
@@ -2146,11 +2488,10 @@ class DatabaseService {
         successScore: parseFloat(row.success_score),
         contextData: row.context_data,
         feedbackMetrics: row.feedback_metrics,
-        timestamp: new Date(row.created_at)
+        timestamp: new Date(row.created_at),
       }));
-      
     } catch (error) {
-      logger.error('Error getting training interactions:', error);
+      logger.error("Error getting training interactions:", error);
       return [];
     }
   }
@@ -2161,7 +2502,7 @@ class DatabaseService {
     content: string;
     keywords: string | string[];
     category: string;
-    priority?: 'low' | 'medium' | 'high' | number;
+    priority?: "low" | "medium" | "high" | number;
     isActive?: boolean;
     source?: string;
     metadata?: any;
@@ -2174,20 +2515,20 @@ class DatabaseService {
     try {
       // Convert priority to numeric
       let numericPriority: number;
-      if (typeof entry.priority === 'number') {
+      if (typeof entry.priority === "number") {
         numericPriority = entry.priority;
       } else {
         const priorityMap = { low: 1, medium: 5, high: 10 };
-        numericPriority = priorityMap[entry.priority || 'medium'] || 5;
+        numericPriority = priorityMap[entry.priority || "medium"] || 5;
       }
-      
+
       // Convert keywords to array if it's a string
       let keywordsArray: string[];
-      if (typeof entry.keywords === 'string') {
+      if (typeof entry.keywords === "string") {
         keywordsArray = entry.keywords
-          .split(',')
-          .map(k => k.trim())
-          .filter(k => k.length > 0);
+          .split(",")
+          .map((k) => k.trim())
+          .filter((k) => k.length > 0);
       } else {
         keywordsArray = entry.keywords;
       }
@@ -2198,28 +2539,29 @@ class DatabaseService {
         ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id;
       `;
-      
+
       const values = [
         entry.category,
         entry.title,
         entry.content,
         keywordsArray,
         numericPriority,
-        entry.isActive !== false // Default to true
+        entry.isActive !== false, // Default to true
       ];
-      
+
       const result = await this.pool.query(query, values);
       const entryId = result.rows[0]?.id;
-      
+
       if (entryId) {
-        logger.info(`✅ Knowledge base entry added: "${entry.title}" (${entryId})`);
+        logger.info(
+          `✅ Knowledge base entry added: "${entry.title}" (${entryId})`,
+        );
         return true;
       }
-      
+
       return false;
-      
     } catch (error) {
-      logger.error('Error adding knowledge base entry:', error);
+      logger.error("Error adding knowledge base entry:", error);
       return false;
     }
   }
@@ -2227,18 +2569,18 @@ class DatabaseService {
   // Limpiar toda la knowledge base
   public async clearKnowledgeBase(): Promise<boolean> {
     if (!this.pool) {
-      logger.info('Mock: Knowledge base cleared');
+      logger.info("Mock: Knowledge base cleared");
       return true;
     }
 
     try {
       const query = `DELETE FROM ai_knowledge_base`;
       const result = await this.pool.query(query);
-      
+
       logger.info(`🧹 Cleared ${result.rowCount} entries from knowledge base`);
       return true;
     } catch (error) {
-      logger.error('Error clearing knowledge base:', error);
+      logger.error("Error clearing knowledge base:", error);
       return false;
     }
   }
@@ -2254,8 +2596,15 @@ class DatabaseService {
       return {
         totalEntries: 6,
         activeEntries: 6,
-        categoryCounts: { 'productos': 1, 'precios': 1, 'monedas': 1, 'registro': 1, 'pagos': 1, 'consejos': 1 },
-        averagePriority: 8.5
+        categoryCounts: {
+          productos: 1,
+          precios: 1,
+          monedas: 1,
+          registro: 1,
+          pagos: 1,
+          consejos: 1,
+        },
+        averagePriority: 8.5,
       };
     }
 
@@ -2276,37 +2625,39 @@ class DatabaseService {
           GROUP BY category, priority, is_active
         ) subquery;
       `;
-      
+
       const result = await this.pool.query(query);
       const stats = result.rows[0];
-      
+
       return {
         totalEntries: parseInt(stats.total_entries) || 0,
         activeEntries: parseInt(stats.active_entries) || 0,
         categoryCounts: stats.category_counts || {},
-        averagePriority: parseFloat(stats.avg_priority) || 0
+        averagePriority: parseFloat(stats.avg_priority) || 0,
       };
-      
     } catch (error) {
-      logger.error('Error getting knowledge base stats:', error);
+      logger.error("Error getting knowledge base stats:", error);
       return {
         totalEntries: 0,
         activeEntries: 0,
         categoryCounts: {},
-        averagePriority: 0
+        averagePriority: 0,
       };
     }
   }
 
   // Actualizar entrada de knowledge base
-  public async updateKnowledgeBase(id: string, updates: {
-    title?: string;
-    content?: string;
-    keywords?: string;
-    category?: string;
-    priority?: 'low' | 'medium' | 'high';
-    isActive?: boolean;
-  }): Promise<boolean> {
+  public async updateKnowledgeBase(
+    id: string,
+    updates: {
+      title?: string;
+      content?: string;
+      keywords?: string;
+      category?: string;
+      priority?: "low" | "medium" | "high";
+      isActive?: boolean;
+    },
+  ): Promise<boolean> {
     if (!this.pool) {
       logger.info(`Mock knowledge base entry updated: ${id}`);
       return true;
@@ -2327,9 +2678,9 @@ class DatabaseService {
       }
       if (updates.keywords !== undefined) {
         const keywordsArray = updates.keywords
-          .split(',')
-          .map(k => k.trim())
-          .filter(k => k.length > 0);
+          .split(",")
+          .map((k) => k.trim())
+          .filter((k) => k.length > 0);
         setParts.push(`keywords = $${valueIndex++}`);
         values.push(keywordsArray);
       }
@@ -2357,13 +2708,13 @@ class DatabaseService {
 
       const query = `
         UPDATE ai_knowledge_base 
-        SET ${setParts.join(', ')}
+        SET ${setParts.join(", ")}
         WHERE id = $${valueIndex}
         RETURNING id;
       `;
 
       const result = await this.pool.query(query, values);
-      
+
       if (result.rows.length > 0) {
         logger.info(`✅ Knowledge base entry updated: ${id}`);
         return true;
@@ -2372,7 +2723,7 @@ class DatabaseService {
         return false;
       }
     } catch (error) {
-      logger.error('Error updating knowledge base entry:', error);
+      logger.error("Error updating knowledge base entry:", error);
       return false;
     }
   }
@@ -2391,7 +2742,7 @@ class DatabaseService {
         averageSuccessScore: 0,
         interactionsLast7Days: 0,
         averageSuccessLast7Days: 0,
-        topPerformingPatterns: []
+        topPerformingPatterns: [],
       };
     }
 
@@ -2422,26 +2773,25 @@ class DatabaseService {
         FROM all_stats a
         CROSS JOIN recent_stats r;
       `;
-      
+
       const result = await this.pool.query(query);
       const stats = result.rows[0];
-      
+
       return {
         totalInteractions: parseInt(stats.total_interactions) || 0,
         averageSuccessScore: parseFloat(stats.avg_success_score) || 0,
         interactionsLast7Days: parseInt(stats.recent_interactions) || 0,
         averageSuccessLast7Days: parseFloat(stats.avg_recent_success) || 0,
-        topPerformingPatterns: [] // Se puede implementar análisis más complejo
+        topPerformingPatterns: [], // Se puede implementar análisis más complejo
       };
-      
     } catch (error) {
-      logger.error('Error getting training statistics:', error);
+      logger.error("Error getting training statistics:", error);
       return {
         totalInteractions: 0,
         averageSuccessScore: 0,
         interactionsLast7Days: 0,
         averageSuccessLast7Days: 0,
-        topPerformingPatterns: []
+        topPerformingPatterns: [],
       };
     }
   }
@@ -2450,7 +2800,7 @@ class DatabaseService {
   public async searchTrainingInteractions(
     searchQuery: string,
     minSuccessScore?: number,
-    limit: number = 100
+    limit: number = 100,
   ): Promise<TrainingInteraction[]> {
     if (!this.pool) {
       return [];
@@ -2464,21 +2814,21 @@ class DatabaseService {
         FROM ai_training_interactions 
         WHERE to_tsvector('spanish', user_message) @@ plainto_tsquery('spanish', $1)
       `;
-      
+
       const values: any[] = [searchQuery];
       let valueIndex = 2;
-      
+
       if (minSuccessScore !== undefined) {
         query += ` AND success_score >= $${valueIndex++}`;
         values.push(minSuccessScore);
       }
-      
+
       query += ` ORDER BY success_score DESC, created_at DESC LIMIT $${valueIndex}`;
       values.push(limit);
-      
+
       const result = await this.pool.query(query, values);
-      
-      return result.rows.map(row => ({
+
+      return result.rows.map((row) => ({
         id: row.id,
         userMessage: row.user_message,
         aiResponse: row.ai_response,
@@ -2486,17 +2836,18 @@ class DatabaseService {
         successScore: parseFloat(row.success_score),
         contextData: row.context_data,
         feedbackMetrics: row.feedback_metrics,
-        timestamp: new Date(row.created_at)
+        timestamp: new Date(row.created_at),
       }));
-      
     } catch (error) {
-      logger.error('Error searching training interactions:', error);
+      logger.error("Error searching training interactions:", error);
       return [];
     }
   }
 
   // Eliminar interacciones de entrenamiento antiguas (limpieza de datos)
-  public async cleanupOldTrainingInteractions(daysOld: number = 90): Promise<number> {
+  public async cleanupOldTrainingInteractions(
+    daysOld: number = 90,
+  ): Promise<number> {
     if (!this.pool) {
       return 0;
     }
@@ -2507,18 +2858,19 @@ class DatabaseService {
         WHERE created_at < NOW() - INTERVAL '${daysOld} days'
         RETURNING id;
       `;
-      
+
       const result = await this.pool.query(query);
       const deletedCount = result.rows.length;
-      
+
       if (deletedCount > 0) {
-        logger.info(`🗑️ Cleaned up ${deletedCount} old training interactions (>${daysOld} days)`);
+        logger.info(
+          `🗑️ Cleaned up ${deletedCount} old training interactions (>${daysOld} days)`,
+        );
       }
-      
+
       return deletedCount;
-      
     } catch (error) {
-      logger.error('Error cleaning up old training interactions:', error);
+      logger.error("Error cleaning up old training interactions:", error);
       return 0;
     }
   }
