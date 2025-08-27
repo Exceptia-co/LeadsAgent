@@ -1,11 +1,15 @@
 import { Client, LocalAuth, Message } from 'whatsapp-web.js'
 import qrcode from 'qrcode-terminal'
-import { logger } from '../utils/logger'
+import { logger } from '../utils/logger';
+import advancedLogger from '../utils/advancedLogger';
 import { WhatsAppMessage, WhatsAppSession, WebhookPayload, SendMessageResponse } from '../types'
 import { SessionCleanupUtil } from '../utils/sessionCleanup'
 import PhoneNumberService from './PhoneNumberService'
 import SessionPersistenceService from './SessionPersistenceService'
 import SessionRecoveryService from './SessionRecoveryService'
+import SessionHealthCheckService from './SessionHealthCheckService'
+import fs from 'fs'
+import path from 'path'
 
 class WhatsAppServiceSimple {
   private clients: Map<string, Client> = new Map()
@@ -17,7 +21,7 @@ class WhatsAppServiceSimple {
   }
 
   async initialize(): Promise<void> {
-    logger.info('🚀 Iniciando WhatsApp service con persistencia mejorada...')
+    logger.info('🚀 Iniciando WhatsApp service con persistencia y monitoreo avanzado...')
     
     // Recover existing sessions from database
     try {
@@ -31,10 +35,22 @@ class WhatsAppServiceSimple {
       logger.error('❌ Error durante recuperación de sesiones:', error)
     }
     
-    // Start periodic health checks
+    // Start periodic health checks (legacy)
     SessionRecoveryService.scheduleHealthChecks(this)
     
-    logger.info('✅ WhatsApp service initialized successfully with database persistence')
+    // Start advanced health monitoring
+    SessionHealthCheckService.startMonitoring(this)
+    
+    // Register alert callback for logging
+    SessionHealthCheckService.onAlert((alert) => {
+      logger.warn(`🚨 Health Alert [${alert.severity.toUpperCase()}] ${alert.sessionId}: ${alert.message}`, {
+        type: alert.type,
+        recommendation: alert.recommendation,
+        timestamp: alert.timestamp
+      })
+    })
+    
+    logger.info('✅ WhatsApp service initialized successfully with database persistence and health monitoring')
   }
 
   async createSession(sessionId: string): Promise<WhatsAppSession> {
@@ -43,11 +59,22 @@ class WhatsAppServiceSimple {
         throw new Error(`Session ${sessionId} already exists`)
       }
 
+      // Ensure auth directory exists
+      const authDataPath = path.resolve('./wwebjs_auth')
+      await this.ensureAuthDirectoryExists(authDataPath)
+      
+      // Validate existing authentication files for integrity
+      const authIsValid = await this.validateAuthFiles(sessionId, authDataPath)
+      if (!authIsValid) {
+        logger.warn(`⚠️ Invalid auth files detected for session ${sessionId}, cleaning up...`)
+        await this.cleanupCorruptedAuthFiles(sessionId, authDataPath)
+      }
+
       // Create WhatsApp client with session authentication
       const client = new Client({
         authStrategy: new LocalAuth({
           clientId: sessionId,
-          dataPath: './wwebjs_auth' // Directorio persistente para autenticación
+          dataPath: authDataPath // Directorio persistente para autenticación
         }),
         puppeteer: {
           headless: process.env.PUPPETEER_HEADLESS === 'true' || process.env.NODE_ENV === 'production',
@@ -83,7 +110,8 @@ class WhatsAppServiceSimple {
       this.clients.set(sessionId, client)
       this.sessions.set(sessionId, session)
       
-      // Persist session to database
+      // Persist session to database with enhanced LocalAuth metadata
+      const authFileInfo = await this.getAuthFileInfo(sessionId, authDataPath)
       await SessionPersistenceService.saveSession({
         sessionId: sessionId,
         name: sessionId,
@@ -91,7 +119,16 @@ class WhatsAppServiceSimple {
         lastSeen: new Date(),
         webhookUrl: this.webhookUrl,
         isActive: true,
-        reconnectCount: 0
+        reconnectCount: 0,
+        metadata: {
+          clientId: sessionId,
+          authDataPath: authDataPath,
+          authFileExists: authFileInfo.exists,
+          authFileSize: authFileInfo.size,
+          authFileModified: authFileInfo.modified,
+          sessionCreated: new Date().toISOString(),
+          localAuthVersion: '1.0'
+        }
       })
 
       // Initialize the client
@@ -132,6 +169,22 @@ class WhatsAppServiceSimple {
       logger.info(`WhatsApp client ${sessionId} is ready`)
       
       const clientInfo = client.info
+      
+      // Advanced logging de evento de sesión
+      advancedLogger.logSessionEvent({
+        sessionId,
+        eventType: 'READY',
+        phoneNumber: clientInfo?.wid?.user || 'unknown',
+        authState: 'AUTHENTICATED',
+        metadata: {
+          clientInfo: {
+            number: clientInfo?.wid?.user,
+            pushname: clientInfo?.pushname,
+            platform: clientInfo?.platform
+          }
+        }
+      })
+      
       this.updateSessionStatus(sessionId, 'ready', { 
         connectedNumber: clientInfo?.wid?.user || 'unknown'
       })
@@ -476,7 +529,7 @@ class WhatsAppServiceSimple {
             thinkingResult.thinkingProcess.steps[0]?.data?.intent,
             thinkingResult.thinkingProcess.steps[0]?.data?.sentiment
           );
-        }, 30000); // Wait 30 seconds before calculating success metrics
+        }, 5000); // Wait 5 seconds before calculating success metrics
         
         logger.info(`✅ Enhanced AI response sent successfully to ${phoneNumber}:`, {
           messageLength: thinkingResult.content.length,
@@ -636,10 +689,10 @@ class WhatsAppServiceSimple {
     let score = 0.7;
     
     // Factor 1: Response time penalty (slower = lower score)
-    // Scale: 0-10000ms is good, 10000-30000ms is ok, >30000ms is slow
-    if (responseTimeMs < 10000) {
+    // Scale: 0-5000ms is good, 5000-15000ms is ok, >15000ms is slow
+    if (responseTimeMs < 5000) {
       score += 0.1; // Fast response bonus
-    } else if (responseTimeMs > 30000) {
+    } else if (responseTimeMs > 15000) {
       score -= 0.1; // Slow response penalty
     }
     
@@ -739,6 +792,22 @@ class WhatsAppServiceSimple {
         leadName: matchedLead?.name,
         messagePreview: messagePreview?.substring(0, 200),
         aiProvider: process.env.AI_PROVIDER || 'unknown'
+      })
+      
+      // Advanced logging de la decisión de whitelist
+      advancedLogger.logWhitelistDecision({
+        phoneNumber,
+        sessionId,
+        decision,
+        reason,
+        leadId: matchedLead?.id,
+        leadName: matchedLead?.name,
+        messagePreview: messagePreview
+      }, {
+        sessionId,
+        phoneNumber,
+        operation: 'whitelist-check',
+        leadId: matchedLead?.id
       })
       
       return {
@@ -1037,6 +1106,9 @@ Respuesta:`,
   async shutdown(): Promise<void> {
     logger.info('Shutting down WhatsApp service...')
     
+    // Stop health monitoring
+    SessionHealthCheckService.stopMonitoring()
+    
     const destroyPromises = Array.from(this.clients.keys()).map(sessionId =>
       this.destroySession(sessionId).catch(error =>
         logger.error(`Error destroying session ${sessionId} during shutdown:`, error)
@@ -1045,6 +1117,277 @@ Respuesta:`,
 
     await Promise.all(destroyPromises)
     logger.info('WhatsApp service shutdown completed')
+  }
+
+  // === LocalAuth Synchronization Methods ===
+
+  /**
+   * Ensure the authentication directory exists
+   */
+  private async ensureAuthDirectoryExists(authDataPath: string): Promise<void> {
+    try {
+      if (!fs.existsSync(authDataPath)) {
+        fs.mkdirSync(authDataPath, { recursive: true })
+        logger.info(`🔐 Created auth directory: ${authDataPath}`)
+      }
+    } catch (error) {
+      logger.error('Error creating auth directory:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Validate LocalAuth files for integrity
+   */
+  private async validateAuthFiles(sessionId: string, authDataPath: string): Promise<boolean> {
+    try {
+      const sessionAuthPath = path.join(authDataPath, `session-${sessionId}`)
+      
+      if (!fs.existsSync(sessionAuthPath)) {
+        logger.debug(`🔍 No auth files found for session ${sessionId} (first time setup)`)
+        return true // No files means clean slate, which is valid
+      }
+
+      // Check for essential auth files
+      const essentialFiles = ['Default', 'RemoteAuth', 'Session Storage']
+      let foundEssentialFiles = 0
+      
+      for (const fileName of essentialFiles) {
+        const filePath = path.join(sessionAuthPath, fileName)
+        if (fs.existsSync(filePath)) {
+          foundEssentialFiles++
+        }
+      }
+
+      // Check for common corruption indicators
+      const hasLockFiles = await this.hasActiveLockFiles(sessionAuthPath)
+      const hasValidStructure = foundEssentialFiles > 0
+      
+      const isValid = hasValidStructure && !hasLockFiles
+      
+      logger.debug(`🔍 Auth validation for ${sessionId}:`, {
+        hasValidStructure,
+        hasLockFiles,
+        foundEssentialFiles,
+        isValid
+      })
+      
+      return isValid
+    } catch (error) {
+      logger.warn(`Error validating auth files for session ${sessionId}:`, error)
+      return false // Assume invalid on error
+    }
+  }
+
+  /**
+   * Check for active lock files that indicate corruption
+   */
+  private async hasActiveLockFiles(sessionAuthPath: string): Promise<boolean> {
+    try {
+      const lockFiles = await this.findLockFiles(sessionAuthPath)
+      
+      // Check if any lock files are older than 5 minutes (likely abandoned)
+      const fiveMinutesAgo = Date.now() - (5 * 60 * 1000)
+      
+      for (const lockFile of lockFiles) {
+        const stats = fs.statSync(lockFile)
+        if (stats.mtime.getTime() < fiveMinutesAgo) {
+          return true // Found stale lock file
+        }
+      }
+      
+      return false
+    } catch (error) {
+      logger.debug('Error checking lock files:', error)
+      return false
+    }
+  }
+
+  /**
+   * Find all lock files recursively
+   */
+  private async findLockFiles(dirPath: string, lockFiles: string[] = []): Promise<string[]> {
+    try {
+      if (!fs.existsSync(dirPath)) return lockFiles
+
+      const items = fs.readdirSync(dirPath)
+      
+      for (const item of items) {
+        const itemPath = path.join(dirPath, item)
+        const stat = fs.statSync(itemPath)
+        
+        if (stat.isDirectory()) {
+          await this.findLockFiles(itemPath, lockFiles)
+        } else if (item === 'LOCK' || item === 'lockfile' || item.endsWith('.lock')) {
+          lockFiles.push(itemPath)
+        }
+      }
+    } catch (error) {
+      logger.debug(`Error finding lock files in ${dirPath}:`, error)
+    }
+    
+    return lockFiles
+  }
+
+  /**
+   * Clean up corrupted authentication files
+   */
+  private async cleanupCorruptedAuthFiles(sessionId: string, authDataPath: string): Promise<void> {
+    try {
+      const sessionAuthPath = path.join(authDataPath, `session-${sessionId}`)
+      
+      if (fs.existsSync(sessionAuthPath)) {
+        logger.info(`🧹 Cleaning corrupted auth files for session ${sessionId}`)
+        
+        // Use the existing SessionCleanupUtil for safe cleanup
+        await SessionCleanupUtil.cleanupSession(`auth-${sessionId}`, sessionAuthPath)
+        
+        // Update database to reflect cleanup
+        await SessionPersistenceService.updateSessionStatus(sessionId, 'connecting', {
+          metadata: {
+            authCleanupPerformed: new Date().toISOString(),
+            authCorruptionDetected: true
+          }
+        })
+        
+        logger.info(`✅ Corrupted auth files cleaned for session ${sessionId}`)
+      }
+    } catch (error) {
+      logger.error(`Error cleaning corrupted auth files for session ${sessionId}:`, error)
+      // Don't throw - allow session creation to continue
+    }
+  }
+
+  /**
+   * Get authentication file information
+   */
+  private async getAuthFileInfo(sessionId: string, authDataPath: string): Promise<{
+    exists: boolean
+    size: number
+    modified: string | null
+  }> {
+    try {
+      const sessionAuthPath = path.join(authDataPath, `session-${sessionId}`)
+      
+      if (!fs.existsSync(sessionAuthPath)) {
+        return {
+          exists: false,
+          size: 0,
+          modified: null
+        }
+      }
+      
+      const stats = fs.statSync(sessionAuthPath)
+      const size = await this.getDirectorySize(sessionAuthPath)
+      
+      return {
+        exists: true,
+        size: Math.round(size / 1024), // Convert to KB
+        modified: stats.mtime.toISOString()
+      }
+    } catch (error) {
+      logger.debug(`Error getting auth file info for ${sessionId}:`, error)
+      return {
+        exists: false,
+        size: 0,
+        modified: null
+      }
+    }
+  }
+
+  /**
+   * Calculate directory size recursively
+   */
+  private async getDirectorySize(dirPath: string): Promise<number> {
+    try {
+      let totalSize = 0
+      
+      const items = fs.readdirSync(dirPath)
+      
+      for (const item of items) {
+        const itemPath = path.join(dirPath, item)
+        const stat = fs.statSync(itemPath)
+        
+        if (stat.isDirectory()) {
+          totalSize += await this.getDirectorySize(itemPath)
+        } else {
+          totalSize += stat.size
+        }
+      }
+      
+      return totalSize
+    } catch (error) {
+      return 0
+    }
+  }
+
+  /**
+   * Sync auth state with database metadata
+   */
+  private async syncAuthStateWithDatabase(sessionId: string): Promise<void> {
+    try {
+      const authDataPath = path.resolve('./wwebjs_auth')
+      const authFileInfo = await this.getAuthFileInfo(sessionId, authDataPath)
+      const session = this.sessions.get(sessionId)
+      
+      if (session) {
+        // Update metadata in database with current auth file state
+        await SessionPersistenceService.updateSessionStatus(sessionId, session.status, {
+          metadata: {
+            authFileExists: authFileInfo.exists,
+            authFileSize: authFileInfo.size,
+            authFileModified: authFileInfo.modified,
+            lastAuthSync: new Date().toISOString(),
+            authDataPath: authDataPath
+          }
+        })
+        
+        logger.debug(`🔄 Auth state synced for session ${sessionId}`, authFileInfo)
+      }
+    } catch (error) {
+      logger.error(`Error syncing auth state for session ${sessionId}:`, error)
+      // Non-blocking error - continue execution
+    }
+  }
+
+  /**
+   * Recover session with LocalAuth validation
+   */
+  async recoverSessionWithAuthValidation(sessionId: string, persistedData: any): Promise<boolean> {
+    try {
+      logger.info(`🔄 Recovering session ${sessionId} with auth validation`)
+      
+      // Validate auth files before attempting recovery
+      const authDataPath = path.resolve('./wwebjs_auth')
+      const authIsValid = await this.validateAuthFiles(sessionId, authDataPath)
+      
+      if (!authIsValid) {
+        logger.warn(`⚠️ Invalid auth detected for session ${sessionId} during recovery`)
+        await this.cleanupCorruptedAuthFiles(sessionId, authDataPath)
+        
+        // Mark as requiring fresh authentication
+        await SessionPersistenceService.updateSessionStatus(sessionId, 'connecting', {
+          qrCode: null, // Clear old QR code
+          metadata: {
+            ...persistedData.metadata,
+            recoveryAuthCleaned: new Date().toISOString()
+          }
+        })
+      }
+      
+      // Proceed with normal session creation
+      await this.createSession(sessionId)
+      
+      // Sync auth state after creation
+      setTimeout(() => {
+        this.syncAuthStateWithDatabase(sessionId)
+      }, 5000) // Wait 5 seconds for client to initialize
+      
+      return true
+    } catch (error) {
+      logger.error(`Error recovering session ${sessionId} with auth validation:`, error)
+      return false
+    }
   }
 }
 

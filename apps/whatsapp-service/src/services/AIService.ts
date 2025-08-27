@@ -197,30 +197,66 @@ class AIService {
   public async analyzeIntent(message: string): Promise<IntentAnalysis> {
     try {
       const prompt = `
-      Analiza el siguiente mensaje de WhatsApp y determina:
-      1. La intención principal (saludo, consulta_producto, solicitar_info, queja, despedida, otro)
-      2. Nivel de confianza (0-1)
-      3. Entidades importantes (nombres, productos, precios, fechas)
-      4. Sentimiento (positive, negative, neutral)
-      
-      Mensaje: "${message}"
-      
-      Responde en formato JSON:
-      {
-        "intent": "categoria_de_intencion",
-        "confidence": 0.95,
-        "entities": {"entity": "value"},
-        "sentiment": "positive"
-      }
-      `;
+Analiza el siguiente mensaje de WhatsApp y clasifica la intención del usuario.
+
+Mensaje: "${message}"
+
+INSTRUCCIONES:
+- Responde ÚNICAMENTE con un objeto JSON válido
+- No incluyas texto adicional antes o después del JSON
+- Usa solo estas intenciones: saludo, consulta_producto, solicitar_info, queja, despedida, precio, registro, general
+- El sentiment debe ser: positive, negative, o neutral
+- La confidence debe ser un número entre 0.0 y 1.0
+
+Ejemplos:
+- "hola" -> intent: "saludo"
+- "cuánto cuesta" -> intent: "precio"
+- "no me interesa" -> intent: "despedida"
+- "gracias, no me interesa" -> intent: "despedida"
+- "quiero registrarme" -> intent: "registro"
+
+Respuesta JSON:
+{
+  "intent": "categoria_aqui",
+  "confidence": 0.90,
+  "entities": {},
+  "sentiment": "neutral"
+}`;
 
       const response = await this.generateResponse(prompt);
       
       if (response.success && response.content) {
         try {
-          return JSON.parse(response.content);
+          // Intentar extraer JSON de la respuesta
+          let jsonContent = response.content.trim();
+          
+          // Buscar el primer { y el último } para extraer solo el JSON
+          const firstBrace = jsonContent.indexOf('{');
+          const lastBrace = jsonContent.lastIndexOf('}');
+          
+          if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+            jsonContent = jsonContent.substring(firstBrace, lastBrace + 1);
+          }
+          
+          const parsed = JSON.parse(jsonContent);
+          
+          // Validar que tiene los campos requeridos
+          if (parsed.intent && typeof parsed.confidence === 'number' && parsed.sentiment) {
+            return {
+              intent: parsed.intent,
+              confidence: Math.max(0, Math.min(1, parsed.confidence)), // Asegurar rango 0-1
+              entities: parsed.entities || {},
+              sentiment: ['positive', 'negative', 'neutral'].includes(parsed.sentiment) 
+                         ? parsed.sentiment : 'neutral'
+            };
+          } else {
+            logger.warn('Respuesta de análisis de intención incompleta, usando valores por defecto');
+          }
         } catch (parseError) {
-          logger.warn('Error parseando análisis de intención, usando valores por defecto');
+          logger.warn('Error parseando análisis de intención:', {
+            error: parseError instanceof Error ? parseError.message : 'Unknown error',
+            responseContent: response.content?.substring(0, 200) + '...' // Solo mostrar primeros 200 chars
+          });
         }
       }
 
@@ -269,7 +305,7 @@ INFORMACIÓN DE LA EMPRESA:
 - Sistema monetario: Monedas HUB (moneda virtual)
 - Mejor oferta: Paquete Plus (500 HUB por 300€ = 0,60€ por moneda)
 - Soporte: Disponible 24/7 para resolver dudas técnicas
-- Sitio web: escortshub.com
+- Sitio web: escortshub.net
 - Acceso: Solo mayores de 18 años
 
 PRODUCTOS Y PRECIOS QUE DEBES PROMOCIONAR:
@@ -327,7 +363,7 @@ RESPUESTAS SEGÚN CONTEXTO:
 - **Consulta disponibilidad**: Promociona "Disponible Ahora" + otros productos
 
 SIEMPRE INCLUYE CALL-TO-ACTION:
-- "¿Te gustaría registrarte ahora en escortshub.com?"
+- "¿Te gustaría registrarte ahora en escortshub.net?"
 - "¿Qué paquete de monedas prefieres para empezar?"
 - "¿Te interesa que te ayude con el proceso de compra?"
 - "¿Quieres que te explique cómo activar tu primer anuncio?"

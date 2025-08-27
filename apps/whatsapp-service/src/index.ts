@@ -69,6 +69,12 @@ async function bootstrap() {
     // Custom middleware
     app.use(logRequest)
     app.use(rateLimit) // Rate limiting middleware
+    
+    // Serve static files from public directory
+    const publicPath = path.join(__dirname, 'public')
+    logger.info(`📂 Setting up static file serving from: ${publicPath}`)
+    app.use('/public', express.static(publicPath))
+    app.use(express.static(publicPath)) // Also serve directly from root
 
     // API routes
     app.use('/api', routes.default)

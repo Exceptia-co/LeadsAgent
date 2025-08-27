@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger';
+import advancedLogger from '../utils/advancedLogger';
 import AIService, { AIResponse, MessageContext } from './AIService';
 import DatabaseService from './DatabaseService';
 
@@ -47,6 +48,7 @@ export interface ResponseStrategy {
 }
 
 export interface EnrichedContext extends MessageContext {
+  messageText?: string; // El mensaje actual
   leadProfile?: any;
   conversationSummary?: string;
   previousIntents: IntentAnalysis[];
@@ -179,6 +181,33 @@ class AIThinkingService {
 
       // 10. REGISTRAR ANÁLISIS PARA APRENDIZAJE FUTURO
       await this.saveThinkingProcess(context.phoneNumber || 'unknown', message, thoughtProcess);
+
+      // 11. LOG AVANZADO DE LA DECISIÓN AI
+      const decisionData = decisionStep.data;
+      const decisionType = thoughtProcess.shouldRespond ? 'RESPOND' : 'NO_RESPONSE';
+      
+      advancedLogger.logAIDecision({
+        messageText: message,
+        intent: intentAnalysis.intent,
+        confidence: thoughtProcess.confidence,
+        decision: decisionType,
+        reasons: decisionData?.reasons || [],
+        processingTimeMs: thoughtProcess.processingTimeMs,
+        knowledgeUsed: knowledgeStep.data?.map((k: any) => k.title || k.category) || [],
+        contextData: {
+          sessionId: context.sessionId,
+          phoneNumber: context.phoneNumber,
+          leadId: enrichedContext.leadProfile?.id,
+          hasHistory: enrichedContext.messageHistory?.length > 0,
+          timeOfDay: enrichedContext.timeOfDay,
+          engagementLevel: enrichedContext.userEngagementLevel,
+          strategy: thoughtProcess.responseStrategy
+        }
+      }, {
+        sessionId: context.sessionId,
+        phoneNumber: context.phoneNumber,
+        operation: 'ai-thinking-process'
+      });
 
       logger.info('🧠 [THINKING] Process completed:', {
         shouldRespond: thoughtProcess.shouldRespond,
@@ -434,6 +463,24 @@ class AIThinkingService {
       };
 
       let strategyReasons: string[] = [];
+      
+      // 0. Verificar si es un saludo simple (override de la lógica de knowledge base)
+      const isGreeting = await this.isGreetingMessage(context.messageText || '');
+      if (isGreeting) {
+        strategy.type = 'contextual';
+        strategy.tone = 'friendly';
+        strategy.length = 'medium';
+        strategyReasons.push('Saludo detectado: respuesta automática de bienvenida');
+        // Para saludos, no requerimos knowledge base
+        return {
+          step: 4,
+          type: 'decision',
+          title: 'Estrategia de Respuesta (Saludo)',
+          content: `Estrategia determinada en ${Date.now() - stepStart}ms: ${strategy.type} (${strategy.tone}, ${strategy.length}). Razones: ${strategyReasons.join(', ')}`,
+          confidence: 0.9, // Alta confianza para saludos
+          data: strategy
+        };
+      }
 
       // 1. Determinar tipo de respuesta basado en intención
       switch (intentAnalysis.intent) {
@@ -449,18 +496,18 @@ class AIThinkingService {
         case 'consulta_precio':
           strategy.type = 'contextual';
           strategy.tone = 'sales';
-          strategy.length = 'detailed';
+          strategy.length = 'medium'; // Cambiar de 'detailed' a 'medium'
           strategy.templateCategory = 'pricing';
-          strategyReasons.push('Consulta de precios: respuesta detallada y orientada a ventas');
+          strategyReasons.push('Consulta de precios: respuesta concisa y orientada a ventas');
           break;
           
         case 'product_inquiry':
         case 'consulta_producto':
           strategy.type = 'contextual';
           strategy.tone = 'sales';
-          strategy.length = 'detailed';
+          strategy.length = 'medium'; // Cambiar de 'detailed' a 'medium'
           strategy.templateCategory = 'products';
-          strategyReasons.push('Consulta de producto: información detallada');
+          strategyReasons.push('Consulta de producto: información concisa');
           break;
           
         case 'complaint':
@@ -497,8 +544,8 @@ class AIThinkingService {
         strategyReasons.push('Urgencia alta: respuesta prioritaria y concisa');
       }
 
-      // 4. Ajustes basados en conocimiento disponible
-      if (knowledgeData.length === 0) {
+      // 4. Ajustes basados en conocimiento disponible (no aplicar a saludos)
+      if (knowledgeData.length === 0 && !isGreeting && intentAnalysis.intent !== 'greeting' && intentAnalysis.intent !== 'saludo') {
         strategy.type = 'defer';
         strategy.tone = 'professional';
         strategyReasons.push('Sin conocimiento específico: diferir a humano');
@@ -561,6 +608,28 @@ class AIThinkingService {
       let decisionReasons: string[] = [];
       let confidence = 0.8;
 
+      // *** VERIFICACIÓN PRIORITARIA PARA SALUDOS ***
+      const isGreeting = await this.isGreetingMessage(context.messageText || '');
+      if (isGreeting) {
+        shouldRespond = true;
+        decisionReasons.push('SALUDO DETECTADO: Respuesta automática garantizada');
+        confidence = 0.95; // Muy alta confianza para saludos
+        
+        return {
+          step: 5,
+          type: 'decision',
+          title: 'Decisión Final (Saludo)',
+          content: `Decisión tomada en ${Date.now() - stepStart}ms: RESPONDER AUTOMÁTICAMENTE - SALUDO. Razones: ${decisionReasons.join(', ')}`,
+          confidence,
+          data: {
+            shouldRespond: true,
+            reasons: decisionReasons,
+            finalConfidence: confidence,
+            isGreeting: true
+          }
+        };
+      }
+
       // Obtener datos de pasos anteriores
       const intentStep = steps.find(s => s.type === 'analysis' && s.title.includes('Intención'));
       const knowledgeStep = steps.find(s => s.type === 'knowledge_retrieval');
@@ -578,32 +647,38 @@ class AIThinkingService {
 
         // Reglas de decisión
         
-        // 1. Verificar confianza mínima en la intención
-        if (intentAnalysis.confidence < 0.4) {
+        // 1. Verificar si es saludo por intención (backup)
+        if (intentAnalysis.intent === 'greeting' || intentAnalysis.intent === 'saludo') {
+          shouldRespond = true;
+          decisionReasons.push('SALUDO por análisis de intención: Respuesta garantizada');
+          confidence = 0.9;
+        }
+        // 2. Verificar confianza mínima en la intención (solo para no-saludos)
+        else if (intentAnalysis.confidence < 0.4) {
           shouldRespond = false;
           decisionReasons.push(`Confianza en intención muy baja: ${(intentAnalysis.confidence * 100).toFixed(1)}%`);
           confidence = 0.3;
         }
 
-        // 2. Verificar si se debe escalar
+        // 3. Verificar si se debe escalar
         if (strategy.type === 'escalate') {
           shouldRespond = false;
           decisionReasons.push('Estrategia requiere escalamiento a humano');
           confidence = 0.9; // Alta confianza en la decisión de no responder
         }
 
-        // 3. Verificar si se debe diferir
-        if (strategy.type === 'defer') {
+        // 4. Verificar si se debe diferir (solo para no-saludos)
+        if (strategy.type === 'defer' && !shouldRespond) {
           shouldRespond = false;
           decisionReasons.push('Sin conocimiento suficiente para responder');
           confidence = 0.7;
         }
 
-        // 4. Verificar límites de conversación (si implementados)
+        // 5. Verificar límites de conversación (si implementados)
         // TODO: Implementar verificación de límites de mensajes por lead
 
-        // 5. Si todo está bien, proceder con la respuesta
-        if (shouldRespond) {
+        // 6. Si todo está bien, proceder con la respuesta
+        if (shouldRespond && !decisionReasons.some(r => r.includes('SALUDO'))) {
           decisionReasons.push('Todos los criterios cumplidos para responder');
           confidence = Math.min(
             intentAnalysis.confidence + 
@@ -659,6 +734,7 @@ class AIThinkingService {
     try {
       const enriched: EnrichedContext = {
         ...context,
+        messageText: currentMessage, // Agregar el mensaje actual al contexto
         previousIntents: [],
         messageHistory: [],
         userEngagementLevel: 'medium',
@@ -862,7 +938,7 @@ class AIThinkingService {
       let systemPrompt = await DatabaseService.getAIConfiguration('system_prompt');
       
       // Añadir contexto específico al prompt
-      const contextualPrompt = this.buildContextualPrompt(
+      const contextualPrompt = await this.buildContextualPrompt(
         systemPrompt || '',
         intentAnalysis,
         strategy,
@@ -916,19 +992,36 @@ class AIThinkingService {
     }
   }
 
-  private buildContextualPrompt(
+  private async buildContextualPrompt(
     basePrompt: string,
     intentAnalysis: IntentAnalysis,
     strategy: ResponseStrategy,
     knowledgeData: any[],
     context: EnrichedContext
-  ): string {
+  ): Promise<string> {
     let contextualPrompt = basePrompt;
     
-    // Añadir instrucciones específicas para respuestas cohesivas
-    contextualPrompt += `\n\n🎯 INSTRUCCIÓN PRIORITARIA: RESPUESTA COMPLETA Y COHESIVA\n`;
-    contextualPrompt += `IMPORTANTE: Genera UNA SOLA respuesta completa que incluya TODA la información necesaria. `;
-    contextualPrompt += `NO dividas la respuesta en múltiples mensajes. Estructura la información de forma lógica y completa.\n\n`;
+    // Detectar si es un saludo simple
+    const isGreeting = await this.isGreetingMessage(context.messageText || '');
+    
+    if (isGreeting) {
+      // Para saludos, usar prompt simplificado
+      contextualPrompt += `\n\n🎯 INSTRUCCIÓN: SALUDO BREVE Y NATURAL\n`;
+      contextualPrompt += `IMPORTANTE: Responde con un saludo cálido pero breve. Presenta EscortsHub.net de forma simple y pregunta cómo puedes ayudar.\n`;
+      contextualPrompt += `MÁXIMO 2 líneas. Sé natural y amigable.\n\n`;
+      
+      if (context.contactName) {
+        contextualPrompt += `Nombre del usuario: ${context.contactName}\n\n`;
+      }
+      
+      contextualPrompt += `Ejemplo de respuesta: "¡Hola! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte hoy?"\n\n`;
+      return contextualPrompt;
+    }
+    
+    // Para otros tipos de mensajes, usar prompt muy conciso
+    contextualPrompt += `\n\n🎯 INSTRUCCIÓN ESTRICTA: RESPUESTA MUY BREVE Y SIMPLE\n`;
+    contextualPrompt += `OBLIGATORIO: Máximo 80-100 palabras. SIN tablas. SIN listas largas. SIN secciones múltiples. `;
+    contextualPrompt += `Responde SOLO lo que se pregunta, de forma conversacional y simple.\n\n`;
     
     // Añadir contexto de intención
     contextualPrompt += `CONTEXTO ACTUAL:\n`;
@@ -963,44 +1056,27 @@ class AIThinkingService {
       });
     }
     
-    // Añadir instrucciones de estructura para respuesta completa
-    contextualPrompt += `\n📝 ESTRUCTURA REQUERIDA PARA RESPUESTA COHESIVA:\n`;
+    // Instrucciones para respuesta breve y directa
+    contextualPrompt += `\n📝 FORMATO DE RESPUESTA:\n`;
     
     if (intentAnalysis.intent.includes('precio') || intentAnalysis.intent.includes('product')) {
       contextualPrompt += `
-1. Saludo amigable con el nombre si está disponible
-2. Información COMPLETA sobre precios y productos solicitados
-3. Explicación clara del sistema de monedas HUB
-4. Recomendación específica de paquete
-5. Proceso de registro paso a paso
-6. Invitación a acción concreta
-7. Ofrecimiento de ayuda adicional`;
+Respuesta SIMPLE: Solo menciona 2-3 precios principales, sistema HUB básico (1 HUB ≈ 0.60€), paquete recomendado y enlace si necesario.`;
     } else if (intentAnalysis.intent.includes('registro')) {
       contextualPrompt += `
-1. Saludo y confirmación del interés
-2. Proceso COMPLETO de registro paso a paso
-3. Beneficios del registro gratuito
-4. Explicación del sistema de monedas
-5. Productos disponibles tras registro
-6. Invitación a completar el registro
-7. Ofrecimiento de soporte`;
+Respuesta SIMPLE: Registro GRATUITO en https://escortshub.net/register. Menciona pasos básicos y pregunta si necesita ayuda.`;
     } else {
       contextualPrompt += `
-1. Saludo personalizado y empatía
-2. Respuesta COMPLETA a la consulta
-3. Información adicional útil y relacionada
-4. Productos o servicios relevantes
-5. Proceso o pasos necesarios si aplica
-6. Invitación a acción
-7. Disponibilidad para más ayuda`;
+Respuesta SIMPLE: Responde solo lo preguntado con información del conocimiento. Termina con una pregunta.`;
     }
     
-    contextualPrompt += `\n\n⚡ REGLAS DE COHESIÓN:\n`;
-    contextualPrompt += `- NUNCA uses frases como "Te cuento más detalles" o "Te explico paso a paso" sin explicar inmediatamente\n`;
-    contextualPrompt += `- INCLUYE toda la información solicitada en esta única respuesta\n`;
-    contextualPrompt += `- USA transiciones suaves entre secciones de información\n`;
-    contextualPrompt += `- TERMINA con una pregunta concreta o call-to-action claro\n`;
-    contextualPrompt += `- MÁXIMO 350 palabras pero COMPLETAS y Útiles\n`;
+    contextualPrompt += `\n\n⚡ REGLAS ULTRA ESTRICTAS:\n`;
+    contextualPrompt += `- MÁXIMO 60-80 palabras TOTAL\n`;
+    contextualPrompt += `- SIN tablas, SIN listas largas, SIN secciones múltiples\n`;
+    contextualPrompt += `- SIN repetir información, SIN introducciones largas\n`;
+    contextualPrompt += `- Formato conversacional como mensaje de WhatsApp\n`;
+    contextualPrompt += `- SIEMPRE EscortsHub.net (nunca .com)\n`;
+    contextualPrompt += `- UNA pregunta final corta\n`;
     
     return contextualPrompt;
   }
@@ -1074,6 +1150,50 @@ class AIThinkingService {
     } catch (error) {
       logger.error('Error saving thinking process:', error);
     }
+  }
+
+  // Método para detectar si un mensaje es un saludo simple
+  private async isGreetingMessage(message: string): Promise<boolean> {
+    try {
+      // Obtener keywords de saludo desde configuración
+      const greetingKeywords = await DatabaseService.getAIConfiguration('greeting_keywords');
+      if (!greetingKeywords) {
+        // Fallback keywords si no hay configuración
+        const fallbackKeywords = ['hola', 'hi', 'buenas', 'buenos', 'saludos', 'hey', 'hello', 'que tal'];
+        return this.checkGreetingKeywords(message, fallbackKeywords);
+      }
+      
+      const keywords = greetingKeywords.split(',').map(k => k.trim());
+      return this.checkGreetingKeywords(message, keywords);
+    } catch (error) {
+      logger.error('Error checking greeting message:', error);
+      // Fallback básico
+      return ['hola', 'hi', 'buenas', 'buenos'].some(keyword => 
+        message.toLowerCase().trim().includes(keyword)
+      );
+    }
+  }
+
+  private checkGreetingKeywords(message: string, keywords: string[]): boolean {
+    const normalizedMessage = message.toLowerCase().trim();
+    
+    // Verificar si el mensaje completo es exactamente un saludo
+    if (keywords.some(keyword => normalizedMessage === keyword)) {
+      return true;
+    }
+    
+    // Verificar si el mensaje empieza con un saludo y es corto (menos de 20 caracteres)
+    if (normalizedMessage.length <= 20) {
+      return keywords.some(keyword => normalizedMessage.startsWith(keyword));
+    }
+    
+    // Para mensajes más largos, ser más estricto
+    const words = normalizedMessage.split(/\s+/);
+    if (words.length <= 3) { // Solo hasta 3 palabras
+      return keywords.some(keyword => words.includes(keyword));
+    }
+    
+    return false;
   }
 }
 

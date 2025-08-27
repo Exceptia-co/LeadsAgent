@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Service Health Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(45deg, #2c3e50, #3498db);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            position: relative;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .refresh-indicator {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 20px;
+            font-size: 0.9em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .refresh-indicator .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top: 2px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .main-content {
+            padding: 30px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            border-left: 4px solid #007bff;
+            transition: transform 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+        }
+
+        .stat-card.healthy {
+            border-left-color: #28a745;
+        }
+
+        .stat-card.warning {
+            border-left-color: #ffc107;
+        }
+
+        .stat-card.error {
+            border-left-color: #dc3545;
+        }
+
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .section {
+            margin-bottom: 40px;
+        }
+
+        .section-title {
+            font-size: 1.5em;
+            margin-bottom: 20px;
+            color: #2c3e50;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .sessions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+
+        .session-card {
+            border: 1px solid #ddd;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .session-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+
+        .session-header {
+            padding: 15px 20px;
+            color: white;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .session-header.healthy {
+            background: linear-gradient(135deg, #28a745, #20c997);
+        }
+
+        .session-header.degraded {
+            background: linear-gradient(135deg, #ffc107, #fd7e14);
+        }
+
+        .session-header.unhealthy {
+            background: linear-gradient(135deg, #dc3545, #e83e8c);
+        }
+
+        .session-body {
+            padding: 20px;
+        }
+
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+        }
+
+        .metric-label {
+            color: #666;
+        }
+
+        .metric-value {
+            font-weight: bold;
+        }
+
+        .alerts-section {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .alert-item {
+            background: white;
+            border-left: 4px solid #007bff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .alert-item.low {
+            border-left-color: #17a2b8;
+        }
+
+        .alert-item.medium {
+            border-left-color: #ffc107;
+        }
+
+        .alert-item.high {
+            border-left-color: #fd7e14;
+        }
+
+        .alert-item.critical {
+            border-left-color: #dc3545;
+        }
+
+        .alert-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .alert-title {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .alert-severity {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            color: white;
+            text-transform: uppercase;
+        }
+
+        .alert-severity.low {
+            background: #17a2b8;
+        }
+
+        .alert-severity.medium {
+            background: #ffc107;
+        }
+
+        .alert-severity.high {
+            background: #fd7e14;
+        }
+
+        .alert-severity.critical {
+            background: #dc3545;
+        }
+
+        .alert-message {
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .alert-recommendation {
+            color: #28a745;
+            font-style: italic;
+            font-size: 0.9em;
+        }
+
+        .metrics-chart {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border: 1px solid #ddd;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: #dc3545;
+            background: #f8d7da;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        .status-indicator.healthy {
+            background: #28a745;
+            box-shadow: 0 0 5px #28a745;
+        }
+
+        .status-indicator.degraded {
+            background: #ffc107;
+            box-shadow: 0 0 5px #ffc107;
+        }
+
+        .status-indicator.unhealthy {
+            background: #dc3545;
+            box-shadow: 0 0 5px #dc3545;
+        }
+
+        .last-updated {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 10px;
+            }
+
+            .main-content {
+                padding: 20px;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .sessions-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📱 WhatsApp Service Health Dashboard</h1>
+            <p>Monitoreo en tiempo real de sesiones y salud del sistema</p>
+            <div class="refresh-indicator" id="refreshIndicator">
+                <div class="spinner"></div>
+                Actualizando...
+            </div>
+        </div>
+
+        <div class="main-content">
+            <!-- Estadísticas Generales -->
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card healthy">
+                    <div class="stat-value" id="totalSessions">-</div>
+                    <div class="stat-label">Sesiones Totales</div>
+                </div>
+                <div class="stat-card healthy">
+                    <div class="stat-value" id="healthySessions">-</div>
+                    <div class="stat-label">Sesiones Saludables</div>
+                </div>
+                <div class="stat-card warning">
+                    <div class="stat-value" id="degradedSessions">-</div>
+                    <div class="stat-label">Sesiones Degradadas</div>
+                </div>
+                <div class="stat-card error">
+                    <div class="stat-value" id="unhealthySessions">-</div>
+                    <div class="stat-label">Sesiones Problemáticas</div>
+                </div>
+            </div>
+
+            <!-- Alertas Activas -->
+            <div class="section">
+                <h2 class="section-title">🚨 Alertas Activas</h2>
+                <div class="alerts-section" id="alertsSection">
+                    <div class="loading">Cargando alertas...</div>
+                </div>
+            </div>
+
+            <!-- Estado de Sesiones -->
+            <div class="section">
+                <h2 class="section-title">📊 Estado de Sesiones</h2>
+                <div class="sessions-grid" id="sessionsGrid">
+                    <div class="loading">Cargando sesiones...</div>
+                </div>
+            </div>
+
+            <!-- Métricas del Sistema -->
+            <div class="section">
+                <h2 class="section-title">📈 Métricas del Sistema</h2>
+                <div class="metrics-chart" id="metricsChart">
+                    <div class="loading">Cargando métricas...</div>
+                </div>
+            </div>
+
+            <div class="last-updated" id="lastUpdated">
+                Última actualización: -
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class HealthDashboard {
+            constructor() {
+                this.refreshInterval = 10000; // 10 segundos
+                this.isRefreshing = false;
+                this.init();
+            }
+
+            init() {
+                this.loadData();
+                this.startAutoRefresh();
+            }
+
+            async loadData() {
+                if (this.isRefreshing) return;
+                
+                this.isRefreshing = true;
+                this.showRefreshIndicator();
+
+                try {
+                    // Cargar datos en paralelo
+                    const [overview, alerts, sessions, metrics] = await Promise.all([
+                        this.fetchHealthOverview(),
+                        this.fetchActiveAlerts(),
+                        this.fetchSessionsHealth(),
+                        this.fetchSystemMetrics()
+                    ]);
+
+                    this.updateStats(overview);
+                    this.updateAlerts(alerts);
+                    this.updateSessions(sessions);
+                    this.updateMetrics(metrics);
+                    this.updateLastUpdated();
+
+                } catch (error) {
+                    console.error('Error loading dashboard data:', error);
+                    this.showError('Error cargando datos del dashboard');
+                } finally {
+                    this.isRefreshing = false;
+                    this.hideRefreshIndicator();
+                }
+            }
+
+            async fetchHealthOverview() {
+                const response = await fetch('/health/overview');
+                if (!response.ok) throw new Error('Failed to fetch health overview');
+                return await response.json();
+            }
+
+            async fetchActiveAlerts() {
+                const response = await fetch('/health/alerts');
+                if (!response.ok) throw new Error('Failed to fetch alerts');
+                return await response.json();
+            }
+
+            async fetchSessionsHealth() {
+                const response = await fetch('/health/sessions');
+                if (!response.ok) throw new Error('Failed to fetch sessions');
+                return await response.json();
+            }
+
+            async fetchSystemMetrics() {
+                const response = await fetch('/health/metrics');
+                if (!response.ok) throw new Error('Failed to fetch metrics');
+                return await response.json();
+            }
+
+            updateStats(overview) {
+                const data = overview.data || {};
+                const overviewData = data.overview || {};
+                const summary = data.summary || {};
+                
+                document.getElementById('totalSessions').textContent = summary.totalSessions || 0;
+                document.getElementById('healthySessions').textContent = overviewData.healthySessions || 0;
+                document.getElementById('degradedSessions').textContent = overviewData.warningSessions || 0;
+                document.getElementById('unhealthySessions').textContent = (overviewData.criticalSessions || 0) + (overviewData.offlineSessions || 0);
+
+                // Update card colors based on health
+                this.updateStatCardColor('healthySessions', (overviewData.healthySessions || 0) > 0 ? 'healthy' : 'error');
+                this.updateStatCardColor('degradedSessions', (overviewData.warningSessions || 0) > 0 ? 'warning' : 'healthy');
+                this.updateStatCardColor('unhealthySessions', ((overviewData.criticalSessions || 0) + (overviewData.offlineSessions || 0)) > 0 ? 'error' : 'healthy');
+            }
+
+            updateStatCardColor(elementId, status) {
+                const card = document.getElementById(elementId).closest('.stat-card');
+                card.className = `stat-card ${status}`;
+            }
+
+            updateAlerts(alertsResponse) {
+                const container = document.getElementById('alertsSection');
+                const alertsData = alertsResponse.data || {};
+                const alerts = alertsData.alerts || [];
+                
+                if (!alerts || alerts.length === 0) {
+                    container.innerHTML = '<div style="text-align: center; padding: 20px; color: #28a745;">✅ No hay alertas activas</div>';
+                    return;
+                }
+
+                const alertsHtml = alerts.map(alert => `
+                    <div class="alert-item ${alert.severity}">
+                        <div class="alert-header">
+                            <div class="alert-title">${alert.sessionId} - ${alert.type}</div>
+                            <div class="alert-severity ${alert.severity}">${alert.severity}</div>
+                        </div>
+                        <div class="alert-message">${alert.message}</div>
+                        ${alert.recommendation ? `<div class="alert-recommendation">💡 ${alert.recommendation}</div>` : ''}
+                    </div>
+                `).join('');
+
+                container.innerHTML = alertsHtml;
+            }
+
+            updateSessions(sessionsResponse) {
+                const container = document.getElementById('sessionsGrid');
+                const sessionsData = sessionsResponse.data || {};
+                const sessions = sessionsData.sessions || [];
+                
+                if (!sessions || sessions.length === 0) {
+                    container.innerHTML = '<div class="loading">No hay sesiones disponibles</div>';
+                    return;
+                }
+
+                const sessionsHtml = sessions.map(session => {
+                    const metrics = session.metrics || {};
+                    const status = session.status || 'unknown';
+                    
+                    // Map status names for styling
+                    let statusClass = status;
+                    if (status === 'warning') statusClass = 'degraded';
+                    if (status === 'critical' || status === 'offline') statusClass = 'unhealthy';
+                    
+                    return `
+                        <div class="session-card">
+                            <div class="session-header ${statusClass}">
+                                <div>
+                                    <span class="status-indicator ${statusClass}"></span>
+                                    ${session.sessionId}
+                                </div>
+                                <div>${status.toUpperCase()}</div>
+                            </div>
+                            <div class="session-body">
+                                <div class="metric-row">
+                                    <span class="metric-label">Conectado:</span>
+                                    <span class="metric-value">${metrics.isConnected ? 'Sí' : 'No'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Autenticado:</span>
+                                    <span class="metric-value">${metrics.isAuthenticated ? 'Sí' : 'No'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Última Verificación:</span>
+                                    <span class="metric-value">${this.formatTimestamp(session.lastCheck)}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Tiempo Activo:</span>
+                                    <span class="metric-value">${metrics.uptime ? metrics.uptime + ' min' : 'N/A'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Latencia:</span>
+                                    <span class="metric-value">${metrics.responseTime ? metrics.responseTime + ' ms' : 'N/A'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Archivos Auth:</span>
+                                    <span class="metric-value">${metrics.authFileHealth || 'Desconocido'}</span>
+                                </div>
+                                <div class="metric-row">
+                                    <span class="metric-label">Mensajes (24h):</span>
+                                    <span class="metric-value">↑${metrics.messageActivity?.sent24h || 0} ↓${metrics.messageActivity?.received24h || 0}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                container.innerHTML = sessionsHtml;
+            }
+
+            updateMetrics(metricsResponse) {
+                const container = document.getElementById('metricsChart');
+                const metricsData = metricsResponse.data || {};
+                const metrics = metricsData.metrics || {};
+                
+                if (!metricsData) {
+                    container.innerHTML = '<div class="loading">No hay métricas disponibles</div>';
+                    return;
+                }
+
+                const metricsHtml = `
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value">${metrics.whatsapp_health_score_percentage || 0}%</div>
+                            <div class="stat-label">Score de Salud</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${Math.round(metrics.whatsapp_average_response_time_ms || 0)} ms</div>
+                            <div class="stat-label">Tiempo de Respuesta</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${metrics.whatsapp_active_alerts_total || 0}</div>
+                            <div class="stat-label">Alertas Activas</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${(metrics.whatsapp_response_time_fast || 0) + (metrics.whatsapp_response_time_normal || 0)}</div>
+                            <div class="stat-label">Conexiones Rápidas</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${metrics.whatsapp_auth_files_valid || 0}</div>
+                            <div class="stat-label">Archivos Auth Válidos</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${(metrics.whatsapp_auth_files_corrupted || 0) + (metrics.whatsapp_auth_files_missing || 0)}</div>
+                            <div class="stat-label">Auth con Problemas</div>
+                        </div>
+                    </div>
+                `;
+
+                container.innerHTML = metricsHtml;
+            }
+
+            formatTimestamp(timestamp) {
+                if (!timestamp) return 'Nunca';
+                const date = new Date(timestamp);
+                return date.toLocaleString('es-ES');
+            }
+
+            formatUptime(seconds) {
+                if (!seconds) return 'N/A';
+                
+                const days = Math.floor(seconds / 86400);
+                const hours = Math.floor((seconds % 86400) / 3600);
+                const minutes = Math.floor((seconds % 3600) / 60);
+                
+                if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+                if (hours > 0) return `${hours}h ${minutes}m`;
+                return `${minutes}m`;
+            }
+
+            updateLastUpdated() {
+                const now = new Date();
+                document.getElementById('lastUpdated').textContent = 
+                    `Última actualización: ${now.toLocaleString('es-ES')}`;
+            }
+
+            showError(message) {
+                const errorHtml = `<div class="error">${message}</div>`;
+                document.getElementById('alertsSection').innerHTML = errorHtml;
+            }
+
+            showRefreshIndicator() {
+                document.getElementById('refreshIndicator').style.display = 'flex';
+            }
+
+            hideRefreshIndicator() {
+                document.getElementById('refreshIndicator').style.display = 'none';
+            }
+
+            startAutoRefresh() {
+                setInterval(() => {
+                    if (!this.isRefreshing) {
+                        this.loadData();
+                    }
+                }, this.refreshInterval);
+            }
+        }
+
+        // Initialize dashboard when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new HealthDashboard();
+        });
+    </script>
+</body>
+</html>
