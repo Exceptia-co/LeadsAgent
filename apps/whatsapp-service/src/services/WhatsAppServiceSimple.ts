@@ -47,7 +47,7 @@ class WhatsAppServiceSimple {
       const client = new Client({
         authStrategy: new LocalAuth({
           clientId: sessionId,
-          dataPath: './sessions'
+          dataPath: './wwebjs_auth' // Directorio persistente para autenticación
         }),
         puppeteer: {
           headless: process.env.PUPPETEER_HEADLESS === 'true' || process.env.NODE_ENV === 'production',

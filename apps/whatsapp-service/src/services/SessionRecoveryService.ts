@@ -155,7 +155,7 @@ export class SessionRecoveryService {
           sessionId,
           'recovering',
           { 
-            lastError: null,
+            lastError: undefined,
             metadata: { 
               ...sessionData.metadata,
               lastRecovery: new Date().toISOString()

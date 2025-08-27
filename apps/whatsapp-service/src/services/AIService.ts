@@ -273,17 +273,44 @@ INFORMACIÓN DE LA EMPRESA:
 - Acceso: Solo mayores de 18 años
 
 PRODUCTOS Y PRECIOS QUE DEBES PROMOCIONAR:
-🔥 **ANUNCIO DOBLE**: Mayor visibilidad (1 día: 20 HUB, 5 días: 85 HUB, 10 días: 150 HUB)
-⭐ **ANUNCIO TOP**: Posición superior (3 días: 85 HUB, 7 días: 125 HUB, 30 días: 450 HUB)
-💎 **ANUNCIO DOBLE TOP**: Máxima exposición (7 días: 250 HUB, 30 días: 900 HUB) - ¡PRODUCTO PREMIUM!
-🚀 **DISPONIBLE AHORA**: Disponibilidad inmediata (25 unidades: 100 HUB)
-📱 **HISTORIAS**: Contenido dinámico (5 unidades: 60 HUB)
 
-PAQUETES DE MONEDAS (PROMOCIONA ESPECIALMENTE EL PLUS):
-• 🥉 Básico: 100 HUB - 80€ (0,80€/moneda)
-• 🥈 Estándar: 200 HUB - 150€ (0,75€/moneda)
-• 🥇 Plus: 500 HUB - 300€ (0,60€/moneda) **¡MEJOR PRECIO!**
-• 💎 Premium: 1,000 HUB - 700€ (0,70€/moneda)
+🔥 **ANUNCIO DOBLE** (Base: 11 monedas HUB)
+• 1 día: 20 monedas HUB
+• 5 días: 85 monedas HUB  
+• 10 días: 150 monedas HUB
+
+⭐ **ANUNCIO TOP** (Base: 28 monedas HUB)
+• 3 días: 85 monedas HUB
+• 7 días: 125 monedas HUB
+• 10 días: 165 monedas HUB
+• 30 días: 450 monedas HUB
+
+💎 **ANUNCIO DOBLE TOP** (Base: 59 monedas HUB) - ¡PRODUCTO PREMIUM!
+• 3 días: 170 monedas HUB
+• 7 días: 250 monedas HUB
+• 10 días: 330 monedas HUB
+• 30 días: 900 monedas HUB
+
+🚀 **DISPONIBLE AHORA** (Base: 100 monedas HUB)
+• 10 unidades: 40 monedas HUB
+• 25 unidades: 100 monedas HUB
+• 100 unidades: 400 monedas HUB
+
+📱 **HISTORIAS** (Base: 7 monedas HUB)
+• 1 unidad: 12 monedas HUB
+• 5 unidades: 60 monedas HUB
+• 10 unidades: 110 monedas HUB
+
+🔄 **REACTIVACIÓN** (Base: 10 monedas HUB)
+• 1 unidad: 25 monedas HUB
+• 5 unidades: 115 monedas HUB
+• 10 unidades: 215 monedas HUB
+
+PAQUETES DE MONEDAS HUB (PROMOCIONA ESPECIALMENTE EL PLUS):
+• 🥉 Paquete Básico: 100 HUB por 80,00 EUR (0,80€/moneda)
+• 🥈 Paquete Estándar: 200 HUB por 150,00 EUR (0,75€/moneda)
+• 🥇 Paquete Plus: 500 HUB por 300,00 EUR (0,60€/moneda) **¡MEJOR PRECIO!**
+• 💎 Paquete Premium: 1.000 HUB por 700,00 EUR (0,70€/moneda)
 
 ESTRATEGIA DE VENTAS:
 - Siempre sugiere el Paquete Plus como la mejor relación calidad-precio

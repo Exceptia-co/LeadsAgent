@@ -1011,24 +1011,47 @@ class AIThinkingService {
     intentAnalysis: IntentAnalysis
   ): string {
     let adjustedResponse = response;
+
+    // Log inicial para diagnóstico de preservación de números
+    logger.debug('AIThinking.applyStrategyToResponse: before', {
+      sample: adjustedResponse.slice(0, 200)
+    });
     
-    // Aplicar longitud
-    if (strategy.length === 'brief' && response.length > 200) {
-      // Truncar si es muy largo
-      const sentences = response.split('.').filter(s => s.trim());
-      adjustedResponse = sentences.slice(0, 2).join('.') + '.';
+    // Aplicar longitud con truncamiento seguro que preserva números claves
+    if (strategy.length === 'brief' && adjustedResponse.length > 200) {
+      // Intentar truncar por párrafos o saltos de línea primero
+      const paragraphs = adjustedResponse.split(/\n\n+/);
+      if (paragraphs.length > 1) {
+        adjustedResponse = paragraphs.slice(0, 2).join('\n\n');
+      } else {
+        // Truncar por oraciones pero evitando cortar números o unidades
+        const sentences = adjustedResponse.split(/(?<=[.!?])\s+/).filter(s => s.trim());
+        adjustedResponse = sentences.slice(0, 2).join(' ');
+      }
     }
     
     // Aplicar emojis según estrategia
     if (!strategy.shouldUseEmojis) {
-      // Eliminar emojis con expresión regular segura
-      adjustedResponse = adjustedResponse.replace(/\p{Emoji}/gu, '');
+      // Eliminar solo rangos Unicode de emojis conocidos manteniendo números y símbolos
+      // Rango Emoticons, Símbolos misceláneos, Transporte/Mapas, Banderas regionales, etc.
+      const emojiRegex = /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E6}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu;
+      adjustedResponse = adjustedResponse.replace(emojiRegex, '');
     }
+
+    // Log después de limpieza de emojis
+    logger.debug('AIThinking.applyStrategyToResponse: afterEmoji', {
+      sample: adjustedResponse.slice(0, 200)
+    });
     
     // Añadir llamadas a la acción según el tono
     if (strategy.tone === 'sales' && !adjustedResponse.includes('?')) {
       adjustedResponse += '\n\n¿Te gustaría que te ayude con algo más específico?';
     }
+
+    // Log final
+    logger.debug('AIThinking.applyStrategyToResponse: final', {
+      sample: adjustedResponse.slice(0, 200)
+    });
     
     return adjustedResponse;
   }
