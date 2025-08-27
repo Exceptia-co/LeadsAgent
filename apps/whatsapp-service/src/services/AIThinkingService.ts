@@ -791,24 +791,55 @@ class AIThinkingService {
     context: EnrichedContext
   ): Promise<IntentAnalysis> {
     try {
-      // Usar el análisis existente de AIService como base
+      // 1. ANÁLISIS DE COMPLEJIDAD DEL MENSAJE
+      const complexityAnalysis = this.getMessageComplexity(message);
+      
+      // 2. Para saludos simples, usar análisis simplificado y optimizado
+      if (complexityAnalysis.complexity === 'simple_greeting') {
+        return {
+          intent: 'saludo',
+          confidence: complexityAnalysis.confidence,
+          entities: {},
+          sentiment: 'positive',
+          urgency: 'low',
+          category: 'social',
+          subcategory: 'simple_greeting'
+        };
+      }
+      
+      // 3. Para otros casos, usar análisis completo de AIService
       const baseAnalysis = await AIService.analyzeIntent(message);
       
-      // Mejorar el análisis con contexto adicional
+      // 4. Mejorar el análisis con contexto adicional y complejidad
       const enhanced: IntentAnalysis = {
         intent: baseAnalysis.intent || 'general',
-        confidence: baseAnalysis.confidence || 0.5,
+        confidence: Math.max(baseAnalysis.confidence || 0.5, complexityAnalysis.confidence * 0.8),
         entities: baseAnalysis.entities || {},
         sentiment: baseAnalysis.sentiment || 'neutral',
         urgency: this.detectUrgency(message),
         category: this.categorizeIntent(baseAnalysis.intent || 'general'),
-        subcategory: this.getSubcategory(message, baseAnalysis.intent || 'general')
+        subcategory: this.getSubcategory(message, baseAnalysis.intent || 'general') || complexityAnalysis.complexity
       };
 
-      // Ajustar confianza basado en contexto
+      // 5. Ajustar confianza basado en contexto y complejidad
       if (context.messageHistory.length > 0) {
         enhanced.confidence = Math.min(enhanced.confidence + 0.1, 1.0);
       }
+      
+      // Para consultas específicas, aumentar confianza
+      if (complexityAnalysis.complexity === 'specific_query') {
+        enhanced.confidence = Math.min(enhanced.confidence + 0.15, 0.95);
+      }
+      
+      // Log del análisis de complejidad para debugging
+      logger.debug('Análisis de complejidad:', {
+        message: message.substring(0, 50),
+        complexity: complexityAnalysis.complexity,
+        confidence: complexityAnalysis.confidence,
+        reasoning: complexityAnalysis.reasoning,
+        finalIntent: enhanced.intent,
+        finalConfidence: enhanced.confidence
+      });
 
       return enhanced;
     } catch (error) {
@@ -1005,23 +1036,22 @@ class AIThinkingService {
     const isGreeting = await this.isGreetingMessage(context.messageText || '');
     
     if (isGreeting) {
-      // Para saludos, usar prompt simplificado
-      contextualPrompt += `\n\n🎯 INSTRUCCIÓN: SALUDO BREVE Y NATURAL\n`;
-      contextualPrompt += `IMPORTANTE: Responde con un saludo cálido pero breve. Presenta EscortsHub.net de forma simple y pregunta cómo puedes ayudar.\n`;
-      contextualPrompt += `MÁXIMO 2 líneas. Sé natural y amigable.\n\n`;
+      // Para saludos, usar prompt ULTRA-SIMPLIFICADO
+      contextualPrompt += `\n\n🎯 INSTRUCCIÓN: SALUDO ULTRA-BREVE\n`;
+      contextualPrompt += `RESPUESTA EXACTA: Máximo 15 palabras. Solo saludo + presentación + pregunta simple.\n`;
       
       if (context.contactName) {
-        contextualPrompt += `Nombre del usuario: ${context.contactName}\n\n`;
+        contextualPrompt += `Usuario: ${context.contactName}\n`;
       }
       
-      contextualPrompt += `Ejemplo de respuesta: "¡Hola! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte hoy?"\n\n`;
+      contextualPrompt += `RESPUESTA MODELO: "¡Hola! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte?"\n\n`;
       return contextualPrompt;
     }
     
-    // Para otros tipos de mensajes, usar prompt muy conciso
-    contextualPrompt += `\n\n🎯 INSTRUCCIÓN ESTRICTA: RESPUESTA MUY BREVE Y SIMPLE\n`;
-    contextualPrompt += `OBLIGATORIO: Máximo 80-100 palabras. SIN tablas. SIN listas largas. SIN secciones múltiples. `;
-    contextualPrompt += `Responde SOLO lo que se pregunta, de forma conversacional y simple.\n\n`;
+    // Para otros tipos de mensajes, usar prompt ULTRA-CONCISO
+    contextualPrompt += `\n\n🎯 INSTRUCCIÓN CRÍTICA: RESPUESTA CONVERSACIONAL BREVE\n`;
+    contextualPrompt += `LÍMITE ABSOLUTO: 60 palabras máximo. Formato WhatsApp natural. `;
+    contextualPrompt += `Responde SOLO lo preguntado + una pregunta final.\n\n`;
     
     // Añadir contexto de intención
     contextualPrompt += `CONTEXTO ACTUAL:\n`;
@@ -1060,23 +1090,19 @@ class AIThinkingService {
     contextualPrompt += `\n📝 FORMATO DE RESPUESTA:\n`;
     
     if (intentAnalysis.intent.includes('precio') || intentAnalysis.intent.includes('product')) {
-      contextualPrompt += `
-Respuesta SIMPLE: Solo menciona 2-3 precios principales, sistema HUB básico (1 HUB ≈ 0.60€), paquete recomendado y enlace si necesario.`;
+      contextualPrompt += `\n📝 FORMATO PRECIO: Paquete Plus (500 HUB/300€) = mejor precio. [1 producto específico]. ¿Te interesa? MAX 40 palabras.`;
     } else if (intentAnalysis.intent.includes('registro')) {
-      contextualPrompt += `
-Respuesta SIMPLE: Registro GRATUITO en https://escortshub.net/register. Menciona pasos básicos y pregunta si necesita ayuda.`;
+      contextualPrompt += `\n📝 FORMATO REGISTRO: "Gratis en https://www.escortshub.net/es/sign-up. Solo pagas productos que actives. ¿Te ayudo?" MAX 25 palabras.`;
     } else {
-      contextualPrompt += `
-Respuesta SIMPLE: Responde solo lo preguntado con información del conocimiento. Termina con una pregunta.`;
+      contextualPrompt += `\n📝 FORMATO GENERAL: Respuesta directa en 30-40 palabras + pregunta final. Nada más.`;
     }
     
-    contextualPrompt += `\n\n⚡ REGLAS ULTRA ESTRICTAS:\n`;
-    contextualPrompt += `- MÁXIMO 60-80 palabras TOTAL\n`;
-    contextualPrompt += `- SIN tablas, SIN listas largas, SIN secciones múltiples\n`;
-    contextualPrompt += `- SIN repetir información, SIN introducciones largas\n`;
-    contextualPrompt += `- Formato conversacional como mensaje de WhatsApp\n`;
-    contextualPrompt += `- SIEMPRE EscortsHub.net (nunca .com)\n`;
-    contextualPrompt += `- UNA pregunta final corta\n`;
+    contextualPrompt += `\n\n⚡ REGLAS ABSOLUTAS:\n`;
+    contextualPrompt += `- MÁXIMO 50 palabras TOTAL\n`;
+    contextualPrompt += `- CERO tablas, CERO listas, CERO secciones\n`;
+    contextualPrompt += `- Mensaje WhatsApp natural y directo\n`;
+    contextualPrompt += `- SIEMPRE EscortsHub.net/es/sign-up para registro\n`;
+    contextualPrompt += `- Terminar con UNA pregunta corta\n`;
     
     return contextualPrompt;
   }
@@ -1088,48 +1114,170 @@ Respuesta SIMPLE: Responde solo lo preguntado con información del conocimiento.
   ): string {
     let adjustedResponse = response;
 
-    // Log inicial para diagnóstico de preservación de números
-    logger.debug('AIThinking.applyStrategyToResponse: before', {
-      sample: adjustedResponse.slice(0, 200)
+    // Log inicial para diagnóstico
+    logger.debug('AIThinking.applyStrategyToResponse: original', {
+      length: adjustedResponse.length,
+      wordCount: adjustedResponse.split(' ').length,
+      sample: adjustedResponse.slice(0, 100)
     });
     
-    // Aplicar longitud con truncamiento seguro que preserva números claves
-    if (strategy.length === 'brief' && adjustedResponse.length > 200) {
-      // Intentar truncar por párrafos o saltos de línea primero
-      const paragraphs = adjustedResponse.split(/\n\n+/);
-      if (paragraphs.length > 1) {
-        adjustedResponse = paragraphs.slice(0, 2).join('\n\n');
-      } else {
-        // Truncar por oraciones pero evitando cortar números o unidades
-        const sentences = adjustedResponse.split(/(?<=[.!?])\s+/).filter(s => s.trim());
-        adjustedResponse = sentences.slice(0, 2).join(' ');
-      }
+    // 1. APLICAR LÍMITES ESTRICTOS DE PALABRAS SEGÚN INTENCIÓN
+    const wordLimits = {
+      'saludo': 15,
+      'greeting': 15,
+      'precio': 40,
+      'pricing_inquiry': 40,
+      'producto': 50,
+      'product_inquiry': 50,
+      'registro': 25,
+      'general': 60
+    };
+    
+    const maxWords = wordLimits[intentAnalysis.intent] || 60;
+    const words = adjustedResponse.split(/\s+/);
+    
+    if (words.length > maxWords) {
+      // Truncamiento inteligente preservando información clave
+      adjustedResponse = this.intelligentTruncate(adjustedResponse, maxWords, intentAnalysis.intent);
     }
     
-    // Aplicar emojis según estrategia
+    // 2. ELIMINAR SECCIONES PROMOCIONALES EXCESIVAS
+    adjustedResponse = this.removeExcessivePromotions(adjustedResponse);
+    
+    // 3. LIMPIAR TABLAS Y LISTAS LARGAS
+    adjustedResponse = this.removeTablesAndLists(adjustedResponse);
+    
+    // 4. ASEGURAR PREGUNTA FINAL
+    adjustedResponse = this.ensureFinalQuestion(adjustedResponse, intentAnalysis.intent);
+    
+    // 5. APLICAR EMOJIS SEGÚN ESTRATEGIA
     if (!strategy.shouldUseEmojis) {
-      // Eliminar solo rangos Unicode de emojis conocidos manteniendo números y símbolos
-      // Rango Emoticons, Símbolos misceláneos, Transporte/Mapas, Banderas regionales, etc.
       const emojiRegex = /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E6}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu;
       adjustedResponse = adjustedResponse.replace(emojiRegex, '');
     }
-
-    // Log después de limpieza de emojis
-    logger.debug('AIThinking.applyStrategyToResponse: afterEmoji', {
-      sample: adjustedResponse.slice(0, 200)
-    });
     
-    // Añadir llamadas a la acción según el tono
-    if (strategy.tone === 'sales' && !adjustedResponse.includes('?')) {
-      adjustedResponse += '\n\n¿Te gustaría que te ayude con algo más específico?';
-    }
+    // 6. VALIDACIÓN FINAL DE LONGITUD
+    adjustedResponse = this.validateFinalLength(adjustedResponse, maxWords);
 
     // Log final
-    logger.debug('AIThinking.applyStrategyToResponse: final', {
-      sample: adjustedResponse.slice(0, 200)
+    logger.debug('AIThinking.applyStrategyToResponse: processed', {
+      originalLength: response.length,
+      finalLength: adjustedResponse.length,
+      originalWords: response.split(' ').length,
+      finalWords: adjustedResponse.split(' ').length,
+      maxWords,
+      sample: adjustedResponse
     });
     
     return adjustedResponse;
+  }
+  
+  /**
+   * Truncamiento inteligente que preserva información clave
+   */
+  private intelligentTruncate(text: string, maxWords: number, intent: string): string {
+    const words = text.split(/\s+/);
+    
+    if (words.length <= maxWords) {
+      return text;
+    }
+    
+    // Para saludos, usar template fijo
+    if (intent === 'saludo' || intent === 'greeting') {
+      return '¡Hola! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte?';
+    }
+    
+    // Para otros casos, truncar inteligentemente
+    let truncated = words.slice(0, maxWords - 5).join(' '); // Reservar 5 palabras para pregunta
+    
+    // Añadir pregunta apropiada según intención
+    if (intent.includes('precio')) {
+      truncated += '. ¿Te interesa algún paquete?';
+    } else if (intent.includes('producto')) {
+      truncated += '. ¿Necesitas más información?';
+    } else if (intent.includes('registro')) {
+      truncated += '. ¿Te ayudo con el registro?';
+    } else {
+      truncated += '. ¿Te ayudo con algo más?';
+    }
+    
+    return truncated;
+  }
+  
+  /**
+   * Eliminar promociones excesivas y redundantes
+   */
+  private removeExcessivePromotions(text: string): string {
+    // Eliminar secciones con múltiples bullet points
+    text = text.replace(/([•\-*]\s+.+\n){3,}/g, '');
+    
+    // Eliminar texto entre ### o ** repetitivos
+    text = text.replace(/(\*\*[^*]+\*\*\s*\n){2,}/g, '');
+    
+    // Eliminar secciones "SIEMPRE", "NUNCA", etc.
+    text = text.replace(/\n\n(SIEMPRE|NUNCA|IMPORTANTE|NOTA):.*$/gm, '');
+    
+    return text;
+  }
+  
+  /**
+   * Eliminar tablas y listas largas
+   */
+  private removeTablesAndLists(text: string): string {
+    // Eliminar tablas markdown
+    text = text.replace(/\|[\s\S]*?\|/g, '');
+    
+    // Eliminar listas largas (más de 3 items)
+    text = text.replace(/(([•\-*]\s+.+\n){4,})/g, '');
+    
+    // Eliminar secciones numeradas largas
+    text = text.replace(/(\d+\.\s+.+\n){3,}/g, '');
+    
+    return text;
+  }
+  
+  /**
+   * Asegurar que hay una pregunta al final
+   */
+  private ensureFinalQuestion(text: string, intent: string): string {
+    // Si ya tiene pregunta, mantener
+    if (text.includes('?')) {
+      return text;
+    }
+    
+    // Añadir pregunta apropiada
+    const questions = {
+      'saludo': ' ¿En qué puedo ayudarte?',
+      'greeting': ' ¿En qué puedo ayudarte?',
+      'precio': ' ¿Te interesa algún paquete?',
+      'pricing_inquiry': ' ¿Te interesa algún paquete?',
+      'producto': ' ¿Necesitas más información?',
+      'product_inquiry': ' ¿Necesitas más información?',
+      'registro': ' ¿Te ayudo con el registro?',
+      'general': ' ¿Te ayudo con algo más?'
+    };
+    
+    const question = questions[intent] || ' ¿En qué más puedo ayudarte?';
+    
+    // Asegurar que no termine con punto antes de la pregunta
+    text = text.replace(/\.$/, '');
+    
+    return text + question;
+  }
+  
+  /**
+   * Validación final de longitud
+   */
+  private validateFinalLength(text: string, maxWords: number): string {
+    const words = text.split(/\s+/);
+    
+    if (words.length <= maxWords) {
+      return text;
+    }
+    
+    // Truncamiento de emergencia
+    const truncated = words.slice(0, maxWords - 3).join(' ');
+    return truncated + '... ¿Te ayudo?';
   }
 
   private async saveThinkingProcess(
@@ -1152,7 +1300,9 @@ Respuesta SIMPLE: Responde solo lo preguntado con información del conocimiento.
     }
   }
 
-  // Método para detectar si un mensaje es un saludo simple
+  /**
+   * Detectar si un mensaje es un saludo simple
+   */
   private async isGreetingMessage(message: string): Promise<boolean> {
     try {
       // Obtener keywords de saludo desde configuración
@@ -1171,6 +1321,97 @@ Respuesta SIMPLE: Responde solo lo preguntado con información del conocimiento.
       return ['hola', 'hi', 'buenas', 'buenos'].some(keyword => 
         message.toLowerCase().trim().includes(keyword)
       );
+    }
+  }
+  
+  /**
+   * Determinar la complejidad del mensaje para optimizar respuestas
+   */
+  private getMessageComplexity(message: string, intentAnalysis?: IntentAnalysis): {
+    complexity: 'simple_greeting' | 'specific_query' | 'general_inquiry',
+    confidence: number,
+    reasoning: string
+  } {
+    try {
+      const normalizedMessage = message.toLowerCase().trim();
+      const wordCount = normalizedMessage.split(/\s+/).length;
+      const messageLength = normalizedMessage.length;
+      
+      // 1. SALUDOS SIMPLES (mayor prioridad)
+      const greetingKeywords = ['hola', 'hi', 'buenas', 'buenos días', 'buenas tardes', 'hey', 'hello', 'saludos'];
+      const isExactGreeting = greetingKeywords.some(keyword => normalizedMessage === keyword);
+      const startsWithGreeting = greetingKeywords.some(keyword => normalizedMessage.startsWith(keyword));
+      
+      if (isExactGreeting) {
+        return {
+          complexity: 'simple_greeting',
+          confidence: 0.95,
+          reasoning: 'Saludo exacto detectado'
+        };
+      }
+      
+      if (startsWithGreeting && wordCount <= 3 && messageLength <= 20) {
+        return {
+          complexity: 'simple_greeting',
+          confidence: 0.9,
+          reasoning: 'Saludo simple con pocas palabras'
+        };
+      }
+      
+      // 2. CONSULTAS ESPECÍFICAS (productos, precios, servicios)
+      const specificKeywords = {
+        precio: ['precio', 'cuesta', 'costo', 'coste', 'tarifa', 'paquete', 'plan'],
+        producto: ['servicio', 'anuncio', 'destacado', 'premium', 'vip', 'top'],
+        registro: ['registrar', 'cuenta', 'alta', 'sign up', 'crear'],
+        tecnico: ['error', 'problema', 'fallo', 'no funciona', 'bug']
+      };
+      
+      let specificMatches = 0;
+      let matchedCategory = '';
+      
+      for (const [category, keywords] of Object.entries(specificKeywords)) {
+        const matches = keywords.filter(keyword => normalizedMessage.includes(keyword));
+        if (matches.length > 0) {
+          specificMatches += matches.length;
+          matchedCategory = category;
+        }
+      }
+      
+      if (specificMatches > 0) {
+        return {
+          complexity: 'specific_query',
+          confidence: Math.min(0.7 + (specificMatches * 0.1), 0.9),
+          reasoning: `Consulta específica sobre ${matchedCategory} detectada`
+        };
+      }
+      
+      // 3. CONSULTAS GENERALES (preguntas abiertas, información general)
+      const questionWords = ['qué', 'cómo', 'cuándo', 'dónde', 'por qué', 'cuál', 'quién'];
+      const hasQuestionWords = questionWords.some(word => normalizedMessage.includes(word));
+      const hasQuestionMark = message.includes('?');
+      
+      if (hasQuestionWords || hasQuestionMark || wordCount > 5) {
+        return {
+          complexity: 'general_inquiry',
+          confidence: 0.6 + (wordCount > 10 ? 0.2 : 0),
+          reasoning: 'Consulta general o pregunta abierta'
+        };
+      }
+      
+      // 4. FALLBACK - Si no encaja en las categorías anteriores
+      return {
+        complexity: 'general_inquiry',
+        confidence: 0.5,
+        reasoning: 'Mensaje no categorizado, tratado como consulta general'
+      };
+      
+    } catch (error) {
+      logger.error('Error determinando complejidad del mensaje:', error);
+      return {
+        complexity: 'general_inquiry',
+        confidence: 0.3,
+        reasoning: 'Error en análisis, usando fallback'
+      };
     }
   }
 

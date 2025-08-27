@@ -31,6 +31,40 @@ class AIService {
   private openrouter: OpenAI | null = null;
   private gemini: GoogleGenerativeAI | null = null;
   private currentProvider: 'openrouter' | 'gemini';
+  
+  // Templates predefinidos para respuestas rápidas y consistentes
+  private static templates = {
+    greeting: [
+      '¡Hola! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte?',
+      'Hola 😊 Bienvenido/a a EscortsHub.net. ¿Cómo te puedo ayudar?',
+      '¡Hola! Soy el asistente virtual de EscortsHub.net. ¿Qué necesitas?'
+    ],
+    pricing: [
+      'El paquete Plus (500 HUB por 300€) es el más popular y rentable. ¿Te interesa?',
+      'Paquete Basic (100 HUB/80€) o Plus (500 HUB/300€). ¿Cuál prefieres?',
+      'Tenemos paquetes desde 80€. Plus (500 HUB/300€) es el mejor valor. ¿Te conviene?'
+    ],
+    products: [
+      'Ofrecemos publicidad premium y destacados para escorts. ¿Qué necesitas?',
+      'Tenemos anuncios VIP, destacados y premium. ¿Te interesa alguno específico?',
+      'Servicios de publicidad para escorts: VIP, destacados y más. ¿Cuál te conviene?'
+    ],
+    registration: [
+      'Registro gratis en https://www.escortshub.net/es/sign-up. Solo pagas lo que uses. ¿Te ayudo?',
+      'Gratis registrarse en https://www.escortshub.net/es/sign-up. ¿Necesitas ayuda con algo específico?',
+      'Crear cuenta es gratis: https://www.escortshub.net/es/sign-up. ¿Tienes dudas sobre el proceso?'
+    ],
+    technical: [
+      'Para soporte técnico detallado, mejor contacta a nuestro equipo. ¿Es urgente?',
+      'Problemas técnicos los resolvemos rápido. ¿Puedes describirme qué pasa?',
+      'Te ayudo con lo técnico. ¿Qué error o problema tienes exactamente?'
+    ],
+    fallback: [
+      'Disculpa, no entendí bien tu consulta. ¿Puedes ser más específico?',
+      'No estoy seguro de entender. ¿Podrías reformular tu pregunta?',
+      'Perdón, ¿puedes explicarme mejor qué necesitas? Te ayudo enseguida.'
+    ]
+  };
 
   constructor() {
     this.currentProvider = (process.env.AI_PROVIDER as 'openrouter' | 'gemini') || 'openrouter';
@@ -281,102 +315,56 @@ Respuesta JSON:
   // Obtener prompt del sistema contextual
   private getSystemPrompt(context?: MessageContext): string {
     const basePrompt = `
-Eres un asistente virtual profesional de EscortsHub, la plataforma líder de escorts en España. Tu misión es ayudar a los usuarios con información sobre nuestros productos y servicios de manera amable y profesional.
+Eres un asistente virtual profesional de EscortsHub, la plataforma líder de escorts en España. Tu misión es ayudar a los usuarios con información sobre nuestros productos de manera BREVE, NATURAL y CONVERSACIONAL.
 
-PERSONALIDAD Y TONO:
-- Mantén un tono profesional pero cercano y amigable
-- Sé comprensivo y discreto con las consultas del sector
-- Responde siempre en español con naturalidad
-- Usa emojis ocasionales para humanizar la conversación
-- Sé directo y claro con la información de productos y precios
-- Muestra entusiasmo por ayudar sin ser agresivo en las ventas
+🎯 **REGLAS FUNDAMENTALES DE RESPUESTA:**
+- **BREVEDAD OBLIGATORIA**: Respuestas máximo 60-80 palabras
+- **SIN TABLAS NI LISTAS LARGAS**: Solo información esencial
+- **CONVERSACIONAL**: Como mensaje de WhatsApp natural
+- **UNA PREGUNTA FINAL**: Para mantener la conversación
 
-OBJETIVOS PRINCIPALES:
-1. 🎯 Promocionar activamente los productos de EscortsHub
-2. 💰 Explicar el sistema de monedas HUB y sus ventajas
-3. 🛒 Guiar hacia el registro y compra de paquetes
-4. 📊 Recomendar la mejor opción según las necesidades
-5. 🔄 Resolver dudas sobre el proceso de compra y activación
-6. ⭐ Destacar las ventajas competitivas de la plataforma
+📱 **TIPOS DE RESPUESTA:**
 
-INFORMACIÓN DE LA EMPRESA:
-- Empresa: EscortsHub - Plataforma líder de escorts en España
-- Productos principales: Anuncio Doble, Anuncio Top, Anuncio Doble Top, Disponible Ahora, Historias, Reactivación
-- Sistema monetario: Monedas HUB (moneda virtual)
-- Mejor oferta: Paquete Plus (500 HUB por 300€ = 0,60€ por moneda)
-- Soporte: Disponible 24/7 para resolver dudas técnicas
-- Sitio web: escortshub.net
-- Acceso: Solo mayores de 18 años
+**SALUDOS ("hola", "buenas", etc.):**
+MÁXIMO 2 LÍNEAS. Ejemplo:
+"¡Hola! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte hoy?"
 
-PRODUCTOS Y PRECIOS QUE DEBES PROMOCIONAR:
+**CONSULTA PRECIOS:**
+Menciona solo:
+- Paquete Plus: 500 HUB por 300€ (0,60€/moneda) - MEJOR PRECIO
+- 1-2 productos relevantes con precios
+- Pregunta qué le interesa más
 
-🔥 **ANUNCIO DOBLE** (Base: 11 monedas HUB)
-• 1 día: 20 monedas HUB
-• 5 días: 85 monedas HUB  
-• 10 días: 150 monedas HUB
+**CONSULTA PRODUCTOS:**
+- Descripción en 1-2 líneas del producto
+- Precio básico con Paquete Plus
+- Pregunta si necesita más info
 
-⭐ **ANUNCIO TOP** (Base: 28 monedas HUB)
-• 3 días: 85 monedas HUB
-• 7 días: 125 monedas HUB
-• 10 días: 165 monedas HUB
-• 30 días: 450 monedas HUB
+**REGISTRO:**
+"Registrarse es GRATUITO en https://www.escortshub.net/es/sign-up. Solo pagas por los productos que actives. ¿Te ayudo con algún paso?"
 
-💎 **ANUNCIO DOBLE TOP** (Base: 59 monedas HUB) - ¡PRODUCTO PREMIUM!
-• 3 días: 170 monedas HUB
-• 7 días: 250 monedas HUB
-• 10 días: 330 monedas HUB
-• 30 días: 900 monedas HUB
+🚫 **PROHIBIDO:**
+- Tablas extensas
+- Listas de todos los precios
+- Más de 80 palabras
+- Múltiples secciones
+- Información no solicitada
 
-🚀 **DISPONIBLE AHORA** (Base: 100 monedas HUB)
-• 10 unidades: 40 monedas HUB
-• 25 unidades: 100 monedas HUB
-• 100 unidades: 400 monedas HUB
+✅ **INFORMACIÓN CLAVE:**
+- EscortsHub.net - Plataforma líder
+- Sistema de monedas HUB
+- Paquete Plus: mejor precio (0,60€/moneda)
+- Registro GRATUITO
+- Soporte 24/7
 
-📱 **HISTORIAS** (Base: 7 monedas HUB)
-• 1 unidad: 12 monedas HUB
-• 5 unidades: 60 monedas HUB
-• 10 unidades: 110 monedas HUB
+💡 **EJEMPLO DE RESPUESTA IDEAL:**
+"En EscortsHub usamos monedas HUB. El Paquete Plus (500 HUB por 300€) te da el mejor precio. Un Anuncio TOP de 30 días cuesta 450 HUB. ¿Te interesa registrarte?"
 
-🔄 **REACTIVACIÓN** (Base: 10 monedas HUB)
-• 1 unidad: 25 monedas HUB
-• 5 unidades: 115 monedas HUB
-• 10 unidades: 215 monedas HUB
-
-PAQUETES DE MONEDAS HUB (PROMOCIONA ESPECIALMENTE EL PLUS):
-• 🥉 Paquete Básico: 100 HUB por 80,00 EUR (0,80€/moneda)
-• 🥈 Paquete Estándar: 200 HUB por 150,00 EUR (0,75€/moneda)
-• 🥇 Paquete Plus: 500 HUB por 300,00 EUR (0,60€/moneda) **¡MEJOR PRECIO!**
-• 💎 Paquete Premium: 1.000 HUB por 700,00 EUR (0,70€/moneda)
-
-ESTRATEGIA DE VENTAS:
-- Siempre sugiere el Paquete Plus como la mejor relación calidad-precio
-- Recomienda Anuncio Doble Top para máxima visibilidad
-- Menciona que las posiciones TOP se agotan rápido (crear urgencia)
-- Ofrece combinaciones de productos para mayor efectividad
-- Pregunta por el nombre del usuario para personalizar
-
-RESPUESTAS SEGÚN CONTEXTO:
-- **Consulta precios**: Muestra tabla completa y destaca el Paquete Plus
-- **Pregunta producto específico**: Explica beneficios y sugiere complementos
-- **Dudas registro**: Guía paso a paso y menciona beneficios
-- **Comparación productos**: Recomienda Doble Top como opción premium
-- **Consulta disponibilidad**: Promociona "Disponible Ahora" + otros productos
-
-SIEMPRE INCLUYE CALL-TO-ACTION:
-- "¿Te gustaría registrarte ahora en escortshub.net?"
-- "¿Qué paquete de monedas prefieres para empezar?"
-- "¿Te interesa que te ayude con el proceso de compra?"
-- "¿Quieres que te explique cómo activar tu primer anuncio?"
-
-NUNCA HAGAS ESTO:
-- No discutas temas no relacionados con EscortsHub
-- No proporciones información incorrecta sobre precios
-- No hagas promesas sobre resultados de los anuncios
-- No seas demasiado insistente si el usuario no muestra interés
-- No menciones a la competencia
-
-RESPUESTA CUANDO NO ENTIENDAS:
-"Disculpa, no he entendido completamente tu consulta. ¿Podrías reformularla? Estoy aquí para ayudarte con información sobre nuestros productos de anuncios, precios y el proceso de registro en EscortsHub 😊"
+🎯 **SIEMPRE PREGUNTA AL FINAL:**
+- ¿Qué te interesa más?
+- ¿Te ayudo con el registro?
+- ¿Necesitas más información?
+- ¿Quieres que te explique algo específico?
     `;
 
     // Añadir contexto específico si está disponible
@@ -385,6 +373,224 @@ RESPUESTA CUANDO NO ENTIENDAS:
     }
 
     return basePrompt;
+  }
+
+  /**
+   * Obtener template predefinido basado en intención
+   */
+  public getTemplateResponse(
+    intent: string, 
+    context?: MessageContext, 
+    useRandom: boolean = true
+  ): string | null {
+    try {
+      let templateCategory: string;
+      
+      // Mapear intenciones a categorías de templates
+      switch (intent.toLowerCase()) {
+        case 'saludo':
+        case 'greeting':
+          templateCategory = 'greeting';
+          break;
+        case 'precio':
+        case 'pricing_inquiry':
+        case 'consulta_precio':
+          templateCategory = 'pricing';
+          break;
+        case 'producto':
+        case 'product_inquiry':
+        case 'consulta_producto':
+          templateCategory = 'products';
+          break;
+        case 'registro':
+        case 'registration':
+          templateCategory = 'registration';
+          break;
+        case 'soporte_tecnico':
+        case 'technical_support':
+          templateCategory = 'technical';
+          break;
+        default:
+          templateCategory = 'fallback';
+      }
+      
+      const templates = AIService.templates[templateCategory as keyof typeof AIService.templates];
+      if (!templates || templates.length === 0) {
+        return null;
+      }
+      
+      // Seleccionar template (aleatorio o primero)
+      let selectedTemplate: string;
+      if (useRandom) {
+        const randomIndex = Math.floor(Math.random() * templates.length);
+        selectedTemplate = templates[randomIndex];
+      } else {
+        selectedTemplate = templates[0];
+      }
+      
+      // Personalizar template con contexto si es necesario
+      if (context?.phoneNumber && templateCategory === 'greeting') {
+        // Añadir personalización para saludos si hay nombre del contacto
+        // Esto se puede extender en el futuro
+      }
+      
+      logger.debug('Template predefinido usado:', {
+        intent,
+        templateCategory,
+        template: selectedTemplate.substring(0, 50) + '...'
+      });
+      
+      return selectedTemplate;
+    } catch (error) {
+      logger.error('Error obteniendo template predefinido:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * Verificar si una respuesta generada es demasiado larga y usar template como fallback
+   */
+  public applyTemplateFallback(
+    originalResponse: string,
+    intent: string,
+    maxWords: number = 60,
+    context?: MessageContext
+  ): string {
+    try {
+      const words = originalResponse.split(/\s+/);
+      
+      if (words.length <= maxWords) {
+        return originalResponse;
+      }
+      
+      logger.info('Respuesta demasiado larga, aplicando template fallback:', {
+        originalWords: words.length,
+        maxWords,
+        intent
+      });
+      
+      // Usar template predefinido como fallback
+      const templateResponse = this.getTemplateResponse(intent, context, true);
+      
+      if (templateResponse) {
+        return templateResponse;
+      }
+      
+      // Fallback final: truncar respuesta original inteligentemente
+      return this.intelligentTruncate(originalResponse, maxWords, intent);
+    } catch (error) {
+      logger.error('Error aplicando template fallback:', error);
+      return originalResponse;
+    }
+  }
+  
+  /**
+   * Truncamiento inteligente de respuestas largas
+   */
+  private intelligentTruncate(text: string, maxWords: number, intent: string): string {
+    const words = text.split(/\s+/);
+    
+    if (words.length <= maxWords) {
+      return text;
+    }
+    
+    // Reservar espacio para pregunta final
+    const questionWords = 5;
+    const availableWords = maxWords - questionWords;
+    
+    let truncated = words.slice(0, availableWords).join(' ');
+    
+    // Añadir pregunta apropiada según intención
+    const questions = {
+      'saludo': ' ¿En qué puedo ayudarte?',
+      'precio': ' ¿Te interesa algún paquete?',
+      'producto': ' ¿Necesitas más información?',
+      'registro': ' ¿Te ayudo con el registro?',
+      'general': ' ¿Te ayudo con algo más?'
+    };
+    
+    const question = questions[intent as keyof typeof questions] || ' ¿Puedo ayudarte en algo más?';
+    
+    // Limpiar puntuación final antes de añadir pregunta
+    truncated = truncated.replace(/[.,!]*$/, '');
+    
+    return truncated + question;
+  }
+  
+  /**
+   * Detectar si un mensaje es un saludo simple
+   */
+  public isSimpleGreeting(message: string): boolean {
+    const greetingKeywords = ['hola', 'hi', 'buenas', 'buenos días', 'buenas tardes', 'buenas noches', 'hey', 'hello', 'saludos'];
+    const normalizedMessage = message.toLowerCase().trim();
+    
+    // Verificar si es exactamente un saludo
+    if (greetingKeywords.some(keyword => normalizedMessage === keyword)) {
+      return true;
+    }
+    
+    // Verificar si empieza con saludo y es corto
+    if (normalizedMessage.length <= 20) {
+      return greetingKeywords.some(keyword => normalizedMessage.startsWith(keyword));
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Método principal mejorado que integra templates predefinidos
+   */
+  public async generateOptimizedResponse(
+    message: string,
+    context?: MessageContext
+  ): Promise<AIResponse> {
+    try {
+      // 1. Analizar intención primero
+      const intentAnalysis = await this.analyzeIntent(message);
+      
+      // 2. Para saludos simples, usar template directo (más eficiente)
+      if (
+        (intentAnalysis.intent === 'saludo' && intentAnalysis.confidence > 0.8) ||
+        this.isSimpleGreeting(message)
+      ) {
+        const greetingTemplate = this.getTemplateResponse('saludo', context, true);
+        if (greetingTemplate) {
+          return {
+            success: true,
+            content: greetingTemplate,
+            provider: this.currentProvider,
+            tokensUsed: 0 // Template no usa tokens
+          };
+        }
+      }
+      
+      // 3. Para otros casos, generar respuesta normal
+      const aiResponse = await this.generateResponse(message, context);
+      
+      // 4. Aplicar fallback de template si es necesario
+      if (aiResponse.success && aiResponse.content) {
+        const optimizedContent = this.applyTemplateFallback(
+          aiResponse.content,
+          intentAnalysis.intent,
+          60, // Límite de 60 palabras
+          context
+        );
+        
+        return {
+          ...aiResponse,
+          content: optimizedContent
+        };
+      }
+      
+      return aiResponse;
+    } catch (error) {
+      logger.error('Error en generateOptimizedResponse:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Error desconocido',
+        provider: this.currentProvider
+      };
+    }
   }
 
   // Verificar el estado de los proveedores
