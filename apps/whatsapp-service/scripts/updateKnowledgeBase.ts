@@ -91,11 +91,10 @@ Disponible en tu dashboard para consultar saldo, historial de transacciones, rec
     content: `Para registrarte en EscortsHub sigue estos pasos sencillos:
 
 PROCESO COMPLETO:
-1. Visita nuestra web oficial: www.escortshub.com
-2. Haz clic en el botón "Registrarse" 
-3. Completa el formulario con tus datos básicos
-4. Verifica tu correo electrónico
-5. ¡Listo para empezar!
+1. Visita nuestra web oficial: https://www.escortshub.net/es/sign-up
+2. Completa el formulario de registro
+3. Verifica tu correo electrónico
+4. ¡Listo para empezar!
 
 Una vez registrado/a podrás:
 - Crear tu perfil
@@ -109,7 +108,7 @@ REQUISITOS:
 - Aceptar términos y condiciones
 
 El registro es GRATUITO. Solo pagas por los productos que actives con monedas HUB.`,
-    keywords: ['registro', 'registrarse', 'cuenta', 'crear perfil', 'gratuito', 'www.escortshub.com'],
+    keywords: ['registro', 'registrarse', 'cuenta', 'crear perfil', 'gratuito', 'escortshub.net', 'sign-up'],
     priority: 9
   },
   {
