@@ -71,9 +71,16 @@ export interface EnrichedContext extends MessageContext {
 class AIThinkingService {
   private static instance: AIThinkingService;
 
-  // Cache para optimizar rendimiento
+  // Cache inteligente para optimizar rendimiento
   private intentCache: Map<string, IntentAnalysis> = new Map();
   private knowledgeCache: Map<string, any[]> = new Map();
+  private responseCache: Map<string, { response: string; timestamp: number; }> = new Map();
+  private complexityCache: Map<string, { complexity: string; confidence: number; reasoning: string; timestamp: number; }> = new Map();
+  
+  // Configuraciones de cache
+  private readonly CACHE_TTL = 1000 * 60 * 30; // 30 minutos
+  private readonly RESPONSE_CACHE_TTL = 1000 * 60 * 10; // 10 minutos para respuestas
+  private readonly MAX_CACHE_SIZE = 500;
   
   private constructor() {}
 
@@ -88,12 +95,56 @@ class AIThinkingService {
   // MÉTODO PRINCIPAL: PROCESAMIENTO CON PENSAMIENTO
   // ============================================
 
+  /**
+   * Nuevo método principal optimizado con sistema express
+   */
   public async processWithThinking(
     message: string,
     context: MessageContext
   ): Promise<AIResponse & { thinkingProcess: ThoughtProcess }> {
     const startTime = Date.now();
-    logger.info('🧠 [THINKING] Starting structured thinking process for message:', {
+    
+    // 🚀 INTENTO DE RESPUESTA RÁPIDA PRIMERO
+    const quickResponse = await this.tryQuickResponse(message, context);
+    if (quickResponse) {
+      const processingTime = Date.now() - startTime;
+      logger.info('⚡ [EXPRESS] Quick response generated:', {
+        message: message.substring(0, 50),
+        processingTime,
+        responseType: 'express'
+      });
+      
+      return {
+        ...quickResponse,
+        thinkingProcess: {
+          steps: [{
+            step: 1,
+            type: 'analysis',
+            title: 'Respuesta Express',
+            content: 'Respuesta rápida generada sin proceso completo de pensamiento',
+            confidence: 0.9,
+            data: { expressResponse: true }
+          }],
+          finalDecision: 'Respuesta express exitosa',
+          confidence: 0.9,
+          reasoning: 'Consulta simple procesada con sistema express',
+          shouldRespond: true,
+          responseStrategy: {
+            type: 'direct',
+            tone: 'friendly',
+            length: 'brief',
+            shouldQuote: false,
+            shouldUseEmojis: true,
+            priority: 'medium'
+          },
+          estimatedComplexity: 'simple',
+          processingTimeMs: processingTime
+        }
+      };
+    }
+
+    // Si no hay respuesta rápida, proceder con el proceso completo
+    logger.info('🧠 [THINKING] Starting full thinking process for message:', {
       message: message.substring(0, 100),
       phoneNumber: context.phoneNumber
     });
@@ -1036,15 +1087,17 @@ class AIThinkingService {
     const isGreeting = await this.isGreetingMessage(context.messageText || '');
     
     if (isGreeting) {
-      // Para saludos, usar prompt ULTRA-SIMPLIFICADO
-      contextualPrompt += `\n\n🎯 INSTRUCCIÓN: SALUDO ULTRA-BREVE\n`;
-      contextualPrompt += `RESPUESTA EXACTA: Máximo 15 palabras. Solo saludo + presentación + pregunta simple.\n`;
+    // Para saludos, usar prompt ULTRA-SIMPLIFICADO
+      contextualPrompt += `\n\n🎯 INSTRUCCIÓN: SALUDO PERSONALIZADO Y BREVE\n`;
+      contextualPrompt += `RESPUESTA EXACTA: Máximo 25 palabras. Saludo cálido + presentación marca + pregunta abierta.\n`;
       
       if (context.contactName) {
-        contextualPrompt += `Usuario: ${context.contactName}\n`;
+        contextualPrompt += `Usuario: ${context.contactName} (usar el nombre para personalizar)\n`;
       }
       
-      contextualPrompt += `RESPUESTA MODELO: "¡Hola! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte?"\n\n`;
+      const timeContext = this.analyzeTimeContext();
+      contextualPrompt += `Horario: ${timeContext.timeOfDay} ${timeContext.dayOfWeek}\n`;
+      contextualPrompt += `MODELO: "¡Hola${context.contactName ? ' ' + context.contactName : ''}! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte hoy?"\n\n`;
       return contextualPrompt;
     }
     
@@ -1121,16 +1174,16 @@ class AIThinkingService {
       sample: adjustedResponse.slice(0, 100)
     });
     
-    // 1. APLICAR LÍMITES ESTRICTOS DE PALABRAS SEGÚN INTENCIÓN
+    // 1. APLICAR LÍMITES REALISTAS DE PALABRAS SEGÚN INTENCIÓN
     const wordLimits = {
-      'saludo': 15,
-      'greeting': 15,
-      'precio': 40,
-      'pricing_inquiry': 40,
-      'producto': 50,
-      'product_inquiry': 50,
-      'registro': 25,
-      'general': 60
+      'saludo': 25,        // Más personalizable (15-25 palabras)
+      'greeting': 25,      // Más personalizable
+      'precio': 80,        // Suficiente para explicar opciones (60-80 palabras)
+      'pricing_inquiry': 80,
+      'producto': 100,     // Descripción útil (80-100 palabras)
+      'product_inquiry': 100,
+      'registro': 50,      // Proceso claro (40-50 palabras)
+      'general': 120       // Respuesta completa (100-120 palabras)
     };
     
     const maxWords = wordLimits[intentAnalysis.intent] || 60;
@@ -1221,17 +1274,26 @@ class AIThinkingService {
   }
   
   /**
-   * Eliminar tablas y listas largas
+   * Optimizar tablas y listas largas
    */
   private removeTablesAndLists(text: string): string {
-    // Eliminar tablas markdown
+    // Eliminar tablas markdown (siempre)
     text = text.replace(/\|[\s\S]*?\|/g, '');
     
-    // Eliminar listas largas (más de 3 items)
-    text = text.replace(/(([•\-*]\s+.+\n){4,})/g, '');
+    // Optimizar listas bulleted: mantener hasta 3 ítems y eliminar el resto
+    text = text.replace(/(([•\-*]\s+.+\n){4,})/g, (match) => {
+      // Mantener los primeros 3 ítems
+      const lines = match.split('\n');
+      const keptItems = lines.filter(line => /^[•\-*]\s+/.test(line)).slice(0, 3);
+      return keptItems.join('\n') + '\n';
+    });
     
-    // Eliminar secciones numeradas largas
-    text = text.replace(/(\d+\.\s+.+\n){3,}/g, '');
+    // Optimizar listas numeradas: mantener hasta 3 ítems 
+    text = text.replace(/(\d+\.\s+.+\n){4,}/g, (match) => {
+      const lines = match.split('\n');
+      const keptItems = lines.filter(line => /^\d+\.\s+/.test(line)).slice(0, 3);
+      return keptItems.join('\n') + '\n';
+    });
     
     return text;
   }
@@ -1435,6 +1497,187 @@ class AIThinkingService {
     }
     
     return false;
+  }
+  
+  // ============================================
+  // SISTEMA DE RESPUESTA RÁPIDA INTELIGENTE
+  // ============================================
+  
+  /**
+   * Intentar respuesta rápida para consultas simples
+   * Evita el proceso completo de thinking para mejorar velocidad
+   */
+  private async tryQuickResponse(message: string, context: MessageContext): Promise<AIResponse | null> {
+    try {
+      const startTime = Date.now();
+      
+      // 1. VERIFICAR CACHE DE RESPUESTAS PRIMERO
+      const cacheKey = this.generateCacheKey(message, context);
+      const cachedResponse = this.responseCache.get(cacheKey);
+      
+      if (cachedResponse && (Date.now() - cachedResponse.timestamp) < this.RESPONSE_CACHE_TTL) {
+        logger.debug('⚡ Respuesta desde cache:', { message: message.substring(0, 50) });
+        return {
+          success: true,
+          content: cachedResponse.response,
+          provider: AIService.getCurrentProvider() as any,
+          tokensUsed: 0 // Cache no usa tokens
+        };
+      }
+      
+      // 2. ANÁLISIS RÁPIDO DE COMPLEJIDAD
+      const complexityKey = message.toLowerCase().trim();
+      let complexity = this.complexityCache.get(complexityKey);
+      
+      if (!complexity || (Date.now() - complexity.timestamp) > this.CACHE_TTL) {
+        const complexityAnalysis = this.getMessageComplexity(message);
+        complexity = {
+          complexity: complexityAnalysis.complexity,
+          confidence: complexityAnalysis.confidence,
+          reasoning: complexityAnalysis.reasoning,
+          timestamp: Date.now()
+        };
+        this.complexityCache.set(complexityKey, complexity);
+      }
+      
+      // 3. DECISIÓN DE RESPUESTA RÁPIDA BASADA EN COMPLEJIDAD
+      const processingTime = Date.now() - startTime;
+      
+      if (complexity.complexity === 'simple_greeting' && complexity.confidence > 0.8) {
+        // SALUDOS SIMPLES - Usar template directo
+        const greetingResponse = AIService.getTemplateResponse('saludo', context, true);
+        if (greetingResponse) {
+          this.cacheResponse(cacheKey, greetingResponse);
+          logger.debug('⚡ Saludo procesado en modo express:', { processingTime });
+          
+          return {
+            success: true,
+            content: greetingResponse,
+            provider: AIService.getCurrentProvider() as any,
+            tokensUsed: 0
+          };
+        }
+      }
+      
+      if (complexity.complexity === 'specific_query' && complexity.confidence > 0.7) {
+        // CONSULTAS ESPECÍFICAS - Respuesta contextual rápida
+        const quickContextualResponse = await this.generateQuickContextualResponse(message, context, complexity);
+        if (quickContextualResponse) {
+          this.cacheResponse(cacheKey, quickContextualResponse);
+          logger.debug('⚡ Consulta específica procesada en modo express:', { processingTime });
+          
+          return {
+            success: true,
+            content: quickContextualResponse,
+            provider: AIService.getCurrentProvider() as any,
+            tokensUsed: 50 // Estimado para respuesta rápida
+          };
+        }
+      }
+      
+      // Si llegamos aquí, no podemos procesar rápidamente
+      logger.debug('🔄 No se puede procesar en modo express, usando proceso completo');
+      return null;
+      
+    } catch (error) {
+      logger.error('Error en respuesta rápida:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * Generar respuesta contextual rápida para consultas específicas
+   */
+  private async generateQuickContextualResponse(message: string, context: MessageContext, complexity: any): Promise<string | null> {
+    try {
+      // Detectar el tipo específico de consulta
+      const normalizedMessage = message.toLowerCase();
+      
+      // PRECIOS
+      if (normalizedMessage.includes('precio') || normalizedMessage.includes('cuesta') || normalizedMessage.includes('coste')) {
+        return `Nuestros paquetes: Basic (100 HUB/80€) y Plus (500 HUB/300€) con mejor precio por moneda. El Plus incluye anuncios TOP desde 450 HUB. ¿Te interesa alguno específico?`;
+      }
+      
+      // PRODUCTOS/SERVICIOS
+      if (normalizedMessage.includes('servicio') || normalizedMessage.includes('anuncio') || normalizedMessage.includes('destacado')) {
+        return `Ofrecemos anuncios VIP, destacados y premium para escorts. El anuncio TOP (30 días) es nuestro más popular por 450 HUB. ¿Qué tipo de promoción necesitas?`;
+      }
+      
+      // REGISTRO
+      if (normalizedMessage.includes('registr') || normalizedMessage.includes('cuenta') || normalizedMessage.includes('alta')) {
+        return `El registro es completamente gratuito en https://www.escortshub.net/es/sign-up. Solo pagas por los productos que decidas activar. ¿Te ayudo con algún paso?`;
+      }
+      
+      // INFORMACIÓN GENERAL
+      if (normalizedMessage.includes('info') || normalizedMessage.includes('funciona') || normalizedMessage.includes('plataforma')) {
+        return `EscortsHub.net es la plataforma líder para escorts en España. Usamos monedas HUB para servicios premium. Registro gratis, solo pagas lo que usas. ¿Qué te interesa saber?`;
+      }
+      
+      // Si no coincide con ninguna categoría específica
+      return null;
+      
+    } catch (error) {
+      logger.error('Error generando respuesta contextual rápida:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * Generar clave de cache para respuestas
+   */
+  private generateCacheKey(message: string, context: MessageContext): string {
+    const normalizedMessage = message.toLowerCase().trim();
+    const contextKey = context.phoneNumber ? context.phoneNumber.substring(-4) : 'unknown';
+    return `${normalizedMessage}_${contextKey}`;
+  }
+  
+  /**
+   * Cachear respuesta con gestión de tamaño
+   */
+  private cacheResponse(key: string, response: string): void {
+    try {
+      this.responseCache.set(key, {
+        response,
+        timestamp: Date.now()
+      });
+      
+      // Limpiar cache si excede el tamaño máximo
+      if (this.responseCache.size > this.MAX_CACHE_SIZE) {
+        this.cleanupCache();
+      }
+    } catch (error) {
+      logger.error('Error cacheando respuesta:', error);
+    }
+  }
+  
+  /**
+   * Limpiar caches expirados y por tamaño
+   */
+  private cleanupCache(): void {
+    const now = Date.now();
+    
+    // Limpiar responses expiradas
+    for (const [key, value] of this.responseCache.entries()) {
+      if (now - value.timestamp > this.RESPONSE_CACHE_TTL) {
+        this.responseCache.delete(key);
+      }
+    }
+    
+    // Limpiar complexity cache expirado
+    for (const [key, value] of this.complexityCache.entries()) {
+      if (now - value.timestamp > this.CACHE_TTL) {
+        this.complexityCache.delete(key);
+      }
+    }
+    
+    // Si aún es muy grande, eliminar las más antiguas
+    if (this.responseCache.size > this.MAX_CACHE_SIZE) {
+      const entries = Array.from(this.responseCache.entries());
+      entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+      
+      const toDelete = entries.slice(0, Math.floor(this.MAX_CACHE_SIZE * 0.3));
+      toDelete.forEach(([key]) => this.responseCache.delete(key));
+    }
   }
 }
 
