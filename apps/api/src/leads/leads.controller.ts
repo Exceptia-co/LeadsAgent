@@ -9,7 +9,8 @@ import {
   Query,
   HttpCode,
   HttpStatus,
-  UseGuards
+  UseGuards,
+  BadRequestException
 } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBearerAuth } from '@nestjs/swagger'
 import { LeadsService } from './leads.service'
@@ -32,12 +33,19 @@ export class LeadsController {
   @ApiResponse({ status: 201, description: 'The lead has been successfully created.' })
   @ApiResponse({ status: 400, description: 'Bad Request.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  create(@Body() createLeadDto: CreateLeadDto, @CurrentUser() user: any) {
-    // If assignedTo is not provided in DTO but user context exists, use it
-    if (!createLeadDto.assignedTo && user?.userId) {
-      createLeadDto.assignedTo = user.userId
+  async create(@Body() createLeadDto: CreateLeadDto, @CurrentUser() user: any) {
+    try {
+      // If assignedTo is not provided in DTO but user context exists, use it
+      if (!createLeadDto.assignedTo && user?.userId) {
+        createLeadDto.assignedTo = user.userId
+      }
+      return await this.leadsService.create(createLeadDto)
+    } catch (error) {
+      if (error.message === 'Ya existe un lead con este número de teléfono') {
+        throw new BadRequestException(error.message)
+      }
+      throw error
     }
-    return this.leadsService.create(createLeadDto)
   }
 
   @Get()

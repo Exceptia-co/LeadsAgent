@@ -4,6 +4,7 @@ import './globals.css'
 import { ClerkProvider } from '@clerk/nextjs'
 import { SWRConfig } from 'swr'
 import { swrConfig } from '../lib/swr-config'
+import { ToastProvider } from '../components/ToastProvider'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -24,7 +25,9 @@ export default function RootLayout({
       <html lang="es">
         <body className={inter.className}>
           <SWRConfig value={swrConfig}>
-            {children}
+            <ToastProvider>
+              {children}
+            </ToastProvider>
           </SWRConfig>
         </body>
       </html>

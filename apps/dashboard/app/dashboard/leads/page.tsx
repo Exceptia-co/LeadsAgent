@@ -6,14 +6,22 @@ import { Badge } from '../../../components/ui/badge'
 import { useLeads } from '../../../lib/api'
 import { STATUS_LABELS, STATUS_VARIANTS, type Lead } from '../../../types'
 import { AddLeadModal } from '../../../components/AddLeadModal'
-import { Users, Search, Plus, Filter, CheckCircle } from 'lucide-react'
+import { EditLeadModal } from '../../../components/EditLeadModal'
+import { DeleteConfirmDialog } from '../../../components/DeleteConfirmDialog'
+import { Users, Search, Plus, Filter, Edit2, Trash2, Eye } from 'lucide-react'
+import { useAuth } from '@clerk/nextjs'
+import { useToast } from '../../../hooks/use-toast'
 
 export default function LeadsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [searchTerm, setSearchTerm] = useState('')
   const [isModalOpen, setIsModalOpen] = useState(false)
-  const [successMessage, setSuccessMessage] = useState('')
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const { leads, pagination, isLoading, isError, refetch } = useLeads(currentPage, 20)
+  const { getToken } = useAuth()
+  const toast = useToast()
 
   const handleWhatsAppToggle = async (leadId: string, authorized: boolean) => {
     try {
@@ -70,25 +78,57 @@ export default function LeadsPage() {
 
   const handleLeadCreated = () => {
     setIsModalOpen(false)
-    setSuccessMessage('Lead creado exitosamente')
+    toast.success('Lead creado exitosamente')
     refetch() // Refresh the leads list
+  }
+
+  const handleEditClick = (lead: Lead) => {
+    setSelectedLead(lead)
+    setIsEditModalOpen(true)
+  }
+
+  const handleEditSuccess = () => {
+    setIsEditModalOpen(false)
+    toast.success('Lead actualizado exitosamente')
+    refetch() // Refresh the leads list
+    setSelectedLead(null)
+  }
+
+  const handleDeleteClick = (lead: Lead) => {
+    setSelectedLead(lead)
+    setIsDeleteDialogOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!selectedLead) return
     
-    // Clear success message after 5 seconds
-    setTimeout(() => setSuccessMessage(''), 5000)
+    try {
+      const token = await getToken()
+      const response = await fetch(`/api/leads/${selectedLead.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+      
+      if (response.ok) {
+        toast.success('Lead eliminado exitosamente')
+        refetch() // Refresh the leads list
+      } else {
+        const error = await response.json()
+        toast.error(error.message || 'Error al eliminar el lead')
+      }
+    } catch (error) {
+      console.error('Error deleting lead:', error)
+      toast.error('Error al eliminar el lead')
+    } finally {
+      setIsDeleteDialogOpen(false)
+      setSelectedLead(null)
+    }
   }
 
   return (
     <div className="space-y-6">
-      {/* Success Message */}
-      {successMessage && (
-        <div className="bg-green-50 border border-green-200 rounded-md p-4">
-          <div className="flex items-center">
-            <CheckCircle className="h-5 w-5 text-green-400 mr-3" />
-            <p className="text-green-800">{successMessage}</p>
-          </div>
-        </div>
-      )}
-      
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Gestión de Leads</h1>
@@ -239,15 +279,26 @@ export default function LeadsPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <div className="flex space-x-2">
-                        <button className="text-blue-600 hover:text-blue-900">
-                          Ver
+                      <div className="flex items-center space-x-3">
+                        <button 
+                          className="text-blue-600 hover:text-blue-900 transition-colors"
+                          title="Ver detalles"
+                        >
+                          <Eye className="h-4 w-4" />
                         </button>
-                        <button className="text-yellow-600 hover:text-yellow-900">
-                          Editar
+                        <button 
+                          onClick={() => handleEditClick(lead)}
+                          className="text-yellow-600 hover:text-yellow-900 transition-colors"
+                          title="Editar lead"
+                        >
+                          <Edit2 className="h-4 w-4" />
                         </button>
-                        <button className="text-red-600 hover:text-red-900">
-                          Eliminar
+                        <button 
+                          onClick={() => handleDeleteClick(lead)}
+                          className="text-red-600 hover:text-red-900 transition-colors"
+                          title="Eliminar lead"
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                     </td>
@@ -303,6 +354,26 @@ export default function LeadsPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onSuccess={handleLeadCreated}
+      />
+      
+      {/* Edit Lead Modal */}
+      <EditLeadModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        onSuccess={handleEditSuccess}
+        lead={selectedLead}
+      />
+      
+      {/* Delete Confirmation Dialog */}
+      <DeleteConfirmDialog
+        isOpen={isDeleteDialogOpen}
+        onClose={() => {
+          setIsDeleteDialogOpen(false)
+          setSelectedLead(null)
+        }}
+        onConfirm={handleDeleteConfirm}
+        leadName={selectedLead?.name}
+        leadPhone={selectedLead?.phone}
       />
     </div>
   )
