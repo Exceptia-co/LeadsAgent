@@ -72,11 +72,20 @@ export const refreshAllLeadData = async () => {
 }
 
 // Hooks para diferentes endpoints con intervalos inteligentes
-export const useLeads = (page = 1, limit = 20, options?: { 
-  refreshInterval?: number 
-  priority?: 'standard' | 'low'
-}) => {
-  const cacheKey = createCacheKey(CACHE_KEYS.LEADS, { page, limit })
+export const useLeads = (
+  page = 1, 
+  limit = 20, 
+  searchTerm?: string,
+  options?: { 
+    refreshInterval?: number 
+    priority?: 'standard' | 'low'
+  }
+) => {
+  const cacheKey = createCacheKey(CACHE_KEYS.LEADS, { 
+    page, 
+    limit, 
+    ...(searchTerm && searchTerm.trim() !== '' && { q: searchTerm })
+  })
   
   // Determine smart refresh interval
   const baseInterval = options?.refreshInterval || 
