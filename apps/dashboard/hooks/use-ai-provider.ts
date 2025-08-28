@@ -198,7 +198,7 @@ export function useAIProvider() {
         isActive: status.currentProvider === 'openrouter',
         isConfigured: openrouterProvider.configured || false,
         description: 'Multiple AI models via OpenRouter API',
-        models: ['anthropic/claude-3.5-sonnet', 'openai/gpt-4o', 'google/gemini-pro-1.5']
+        models: ['openai/gpt-oss-120b', 'deepseek/deepseek-chat-v3.1', 'google/gemini-2.0-flash-001']
       },
       {
         id: 'gemini',
@@ -206,7 +206,7 @@ export function useAIProvider() {
         isActive: status.currentProvider === 'gemini',
         isConfigured: geminiProvider.configured || false,
         description: 'Google Gemini Pro with large context window',
-        models: ['gemini-2.5-flash', 'gemini-1.5-pro']
+        models: ['gemini-2.5-flash', 'gemini-2.5-pro']
       }
     ]
   }, [status])

@@ -74,9 +74,9 @@ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
 # IA (selecciona proveedor)
 AI_PROVIDER=openrouter  # o gemini
 OPENROUTER_API_KEY="..."
-OPENROUTER_MODEL="anthropic/claude-3.5-sonnet"
+OPENROUTER_MODEL="openai/gpt-oss-120b"
 GEMINI_API_KEY="..."
-GEMINI_MODEL="gemini-1.5-pro"
+GEMINI_MODEL="gemini-2.5-flash"
 
 # WhatsApp (si se usan sesiones nombradas)
 WHATSAPP_SESSION_DIR="./.wwebjs_sessions"
