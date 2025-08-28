@@ -6,24 +6,29 @@
 
 LeadsCRM: Next.js dashboard, NestJS API, WhatsApp svc, PostgreSQL (Prisma), Clerk auth, Turborepo.
 
-Stack: Next.js 15.4.2 / NestJS / Supabase Postgres / Prisma / Clerk / pnpm.
+Stack: Next.js 14.2.15 / NestJS / Supabase Postgres / Prisma / Clerk / pnpm 9.0.0.
 Status: MVP (dashboard+api+db); WhatsApp+AI integrating.
 
 ## Commands
 
-Run order: retrieve knowledge -> task -> store knowledge (see .github/copilot-instructions.md). Dev: pnpm dev | pnpm dev:dashboard | dev:api | dev:whatsapp
+Run order: retrieve knowledge -> task -> store knowledge (see .github/copilot-instructions.md).
 
-Build: pnpm build | pnpm build:fast | pnpm build:production
+**Development:**
 
-Single backend test: cd apps/api && pnpm test -- --testNamePattern "Name|Regex"
+- `pnpm dev` (all services) | `pnpm dev:dashboard` | `pnpm dev:api` | `pnpm dev:whatsapp`
 
-Test watch (API): cd apps/api && pnpm test:watch
+**Build & Test:**
 
-All tests: pnpm test | E2E: pnpm test:e2e | Coverage: pnpm test:coverage
+- `pnpm build` | `pnpm build:fast` | `pnpm build:production`
+- Single backend test: `cd apps/api && pnpm test -- --testNamePattern "Name|Regex"`
+- Test watch (API): `cd apps/api && pnpm test:watch`
+- All tests: `pnpm test` | E2E: `pnpm test:e2e` | Coverage: `pnpm test:coverage`
 
 Quality: pnpm lint | lint:fix | typecheck | format | clean:cache | rebuild
 
-DB: pnpm db:generate | db:migrate:dev | db:studio
+**Database:**
+
+- `pnpm db:generate` | `pnpm db:migrate:dev` | `pnpm db:studio`
 
 **Quality & DB:**
 
@@ -36,6 +41,7 @@ DB: pnpm db:generate | db:migrate:dev | db:studio
 ```
 apps/dashboard/     # Next.js frontend (port 3000)
 apps/api/           # NestJS backend (port 3003)
+apps/docs/          # Documentation site (port 3003)
 apps/whatsapp-service/  # WhatsApp integration (port 3002)
 packages/db/        # Prisma schema + client (PostgreSQL)
 packages/ui/        # Shared React components (shadcn/ui)

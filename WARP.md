@@ -573,7 +573,7 @@ AI_PROVIDER=openrouter
 # OpenRouter
 OPENROUTER_API_KEY="{{OPENROUTER_API_KEY}}"
 OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
-OPENROUTER_MODEL="anthropic/claude-3.5-sonnet"
+OPENROUTER_MODEL="openai/gpt-oss-120b"
 
 # Google Gemini
 GEMINI_API_KEY="{{GEMINI_API_KEY}}"
@@ -746,7 +746,7 @@ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="{{CLERK_PUBLISHABLE_KEY}}"
 # IA (selecciona proveedor)
 AI_PROVIDER=openrouter  # o gemini
 OPENROUTER_API_KEY="{{OPENROUTER_API_KEY}}"
-OPENROUTER_MODEL="anthropic/claude-3.5-sonnet"
+OPENROUTER_MODEL="openai/gpt-oss-120b"
 GEMINI_API_KEY="{{GEMINI_API_KEY}}"
 GEMINI_MODEL="gemini-1.5-pro"
 ```
@@ -764,7 +764,7 @@ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="{{CLERK_PUBLISHABLE_KEY}}"
 # IA (usar claves de producción)
 AI_PROVIDER=openrouter  # o gemini
 OPENROUTER_API_KEY="{{OPENROUTER_API_KEY}}"
-OPENROUTER_MODEL="anthropic/claude-3.5-sonnet"
+OPENROUTER_MODEL="openai/gpt-oss-120b"
 GEMINI_API_KEY="{{GEMINI_API_KEY}}"
 GEMINI_MODEL="gemini-1.5-pro"
 
