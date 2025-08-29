@@ -20,6 +20,10 @@ class WhatsAppServiceSimple {
   private clients: Map<string, Client> = new Map();
   private sessions: Map<string, WhatsAppSession> = new Map();
   private webhookUrl: string | undefined;
+  
+  // Enhanced monitoring properties
+  private monitoringIntervals: Map<string, NodeJS.Timeout> = new Map();
+  private lastMemoryLog: number = 0;
 
   constructor() {
     this.webhookUrl = process.env.WEBHOOK_URL;
@@ -30,19 +34,24 @@ class WhatsAppServiceSimple {
       "🚀 Iniciando WhatsApp service con persistencia y monitoreo avanzado...",
     );
 
-    // Recover existing sessions from database
+    // Recover existing sessions from database using smart filtering
     try {
+      logger.info("🤖 Using smart session recovery with intelligent filtering...");
       const recoveryResult =
-        await SessionRecoveryService.recoverAllSessions(this);
+        await SessionRecoveryService.recoverSessionsWithSmartFiltering(this, {
+          validateAuthFiles: true,
+          cleanupCorruptedAuth: true,
+          maxReconnectAttempts: 3
+        });
       logger.info(
-        `📊 Recuperación completada: ${recoveryResult.recoveredSessions}/${recoveryResult.totalSessions} sesiones`,
+        `📊 Smart recovery completed: ${recoveryResult.recoveredSessions}/${recoveryResult.totalSessions} sessions recovered, ${recoveryResult.skippedSessions} skipped`,
       );
 
       if (recoveryResult.errors.length > 0) {
-        logger.warn("⚠️ Errores durante recuperación:", recoveryResult.errors);
+        logger.warn("⚠️ Errors during smart recovery:", recoveryResult.errors);
       }
     } catch (error) {
-      logger.error("❌ Error durante recuperación de sesiones:", error);
+      logger.error("❌ Error during smart session recovery:", error);
     }
 
     // Start periodic health checks (legacy)
@@ -99,16 +108,43 @@ class WhatsAppServiceSimple {
             process.env.NODE_ENV === "production",
           executablePath: process.env.CHROME_EXECUTABLE_PATH || undefined,
           devtools: process.env.NODE_ENV === "development",
+          // Configuración optimizada para estabilidad
+          timeout: 120000, // 2 minutos timeout para inicialización
           args: [
+            // Seguridad básica (requerido)
             "--no-sandbox",
             "--disable-setuid-sandbox",
+            
+            // Optimización de memoria (problemas comunes)
             "--disable-dev-shm-usage",
-            "--disable-accelerated-2d-canvas",
-            "--no-first-run",
-            "--no-zygote",
             "--disable-gpu",
+            "--disable-gpu-sandbox",
+            "--no-first-run",
+            
+            // Estabilidad de WhatsApp Web
             "--disable-web-security",
             "--disable-features=VizDisplayCompositor",
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+            
+            // Prevención de memory leaks
+            "--memory-pressure-off",
+            "--max_old_space_size=4096",
+            
+            // Windows específicos
+            "--disable-win32k-lockdown",
+            "--disable-component-cloud-policy",
+            "--disable-domain-reliability",
+            
+            // Configuración de usuario
+            "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            
+            // Logging mejorado para debugging
+            ...(process.env.NODE_ENV === 'development' ? [
+              "--enable-logging=stderr",
+              "--log-level=1"
+            ] : [])
           ],
         },
       });
@@ -150,8 +186,39 @@ class WhatsAppServiceSimple {
         },
       });
 
-      // Initialize the client
-      client.initialize();
+      // Initialize the client with enhanced error handling
+      logger.info(`🚀 Initializing WhatsApp client for session ${sessionId}...`);
+      
+      // Add initialization timeout and error handling
+      const initTimeout = setTimeout(() => {
+        logger.error(`⏰ Session ${sessionId} initialization timeout after 2 minutes`);
+        this.handleBrowserDisconnect(sessionId, 'INIT_TIMEOUT');
+      }, 120000); // 2 minutes timeout
+      
+      try {
+        client.initialize();
+        
+        // Clear timeout once initialization starts
+        client.once('qr', () => {
+          clearTimeout(initTimeout);
+          logger.info(`✅ Session ${sessionId} initialization successful - QR generated`);
+        });
+        
+        client.once('ready', () => {
+          clearTimeout(initTimeout);
+          logger.info(`✅ Session ${sessionId} fully ready`);
+        });
+        
+        client.once('auth_failure', () => {
+          clearTimeout(initTimeout);
+          logger.error(`❌ Session ${sessionId} authentication failed`);
+        });
+        
+      } catch (initError) {
+        clearTimeout(initTimeout);
+        logger.error(`❌ Error during client initialization for session ${sessionId}:`, initError);
+        throw initError;
+      }
 
       logger.info(
         `📱 WhatsApp session ${sessionId} created and persisted successfully`,
@@ -164,6 +231,62 @@ class WhatsAppServiceSimple {
   }
 
   private setupClientEventListeners(client: Client, sessionId: string): void {
+    // 🔍 Enhanced Browser monitoring - Get puppeteer page for comprehensive event listening
+    client.pupPage?.then(async (page) => {
+      if (page && page.browser) {
+        const browser = page.browser();
+        
+        // Enhanced browser disconnect events
+        browser.on('disconnected', async () => {
+          logger.warn(`🚨 Browser disconnected for session ${sessionId}`);
+          await this.handleBrowserDisconnect(sessionId, 'BROWSER_CLOSED');
+        });
+
+        // Enhanced page events
+        page.on('close', async () => {
+          logger.warn(`🚨 Browser page closed for session ${sessionId}`);
+          await this.handleBrowserDisconnect(sessionId, 'PAGE_CLOSED');
+        });
+
+        page.on('error', async (error) => {
+          logger.error(`🚨 Browser page error for session ${sessionId}:`, error);
+          await this.handleBrowserDisconnect(sessionId, 'PAGE_ERROR');
+        });
+
+        // NEW: Additional crash detection events
+        page.on('crash', async () => {
+          logger.error(`💥 Browser page crashed for session ${sessionId}`);
+          await this.handleBrowserDisconnect(sessionId, 'PAGE_CRASHED');
+        });
+
+        // NEW: Target destroyed detection
+        browser.on('targetdestroyed', async (target) => {
+          if (target.url().includes('web.whatsapp.com')) {
+            logger.warn(`🎯 WhatsApp target destroyed for session ${sessionId}`);
+            await this.handleBrowserDisconnect(sessionId, 'TARGET_DESTROYED');
+          }
+        });
+
+        // NEW: Target crashed detection
+        browser.on('targetcrashed', async (target) => {
+          if (target.url().includes('web.whatsapp.com')) {
+            logger.error(`💥 WhatsApp target crashed for session ${sessionId}`);
+            await this.handleBrowserDisconnect(sessionId, 'TARGET_CRASHED');
+          }
+        });
+
+        // NEW: Process memory monitoring
+        this.startMemoryMonitoring(page, sessionId);
+
+        // NEW: Heartbeat monitoring
+        this.startHeartbeatMonitoring(page, sessionId);
+
+        logger.info(`🔍 Enhanced browser monitoring setup for session ${sessionId}`);
+      }
+    }).catch((error) => {
+      logger.warn(`⚠️ Could not setup enhanced browser monitoring for session ${sessionId}:`, error);
+    });
+
     // QR Code event
     client.on("qr", async (qr) => {
       logger.info(`QR Code generated for session ${sessionId}`);
@@ -208,6 +331,7 @@ class WhatsAppServiceSimple {
 
       this.updateSessionStatus(sessionId, "ready", {
         connectedNumber: clientInfo?.wid?.user || "unknown",
+        lastHealthCheck: new Date(),
       });
 
       // Send webhook
@@ -228,7 +352,9 @@ class WhatsAppServiceSimple {
     // Authentication failure event
     client.on("auth_failure", async (msg) => {
       logger.error(`Authentication failed for session ${sessionId}:`, msg);
-      this.updateSessionStatus(sessionId, "auth_failure");
+      this.updateSessionStatus(sessionId, "auth_failure", {
+        lastError: `Authentication failed: ${msg}`
+      });
 
       // Send webhook
       await this.sendWebhook({
@@ -239,23 +365,65 @@ class WhatsAppServiceSimple {
       });
     });
 
-    // Disconnected event
+    // Disconnected event - Enhanced with reason detection
     client.on("disconnected", async (reason) => {
       logger.info(`WhatsApp client ${sessionId} disconnected:`, reason);
-      this.updateSessionStatus(sessionId, "disconnected");
+      
+      // Detect if this is a browser closure vs network issue
+      let disconnectReason = 'WHATSAPP_DISCONNECT';
+      if (reason && typeof reason === 'string') {
+        if (reason.includes('Target closed') || reason.includes('Page closed')) {
+          disconnectReason = 'BROWSER_CLOSED';
+        } else if (reason.includes('Navigation failed') || reason.includes('net::ERR_')) {
+          disconnectReason = 'NETWORK_ERROR';
+        }
+      }
+
+      await this.handleSessionDisconnect(sessionId, disconnectReason, reason);
 
       // Send webhook
       await this.sendWebhook({
         event: "disconnected",
         sessionId,
-        data: { reason },
+        data: { reason, disconnectType: disconnectReason },
         timestamp: new Date().toISOString(),
       });
+    });
+
+    // State change event - Detect WhatsApp Web states
+    client.on('change_state', async (state) => {
+      logger.info(`WhatsApp client ${sessionId} state changed:`, state);
+      
+      // Handle different WhatsApp Web states
+      if (state === 'UNPAIRED' || state === 'UNPAIRED_IDLE') {
+        logger.warn(`Session ${sessionId} became unpaired, marking as disconnected`);
+        await this.handleSessionDisconnect(sessionId, 'WHATSAPP_UNPAIRED', `State: ${state}`);
+      } else if (state === 'TIMEOUT') {
+        logger.warn(`Session ${sessionId} timed out`);
+        await this.handleSessionDisconnect(sessionId, 'WHATSAPP_TIMEOUT', `State: ${state}`);
+      }
+    });
+
+    // Loading screen event - Detect when WhatsApp Web shows loading screen
+    client.on('loading_screen', async (percent, message) => {
+      logger.debug(`Session ${sessionId} loading: ${percent}% - ${message}`);
+      if (percent === 0) {
+        // WhatsApp Web is reloading, might indicate connection issues
+        this.updateSessionStatus(sessionId, "connecting", {
+          lastHealthCheck: new Date(),
+          metadata: { loading: true, loadingMessage: message }
+        });
+      }
     });
 
     // Message event
     client.on("message", async (message: Message) => {
       try {
+        // Update last health check on successful message receipt
+        this.updateSessionStatus(sessionId, this.sessions.get(sessionId)?.status || "ready", {
+          lastHealthCheck: new Date()
+        });
+
         const whatsappMessage = await this.parseMessage(message, sessionId);
         logger.info(`Message received in session ${sessionId}:`, {
           from: whatsappMessage.from,
@@ -375,6 +543,11 @@ class WhatsAppServiceSimple {
         };
       }
 
+      // Update health check on successful message sending attempt
+      this.updateSessionStatus(sessionId, "ready", {
+        lastHealthCheck: new Date()
+      });
+
       // Normalize phone number for WhatsApp Web compatibility
       let normalizedNumber: string;
       try {
@@ -410,12 +583,28 @@ class WhatsAppServiceSimple {
         messageId: sentMessage.id._serialized,
       });
 
+      // Update health check on successful message sent
+      this.updateSessionStatus(sessionId, "ready", {
+        lastHealthCheck: new Date()
+      });
+
       return {
         success: true,
         messageId: sentMessage.id._serialized,
       };
     } catch (error) {
       logger.error(`Error sending message in session ${sessionId}:`, error);
+      
+      // Check if error indicates session is dead
+      if (error instanceof Error) {
+        const errorMsg = error.message.toLowerCase();
+        if (errorMsg.includes('target closed') || 
+            errorMsg.includes('page closed') || 
+            errorMsg.includes('session closed')) {
+          logger.warn(`Session ${sessionId} appears to be closed, marking as disconnected`);
+          await this.handleSessionDisconnect(sessionId, 'SESSION_DEAD', error.message);
+        }
+      }
 
       // Provide more specific error messages for common issues
       let errorMessage =
@@ -936,127 +1125,71 @@ class WhatsAppServiceSimple {
     messagePreview?: string,
   ): Promise<{ allowed: boolean; reason: string; leadInfo?: any }> {
     try {
+      // Import the new enhanced WhatsApp Authorization Service
+      const { default: WhatsAppAuthorizationService } = await import(
+        "./WhatsAppAuthorizationService"
+      );
+
       // Remove WhatsApp suffix to get clean phone number
       const phoneNumber = phoneNumberWithSuffix
         .replace("@c.us", "")
         .replace("@g.us", "");
 
-      // Import DatabaseService to check leads
-      const { default: DatabaseService } = await import("./DatabaseService");
+      logger.debug(`🔍 Checking authorization for phone number: ${phoneNumber}`);
 
-      // Get all active leads from database
-      const leads = await DatabaseService.getAllLeads();
-
-      // Check if the phone number matches any lead using PhoneNumberService
-      let matchedLead: any = null;
-
-      // Normalize incoming phone number
-      const normalizedIncoming =
-        PhoneNumberService.normalizePhoneNumber(phoneNumber);
-
-      const isAllowed = leads.some((lead) => {
-        if (!lead.phone || !lead.whatsappAuthorized) return false;
-
-        // Use PhoneNumberService for robust phone number comparison
-        if (
-          PhoneNumberService.arePhoneNumbersEquivalent(phoneNumber, lead.phone)
-        ) {
-          matchedLead = lead;
-          logger.debug(
-            `✅ Phone number match found: ${lead.phone} ≈ ${phoneNumber} (normalized: ${normalizedIncoming})`,
-          );
-          return true;
-        }
-
-        return false;
-      });
-
-      let decision: "ALLOWED" | "BLOCKED";
-      let reason: string;
-
-      if (isAllowed && matchedLead) {
-        decision = "ALLOWED";
-        reason = `Lead autorizado: ${matchedLead.name || "Sin nombre"} (ID: ${matchedLead.id})`;
-        logger.info(`✅ Número ${phoneNumber} PERMITIDO - ${reason}`);
-      } else {
-        decision = "BLOCKED";
-        const leadExists = leads.some((lead) => {
-          if (!lead.phone) return false;
-          return PhoneNumberService.arePhoneNumbersEquivalent(
-            phoneNumber,
-            lead.phone,
-          );
-        });
-
-        if (leadExists) {
-          reason = "Lead existe pero WhatsApp no autorizado";
-        } else {
-          reason = "Número no encontrado en whitelist de leads";
-        }
-
-        logger.info(`❌ Número ${phoneNumber} BLOQUEADO - ${reason}`);
-      }
-
-      // Log the decision to database
-      await DatabaseService.logWhitelistDecision({
+      // Use the enhanced authorization service with all new rules
+      const authorizationResult = await WhatsAppAuthorizationService.authorize({
         phoneNumber,
         sessionId,
-        decision,
-        reason,
-        leadId: matchedLead?.id,
-        leadName: matchedLead?.name,
-        messagePreview: messagePreview?.substring(0, 200),
-        aiProvider: process.env.AI_PROVIDER || "unknown",
+        messagePreview,
+        timestamp: new Date(),
       });
 
-      // Advanced logging de la decisión de whitelist
-      advancedLogger.logWhitelistDecision(
+      logger.info(
+        `🔐 Authorization result for ${phoneNumber}: ${authorizationResult.decision}`,
         {
-          phoneNumber,
-          sessionId,
-          decision,
-          reason,
-          leadId: matchedLead?.id,
-          leadName: matchedLead?.name,
-          messagePreview: messagePreview,
-        },
-        {
-          sessionId,
-          phoneNumber,
-          operation: "whitelist-check",
-          leadId: matchedLead?.id,
-        },
+          reason: authorizationResult.reason,
+          confidence: authorizationResult.confidence,
+          leadId: authorizationResult.leadInfo?.id,
+          leadName: authorizationResult.leadInfo?.name,
+          riskFactors: authorizationResult.metadata?.riskFactors,
+          allowanceFactors: authorizationResult.metadata?.allowanceFactors,
+        }
       );
 
+      // Convert to legacy format for compatibility with existing code
       return {
-        allowed: isAllowed,
-        reason,
-        leadInfo: matchedLead,
+        allowed: authorizationResult.decision === "ALLOWED",
+        reason: authorizationResult.reason,
+        leadInfo: authorizationResult.leadInfo,
       };
     } catch (error) {
-      logger.error("Error checking phone number whitelist:", error);
+      logger.error("Error in enhanced authorization check:", error);
+
+      // Fallback to conservative approach - block unknown numbers
+      const phoneNumber = phoneNumberWithSuffix
+        .replace("@c.us", "")
+        .replace("@g.us", "");
 
       // Log the error decision
       try {
         const { default: DatabaseService } = await import("./DatabaseService");
         await DatabaseService.logWhitelistDecision({
-          phoneNumber: phoneNumberWithSuffix
-            .replace("@c.us", "")
-            .replace("@g.us", ""),
+          phoneNumber,
           sessionId,
-          decision: "ALLOWED",
-          reason: "Error en verificación - comportamiento fail-safe",
+          decision: "BLOCKED",
+          reason: "Error en sistema de autorización - bloqueado por seguridad",
           messagePreview: messagePreview?.substring(0, 200),
           aiProvider: process.env.AI_PROVIDER || "unknown",
         });
       } catch (logError) {
-        logger.error("Error logging whitelist decision:", logError);
+        logger.error("Error logging authorization decision:", logError);
       }
 
-      // En caso de error, permitir la respuesta (behavior fail-safe)
+      // En caso de error, comportamiento conservador (BLOQUEAR)
       return {
-        allowed: true,
-        reason: "Error en verificación - comportamiento fail-safe permitido",
+        allowed: false,
+        reason: "Error en sistema de autorización - bloqueado por seguridad",
       };
     }
   }
@@ -1191,6 +1324,250 @@ class WhatsAppServiceSimple {
 
     // Don't quote for long conversations (default)
     return false;
+  }
+
+  /**
+   * 🚨 Handle browser disconnect events (window close, browser crash, etc.)
+   */
+  private async handleBrowserDisconnect(sessionId: string, disconnectType: string): Promise<void> {
+    try {
+      logger.warn(`🚨 Handling browser disconnect for session ${sessionId}, type: ${disconnectType}`);
+
+      // Update session status immediately
+      await this.updateSessionStatus(sessionId, "disconnected", {
+        lastError: `Browser disconnected: ${disconnectType}`,
+        lastHealthCheck: new Date(),
+        autoReconnect: false, // Prevent auto-reconnection for browser closures
+      });
+
+      // Clean up client reference
+      const client = this.clients.get(sessionId);
+      if (client) {
+        try {
+          // Don't call destroy() here as browser is already gone
+          this.clients.delete(sessionId);
+          logger.info(`✅ Client reference cleaned for session ${sessionId}`);
+        } catch (error) {
+          logger.error(`Error cleaning client reference for ${sessionId}:`, error);
+        }
+      }
+
+      // Persist the disconnection state
+      try {
+        await SessionPersistenceService.updateSessionStatus(sessionId, "disconnected", {
+          lastError: `Browser disconnected: ${disconnectType}`,
+          lastHealthCheck: new Date(),
+          metadata: {
+            disconnectType,
+            disconnectedAt: new Date().toISOString(),
+            autoReconnect: false,
+          }
+        });
+      } catch (dbError) {
+        logger.error(`Error updating database for session ${sessionId}:`, dbError);
+      }
+
+      // Send webhook notification
+      await this.sendWebhook({
+        event: "browser_closed",
+        sessionId,
+        data: { 
+          disconnectType,
+          timestamp: new Date().toISOString(),
+          autoReconnect: false
+        },
+        timestamp: new Date().toISOString(),
+      });
+
+      logger.info(`✅ Browser disconnect handled for session ${sessionId}`);
+    } catch (error) {
+      logger.error(`❌ Error handling browser disconnect for session ${sessionId}:`, error);
+    }
+  }
+
+  /**
+   * 🔌 Handle session disconnect with different strategies based on reason
+   */
+  private async handleSessionDisconnect(sessionId: string, disconnectType: string, originalReason?: any): Promise<void> {
+    try {
+      logger.info(`🔌 Handling session disconnect: ${sessionId} - Type: ${disconnectType}`);
+
+      let shouldAutoReconnect = true;
+      let errorMessage = `Session disconnected: ${disconnectType}`;
+
+      // Determine reconnection strategy based on disconnect type
+      switch (disconnectType) {
+        case 'BROWSER_CLOSED':
+        case 'PAGE_CLOSED':
+        case 'PAGE_ERROR':
+          shouldAutoReconnect = false; // User intentionally closed browser
+          errorMessage = `Browser was closed by user: ${disconnectType}`;
+          break;
+          
+        case 'WHATSAPP_UNPAIRED':
+        case 'WHATSAPP_TIMEOUT':
+          shouldAutoReconnect = false; // WhatsApp Web session expired
+          errorMessage = `WhatsApp Web session expired: ${disconnectType}`;
+          break;
+          
+        case 'NETWORK_ERROR':
+          shouldAutoReconnect = true; // Network issues might be temporary
+          errorMessage = `Network error: ${originalReason || disconnectType}`;
+          break;
+          
+        default:
+          shouldAutoReconnect = false; // Conservative approach for unknown reasons
+          errorMessage = `Unknown disconnect: ${originalReason || disconnectType}`;
+      }
+
+      // Update session status
+      await this.updateSessionStatus(sessionId, "disconnected", {
+        lastError: errorMessage,
+        lastHealthCheck: new Date(),
+        autoReconnect: shouldAutoReconnect,
+      });
+
+      // Clean up client if still exists
+      const client = this.clients.get(sessionId);
+      if (client) {
+        try {
+          if (disconnectType !== 'BROWSER_CLOSED' && disconnectType !== 'PAGE_CLOSED') {
+            // Only call destroy if browser isn't already gone
+            await client.destroy();
+          }
+          this.clients.delete(sessionId);
+        } catch (error) {
+          logger.warn(`Error during client cleanup for ${sessionId}:`, error);
+          this.clients.delete(sessionId); // Force removal
+        }
+      }
+
+      // Remove from active sessions
+      this.sessions.delete(sessionId);
+
+      // Update database
+      try {
+        await SessionPersistenceService.updateSessionStatus(sessionId, "disconnected", {
+          lastError: errorMessage,
+          autoReconnect: shouldAutoReconnect,
+          metadata: {
+            disconnectType,
+            originalReason: originalReason?.toString() || 'N/A',
+            disconnectedAt: new Date().toISOString(),
+          }
+        });
+      } catch (dbError) {
+        logger.error(`Error updating database for disconnected session ${sessionId}:`, dbError);
+      }
+
+      logger.info(`✅ Session disconnect handled: ${sessionId} (autoReconnect: ${shouldAutoReconnect})`);
+    } catch (error) {
+      logger.error(`❌ Error handling session disconnect for ${sessionId}:`, error);
+    }
+  }
+
+  /**
+   * 🛡️ Graceful shutdown - close all sessions cleanly
+   */
+  async shutdown(): Promise<void> {
+    logger.info('🛑 Starting graceful shutdown of WhatsApp service...');
+
+    const sessions = Array.from(this.clients.keys());
+    logger.info(`🔄 Shutting down ${sessions.length} active sessions...`);
+
+    // Stop health monitoring
+    try {
+      SessionHealthCheckService.stopMonitoring();
+      logger.info('✅ Health monitoring stopped');
+    } catch (error) {
+      logger.error('Error stopping health monitoring:', error);
+    }
+
+    // Shutdown all sessions with timeout
+    const shutdownPromises = sessions.map(async (sessionId) => {
+      return new Promise<void>((resolve) => {
+        const timeoutId = setTimeout(() => {
+          logger.warn(`⚠️ Timeout shutting down session ${sessionId}, forcing cleanup`);
+          this.clients.delete(sessionId);
+          this.sessions.delete(sessionId);
+          resolve();
+        }, 10000); // 10 second timeout per session
+
+        this.destroySession(sessionId)
+          .then(() => {
+            clearTimeout(timeoutId);
+            logger.info(`✅ Session ${sessionId} shutdown complete`);
+            resolve();
+          })
+          .catch((error) => {
+            clearTimeout(timeoutId);
+            logger.error(`❌ Error shutting down session ${sessionId}:`, error);
+            // Force cleanup even on error
+            this.clients.delete(sessionId);
+            this.sessions.delete(sessionId);
+            resolve();
+          });
+      });
+    });
+
+    try {
+      // Wait for all sessions to shutdown (max 30 seconds total)
+      await Promise.race([
+        Promise.all(shutdownPromises),
+        new Promise(resolve => setTimeout(resolve, 30000))
+      ]);
+
+      logger.info('✅ All sessions shutdown completed');
+    } catch (error) {
+      logger.error('❌ Error during session shutdown:', error);
+    }
+
+    // Final cleanup - mark all remaining sessions as disconnected in database
+    try {
+      const remainingSessions = await SessionPersistenceService.loadActiveSessions();
+      for (const session of remainingSessions) {
+        await SessionPersistenceService.updateSessionStatus(session.sessionId, "disconnected", {
+          lastError: "Server shutdown",
+          autoReconnect: false,
+        });
+      }
+      logger.info(`✅ Database cleanup completed for ${remainingSessions.length} sessions`);
+    } catch (error) {
+      logger.error('❌ Error during database cleanup:', error);
+    }
+
+    logger.info('🏁 WhatsApp service graceful shutdown completed');
+  }
+
+  /**
+   * 💪 Force disconnect a specific session
+   */
+  async forceDisconnectSession(sessionId: string): Promise<void> {
+    logger.info(`💪 Force disconnecting session ${sessionId}`);
+
+    try {
+      // Immediately mark as disconnected
+      await this.updateSessionStatus(sessionId, "disconnected", {
+        lastError: "Force disconnected by user",
+        autoReconnect: false,
+      });
+
+      // Destroy the session
+      await this.destroySession(sessionId);
+
+      // Send webhook notification
+      await this.sendWebhook({
+        event: "force_disconnected",
+        sessionId,
+        data: { timestamp: new Date().toISOString() },
+        timestamp: new Date().toISOString(),
+      });
+
+      logger.info(`✅ Session ${sessionId} force disconnected successfully`);
+    } catch (error) {
+      logger.error(`❌ Error force disconnecting session ${sessionId}:`, error);
+      throw error;
+    }
   }
 
   // Mantener método original para compatibilidad
@@ -1713,6 +2090,221 @@ Respuesta:`,
         error,
       );
       return false;
+    }
+  }
+
+  // === Enhanced Monitoring Methods ===
+
+  /**
+   * 📊 Start memory monitoring for a browser page
+   */
+  private async startMemoryMonitoring(page: any, sessionId: string): Promise<void> {
+    try {
+      // Store monitoring interval reference
+      const monitoringKey = `memory_monitor_${sessionId}`;
+      
+      const memoryMonitorInterval = setInterval(async () => {
+        try {
+          // Get browser process info
+          const browserProcess = page.browser().process();
+          if (!browserProcess) {
+            logger.debug(`⚠️ No browser process found for session ${sessionId}`);
+            return;
+          }
+
+          // Get memory metrics from the page
+          const metrics = await page.metrics();
+          const memoryUsage = {
+            usedJSHeapSize: metrics.JSHeapUsedSize || 0,
+            totalJSHeapSize: metrics.JSHeapTotalSize || 0,
+            jsHeapSizeLimit: metrics.JSHeapSizeLimit || 0,
+            timestamp: new Date().toISOString()
+          };
+
+          // Convert to MB for easier reading
+          const usedMB = Math.round(memoryUsage.usedJSHeapSize / (1024 * 1024));
+          const totalMB = Math.round(memoryUsage.totalJSHeapSize / (1024 * 1024));
+          const limitMB = Math.round(memoryUsage.jsHeapSizeLimit / (1024 * 1024));
+
+          // Define memory thresholds
+          const WARNING_THRESHOLD = 500; // 500MB
+          const CRITICAL_THRESHOLD = 1000; // 1GB
+
+          // Log memory usage periodically (every 5 minutes)
+          const currentTime = Date.now();
+          if (!this.lastMemoryLog || currentTime - this.lastMemoryLog > 300000) { // 5 minutes
+            logger.info(`📊 Memory usage for session ${sessionId}: ${usedMB}MB used, ${totalMB}MB total (limit: ${limitMB}MB)`);
+            this.lastMemoryLog = currentTime;
+          }
+
+          // Check for memory warnings
+          if (usedMB > CRITICAL_THRESHOLD) {
+            logger.error(`🚨 CRITICAL memory usage for session ${sessionId}: ${usedMB}MB (>${CRITICAL_THRESHOLD}MB threshold)`);
+            
+            // Update session with memory warning
+            await this.updateSessionStatus(sessionId, this.sessions.get(sessionId)?.status || "connecting", {
+              lastHealthCheck: new Date(),
+              metadata: { 
+                memoryWarning: 'CRITICAL',
+                memoryUsageMB: usedMB,
+                timestamp: new Date().toISOString()
+              }
+            });
+
+            // Consider triggering disconnect to prevent crash
+            setTimeout(async () => {
+              logger.warn(`💥 Proactively disconnecting session ${sessionId} due to critical memory usage`);
+              await this.handleBrowserDisconnect(sessionId, 'MEMORY_OVERLOAD');
+            }, 10000); // Wait 10 seconds before disconnecting
+
+          } else if (usedMB > WARNING_THRESHOLD) {
+            logger.warn(`⚠️ High memory usage for session ${sessionId}: ${usedMB}MB (>${WARNING_THRESHOLD}MB threshold)`);
+            
+            await this.updateSessionStatus(sessionId, this.sessions.get(sessionId)?.status || "connecting", {
+              lastHealthCheck: new Date(),
+              metadata: { 
+                memoryWarning: 'HIGH',
+                memoryUsageMB: usedMB,
+                timestamp: new Date().toISOString()
+              }
+            });
+          }
+
+          // Store metrics for potential analysis
+          await SessionPersistenceService.updateSessionStatus(sessionId, 
+            this.sessions.get(sessionId)?.status || "connecting", 
+            {
+              metadata: {
+                lastMemoryCheck: new Date().toISOString(),
+                memoryUsage: {
+                  usedMB,
+                  totalMB,
+                  limitMB,
+                  utilizationPercent: Math.round((usedMB / limitMB) * 100)
+                }
+              }
+            }
+          );
+
+        } catch (error) {
+          logger.debug(`Error in memory monitoring for session ${sessionId}:`, error);
+          // Don't throw - memory monitoring is non-critical
+        }
+      }, 30000); // Check every 30 seconds
+
+      // Store interval reference for cleanup
+      if (!this.monitoringIntervals) {
+        this.monitoringIntervals = new Map();
+      }
+      this.monitoringIntervals.set(monitoringKey, memoryMonitorInterval);
+
+      logger.debug(`📊 Memory monitoring started for session ${sessionId}`);
+    } catch (error) {
+      logger.warn(`Error starting memory monitoring for session ${sessionId}:`, error);
+    }
+  }
+
+  /**
+   * 💓 Start heartbeat monitoring for a browser page
+   */
+  private async startHeartbeatMonitoring(page: any, sessionId: string): Promise<void> {
+    try {
+      const heartbeatKey = `heartbeat_${sessionId}`;
+      let consecutiveFailures = 0;
+      const MAX_FAILURES = 3;
+
+      const heartbeatInterval = setInterval(async () => {
+        try {
+          // Perform a simple page evaluation to check if browser is responsive
+          const isAlive = await page.evaluate(() => {
+            // Simple check - if this executes, the page is responsive
+            return document.readyState && window.location.href;
+          });
+
+          if (isAlive) {
+            // Reset failure counter on successful heartbeat
+            if (consecutiveFailures > 0) {
+              logger.info(`💚 Session ${sessionId} heartbeat recovered after ${consecutiveFailures} failures`);
+              consecutiveFailures = 0;
+            }
+
+            // Update session with successful heartbeat
+            await this.updateSessionStatus(sessionId, this.sessions.get(sessionId)?.status || "ready", {
+              lastHealthCheck: new Date(),
+              metadata: {
+                lastHeartbeat: new Date().toISOString(),
+                heartbeatStatus: 'ALIVE',
+                consecutiveFailures: 0
+              }
+            });
+
+            logger.debug(`💓 Heartbeat OK for session ${sessionId}`);
+          } else {
+            throw new Error('Page evaluation returned falsy value');
+          }
+
+        } catch (error) {
+          consecutiveFailures++;
+          logger.warn(`💔 Heartbeat failed for session ${sessionId} (failure ${consecutiveFailures}/${MAX_FAILURES}):`, error.message);
+
+          // Update session with heartbeat failure
+          await this.updateSessionStatus(sessionId, this.sessions.get(sessionId)?.status || "connecting", {
+            lastHealthCheck: new Date(),
+            metadata: {
+              lastHeartbeat: new Date().toISOString(),
+              heartbeatStatus: 'FAILED',
+              consecutiveFailures: consecutiveFailures,
+              lastHeartbeatError: error.message
+            }
+          });
+
+          // If we've reached max failures, consider the session dead
+          if (consecutiveFailures >= MAX_FAILURES) {
+            logger.error(`💀 Session ${sessionId} heartbeat failed ${MAX_FAILURES} times consecutively - marking as disconnected`);
+            
+            // Clear the heartbeat interval to prevent further checks
+            if (this.monitoringIntervals?.has(heartbeatKey)) {
+              clearInterval(this.monitoringIntervals.get(heartbeatKey));
+              this.monitoringIntervals.delete(heartbeatKey);
+            }
+
+            // Handle as browser disconnect
+            await this.handleBrowserDisconnect(sessionId, 'HEARTBEAT_FAILURE');
+          }
+        }
+      }, 60000); // Check every 60 seconds
+
+      // Store interval reference for cleanup
+      if (!this.monitoringIntervals) {
+        this.monitoringIntervals = new Map();
+      }
+      this.monitoringIntervals.set(heartbeatKey, heartbeatInterval);
+
+      logger.debug(`💓 Heartbeat monitoring started for session ${sessionId}`);
+    } catch (error) {
+      logger.warn(`Error starting heartbeat monitoring for session ${sessionId}:`, error);
+    }
+  }
+
+  /**
+   * 🧹 Clean up monitoring intervals for a session
+   */
+  private cleanupMonitoring(sessionId: string): void {
+    if (!this.monitoringIntervals) return;
+
+    const memoryKey = `memory_monitor_${sessionId}`;
+    const heartbeatKey = `heartbeat_${sessionId}`;
+
+    if (this.monitoringIntervals.has(memoryKey)) {
+      clearInterval(this.monitoringIntervals.get(memoryKey));
+      this.monitoringIntervals.delete(memoryKey);
+      logger.debug(`🧹 Memory monitoring cleaned up for session ${sessionId}`);
+    }
+
+    if (this.monitoringIntervals.has(heartbeatKey)) {
+      clearInterval(this.monitoringIntervals.get(heartbeatKey));
+      this.monitoringIntervals.delete(heartbeatKey);
+      logger.debug(`🧹 Heartbeat monitoring cleaned up for session ${sessionId}`);
     }
   }
 }

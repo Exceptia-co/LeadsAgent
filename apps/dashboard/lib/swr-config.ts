@@ -95,7 +95,22 @@ export const createCacheKey = (endpoint: string, params?: Record<string, any>) =
   const searchParams = new URLSearchParams()
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null) {
-      searchParams.set(key, String(value))
+      // Properly serialize values to prevent [object Object]
+      let serializedValue: string
+      
+      if (typeof value === 'object') {
+        // If it's an object, stringify it properly or skip if it's a complex object
+        if (Array.isArray(value)) {
+          serializedValue = value.join(',')
+        } else {
+          console.warn(`Skipping object parameter '${key}' in createCacheKey:`, value)
+          return // Skip object parameters to prevent [object Object]
+        }
+      } else {
+        serializedValue = String(value)
+      }
+      
+      searchParams.set(key, serializedValue)
     }
   })
   

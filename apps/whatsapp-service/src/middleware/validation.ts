@@ -284,6 +284,86 @@ export function rateLimit(req: Request, res: Response, next: NextFunction): void
   }
 }
 
+// Middleware to validate direct WhatsApp send request (for /whatsapp/send endpoint)
+export function validateWhatsAppSendMessage(req: Request, res: Response, next: NextFunction): void {
+  try {
+    const { sessionId, phone, message } = req.body
+    
+    // Validate sessionId from body
+    if (!sessionId || typeof sessionId !== 'string') {
+      res.status(400).json({
+        success: false,
+        error: 'sessionId is required and must be a string',
+        code: 'MISSING_SESSION_ID'
+      })
+      return
+    }
+    
+    // Validate phone number
+    if (!phone || typeof phone !== 'string') {
+      res.status(400).json({
+        success: false,
+        error: 'phone field is required and must be a string',
+        code: 'MISSING_PHONE'
+      })
+      return
+    }
+    
+    // Validate phone number format
+    if (!isValidPhoneNumber(phone)) {
+      res.status(400).json({
+        success: false,
+        error: 'phone field must be a valid phone number (10-15 digits)',
+        code: 'INVALID_PHONE_NUMBER',
+        examples: ['1234567890', '+1234567890', '54911234567']
+      })
+      return
+    }
+    
+    // Validate message content
+    if (!message || typeof message !== 'string') {
+      res.status(400).json({
+        success: false,
+        error: 'message field is required and must be a string',
+        code: 'MISSING_MESSAGE'
+      })
+      return
+    }
+    
+    // Validate message length
+    if (message.length === 0) {
+      res.status(400).json({
+        success: false,
+        error: 'message cannot be empty',
+        code: 'EMPTY_MESSAGE'
+      })
+      return
+    }
+    
+    if (message.length > 4096) {
+      res.status(400).json({
+        success: false,
+        error: 'message is too long (maximum 4096 characters)',
+        code: 'MESSAGE_TOO_LONG'
+      })
+      return
+    }
+    
+    // Format the phone number for WhatsApp and maintain both fields for compatibility
+    req.body.to = formatPhoneNumber(phone)  // For other controllers that expect 'to'
+    req.body.phone = req.body.to            // For sendDirectMessage controller that expects 'phone'
+    
+    next()
+  } catch (error) {
+    logger.error('Error in validateWhatsAppSendMessage middleware:', error)
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error during validation',
+      code: 'VALIDATION_ERROR'
+    })
+  }
+}
+
 // Request logging middleware
 export function logRequest(req: Request, res: Response, next: NextFunction): void {
   const startTime = Date.now()

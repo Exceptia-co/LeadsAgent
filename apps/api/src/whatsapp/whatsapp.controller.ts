@@ -1,6 +1,13 @@
 import { Controller, Post, Body, Headers, Logger, BadRequestException } from '@nestjs/common'
 import { WhatsAppService } from './whatsapp.service'
 
+interface SendMessageDto {
+  sessionId: string
+  phone: string
+  message: string
+  type?: 'text' | 'image' | 'document' | 'audio' | 'video'
+}
+
 interface WebhookPayload {
   event: 'message' | 'status_change' | 'qr_updated' | 'authenticated' | 'disconnected'
   sessionId: string
@@ -57,6 +64,28 @@ export class WhatsAppController {
     } catch (error) {
       this.logger.error('Error processing webhook:', error)
       throw error
+    }
+  }
+
+  @Post('send')
+  async sendMessage(@Body() sendMessageDto: SendMessageDto) {
+    this.logger.log(`Sending message to ${sendMessageDto.phone} via session ${sendMessageDto.sessionId}`)
+    
+    try {
+      const success = await this.whatsAppService.sendMessage(
+        sendMessageDto.sessionId,
+        sendMessageDto.phone,
+        sendMessageDto.message
+      )
+
+      if (success) {
+        return { success: true, message: 'Message sent successfully' }
+      } else {
+        throw new BadRequestException('Failed to send message')
+      }
+    } catch (error) {
+      this.logger.error('Error sending message:', error)
+      throw new BadRequestException('Failed to send message: ' + error.message)
     }
   }
 }

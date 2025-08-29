@@ -255,6 +255,49 @@ pnpm add puppeteer
 - Verifica que Puppeteer se haya instalado correctamente
 - Revisa los logs del servidor para errores
 
+## 🎯 Troubleshooting - Verificar Modelo de IA
+
+### ✅ Cómo verificar que se está usando openai/gpt-oss-120b
+
+**1. Revisar logs de inicio del servicio:**
+```bash
+pnpm dev
+# Buscar en los logs:
+# "🚀 OpenRouter inicializado con modelo FIJO: openai/gpt-oss-120b"
+# "⚠️  Modelo no puede ser cambiado desde variables de entorno"
+```
+
+**2. Verificar configuración:**
+```bash
+node test-ai-config.js
+# Debe mostrar: "Model Match: 🟼 CORRECT"
+```
+
+**3. Probar endpoint de estado:**
+```bash
+curl http://localhost:3002/ai/status
+# Verificar que currentProvider sea "openrouter"
+```
+
+**4. Enviar mensaje de prueba:**
+```bash
+curl -X POST http://localhost:3002/ai/test \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hola, ¿cómo estás?"}'
+# Los logs deberían mostrar: "🤖 Using FIXED OpenRouter model: openai/gpt-oss-120b"
+```
+
+**5. Revisar actividad de OpenRouter:**
+- Ir a https://openrouter.ai/activity
+- Verificar que las llamadas usen "openai/gpt-oss-120b"
+- NO deberían aparecer llamadas a "anthropic/claude-3.5-sonnet"
+
+### ❌ Problemas comunes
+
+- **Error "Model not found"**: Verificar OPENROUTER_API_KEY en .env
+- **Usando Claude 3.5**: Reiniciar el servicio después de cambiar .env
+- **Variables ignoradas**: El modelo está hardcodeado en `src/config/ai.config.ts`
+
 ## 🔐 Seguridad
 
 - Nunca expongas este servicio directamente a Internet sin autenticación

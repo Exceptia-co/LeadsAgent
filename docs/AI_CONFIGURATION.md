@@ -13,13 +13,16 @@ OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 OPENROUTER_MODEL="openai/gpt-oss-120b"
 ```
 
-**Modelos disponibles en OpenRouter:**
-- `openai/gpt-oss-120b` - **MODELO ACTUAL** - GPT Open Source 120B, optimizado para conversaciones
-- `anthropic/claude-3.5-sonnet` - Excelente para análisis y conversaciones
-- `openai/gpt-4o` - GPT-4 Omni
-- `google/gemini-pro-1.5` - Google Gemini Pro
-- `meta-llama/llama-3.1-405b` - Llama 3.1 405B
-- Y muchos más...
+**Modelo FIJO en LeadsCRM:**
+- `openai/gpt-oss-120b` - **MODELO OBLIGATORIO** - GPT Open Source 120B, hardcodeado en la configuración
+- ⚠️ **IMPORTANTE**: El modelo está fijo en el código y NO puede cambiarse via variables de entorno
+- ✅ **Configuración centralizada**: Se usa `ai.config.ts` para prevenir uso de Claude 3.5 Sonnet
+
+**Otros modelos disponibles en OpenRouter (NO UTILIZADOS):**
+- `anthropic/claude-3.5-sonnet` - BLOQUEADO por configuración
+- `openai/gpt-4o` - No usado
+- `google/gemini-pro-1.5` - No usado
+- `meta-llama/llama-3.1-405b` - No usado
 
 ### Google Gemini
 Servicio de IA nativo de Google:
@@ -73,12 +76,12 @@ const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || "gem
 const result = await model.generateContent("Analiza este mensaje de WhatsApp...");
 ```
 
-## 💡 Recomendaciones de Uso
+## 💡 Configuración de Uso
 
-1. **Para análisis de sentimientos**: Usa OpenRouter con Claude 3.5 Sonnet
-2. **Para tareas multimodales**: Usa Google Gemini
-3. **Para compatibilidad con código existente**: Usa OpenAI
-4. **Para experimentar con diferentes modelos**: Usa OpenRouter
+1. **Modelo único**: Siempre se usa `openai/gpt-oss-120b` vía OpenRouter
+2. **Sin configuración**: El modelo está hardcodeado y no puede cambiarse
+3. **Para tareas multimodales**: Cambiar manualmente a Gemini si es necesario
+4. **Claude 3.5 Sonnet**: BLOQUEADO para evitar uso accidental
 
 ## 🔒 Seguridad
 
@@ -95,7 +98,8 @@ const result = await model.generateContent("Analiza este mensaje de WhatsApp..."
 ## 🚀 Configuración en Producción
 
 Para producción, asegúrate de:
-1. Configurar las variables de entorno en tu plataforma de hosting
-2. Usar claves de API de producción
+1. Configurar OPENROUTER_API_KEY en variables de entorno
+2. ✅ El modelo `openai/gpt-oss-120b` ya está hardcodeado
 3. Implementar rate limiting apropiado
 4. Monitorear el uso y costos
+5. Verificar logs de inicio para confirmar modelo FIXED

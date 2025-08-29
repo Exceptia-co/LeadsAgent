@@ -2291,20 +2291,94 @@ class DatabaseService {
     }
   }
 
-  // Reemplazar variables en template
+  // Reemplazar variables en template con sistema expandido
   public replaceTemplateVariables(
     content: string,
     variables: { [key: string]: string },
   ): string {
     let result = content;
 
-    // Reemplazar variables con formato {{variable}}
-    Object.entries(variables).forEach(([key, value]) => {
-      const regex = new RegExp(`\{\{${key}\}\}`, "g");
+    // Variables de fecha y hora dinámicas
+    const now = new Date();
+    const dynamicVariables = {
+      ...variables,
+      // Variables de fecha
+      fecha_actual: now.toLocaleDateString('es-ES'),
+      fecha_completa: now.toLocaleDateString('es-ES', { 
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+      }),
+      hora_actual: now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
+      dia_semana: now.toLocaleDateString('es-ES', { weekday: 'long' }),
+      mes_actual: now.toLocaleDateString('es-ES', { month: 'long' }),
+      año_actual: now.getFullYear().toString(),
+      
+      // Variables de saludo dinámico
+      saludo: this.getDynamicGreeting(),
+      
+      // Variables de empresa (pueden ser configurables)
+      empresa: 'EscortsHub',
+      sitio_web: 'www.escortshub.com',
+      telefono_soporte: '+34 900 123 456',
+      email_soporte: 'soporte@escortshub.com',
+    };
+
+    // Reemplazar todas las variables con formato {{variable}}
+    Object.entries(dynamicVariables).forEach(([key, value]) => {
+      const regex = new RegExp(`\\{\\{${key}\\}\\}`, "g");
       result = result.replace(regex, value || "");
     });
 
+    // Limpiar variables no reemplazadas con mensaje más claro
+    result = result.replace(/\{\{([^}]+)\}\}/g, '[variable "$1" no disponible]');
+
     return result;
+  }
+
+  // Obtener saludo dinámico basado en hora del día
+  private getDynamicGreeting(): string {
+    const hour = new Date().getHours();
+    
+    if (hour >= 6 && hour < 12) {
+      return 'Buenos días';
+    } else if (hour >= 12 && hour < 18) {
+      return 'Buenas tardes';
+    } else {
+      return 'Buenas noches';
+    }
+  }
+
+  // Obtener lista completa de variables disponibles
+  public getAvailableTemplateVariables(): {
+    lead: string[];
+    system: string[];
+    dynamic: string[];
+  } {
+    return {
+      lead: [
+        'nombre',
+        'telefono', 
+        'email',
+        'estado', // status del lead
+        'origen', // source del lead
+        'fecha_creacion',
+        'id'
+      ],
+      system: [
+        'empresa',
+        'sitio_web', 
+        'telefono_soporte',
+        'email_soporte'
+      ],
+      dynamic: [
+        'fecha_actual',
+        'fecha_completa',
+        'hora_actual',
+        'dia_semana',
+        'mes_actual',
+        'año_actual',
+        'saludo'
+      ]
+    };
   }
 
   // Templates por defecto
@@ -2873,6 +2947,204 @@ class DatabaseService {
       logger.error("Error cleaning up old training interactions:", error);
       return 0;
     }
+  }
+
+  // ============================================
+  // MÉTODOS PARA VARIABLES DEL SISTEMA
+  // ============================================
+
+  // Cache en memoria para variables del sistema
+  private systemVariablesCache: Record<string, string> = {};
+  private cacheTimestamp: number = 0;
+  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutos
+
+  // Obtener todas las variables del sistema
+  public async getSystemVariables(): Promise<Record<string, string>> {
+    // Verificar cache primero
+    const now = Date.now();
+    if (
+      Object.keys(this.systemVariablesCache).length > 0 &&
+      now - this.cacheTimestamp < this.CACHE_DURATION
+    ) {
+      return { ...this.systemVariablesCache };
+    }
+
+    if (!this.pool) {
+      // Devolver valores por defecto si no hay conexión
+      const defaults = {
+        empresa: 'Mi Empresa',
+        sitio_web: 'https://mi-empresa.com',
+        telefono_soporte: '+1234567890',
+        email_soporte: 'soporte@mi-empresa.com',
+        telefono_empresa: '+1234567890',
+        direccion: '123 Calle Principal, Ciudad',
+        horario_atencion: 'Lunes a Viernes 9:00 AM - 6:00 PM'
+      };
+      this.systemVariablesCache = defaults;
+      this.cacheTimestamp = now;
+      return defaults;
+    }
+
+    try {
+      const query = 'SELECT key, value FROM system_variables ORDER BY key';
+      const result = await this.pool.query(query);
+
+      const variables: Record<string, string> = {};
+      result.rows.forEach((row) => {
+        variables[row.key] = row.value;
+      });
+
+      // Actualizar cache
+      this.systemVariablesCache = variables;
+      this.cacheTimestamp = now;
+
+      logger.debug(`📊 Loaded ${result.rows.length} system variables`);
+      return variables;
+    } catch (error) {
+      logger.error('Error getting system variables:', error);
+      return this.systemVariablesCache; // Devolver cache si hay error
+    }
+  }
+
+  // Obtener una variable específica del sistema
+  public async getSystemVariable(key: string): Promise<string | null> {
+    const variables = await this.getSystemVariables();
+    return variables[key] || null;
+  }
+
+  // Actualizar múltiples variables del sistema
+  public async updateSystemVariables(
+    updates: Record<string, string>
+  ): Promise<boolean> {
+    if (!this.pool) {
+      logger.warn('No database connection for updating system variables');
+      // Actualizar cache local al menos
+      Object.assign(this.systemVariablesCache, updates);
+      this.cacheTimestamp = Date.now();
+      return true;
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      for (const [key, value] of Object.entries(updates)) {
+        // Validar entrada según el tipo de variable
+        if (!this.validateSystemVariable(key, value)) {
+          throw new Error(`Invalid value for system variable '${key}': ${value}`);
+        }
+
+        const query = `
+          INSERT INTO system_variables (key, value, description, category, updated_at)
+          VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+          ON CONFLICT (key) 
+          DO UPDATE SET 
+            value = EXCLUDED.value,
+            updated_at = CURRENT_TIMESTAMP
+        `;
+
+        const description = this.getSystemVariableDescription(key);
+        await client.query(query, [key, value, description, 'system']);
+      }
+
+      await client.query('COMMIT');
+
+      // Limpiar cache para forzar recarga
+      this.systemVariablesCache = {};
+      this.cacheTimestamp = 0;
+
+      logger.info(
+        `✅ Updated ${Object.keys(updates).length} system variables: ${Object.keys(
+          updates
+        ).join(', ')}`
+      );
+      return true;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      logger.error('Error updating system variables:', error);
+      return false;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Actualizar una variable específica del sistema
+  public async updateSystemVariable(key: string, value: string): Promise<boolean> {
+    return this.updateSystemVariables({ [key]: value });
+  }
+
+  // Validar valor de variable del sistema
+  private validateSystemVariable(key: string, value: string): boolean {
+    if (!value || value.trim().length === 0) {
+      return false;
+    }
+
+    switch (key) {
+      case 'email_soporte':
+      case 'email_empresa':
+        // Validación básica de email
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(value);
+      
+      case 'sitio_web':
+        // Validación básica de URL
+        try {
+          new URL(value);
+          return true;
+        } catch {
+          return false;
+        }
+      
+      case 'telefono_soporte':
+      case 'telefono_empresa':
+        // Validación básica de teléfono (debe contener al menos algunos dígitos)
+        const phoneRegex = /\d{7,}/; // Al menos 7 dígitos
+        return phoneRegex.test(value.replace(/[^\d]/g, ''));
+      
+      default:
+        // Para otras variables, solo verificar que no estén vacías
+        return value.trim().length > 0;
+    }
+  }
+
+  // Obtener descripción por defecto para variables del sistema
+  private getSystemVariableDescription(key: string): string {
+    const descriptions: Record<string, string> = {
+      empresa: 'Nombre de la empresa',
+      sitio_web: 'URL del sitio web de la empresa',
+      telefono_soporte: 'Número de teléfono de soporte al cliente',
+      email_soporte: 'Email de soporte al cliente',
+      telefono_empresa: 'Número de teléfono principal de la empresa',
+      direccion: 'Dirección física de la empresa',
+      horario_atencion: 'Horario de atención al cliente'
+    };
+
+    return descriptions[key] || `Variable del sistema: ${key}`;
+  }
+
+  // Reemplazar variables del sistema en texto (para usar en templates)
+  public async replaceSystemVariables(text: string): Promise<string> {
+    if (!text || !text.includes('{{')) {
+      return text;
+    }
+
+    const variables = await this.getSystemVariables();
+    let result = text;
+
+    // Reemplazar todas las variables encontradas
+    for (const [key, value] of Object.entries(variables)) {
+      const placeholder = `{{${key}}}`;
+      result = result.replace(new RegExp(placeholder, 'g'), value);
+    }
+
+    return result;
+  }
+
+  // Limpiar cache de variables del sistema (útil para tests)
+  public clearSystemVariablesCache(): void {
+    this.systemVariablesCache = {};
+    this.cacheTimestamp = 0;
+    logger.debug('🧹 System variables cache cleared');
   }
 }
 

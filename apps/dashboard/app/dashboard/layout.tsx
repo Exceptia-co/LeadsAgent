@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation'
 import { useUser, UserButton } from '@clerk/nextjs'
 import { clsx } from 'clsx'
 import { ToastProvider } from '../../components/ui/toast'
+import { TemplateProvider } from '../../contexts/TemplateContext'
+import { WhatsAppProvider } from '../../contexts/WhatsAppContext'
 
 // Utility function for combining classes
 const cn = (...classes: any[]) => clsx(classes)
@@ -62,7 +64,9 @@ export default function DashboardLayout({
 
   return (
     <ToastProvider>
-      <div className="h-full">
+      <TemplateProvider>
+        <WhatsAppProvider>
+          <div className="h-full">
       {/* Mobile sidebar */}
       <div className={cn(
         'fixed inset-0 z-50 lg:hidden',
@@ -176,7 +180,9 @@ export default function DashboardLayout({
           {children}
         </main>
       </div>
-    </div>
+          </div>
+        </WhatsAppProvider>
+      </TemplateProvider>
     </ToastProvider>
   )
 }

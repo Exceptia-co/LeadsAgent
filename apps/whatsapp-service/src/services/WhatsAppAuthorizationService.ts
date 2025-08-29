@@ -39,7 +39,7 @@ class WhatsAppAuthorizationService {
     allowKnownLeadsWithAuth: true,
     
     // Permitir leads nuevos (sin registro previo)
-    allowNewLeads: true,
+    allowNewLeads: false,
     
     // Bloquear leads con autorización explícitamente denegada
     blockExplicitlyDenied: true,
@@ -139,6 +139,26 @@ class WhatsAppAuthorizationService {
     
     const riskFactors: string[] = [];
     const allowanceFactors: string[] = [];
+    
+    // REGLA 0: Verificar lista blanca explícita (máxima prioridad)
+    const isInExplicitWhitelist = await this.checkExplicitWhitelist(context.phoneNumber);
+    if (isInExplicitWhitelist.isAuthorized) {
+      allowanceFactors.push('explicit-whitelist');
+      
+      return {
+        decision: 'ALLOWED',
+        reason: `Número en lista blanca explícita: ${isInExplicitWhitelist.reason}`,
+        confidence: 1.0,
+        leadInfo,
+        metadata: {
+          isKnownLead: !!leadInfo,
+          hasWhatsAppAuth: true,
+          leadStatus: leadInfo?.status,
+          riskFactors,
+          allowanceFactors
+        }
+      };
+    }
     
     // REGLA 1: Verificar si es un lead conocido con autorización explícita
     if (leadInfo && this.config.allowKnownLeadsWithAuth) {
@@ -318,6 +338,35 @@ class WhatsAppAuthorizationService {
         allowanceFactors
       }
     };
+  }
+
+  /**
+   * Verificar si el número está en la lista blanca explícita
+   */
+  private async checkExplicitWhitelist(phoneNumber: string): Promise<{
+    isAuthorized: boolean;
+    reason?: string;
+    authorizedBy?: string;
+  }> {
+    try {
+      // Para la implementación inicial, usaremos una verificación temporal
+      // TODO: Implementar consulta real a la base de datos
+      const testNumbers = ['34123456789', '34987654321', '1234567890'];
+      
+      if (testNumbers.includes(phoneNumber)) {
+        return {
+          isAuthorized: true,
+          reason: 'Número de prueba autorizado',
+          authorizedBy: 'admin'
+        };
+      }
+      
+      return { isAuthorized: false };
+      
+    } catch (error) {
+      logger.warn('Error verificando lista blanca explícita:', error);
+      return { isAuthorized: false };
+    }
   }
 
   /**

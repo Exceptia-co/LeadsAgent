@@ -1,16 +1,17 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Card } from '../../../components/ui/card'
 import { Badge } from '../../../components/ui/badge'
 import { useLeads } from '../../../lib/api'
-import { STATUS_LABELS, STATUS_VARIANTS, type Lead } from '../../../types'
+import { STATUS_LABELS, STATUS_VARIANTS, type Lead, type SortableLeadField, type SortOrder } from '../../../types'
 import { AddLeadModal } from '../../../components/AddLeadModal'
 import { EditLeadModal } from '../../../components/EditLeadModal'
 import { DeleteConfirmDialog } from '../../../components/DeleteConfirmDialog'
+import { SortableTableHeader } from '../../../components/ui/SortableTableHeader'
 import { Users, Search, Plus, Filter, Edit2, Trash2, Eye, X } from 'lucide-react'
 import { useAuth } from '@clerk/nextjs'
-import { useToast } from '../../../hooks/use-toast'
+import { useToast } from '../../../components/ui/toast'
 import { useDebounce } from '../../../hooks/use-debounce'
 
 export default function LeadsPage() {
@@ -21,6 +22,15 @@ export default function LeadsPage() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [isSearching, setIsSearching] = useState(false)
+  
+  // Sorting state
+  const [sortBy, setSortBy] = useState<SortableLeadField>('createdAt')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  
+  // Bulk selection state
+  const [selectedLeads, setSelectedLeads] = useState<string[]>([])
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false)
+  const [isAllSelected, setIsAllSelected] = useState(false)
   
   // Ref to maintain focus on search input
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -34,10 +44,13 @@ export default function LeadsPage() {
     currentPage, 
     20, 
     debouncedSearchTerm
+    // NOTE: Ordenamiento se maneja client-side por ahora, no pasamos parámetros de sortBy/sortOrder
   )
   
   const { getToken } = useAuth()
-  const { success: toastSuccess, error: toastError } = useToast()
+  const { showToast } = useToast()
+  const success = (message: string, title?: string) => showToast({ type: 'success', title: title || 'Éxito', description: message })
+  const showError = (message: string, title?: string) => showToast({ type: 'error', title: title || 'Error', description: message })
   
   // Reset to first page when search term changes
   useEffect(() => {
@@ -45,6 +58,26 @@ export default function LeadsPage() {
       setCurrentPage(1)
     }
   }, [debouncedSearchTerm])
+  
+  // Update selection when leads change
+  useEffect(() => {
+    if (leads.length > 0) {
+      const currentSelectedIds = new Set(selectedLeads)
+      const currentLeadIds = leads.map(lead => lead.id)
+      const validSelectedIds = selectedLeads.filter(id => currentLeadIds.includes(id))
+      
+      if (validSelectedIds.length !== selectedLeads.length) {
+        setSelectedLeads(validSelectedIds)
+      }
+      
+      // Update isAllSelected based on current page leads
+      const allCurrentLeadsSelected = currentLeadIds.length > 0 && 
+        currentLeadIds.every(id => currentSelectedIds.has(id))
+      setIsAllSelected(allCurrentLeadsSelected)
+    } else {
+      setIsAllSelected(false)
+    }
+  }, [leads, selectedLeads])
   
   // Track when we're actively searching (for UI feedback)
   useEffect(() => {
@@ -74,21 +107,154 @@ export default function LeadsPage() {
     }
   }, [leads, isLoading, shouldMaintainFocus])
 
-  const handleWhatsAppToggle = async (leadId: string, authorized: boolean) => {
+
+  // Sort the leads client-side since backend doesn't support sorting yet
+  const sortedLeads = useMemo(() => {
+    if (!leads || leads.length === 0) return leads
+    
+    const sorted = [...leads].sort((a, b) => {
+      let aValue: any = a[sortBy]
+      let bValue: any = b[sortBy]
+      
+      // Handle different data types
+      if (sortBy === 'createdAt' || sortBy === 'updatedAt') {
+        aValue = new Date(aValue).getTime()
+        bValue = new Date(bValue).getTime()
+      } else if (sortBy === 'score') {
+        aValue = aValue ? Number(aValue) : 0
+        bValue = bValue ? Number(bValue) : 0
+      } else if (typeof aValue === 'string') {
+        aValue = aValue.toLowerCase()
+        bValue = bValue ? bValue.toLowerCase() : ''
+      }
+      
+      // Handle null/undefined values
+      if (aValue == null && bValue == null) return 0
+      if (aValue == null) return sortOrder === 'asc' ? -1 : 1
+      if (bValue == null) return sortOrder === 'asc' ? 1 : -1
+      
+      if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1
+      return 0
+    })
+    
+    return sorted
+  }, [leads, sortBy, sortOrder])
+
+  // Handle sorting
+  const handleSort = (field: SortableLeadField) => {
+    if (sortBy === field) {
+      // If clicking the same column, cycle through: asc -> desc -> none -> asc
+      if (sortOrder === 'asc') {
+        setSortOrder('desc')
+      } else if (sortOrder === 'desc') {
+        setSortBy('createdAt') // Reset to default
+        setSortOrder('desc')
+      }
+    } else {
+      // If clicking a different column, start with ascending
+      setSortBy(field)
+      setSortOrder('asc')
+    }
+  }
+
+  // Handle individual lead selection
+  const handleLeadSelect = (leadId: string, selected: boolean) => {
+    if (selected) {
+      setSelectedLeads(prev => [...prev, leadId])
+    } else {
+      setSelectedLeads(prev => prev.filter(id => id !== leadId))
+    }
+  }
+
+  // Handle select all toggle
+  const handleSelectAll = (selected: boolean) => {
+    if (selected) {
+      const currentPageLeadIds = sortedLeads.map(lead => lead.id)
+      setSelectedLeads(prev => {
+        const newSelection = new Set([...prev, ...currentPageLeadIds])
+        return Array.from(newSelection)
+      })
+    } else {
+      const currentPageLeadIds = new Set(sortedLeads.map(lead => lead.id))
+      setSelectedLeads(prev => prev.filter(id => !currentPageLeadIds.has(id)))
+    }
+  }
+
+  // Handle bulk WhatsApp authorization update
+  const handleBulkWhatsAppUpdate = async (authorized: boolean) => {
+    if (selectedLeads.length === 0) {
+      showError('Selecciona al menos un lead para actualizar')
+      return
+    }
+
+    console.log('🔄 Starting bulk WhatsApp update:', {
+      leadIds: selectedLeads,
+      authorized,
+      count: selectedLeads.length
+    })
+
+    setIsBulkUpdating(true)
     try {
-      const response = await fetch(`/api/public/leads/${leadId}/whatsapp`, {
+      const response = await fetch('/api/public/leads/bulk-update-whatsapp', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ whatsappAuthorized: authorized })
+        body: JSON.stringify({
+          leadIds: selectedLeads,
+          whatsappAuthorized: authorized
+        })
       })
-      
+
+      console.log('📡 Response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries())
+      })
+
       if (response.ok) {
-        refetch() // Refrescar la lista de leads
+        const result = await response.json()
+        console.log('✅ Success result:', result)
+        success(result.message || `${selectedLeads.length} leads actualizados exitosamente`)
+        setSelectedLeads([]) // Clear selection
+        refetch() // Refresh the leads list
       } else {
-        console.error('Error updating WhatsApp authorization')
+        let errorMessage = 'Error desconocido al actualizar los leads'
+        
+        try {
+          // Clone response to read it safely
+          const responseClone = response.clone()
+          const errorData = await responseClone.json()
+          errorMessage = errorData.error || errorData.message || errorMessage
+          console.error('❌ Error response:', errorData)
+        } catch (parseError) {
+          console.error('❌ Failed to parse error response:', parseError)
+          try {
+            const textResponse = await response.text()
+            console.error('❌ Raw error response:', textResponse)
+            if (textResponse.trim()) {
+              errorMessage = textResponse
+            } else {
+              errorMessage = `Error ${response.status}: ${response.statusText}`
+            }
+          } catch (textError) {
+            console.error('❌ Failed to read response as text:', textError)
+            errorMessage = `Error ${response.status}: ${response.statusText}`
+          }
+        }
+        
+        showError(errorMessage)
       }
     } catch (error) {
-      console.error('Error updating WhatsApp authorization:', error)
+      console.error('💥 Network/unexpected error:', error)
+      if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+        showError('Error de conexión: No se pudo conectar con el servidor')
+      } else if (error instanceof SyntaxError) {
+        showError('Error de respuesta: El servidor devolvió una respuesta inválida')
+      } else {
+        showError('Error inesperado al actualizar los leads')
+      }
+    } finally {
+      setIsBulkUpdating(false)
     }
   }
 
@@ -122,12 +288,12 @@ export default function LeadsPage() {
     )
   }
 
-  // No need for client-side filtering anymore, the backend handles it
-  const displayLeads = leads
+  // Use sorted leads for display
+  const displayLeads = sortedLeads
 
   const handleLeadCreated = () => {
     setIsModalOpen(false)
-    toastSuccess('Lead creado exitosamente')
+    success('Lead creado exitosamente')
     refetch() // Refresh the leads list
   }
 
@@ -138,7 +304,7 @@ export default function LeadsPage() {
 
   const handleEditSuccess = () => {
     setIsEditModalOpen(false)
-    toastSuccess('Lead actualizado exitosamente')
+    success('Lead actualizado exitosamente')
     refetch() // Refresh the leads list
     setSelectedLead(null)
   }
@@ -161,15 +327,15 @@ export default function LeadsPage() {
       })
       
       if (response.ok) {
-        toastSuccess('Lead eliminado exitosamente')
+        success('Lead eliminado exitosamente')
         refetch() // Refresh the leads list
       } else {
         const error = await response.json()
-        toastError(error.message || 'Error al eliminar el lead')
+        showError(error.message || 'Error al eliminar el lead')
       }
     } catch (error) {
       console.error('Error deleting lead:', error)
-      toastError('Error al eliminar el lead')
+      showError('Error al eliminar el lead')
     } finally {
       setIsDeleteDialogOpen(false)
       setSelectedLead(null)
@@ -278,6 +444,68 @@ export default function LeadsPage() {
         </Card>
       </div>
 
+      {/* Floating Action Bar */}
+      {selectedLeads.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
+          <div className="bg-white rounded-full shadow-2xl border border-gray-200 px-6 py-4 flex items-center space-x-4 animate-in slide-in-from-bottom-2 fade-in duration-300">
+            <div className="flex items-center space-x-2 text-gray-700">
+              <div className="flex items-center justify-center w-6 h-6 bg-blue-100 rounded-full">
+                <span className="text-xs font-bold text-blue-600">{selectedLeads.length}</span>
+              </div>
+              <span className="text-sm font-medium">
+                {selectedLeads.length === 1 ? 'lead seleccionado' : 'leads seleccionados'}
+              </span>
+            </div>
+            
+            <div className="h-6 w-px bg-gray-200"></div>
+            
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => handleBulkWhatsAppUpdate(true)}
+                disabled={isBulkUpdating}
+                className="flex items-center px-4 py-2 text-sm bg-green-600 text-white rounded-full hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg"
+                title="Autorizar WhatsApp para todos los seleccionados"
+              >
+                {isBulkUpdating ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                ) : (
+                  <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+                Autorizar
+              </button>
+              
+              <button
+                onClick={() => handleBulkWhatsAppUpdate(false)}
+                disabled={isBulkUpdating}
+                className="flex items-center px-4 py-2 text-sm bg-red-600 text-white rounded-full hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg"
+                title="Desautorizar WhatsApp para todos los seleccionados"
+              >
+                {isBulkUpdating ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                ) : (
+                  <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                  </svg>
+                )}
+                Desautorizar
+              </button>
+              
+              <button
+                onClick={() => setSelectedLeads([])}
+                className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-all duration-200"
+                title="Limpiar selección"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Leads Table */}
       <Card>
         <div className="overflow-x-auto">
@@ -285,22 +513,56 @@ export default function LeadsPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Lead
+                  <SortableTableHeader
+                    label="Lead"
+                    field="name"
+                    currentSort={{ field: sortBy, order: sortOrder }}
+                    onSort={handleSort}
+                  />
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Teléfono
+                  <SortableTableHeader
+                    label="Teléfono"
+                    field="phone"
+                    currentSort={{ field: sortBy, order: sortOrder }}
+                    onSort={handleSort}
+                  />
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Estado
+                  <SortableTableHeader
+                    label="Estado"
+                    field="status"
+                    currentSort={{ field: sortBy, order: sortOrder }}
+                    onSort={handleSort}
+                  />
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Score
+                  <SortableTableHeader
+                    label="Score"
+                    field="score"
+                    currentSort={{ field: sortBy, order: sortOrder }}
+                    onSort={handleSort}
+                  />
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Fecha
+                  <SortableTableHeader
+                    label="Fecha"
+                    field="createdAt"
+                    currentSort={{ field: sortBy, order: sortOrder }}
+                    onSort={handleSort}
+                  />
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  WhatsApp IA
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      title="Seleccionar todos en esta página"
+                    />
+                    <span>WhatsApp IA</span>
+                  </div>
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Acciones
@@ -338,27 +600,31 @@ export default function LeadsPage() {
                       {new Date(lead.createdAt).toLocaleDateString('es-ES')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <label className="flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={lead.whatsappAuthorized || false}
-                            onChange={(e) => handleWhatsAppToggle(lead.id, e.target.checked)}
-                            className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
-                          />
-                          <span className="ml-2 text-sm text-gray-900">
-                            {lead.whatsappAuthorized ? (
-                              <span className="flex items-center text-green-600">
-                                <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                </svg>
-                                Autorizado
-                              </span>
-                            ) : (
-                              <span className="text-gray-500">No autorizado</span>
-                            )}
-                          </span>
-                        </label>
+                      <div className="flex items-center space-x-3">
+                        {/* Selection checkbox for bulk operations */}
+                        <input
+                          type="checkbox"
+                          checked={selectedLeads.includes(lead.id)}
+                          onChange={(e) => handleLeadSelect(lead.id, e.target.checked)}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded flex-shrink-0"
+                          title="Seleccionar para operación masiva"
+                        />
+                        {/* WhatsApp status badge */}
+                        {lead.whatsappAuthorized ? (
+                          <div className="flex items-center px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
+                            <svg className="w-3 h-3 mr-1 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                            <span className="whitespace-nowrap">Autorizado</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center px-2 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
+                            <svg className="w-3 h-3 mr-1 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                            </svg>
+                            <span className="whitespace-nowrap">No autorizado</span>
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
