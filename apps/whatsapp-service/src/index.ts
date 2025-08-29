@@ -115,15 +115,25 @@ async function bootstrap() {
     logger.info('🔄 Loading services...')
     
     // Import services
-    const WhatsAppServiceModule = await import('./services/WhatsAppServiceSimple')
+    const WhatsAppServiceModule = await import('./services/WhatsAppServiceWithRedis')
     const AIServiceModule = await import('./services/AIService')
     const DatabaseServiceModule = await import('./services/DatabaseService')
+    const { redisClient } = await import('./config/redis')
     
     const WhatsAppService = WhatsAppServiceModule.default
     const AIService = AIServiceModule.default
     const DatabaseService = DatabaseServiceModule.default
     
     logger.info('✅ Services loaded')
+    
+    logger.info('🔄 Initializing Redis service...')
+    try {
+      await redisClient.connect()
+      const pingResult = await redisClient.ping()
+      logger.info(`✅ Redis service initialized successfully (ping: ${pingResult})`)
+    } catch (error) {
+      logger.warn('⚠️  Redis connection failed, running without cache:', error)
+    }
     
     logger.info('🔄 Initializing database service...')
     await DatabaseService.testConnection()
@@ -136,21 +146,64 @@ async function bootstrap() {
     logger.info('✅ AI service initialized')
     
     logger.info('🔄 Initializing WhatsApp service...')
-    await WhatsAppService.initialize()
+    const whatsappService = new WhatsAppService()
+    await whatsappService.initialize()
     logger.info('✅ WhatsApp service initialized successfully')
     
     // Graceful shutdown handlers
-    process.on('SIGTERM', async () => {
-      logger.info('SIGTERM received, shutting down gracefully...')
-      await WhatsAppService.shutdown()
+    const gracefulShutdown = async () => {
+      logger.info('🛑 Shutting down gracefully...')
+      
+      // Set shutdown timeout - force exit after 45 seconds
+      const shutdownTimeout = setTimeout(() => {
+        logger.error('⏰ Shutdown timeout reached, forcing exit...')
+        process.exit(1)
+      }, 45000);
+
+      try {
+        // Import the service to use the new shutdown method
+        const WhatsAppServiceModule = await import('./services/WhatsAppServiceSimple')
+        const whatsappServiceInstance = WhatsAppServiceModule.default
+        
+        logger.info('📱 Shutting down WhatsApp service...')
+        await whatsappServiceInstance.shutdown()
+        
+        logger.info('🔴 Shutting down Redis service...')
+        try {
+          await redisClient.disconnect()
+          logger.info('✅ Redis disconnected successfully')
+        } catch (redisError) {
+          logger.warn('⚠️ Redis disconnect warning (non-critical):', redisError)
+        }
+        
+        clearTimeout(shutdownTimeout)
+        logger.info('🏁 All services shut down successfully')
+      } catch (error) {
+        logger.error('❌ Error during shutdown:', error)
+        clearTimeout(shutdownTimeout)
+      }
+      
       process.exit(0)
+    }
+
+    // Register shutdown handlers
+    process.on('SIGTERM', () => {
+      logger.info('🚨 SIGTERM received, starting graceful shutdown...')
+      gracefulShutdown()
+    })
+    
+    process.on('SIGINT', () => {
+      logger.info('🚨 SIGINT received (Ctrl+C), starting graceful shutdown...')
+      gracefulShutdown()
     })
 
-    process.on('SIGINT', async () => {
-      logger.info('SIGINT received, shutting down gracefully...')
-      await WhatsAppService.shutdown()
-      process.exit(0)
-    })
+    // Handle Windows-specific signals
+    if (process.platform === 'win32') {
+      process.on('SIGBREAK', () => {
+        logger.info('🚨 SIGBREAK received (Windows), starting graceful shutdown...')
+        gracefulShutdown()
+      })
+    }
 
     logger.info('🌐 Starting HTTP server...')
     const server = app.listen(PORT, () => {

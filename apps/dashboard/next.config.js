@@ -17,19 +17,19 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   
-  // Rewrite API routes to backend server
-  async rewrites() {
-    return [
-      {
-        source: '/api/public/:path*',
-        destination: 'http://localhost:3001/public/:path*',
-      },
-      {
-        source: '/api/:path*',
-        destination: 'http://localhost:3001/:path*',
-      },
-    ]
-  },
+  // Rewrite API routes to backend server (TEMPORARILY DISABLED FOR TESTING)
+  // async rewrites() {
+  //   return [
+  //     {
+  //       source: '/api/public/:path*',
+  //       destination: 'http://localhost:3001/public/:path*',
+  //     },
+  //     {
+  //       source: '/api/:path*',
+  //       destination: 'http://localhost:3001/:path*',
+  //     },
+  //   ]
+  // },
 };
 
 module.exports = nextConfig;

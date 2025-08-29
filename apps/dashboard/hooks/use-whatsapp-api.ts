@@ -88,7 +88,7 @@ export function useWhatsAppApi() {
           }
         }
 
-        const response = await fetch(`${WHATSAPP_API_BASE_URL}/api${endpoint}`, {
+        const response = await fetch(`${WHATSAPP_API_BASE_URL}${endpoint}`, {
           headers: {
             'Content-Type': 'application/json',
             ...options.headers,
@@ -205,7 +205,7 @@ export function useWhatsAppApi() {
     message: string,
     type: 'text' | 'image' | 'document' | 'audio' | 'video' = 'text'
   ): Promise<boolean> => {
-    return makeApiCall('/messages/send', {
+    const result = await makeApiCall('/whatsapp/send', {
       method: 'POST',
       body: JSON.stringify({
         sessionId,
@@ -214,6 +214,7 @@ export function useWhatsAppApi() {
         type
       })
     })
+    return result.success || false
   }, [makeApiCall])
 
   // Session methods

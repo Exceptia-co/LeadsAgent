@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Template } from "../templates/TemplateCard";
 import BulkSendMessageModal from "./BulkSendMessageModal";
+import FloatingLeadSelectionBanner from "./FloatingLeadSelectionBanner";
 
 export interface Lead {
   id: string;
@@ -26,12 +27,6 @@ export interface Lead {
 
 interface BulkProactiveMessageSenderProps {
   templates: Template[];
-  onSendMessage: (
-    leadId: string,
-    templateId?: string,
-    content?: string,
-    variables?: { [key: string]: string },
-  ) => Promise<void>;
   onBulkSendMessage: (
     leadIds: string[],
     templateId?: string,
@@ -70,7 +65,6 @@ const ITEMS_PER_PAGE = 10;
 
 export default function BulkProactiveMessageSender({
   templates,
-  onSendMessage,
   onBulkSendMessage,
   selectedTemplate,
 }: BulkProactiveMessageSenderProps) {
@@ -179,13 +173,6 @@ export default function BulkProactiveMessageSender({
     }
   };
 
-  const handleIndividualSend = async (leadId: string) => {
-    try {
-      await onSendMessage(leadId);
-    } catch (error) {
-      console.error("Error sending individual message:", error);
-    }
-  };
 
   // Check states for "select all" checkbox
   const currentPageLeadIds = new Set(currentLeads.map((lead) => lead.id));
@@ -215,7 +202,7 @@ export default function BulkProactiveMessageSender({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       {/* Search */}
       <Card className="p-4">
         <div className="relative">
@@ -230,36 +217,14 @@ export default function BulkProactiveMessageSender({
         </div>
       </Card>
 
-      {/* Selection Summary & Bulk Actions */}
-      {selectedLeads.size > 0 && (
-        <Card className="p-4 bg-blue-50 border-blue-200">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <Users className="h-5 w-5 text-blue-600" />
-              <span className="text-sm font-medium text-blue-900">
-                {selectedLeads.size} lead{selectedLeads.size !== 1 ? "s" : ""}{" "}
-                seleccionado{selectedLeads.size !== 1 ? "s" : ""}
-              </span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={openBulkSendModal}
-                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-              >
-                <Send className="h-4 w-4 mr-2" />
-                Enviar Mensaje Masivo
-              </button>
-              <button
-                onClick={clearSelection}
-                className="flex items-center px-3 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-              >
-                <X className="h-4 w-4 mr-1" />
-                Limpiar
-              </button>
-            </div>
-          </div>
-        </Card>
-      )}
+      {/* Floating Lead Selection Banner */}
+      <FloatingLeadSelectionBanner
+        selectedCount={selectedLeads.size}
+        totalLeads={filteredLeads.length}
+        onSendBulkMessage={openBulkSendModal}
+        onClearSelection={clearSelection}
+        isLoading={loading}
+      />
 
       {/* Table */}
       <Card className="overflow-hidden">
@@ -285,9 +250,6 @@ export default function BulkProactiveMessageSender({
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Estado
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Acciones
                 </th>
               </tr>
             </thead>
@@ -322,14 +284,6 @@ export default function BulkProactiveMessageSender({
                     <Badge variant="outline" className="text-xs">
                       {lead.status}
                     </Badge>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    <button
-                      onClick={() => handleIndividualSend(lead.id)}
-                      className="text-blue-600 hover:text-blue-900"
-                    >
-                      Enviar individual
-                    </button>
                   </td>
                 </tr>
               ))}

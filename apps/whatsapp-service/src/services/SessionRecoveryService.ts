@@ -184,7 +184,7 @@ export class SessionRecoveryService {
   }
 
   /**
-   * Recover a single session
+   * 🔄 Recover a single session with intelligent filtering
    * @private
    */
   private async recoverSingleSession(
@@ -193,6 +193,30 @@ export class SessionRecoveryService {
     config: RecoveryOptions
   ): Promise<boolean> {
     const { sessionId } = sessionData
+
+    // 🚨 NEW: Skip sessions that were manually closed (browser closed by user)
+    if (sessionData.lastError && this.isSessionClosedByUser(sessionData.lastError)) {
+      logger.info(`🚨 Skipping session ${sessionId}: was closed by user (${sessionData.lastError})`)
+      return false
+    }
+
+    // 🚨 NEW: Skip sessions with autoReconnect disabled
+    const metadata = sessionData.metadata as any || {}
+    if (metadata.autoReconnect === false) {
+      logger.info(`🚨 Skipping session ${sessionId}: autoReconnect disabled`)
+      return false
+    }
+
+    // 🚨 NEW: Skip sessions with recent health check failures
+    const lastHealthCheck = sessionData.lastSeen
+    if (lastHealthCheck && this.isHealthCheckTooOld(lastHealthCheck)) {
+      logger.info(`🚨 Skipping session ${sessionId}: health check too old (${lastHealthCheck})`)
+      await this.persistenceService.updateSessionStatus(sessionId, 'disconnected', {
+        lastError: 'Health check expired, manual reconnection required',
+        autoReconnect: false
+      })
+      return false
+    }
 
     // Skip if too many reconnect attempts
     if ((sessionData.reconnectCount || 0) >= config.maxReconnectAttempts) {
@@ -763,6 +787,276 @@ export class SessionRecoveryService {
       }
     } catch (error) {
       logger.error('Error en limpieza avanzada de sesiones:', error)
+    }
+  }
+
+  // === 🚨 NEW: Smart Session Filtering Methods ===
+
+  /**
+   * 🚨 Check if session was closed by user (browser closed)
+   * @private
+   */
+  private isSessionClosedByUser(lastError: string): boolean {
+    const userClosureIndicators = [
+      'browser disconnected',
+      'browser was closed',
+      'page closed',
+      'browser_closed',
+      'page_closed',
+      'target closed',
+      'force disconnected by user',
+      'user closed',
+      'window closed'
+    ]
+
+    const normalizedError = lastError.toLowerCase()
+    return userClosureIndicators.some(indicator => 
+      normalizedError.includes(indicator)
+    )
+  }
+
+  /**
+   * 🚨 Check if health check is too old (indicates stale session)
+   * @private
+   */
+  private isHealthCheckTooOld(lastSeen: Date): boolean {
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000) // 5 minutes ago
+    const lastSeenDate = new Date(lastSeen)
+    
+    return lastSeenDate < fiveMinutesAgo
+  }
+
+  /**
+   * 🚨 Check if session should be recovered based on smart criteria
+   * @private
+   */
+  private shouldRecoverSession(sessionData: SessionPersistenceData): {
+    shouldRecover: boolean
+    reason: string
+  } {
+    const { sessionId, lastError, lastSeen, reconnectCount, metadata } = sessionData
+    const sessionMetadata = metadata as any || {}
+
+    // Check for user-initiated closures
+    if (lastError && this.isSessionClosedByUser(lastError)) {
+      return {
+        shouldRecover: false,
+        reason: `Session was closed by user: ${lastError}`
+      }
+    }
+
+    // Check autoReconnect flag
+    if (sessionMetadata.autoReconnect === false) {
+      return {
+        shouldRecover: false,
+        reason: 'autoReconnect disabled in metadata'
+      }
+    }
+
+    // NEW: Check for corrupted authentication files
+    if (sessionMetadata.authCorruptionDetected || 
+        sessionMetadata.lastAlertType === 'authentication' ||
+        (lastError && this.isAuthCorruptionError(lastError))) {
+      return {
+        shouldRecover: false,
+        reason: 'Authentication files are corrupted or invalid'
+      }
+    }
+
+    // NEW: Skip sessions that have been manually disconnected recently
+    if (sessionMetadata.manualDisconnect === true && 
+        sessionMetadata.lastDisconnectTime &&
+        this.isRecentManualDisconnect(sessionMetadata.lastDisconnectTime)) {
+      return {
+        shouldRecover: false,
+        reason: 'Session was manually disconnected recently'
+      }
+    }
+
+    // Check health check freshness
+    if (lastSeen && this.isHealthCheckTooOld(lastSeen)) {
+      return {
+        shouldRecover: false,
+        reason: `Health check too old: ${lastSeen}`
+      }
+    }
+
+    // Check reconnect attempts
+    if ((reconnectCount || 0) >= this.defaultOptions.maxReconnectAttempts) {
+      return {
+        shouldRecover: false,
+        reason: `Too many reconnect attempts: ${reconnectCount}`
+      }
+    }
+
+    // Check for specific error patterns that indicate permanent failures
+    if (lastError) {
+      const permanentFailureIndicators = [
+        'whatsapp web session expired',
+        'unpaired',
+        'timeout',
+        'authentication failed permanently',
+        'account banned',
+        'phone number not allowed',
+        'authentication files are corrupted', // NEW
+        'session files invalid', // NEW
+        'chrome profile corrupted' // NEW
+      ]
+
+      const normalizedError = lastError.toLowerCase()
+      const hasPermanentFailure = permanentFailureIndicators.some(indicator => 
+        normalizedError.includes(indicator)
+      )
+
+      if (hasPermanentFailure) {
+        return {
+          shouldRecover: false,
+          reason: `Permanent failure detected: ${lastError}`
+        }
+      }
+    }
+
+    // Check if session was recently updated (might be starting up)
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000)
+    const lastSeenDate = new Date(lastSeen || 0)
+    
+    if (lastSeenDate > oneMinuteAgo) {
+      return {
+        shouldRecover: false,
+        reason: 'Session was updated recently, might be starting up'
+      }
+    }
+
+    // Default to recovery if no exclusion criteria met
+    return {
+      shouldRecover: true,
+      reason: 'Session passed all recovery checks'
+    }
+  }
+
+  /**
+   * 🚨 Enhanced session recovery with smart filtering
+   */
+  async recoverSessionsWithSmartFiltering(
+    whatsAppService: any,
+    options: Partial<RecoveryOptions> = {}
+  ): Promise<RecoveryResult> {
+    const startTime = Date.now()
+    const config = { ...this.defaultOptions, ...options }
+    
+    logger.info('🤖 Starting smart session recovery with intelligent filtering...')
+    
+    try {
+      // Load all sessions
+      const allSessions = await this.persistenceService.loadActiveSessions()
+      
+      // Apply smart filtering
+      const filteredSessions: SessionPersistenceData[] = []
+      const skippedSessions: { session: SessionPersistenceData, reason: string }[] = []
+      
+      for (const session of allSessions) {
+        const { shouldRecover, reason } = this.shouldRecoverSession(session)
+        
+        if (shouldRecover) {
+          filteredSessions.push(session)
+        } else {
+          skippedSessions.push({ session, reason })
+          logger.info(`🚨 Skipping session ${session.sessionId}: ${reason}`)
+          
+          // Update database to reflect skip reason
+          await this.persistenceService.updateSessionStatus(
+            session.sessionId,
+            'disconnected',
+            {
+              autoReconnect: false,
+              lastError: `Skipped recovery: ${reason}`,
+              metadata: {
+                ...session.metadata,
+                lastRecoverySkip: new Date().toISOString(),
+                recoverySkipReason: reason
+              }
+            }
+          )
+        }
+      }
+      
+      logger.info(`🤖 Smart filtering complete: ${filteredSessions.length}/${allSessions.length} sessions will be recovered`)
+      logger.info(`🚨 Skipped ${skippedSessions.length} sessions: ${skippedSessions.map(s => `${s.session.sessionId}(${s.reason})`).join(', ')}`)
+      
+      // Proceed with normal recovery for filtered sessions
+      const mockSessionData = {
+        totalSessions: allSessions.length,
+        recoveredSessions: 0,
+        failedSessions: 0,
+        skippedSessions: skippedSessions.length,
+        authValidationPassed: 0,
+        authValidationFailed: 0,
+        authFilesCleanedUp: 0,
+        errors: [],
+        recoveryTimeMs: 0,
+        metrics: {
+          averageRecoveryTime: 0,
+          successRate: 0,
+          authHealthScore: 0
+        }
+      }
+      
+      // Replace the sessions list with filtered sessions for normal recovery
+      const originalLoadMethod = this.persistenceService.loadActiveSessions
+      this.persistenceService.loadActiveSessions = async () => filteredSessions
+      
+      try {
+        // Run normal recovery with filtered sessions
+        const result = await this.recoverAllSessions(whatsAppService, config)
+        result.skippedSessions = skippedSessions.length
+        return result
+      } finally {
+        // Restore original method
+        this.persistenceService.loadActiveSessions = originalLoadMethod
+      }
+      
+    } catch (error) {
+      logger.error('🚨 Error in smart session recovery:', error)
+      throw error
+    }
+  }
+  /**
+   * 🚨 Check if error indicates authentication corruption
+   * @private
+   */
+  private isAuthCorruptionError(lastError: string): boolean {
+    const authCorruptionIndicators = [
+      'authentication files are corrupted',
+      'auth files corrupted',
+      'session files invalid',
+      'chrome profile corrupted',
+      'local storage corrupted',
+      'session storage corrupted',
+      'authentication failed repeatedly',
+      'qr code timeout',
+      'auth timeout',
+      'profile directory corrupted',
+      'browser profile invalid'
+    ]
+
+    const normalizedError = lastError.toLowerCase()
+    return authCorruptionIndicators.some(indicator => 
+      normalizedError.includes(indicator)
+    )
+  }
+
+  /**
+   * 🚨 Check if manual disconnect was recent (within last 30 minutes)
+   * @private
+   */
+  private isRecentManualDisconnect(lastDisconnectTime: string): boolean {
+    try {
+      const disconnectTime = new Date(lastDisconnectTime)
+      const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000) // 30 minutes ago
+      
+      return disconnectTime > thirtyMinutesAgo
+    } catch (error) {
+      return false
     }
   }
 }

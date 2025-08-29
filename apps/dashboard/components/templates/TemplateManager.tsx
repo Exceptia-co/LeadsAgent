@@ -3,27 +3,36 @@
 import { useState, useEffect } from 'react'
 import { Card } from '../ui/card'
 import { Search, Plus, FileText } from 'lucide-react'
-import TemplateCard, { Template } from './TemplateCard'
+import TemplateCard from './TemplateCard'
 import TemplateModal from './TemplateModal'
+import { useTemplates, Template } from '../../contexts/TemplateContext'
+import { useToast } from '../ui/toast'
 
 interface TemplateManagerProps {
   onUseTemplate?: (template: Template) => void
+  onTemplatesChange?: () => void
 }
 
-export default function TemplateManager({ onUseTemplate }: TemplateManagerProps) {
-  const [templates, setTemplates] = useState<Template[]>([])
+export default function TemplateManager({ onUseTemplate, onTemplatesChange }: TemplateManagerProps) {
+  const { templates, loading, createTemplate, updateTemplate, deleteTemplate } = useTemplates()
+  const { showToast } = useToast()
+  
+  // Helper functions for different toast types
+  const success = (title: string, description?: string) => {
+    showToast({ type: 'success', title, description })
+  }
+  
+  const showError = (title: string, description?: string) => {
+    showToast({ type: 'error', title, description })
+  }
+  
   const [filteredTemplates, setFilteredTemplates] = useState<Template[]>([])
   const [templateSearch, setTemplateSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [loading, setLoading] = useState(true)
   
   // Modal states
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
-
-  useEffect(() => {
-    fetchTemplates()
-  }, [])
 
   useEffect(() => {
     // Filter templates
@@ -36,68 +45,31 @@ export default function TemplateManager({ onUseTemplate }: TemplateManagerProps)
     setFilteredTemplates(filtered)
   }, [templates, templateSearch, categoryFilter])
 
-  const fetchTemplates = async () => {
-    setLoading(true)
-    try {
-      const response = await fetch('http://localhost:3002/templates')
-      const result = await response.json()
-      
-      if (result.success) {
-        setTemplates(result.data)
-      } else {
-        // Fallback to mock data
-        setTemplates([
-          {
-            id: 'mock_1',
-            name: 'Mensaje de Bienvenida',
-            category: 'welcome',
-            content: '¡Hola {{nombre}}! 👋\n\nBienvenido/a a EscortsHub.',
-            variables: ['nombre']
-          }
-        ])
-      }
-    } catch (error) {
-      console.error('Error fetching templates:', error)
-      // Fallback to mock data
-      setTemplates([
-        {
-          id: 'mock_1',
-          name: 'Mensaje de Bienvenida',
-          category: 'welcome',
-          content: '¡Hola {{nombre}}! 👋\n\nBienvenido/a a EscortsHub.',
-          variables: ['nombre']
-        }
-      ])
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const handleSaveTemplate = async (templateData: any) => {
     try {
-      const url = editingTemplate 
-        ? `http://localhost:3002/templates/${editingTemplate.id}`
-        : 'http://localhost:3002/templates'
-      
-      const method = editingTemplate ? 'PUT' : 'POST'
-      
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(templateData)
-      })
-
-      const result = await response.json()
-      
-      if (result.success) {
-        fetchTemplates()
-        alert(editingTemplate ? 'Template actualizado exitosamente!' : 'Template creado exitosamente!')
+      let result = false
+      if (editingTemplate) {
+        result = await updateTemplate(editingTemplate.id, templateData)
       } else {
-        throw new Error(result.error)
+        result = await createTemplate(templateData)
+      }
+      
+      if (result) {
+        success(
+          editingTemplate ? 'Template actualizado' : 'Template creado',
+          'El template se ha guardado exitosamente'
+        )
+        closeTemplateModal()
+        // Notify parent about templates change
+        if (onTemplatesChange) {
+          onTemplatesChange()
+        }
       }
     } catch (error) {
-      console.error('Error saving template:', error)
-      alert('Error guardando el template: ' + (error as Error).message)
+      showError(
+        'Error al guardar template',
+        error instanceof Error ? error.message : 'Error desconocido'
+      )
       throw error // Re-throw to prevent modal from closing
     }
   }
@@ -105,22 +77,13 @@ export default function TemplateManager({ onUseTemplate }: TemplateManagerProps)
   const handleDeleteTemplate = async (id: string) => {
     if (!confirm('¿Estás seguro de eliminar este template?')) return
     
-    try {
-      const response = await fetch(`http://localhost:3002/templates/${id}`, {
-        method: 'DELETE'
-      })
-      
-      const result = await response.json()
-      
-      if (result.success) {
-        fetchTemplates()
-        alert('Template eliminado exitosamente!')
-      } else {
-        alert('Error: ' + result.error)
+    const result = await deleteTemplate(id)
+    if (result) {
+      success('Template eliminado', 'El template ha sido eliminado exitosamente')
+      // Notify parent about templates change
+      if (onTemplatesChange) {
+        onTemplatesChange()
       }
-    } catch (error) {
-      console.error('Error deleting template:', error)
-      alert('Error eliminando el template')
     }
   }
 

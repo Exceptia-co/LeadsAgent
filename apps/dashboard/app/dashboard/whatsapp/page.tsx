@@ -121,9 +121,7 @@ export default function WhatsAppPage() {
         showToast({
           type: "error",
           title: "Error de carga",
-          description:
-            "Hubo un problema al cargar algunos datos. Refresca la página.",
-          duration: 5000,
+          description: "Hubo un problema al cargar algunos datos. Refresca la página."
         });
       } finally {
         // Mark initial load as complete
@@ -150,7 +148,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Error cargando plantillas",
-        description: "No se pudieron cargar las plantillas de mensaje",
+        description: "No se pudieron cargar las plantillas de mensaje"
       });
     } finally {
       setDataLoading((prev) => ({ ...prev, templates: false }));
@@ -171,7 +169,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Error cargando mensajes",
-        description: "No se pudieron cargar los mensajes proactivos",
+        description: "No se pudieron cargar los mensajes proactivos"
       });
     } finally {
       setDataLoading((prev) => ({ ...prev, proactiveMessages: false }));
@@ -192,7 +190,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Error cargando leads",
-        description: "No se pudieron cargar la lista de leads",
+        description: "No se pudieron cargar la lista de leads"
       });
     } finally {
       setDataLoading((prev) => ({ ...prev, leads: false }));
@@ -212,7 +210,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Error cargando sesiones",
-        description: "No se pudieron cargar las sesiones de WhatsApp",
+        description: "No se pudieron cargar las sesiones de WhatsApp"
       });
     } finally {
       setDataLoading((prev) => ({ ...prev, sessions: false }));
@@ -237,7 +235,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Sin sesión seleccionada",
-        description: "Por favor selecciona una sesión de WhatsApp activa",
+        description: "Por favor selecciona una sesión de WhatsApp activa"
       });
       throw new Error("No hay sesión seleccionada");
     }
@@ -274,8 +272,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "success",
         title: "¡Mensaje enviado!",
-        description: "El mensaje proactivo se envió correctamente",
-        duration: 4000,
+        description: "El mensaje proactivo se envió correctamente"
       });
 
       // Refresh proactive messages count
@@ -285,7 +282,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Error enviando mensaje",
-        description: (error as Error).message || "Ocurrió un error inesperado",
+        description: (error as Error).message || "Ocurrió un error inesperado"
       });
       throw error;
     }
@@ -302,7 +299,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Sin sesión seleccionada",
-        description: "Por favor selecciona una sesión de WhatsApp activa",
+        description: "Por favor selecciona una sesión de WhatsApp activa"
       });
       throw new Error("No hay sesión seleccionada");
     }
@@ -347,22 +344,19 @@ export default function WhatsAppPage() {
         showToast({
           type: "success",
           title: "¡Mensajes enviados!",
-          description: `Se enviaron ${successful} mensajes correctamente`,
-          duration: 4000,
+          description: `Se enviaron ${successful} mensajes correctamente`
         });
       } else if (successful > 0 && failed > 0) {
         showToast({
           type: "warning",
           title: "Envío parcial",
-          description: `${successful} enviados, ${failed} fallaron`,
-          duration: 6000,
+          description: `${successful} enviados, ${failed} fallaron`
         });
       } else {
         showToast({
           type: "error",
           title: "Error en envío masivo",
-          description: `Fallaron todos los envíos (${failed})`,
-          duration: 6000,
+          description: `Fallaron todos los envíos (${failed})`
         });
       }
 
@@ -373,7 +367,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Error enviando mensajes",
-        description: (error as Error).message || "Ocurrió un error inesperado",
+        description: (error as Error).message || "Ocurrió un error inesperado"
       });
       throw error;
     }
@@ -547,7 +541,10 @@ export default function WhatsAppPage() {
       {activeTab === "conversations" && <WhatsAppConversations />}
 
       {activeTab === "templates" && (
-        <TemplateManager onUseTemplate={handleUseTemplate} />
+        <TemplateManager 
+          onUseTemplate={handleUseTemplate} 
+          onTemplatesChange={loadTemplates}
+        />
       )}
 
       {activeTab === "proactive" && (
@@ -585,7 +582,6 @@ export default function WhatsAppPage() {
           {proactiveSubTab === "send" && (
             <BulkProactiveMessageSender
               templates={templates}
-              onSendMessage={handleSendProactiveMessage}
               onBulkSendMessage={handleBulkSendProactiveMessage}
               selectedTemplate={selectedTemplate}
             />
@@ -810,8 +806,9 @@ function SendMessage({
   const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
-  const [success, setSuccess] = useState(false);
   const [useManualInput, setUseManualInput] = useState(false);
+  
+  const { showToast } = useToast();
 
   const connectedSessions = sessions.filter(
     (s) => s.status === "CONNECTED" || s.status === "CONNECTING",
@@ -833,15 +830,22 @@ function SendMessage({
     if (!selectedSession || !phone.trim() || !message.trim()) return;
 
     setSending(true);
-    setSuccess(false);
     try {
       await sendDirectMessage(selectedSession, phone.trim(), message.trim());
       setPhone("");
       setMessage("");
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
+      showToast({
+        type: "success",
+        title: "Mensaje enviado correctamente",
+        description: "El mensaje se envió exitosamente por WhatsApp"
+      });
     } catch (err) {
       console.error("Error sending message:", err);
+      showToast({
+        type: "error",
+        title: "Error al enviar el mensaje",
+        description: err instanceof Error ? err.message : "Error desconocido"
+      });
     } finally {
       setSending(false);
     }
@@ -924,15 +928,6 @@ function SendMessage({
                 required
               />
             </div>
-
-            {success && (
-              <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-                <p className="text-green-800 text-sm flex items-center">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Mensaje enviado correctamente
-                </p>
-              </div>
-            )}
 
             {error && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-md">

@@ -18,6 +18,9 @@ import {
   Plus,
   Edit
 } from 'lucide-react'
+import { useTemplates } from '../../../contexts/TemplateContext'
+import { useWhatsApp } from '../../../contexts/WhatsAppContext'
+import { useToast } from '../../../components/ui/toast'
 
 interface Lead {
   id: string
@@ -51,8 +54,24 @@ interface ProactiveMessage {
 }
 
 export default function ProactivePage() {
+  const { templates } = useTemplates()
+  const { validateSessionForSending } = useWhatsApp()
+  const { showToast } = useToast()
+  
+  // Helper functions for different toast types
+  const success = (title: string, description?: string) => {
+    showToast({ type: 'success', title, description })
+  }
+  
+  const showError = (title: string, description?: string) => {
+    showToast({ type: 'error', title, description })
+  }
+  
+  const warning = (title: string, description?: string) => {
+    showToast({ type: 'warning', title, description })
+  }
+  
   const [leads, setLeads] = useState<Lead[]>([])
-  const [templates, setTemplates] = useState<Template[]>([])
   const [proactiveMessages, setProactiveMessages] = useState<ProactiveMessage[]>([])
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([])
   
@@ -99,20 +118,12 @@ export default function ProactivePage() {
       const leadsResponse = await fetch('http://localhost:3002/leads')
       const leadsResult = await leadsResponse.json()
       
-      // Fetch templates
-      const templatesResponse = await fetch('http://localhost:3002/templates')
-      const templatesResult = await templatesResponse.json()
-      
       // Fetch proactive messages
       const messagesResponse = await fetch('http://localhost:3002/proactive-messages')
       const messagesResult = await messagesResponse.json()
       
       if (leadsResult.success) {
         setLeads(leadsResult.leads || leadsResult.data)
-      }
-      
-      if (templatesResult.success) {
-        setTemplates(templatesResult.data)
       }
       
       if (messagesResult.success) {
@@ -137,16 +148,6 @@ export default function ProactivePage() {
           email: 'maria@example.com',
           status: 'QUALIFIED',
           whatsappAuthorized: true
-        }
-      ])
-      
-      setTemplates([
-        {
-          id: 'default_welcome',
-          name: 'Mensaje de Bienvenida',
-          category: 'welcome',
-          content: '¡Hola {{nombre}}! 👋\n\nBienvenido/a a EscortsHub.',
-          variables: ['nombre']
         }
       ])
     } finally {
@@ -179,21 +180,24 @@ export default function ProactivePage() {
     
     setSending(true)
     try {
-      const content = selectedTemplate ? previewContent : customMessage
+      // Validar sesiones WhatsApp antes de enviar
+      const sessionValidation = await validateSessionForSending()
       
-      // First, check if there are active WhatsApp sessions
-      const sessionsResponse = await fetch('http://localhost:3002/sessions')
-      const sessionsResult = await sessionsResponse.json()
-      
-      let sessionId = 'demo-session' // Default to demo mode
-      
-      if (sessionsResult.success && sessionsResult.sessions.length > 0) {
-        // Use the first available session if available
-        sessionId = sessionsResult.sessions[0].id
-      } else {
-        // No real sessions available - use demo mode
-        console.log('No WhatsApp sessions available, using demo mode')
+      if (!sessionValidation.isValid) {
+        showError('Error de sesión WhatsApp', sessionValidation.error || 'No se pudo validar la sesión')
+        return
       }
+      
+      // Mostrar advertencia si estamos en modo demo
+      const sessionId = sessionValidation.session?.id || 'demo-session'
+      if (sessionId === 'demo-session' || sessionId.includes('demo')) {
+        warning(
+          'Modo de prueba activado', 
+          'El mensaje se enviará en modo de prueba. Para envío real, configura una sesión WhatsApp activa.'
+        )
+      }
+      
+      const content = selectedTemplate ? previewContent : customMessage
       
       const response = await fetch('http://localhost:3002/proactive-messages', {
         method: 'POST',
@@ -201,7 +205,7 @@ export default function ProactivePage() {
         body: JSON.stringify({
           leadId: selectedLead.id,
           templateId: selectedTemplate?.id,
-          sessionId, // Use active session
+          sessionId,
           content,
           variables
         })
@@ -216,13 +220,23 @@ export default function ProactivePage() {
         
         // Switch to history tab to see the sent message
         setActiveTab('history')
-        alert('¡Mensaje enviado exitosamente!')
+        
+        success(
+          '¡Mensaje enviado!', 
+          `Mensaje enviado exitosamente a ${selectedLead.name}`
+        )
       } else {
-        alert('Error enviando mensaje: ' + result.error)
+        showError(
+          'Error al enviar mensaje', 
+          result.error || 'Error desconocido'
+        )
       }
     } catch (error) {
       console.error('Error sending message:', error)
-      alert('Error enviando mensaje. Revise que el servicio de WhatsApp esté funcionando.')
+      showError(
+        'Error de conexión',
+        'Error enviando mensaje. Verifica que el servicio esté funcionando.'
+      )
     } finally {
       setSending(false)
     }

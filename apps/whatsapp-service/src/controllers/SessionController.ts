@@ -127,6 +127,40 @@ export class SessionController {
     }
   }
 
+  // Force disconnect a session
+  async forceDisconnectSession(req: Request, res: Response): Promise<void> {
+    try {
+      const { sessionId } = req.params
+
+      logger.info(`🔌 Force disconnect requested for session: ${sessionId}`)
+      
+      const result = await WhatsAppService.forceDisconnectSession(sessionId)
+      
+      if (result.success) {
+        res.json({
+          success: true,
+          message: `Session ${sessionId} forcefully disconnected`,
+          data: {
+            sessionId,
+            previousStatus: result.previousStatus,
+            timestamp: new Date().toISOString()
+          }
+        })
+      } else {
+        res.status(404).json({
+          success: false,
+          error: result.error || 'Failed to force disconnect session'
+        })
+      }
+    } catch (error) {
+      logger.error('Error force disconnecting session:', error)
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+    }
+  }
+
   // Get QR code for session
   async getQRCode(req: Request, res: Response): Promise<void> {
     try {

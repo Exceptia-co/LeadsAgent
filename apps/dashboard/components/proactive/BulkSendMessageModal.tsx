@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { X, Send, Users, AlertTriangle } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { X, Send, Users, AlertTriangle, RefreshCw } from "lucide-react";
 import { Template } from "../templates/TemplateCard";
 import { Lead } from "./ProactiveMessageSender";
 
@@ -30,9 +30,16 @@ export default function BulkSendMessageModal({
     selectedTemplate || null,
   );
   const [customMessage, setCustomMessage] = useState("");
-  const [variables, setVariables] = useState<{ [key: string]: string }>({});
   const [previewContent, setPreviewContent] = useState("");
   const [sending, setSending] = useState(false);
+  const [refreshingTemplates, setRefreshingTemplates] = useState(false);
+  const [localTemplates, setLocalTemplates] = useState<Template[]>(templates);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Sincronizar templates locales con props
+  useEffect(() => {
+    setLocalTemplates(templates);
+  }, [templates]);
 
   useEffect(() => {
     if (selectedTemplate) {
@@ -44,7 +51,23 @@ export default function BulkSendMessageModal({
     if (currentTemplate) {
       generatePreview();
     }
-  }, [currentTemplate, variables]);
+  }, [currentTemplate]);
+
+  // Click fuera del modal para cerrarlo
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [isOpen, onClose]);
 
   const generatePreview = () => {
     if (!currentTemplate) return;
@@ -59,7 +82,6 @@ export default function BulkSendMessageModal({
       nombre: sampleLead.name || "Usuario",
       telefono: sampleLead.phone,
       email: sampleLead.email || "",
-      ...variables,
     };
 
     Object.entries(leadVariables).forEach(([key, value]) => {
@@ -70,18 +92,33 @@ export default function BulkSendMessageModal({
     setPreviewContent(content);
   };
 
+  // Función para refrescar templates
+  const handleRefreshTemplates = async () => {
+    setRefreshingTemplates(true);
+    try {
+      const response = await fetch('http://localhost:3002/templates');
+      const result = await response.json();
+      if (result.success) {
+        setLocalTemplates(result.data || []);
+      }
+    } catch (error) {
+      console.error('Error refreshing templates:', error);
+    } finally {
+      setRefreshingTemplates(false);
+    }
+  };
+
   const handleSend = async () => {
     setSending(true);
     try {
       const content = currentTemplate ? previewContent : customMessage;
       const templateId = currentTemplate?.id;
 
-      await onSend(templateId, content, variables);
+      await onSend(templateId, content, undefined);
 
       // Reset form
       setCurrentTemplate(null);
       setCustomMessage("");
-      setVariables({});
       setPreviewContent("");
     } catch (error) {
       console.error("Error sending bulk messages:", error);
@@ -95,7 +132,7 @@ export default function BulkSendMessageModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-      <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white rounded-lg shadow-lg border">
+      <div ref={modalRef} className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white rounded-lg shadow-lg border">
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-3">
@@ -143,13 +180,24 @@ export default function BulkSendMessageModal({
 
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Seleccionar Template (opcional)
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  Seleccionar Template (opcional)
+                </label>
+                <button
+                  onClick={handleRefreshTemplates}
+                  disabled={refreshingTemplates}
+                  className="flex items-center space-x-1 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border transition-colors disabled:opacity-50"
+                  title="Refrescar templates"
+                >
+                  <RefreshCw className={`h-3 w-3 ${refreshingTemplates ? 'animate-spin' : ''}`} />
+                  <span>Refrescar</span>
+                </button>
+              </div>
               <select
                 value={currentTemplate?.id || ""}
                 onChange={(e) => {
-                  const template = templates.find(
+                  const template = localTemplates.find(
                     (t) => t.id === e.target.value,
                   );
                   setCurrentTemplate(template || null);
@@ -157,7 +205,7 @@ export default function BulkSendMessageModal({
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Sin template - Mensaje personalizado</option>
-                {templates.map((template) => (
+                {localTemplates.map((template) => (
                   <option key={template.id} value={template.id}>
                     {template.name}
                   </option>
@@ -165,39 +213,6 @@ export default function BulkSendMessageModal({
               </select>
             </div>
 
-            {currentTemplate && currentTemplate.variables.length > 0 && (
-              <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-3">
-                  Variables del Template
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {currentTemplate.variables.map((variable) => (
-                    <div key={variable}>
-                      <label className="block text-xs text-gray-600 mb-1 capitalize">
-                        {variable}
-                      </label>
-                      <input
-                        type="text"
-                        value={variables[variable] || ""}
-                        onChange={(e) =>
-                          setVariables((prev) => ({
-                            ...prev,
-                            [variable]: e.target.value,
-                          }))
-                        }
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
-                        placeholder={`Valor para {{${variable}}}`}
-                      />
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
-                  <AlertTriangle className="h-3 w-3 inline mr-1" />
-                  Las variables {"{nombre}"}, {"{telefono}"} y {"{email}"} se
-                  completarán automáticamente para cada lead.
-                </div>
-              </div>
-            )}
 
             {!currentTemplate && (
               <div>

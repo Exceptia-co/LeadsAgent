@@ -2,9 +2,6 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { ClerkProvider } from '@clerk/nextjs'
-import { SWRConfig } from 'swr'
-import { swrConfig } from '../lib/swr-config'
-import { ToastProvider } from '../components/ToastProvider'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -19,16 +16,10 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <ClerkProvider 
-      publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
-    >
+    <ClerkProvider>
       <html lang="es">
         <body className={inter.className}>
-          <SWRConfig value={swrConfig}>
-            <ToastProvider>
-              {children}
-            </ToastProvider>
-          </SWRConfig>
+          {children}
         </body>
       </html>
     </ClerkProvider>

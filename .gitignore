@@ -39,6 +39,7 @@ apps/whatsapp-service/sessions/
 apps/whatsapp-service/.wwebjs_cache/
 apps/whatsapp-service/.wwebjs_auth/
 apps/whatsapp-service/wwebjs_auth/
+apps/whatsapp-service/wwebjs_auth_test/
 
 # IDE/Editor
 .vscode/

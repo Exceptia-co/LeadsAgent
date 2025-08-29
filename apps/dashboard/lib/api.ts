@@ -76,6 +76,8 @@ export const useLeads = (
   page = 1, 
   limit = 20, 
   searchTerm?: string,
+  sortBy?: string,
+  sortOrder?: string,
   options?: { 
     refreshInterval?: number 
     priority?: 'standard' | 'low'
@@ -84,7 +86,10 @@ export const useLeads = (
   const cacheKey = createCacheKey(CACHE_KEYS.LEADS, { 
     page, 
     limit, 
-    ...(searchTerm && searchTerm.trim() !== '' && { q: searchTerm })
+    ...(searchTerm && searchTerm.trim() !== '' && { q: searchTerm }),
+    // Ensure sortBy and sortOrder are strings to prevent object serialization
+    ...(sortBy && typeof sortBy === 'string' && { sortBy }),
+    ...(sortOrder && typeof sortOrder === 'string' && { sortOrder })
   })
   
   // Determine smart refresh interval

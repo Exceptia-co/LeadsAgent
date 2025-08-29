@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { Card } from '../ui/card'
 import { Badge } from '../ui/badge'
 import { 
-  Filter, 
   User, 
   CheckCircle, 
   Clock, 
@@ -12,6 +11,7 @@ import {
   MessageSquare 
 } from 'lucide-react'
 import { Lead } from './ProactiveMessageSender'
+import FloatingMessageFilter from './FloatingMessageFilter'
 
 export interface ProactiveMessage {
   id: string
@@ -74,6 +74,10 @@ export default function ProactiveMessageHistory({ leads, onRefresh }: ProactiveM
     }
   }
 
+  const handleClearFilter = () => {
+    setStatusFilter('all')
+  }
+
   if (loading) {
     return (
       <div className="animate-pulse">
@@ -83,30 +87,15 @@ export default function ProactiveMessageHistory({ leads, onRefresh }: ProactiveM
   }
 
   return (
-    <div className="space-y-6">
-      {/* Filter */}
-      <Card className="p-4">
-        <div className="flex items-center space-x-4">
-          <Filter className="h-4 w-4 text-gray-400" />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value="all">Todos los estados</option>
-            <option value="pending">Pendientes</option>
-            <option value="sent">Enviados</option>
-            <option value="delivered">Entregados</option>
-            <option value="failed">Fallidos</option>
-          </select>
-          <button
-            onClick={handleRefresh}
-            className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-          >
-            Actualizar
-          </button>
-        </div>
-      </Card>
+    <div className="space-y-6 pb-24">
+      {/* Floating Message Filter */}
+      <FloatingMessageFilter
+        messages={messages}
+        filteredMessages={filteredMessages}
+        statusFilter={statusFilter}
+        onStatusFilterChange={setStatusFilter}
+        onClearFilter={handleClearFilter}
+      />
 
       {/* Messages List */}
       <div className="space-y-4">

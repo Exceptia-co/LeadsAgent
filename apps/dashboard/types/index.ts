@@ -2,8 +2,10 @@
 export interface Lead {
   id: string
   name: string | null
+  email: string | null
   phone: string
   status: LeadStatus
+  source: string | null
   score: number | null
   whatsappAuthorized?: boolean | null
   createdAt: string
@@ -63,8 +65,10 @@ export interface CreateLeadData {
 
 export interface UpdateLeadData {
   name?: string
+  email?: string
   phone?: string
   status?: LeadStatus
+  source?: string
   score?: number
 }
 
@@ -100,6 +104,21 @@ export const STATUS_LABELS: Record<LeadStatus, string> = {
   QUALIFIED: 'Calificado', 
   GANADO: 'Ganado',
   PERDIDO: 'Perdido'
+}
+
+// Sorting types
+export type SortOrder = 'asc' | 'desc'
+export type SortableLeadField = 'name' | 'phone' | 'status' | 'score' | 'createdAt' | 'whatsappAuthorized'
+
+export interface LeadSortConfig {
+  sortBy?: SortableLeadField
+  sortOrder?: SortOrder
+}
+
+// Bulk actions types
+export interface BulkUpdateWhatsAppData {
+  leadIds: string[]
+  whatsappAuthorized: boolean
 }
 
 // WhatsApp types

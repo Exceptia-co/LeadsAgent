@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logger } from '../utils/logger';
+import { AI_CONFIG, getModelName, validateAIConfig } from '../config/ai.config';
 
 // Interfaz común para respuestas de IA
 export interface AIResponse {
@@ -67,30 +68,38 @@ class AIService {
   };
 
   constructor() {
-    this.currentProvider = (process.env.AI_PROVIDER as 'openrouter' | 'gemini') || 'openrouter';
-    logger.info(`🔍 Environment Variables Check:`);
-    logger.info(`  - AI_PROVIDER: ${process.env.AI_PROVIDER}`);
-    logger.info(`  - OPENROUTER_MODEL: ${process.env.OPENROUTER_MODEL}`);
-    logger.info(`  - OPENROUTER_API_KEY: ${process.env.OPENROUTER_API_KEY ? 'Set (hidden)' : 'Not set'}`);
+    this.currentProvider = (process.env.AI_PROVIDER as 'openrouter' | 'gemini') || AI_CONFIG.DEFAULT_PROVIDER;
+    
+    // Validar configuración centralizada
+    const configValidation = validateAIConfig();
+    if (!configValidation.isValid) {
+      logger.warn('AI Config validation warnings:', configValidation.errors);
+    }
+    
+    logger.info(`🔍 AI Configuration Check:`);
+    logger.info(`  - AI_PROVIDER: ${this.currentProvider}`);
+    logger.info(`  - FORCED MODEL: ${getModelName()} (centralized config)`);
+    logger.info(`  - OPENROUTER_API_KEY: ${AI_CONFIG.OPENROUTER_API_KEY ? 'Set (hidden)' : 'Not set'}`);
+    logger.info(`  - BASE_URL: ${AI_CONFIG.OPENROUTER_BASE_URL}`);
+    
     this.initializeProviders();
   }
 
   private initializeProviders(): void {
     try {
-      // Inicializar OpenRouter con nueva configuración
-      const openrouterApiKey = process.env.OPENROUTER_API_KEY || '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';
-      
-      if (openrouterApiKey) {
+      // Inicializar OpenRouter con configuración centralizada
+      if (AI_CONFIG.OPENROUTER_API_KEY) {
         this.openrouter = new OpenAI({
-          baseURL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
-          apiKey: openrouterApiKey,
-          defaultHeaders: {
-            'HTTP-Referer': 'http://localhost:3002',
-            'X-Title': 'LeadsCRM WhatsApp Service'
-          }
+          baseURL: AI_CONFIG.OPENROUTER_BASE_URL,
+          apiKey: AI_CONFIG.OPENROUTER_API_KEY,
+          defaultHeaders: AI_CONFIG.DEFAULT_HEADERS
         });
-        const modelToUse = process.env.OPENROUTER_MODEL || 'openai/gpt-oss-120b';
-        logger.info(`🚀 OpenRouter inicializado correctamente con modelo: ${modelToUse}`);
+        
+        const modelToUse = getModelName(); // SIEMPRE openai/gpt-oss-120b
+        logger.info(`🚀 OpenRouter inicializado con modelo FIJO: ${modelToUse}`);
+        logger.info(`   ⚠️  Modelo no puede ser cambiado desde variables de entorno`);
+      } else {
+        logger.error('❌ OPENROUTER_API_KEY no configurado en variables de entorno');
       }
 
       // Inicializar Google Gemini
@@ -180,17 +189,18 @@ class AIService {
       content: message
     });
 
-    // Get the model name and log it for debugging
-    const modelName = process.env.OPENROUTER_MODEL || 'openai/gpt-oss-120b';
-    logger.info(`🤖 Using OpenRouter model: ${modelName}`);
+    // Get the model name from centralized config (ALWAYS openai/gpt-oss-120b)
+    const modelName = getModelName();
+    logger.info(`🤖 Using FIXED OpenRouter model: ${modelName}`);
+    logger.info(`   📌 Model is hardcoded to prevent claude-3.5-sonnet usage`);
 
     try {
       const completion = await this.openrouter.chat.completions.create({
         model: modelName,
         messages,
-        max_tokens: 2048,
-        temperature: 0.7,
-        stream: false
+        max_tokens: AI_CONFIG.MODEL_SETTINGS.maxTokens,
+        temperature: AI_CONFIG.MODEL_SETTINGS.temperature,
+        stream: AI_CONFIG.MODEL_SETTINGS.stream
       });
 
       const responseContent = completion.choices[0]?.message?.content;

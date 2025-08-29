@@ -12,8 +12,12 @@ import {
   Eye,
   Save,
   X,
-  Send
+  Send,
+  Sparkles,
+  Zap
 } from 'lucide-react'
+import VariablePicker from '../../../components/templates/VariablePicker'
+import AdvancedPreview from '../../../components/templates/AdvancedPreview'
 
 interface Template {
   id: string
@@ -34,6 +38,7 @@ export default function TemplatesPage() {
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const [previewTemplate, setPreviewTemplate] = useState<{ template: Template, variables: { [key: string]: string } } | null>(null)
+  const [showAdvancedPreview, setShowAdvancedPreview] = useState<Template | null>(null)
   const [loading, setLoading] = useState(true)
 
   // Formulario para template
@@ -299,10 +304,19 @@ export default function TemplatesPage() {
               <button
                 onClick={() => setPreviewTemplate({ template, variables: {} })}
                 className="flex items-center px-2 py-1 text-gray-600 hover:bg-gray-100 rounded text-xs"
-                title="Vista previa"
+                title="Vista previa simple"
               >
                 <Eye className="h-3 w-3 mr-1" />
-                Vista previa
+                Preview
+              </button>
+              
+              <button
+                onClick={() => setShowAdvancedPreview(template)}
+                className="flex items-center px-2 py-1 text-purple-600 hover:bg-purple-50 rounded text-xs"
+                title="Vista previa avanzada con leads reales"
+              >
+                <Sparkles className="h-3 w-3 mr-1" />
+                Live Preview
               </button>
               
               <button
@@ -419,34 +433,78 @@ export default function TemplatesPage() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
                     Contenido del Mensaje
                   </label>
-                  <textarea
-                    value={formData.content}
-                    onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
-                    rows={6}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                    placeholder="Contenido del mensaje... Usa {{variable}} para variables dinámicas."
+                  <button
+                    type="button"
+                    className="inline-flex items-center px-2 py-1 text-xs text-blue-600 hover:text-blue-800 font-medium border border-blue-200 rounded-md hover:bg-blue-50"
+                    title="Ver variables disponibles"
+                  >
+                    <Zap className="h-3 w-3 mr-1" />
+                    Variables
+                  </button>
+                </div>
+                <textarea
+                  value={formData.content}
+                  onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                  rows={6}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                  placeholder="Contenido del mensaje... Usa {{variable}} para variables dinámicas."
+                />
+                <div className="mt-2">
+                  <VariablePicker 
+                    compact={true}
+                    onVariableSelect={(variable) => {
+                      const textarea = document.querySelector('textarea[placeholder*="Contenido del mensaje"]') as HTMLTextAreaElement
+                      if (textarea) {
+                        const start = textarea.selectionStart
+                        const end = textarea.selectionEnd
+                        const currentContent = formData.content
+                        const newContent = currentContent.substring(0, start) + variable + currentContent.substring(end)
+                        setFormData(prev => ({ ...prev, content: newContent }))
+                        // Restore focus and cursor position
+                        setTimeout(() => {
+                          textarea.focus()
+                          const newPosition = start + variable.length
+                          textarea.setSelectionRange(newPosition, newPosition)
+                        }, 0)
+                      }
+                    }}
                   />
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Variables (separadas por comas)
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.variables}
-                    onChange={(e) => setFormData(prev => ({ ...prev, variables: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="nombre, telefono, email, servicio..."
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Las variables se reemplazarán automáticamente con datos del lead
-                  </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Variables Detectadas
+                </label>
+                <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg border min-h-[40px]">
+                  {(() => {
+                    const matches = formData.content.match(/\{\{([^}]+)\}\}/g)
+                    const variables = matches ? Array.from(new Set(matches.map(match => match.slice(2, -2).trim()))) : []
+                    
+                    if (variables.length === 0) {
+                      return (
+                        <span className="text-sm text-gray-500 italic">
+                          Las variables se detectarán automáticamente mientras escribes
+                        </span>
+                      )
+                    }
+                    
+                    return variables.map(variable => (
+                      <span key={variable} className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800 border border-blue-200">
+                        {{`{{${variable}}}`}}
+                      </span>
+                    ))
+                  })()} 
                 </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  💡 Las variables se reemplazarán automáticamente con datos reales del lead
+                </p>
+              </div>
 
                 {editingTemplate && (
                   <div className="flex items-center">
@@ -464,26 +522,43 @@ export default function TemplatesPage() {
                 )}
               </div>
 
-              <div className="flex justify-end space-x-3 mt-6 pt-6 border-t">
-                <button
-                  onClick={() => {
-                    setIsCreating(false)
-                    setEditingTemplate(null)
-                    resetForm()
-                  }}
-                  className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  Cancelar
-                </button>
+              <div className="flex justify-between items-center mt-6 pt-6 border-t">
+                <div className="flex items-center space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Función para manejar la IA cuando esté implementada
+                      console.log('IA helper clicked')
+                    }}
+                    className="inline-flex items-center px-3 py-2 text-sm bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all"
+                    title="Generar contenido con IA"
+                  >
+                    <Sparkles className="h-4 w-4 mr-1" />
+                    Generar con IA
+                  </button>
+                </div>
                 
-                <button
-                  onClick={isCreating ? handleCreateTemplate : handleUpdateTemplate}
-                  disabled={!formData.name || !formData.content}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                >
-                  <Save className="h-4 w-4 mr-2" />
-                  {isCreating ? 'Crear' : 'Actualizar'}
-                </button>
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => {
+                      setIsCreating(false)
+                      setEditingTemplate(null)
+                      resetForm()
+                    }}
+                    className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                  
+                  <button
+                    onClick={isCreating ? handleCreateTemplate : handleUpdateTemplate}
+                    disabled={!formData.name || !formData.content}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    {isCreating ? 'Crear' : 'Actualizar'}
+                  </button>
+                </div>
               </div>
             </div>
           </Card>
@@ -544,6 +619,22 @@ export default function TemplatesPage() {
             </div>
           </Card>
         </div>
+      )}
+      
+      {/* Advanced Preview Modal */}
+      {showAdvancedPreview && (
+        <AdvancedPreview
+          templateId={showAdvancedPreview.id}
+          templateContent={showAdvancedPreview.content}
+          variables={showAdvancedPreview.variables}
+          onClose={() => setShowAdvancedPreview(null)}
+          onSendToLead={(leadId, content) => {
+            console.log('Sending to lead:', leadId, 'Content:', content)
+            // Aquí se integraría con el sistema de envío de mensajes
+            alert(`Mensaje enviado a lead ${leadId}`)
+            setShowAdvancedPreview(null)
+          }}
+        />
       )}
     </div>
   )
