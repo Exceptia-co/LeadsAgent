@@ -1,4 +1,4 @@
-import express from 'express'
+import express, { Express } from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import path from 'path'
@@ -38,7 +38,7 @@ if (fs.existsSync(rootEnvPath)) {
   logger.info(`📁 Loaded root .env from: ${rootEnvPath}`);
 }
 
-const app = express()
+const app: Express = express()
 const PORT = process.env.WHATSAPP_SERVICE_PORT || process.env.PORT || 3002
 
 // Trust proxy for rate limiting

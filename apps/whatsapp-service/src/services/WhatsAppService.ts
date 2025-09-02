@@ -47,7 +47,7 @@ class WhatsAppService {
     this.initialize();
   }
 
-  private async initialize(): Promise<void> {
+  public async initialize(): Promise<void> {
     await this.checkRedisConnection();
     await this.statsService.loadStatsFromRedis();
   }
