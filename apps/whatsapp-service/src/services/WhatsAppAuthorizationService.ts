@@ -149,7 +149,7 @@ class WhatsAppAuthorizationService {
         decision: 'ALLOWED',
         reason: `Número en lista blanca explícita: ${isInExplicitWhitelist.reason}`,
         confidence: 1.0,
-        leadInfo,
+        leadInfo: leadInfo || undefined,
         metadata: {
           isKnownLead: !!leadInfo,
           hasWhatsAppAuth: true,
@@ -209,7 +209,7 @@ class WhatsAppAuthorizationService {
         decision: 'BLOCKED',
         reason: `Número con patrón sospechoso: ${suspiciousCheck.reasons.join(', ')}`,
         confidence: 0.8,
-        leadInfo,
+        leadInfo: leadInfo || undefined,
         metadata: {
           isKnownLead: !!leadInfo,
           hasWhatsAppAuth: leadInfo?.whatsappAuthorized || false,
@@ -229,7 +229,7 @@ class WhatsAppAuthorizationService {
         decision: 'BLOCKED',
         reason: `Código de país no permitido: ${countryCheck.countryCode}`,
         confidence: 0.85,
-        leadInfo,
+        leadInfo: leadInfo || undefined,
         metadata: {
           isKnownLead: !!leadInfo,
           hasWhatsAppAuth: leadInfo?.whatsappAuthorized || false,
@@ -312,7 +312,7 @@ class WhatsAppAuthorizationService {
         decision: 'ALLOWED',
         reason: 'Nuevo número - permitido por política de leads nuevos',
         confidence: 0.5,
-        leadInfo: null,
+        leadInfo: undefined,
         metadata: {
           isKnownLead: false,
           hasWhatsAppAuth: false,
@@ -329,7 +329,7 @@ class WhatsAppAuthorizationService {
       decision: 'BLOCKED',
       reason: 'Número no autorizado - no cumple con criterios de autorización',
       confidence: 0.6,
-      leadInfo,
+      leadInfo: leadInfo || undefined,
       metadata: {
         isKnownLead: !!leadInfo,
         hasWhatsAppAuth: leadInfo?.whatsappAuthorized || false,

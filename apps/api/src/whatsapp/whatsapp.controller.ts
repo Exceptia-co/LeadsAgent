@@ -1,5 +1,6 @@
-import { Controller, Post, Body, Headers, Logger, BadRequestException } from '@nestjs/common'
+import { Controller, Post, Get, Body, Headers, Logger, BadRequestException, Query } from '@nestjs/common'
 import { WhatsAppService } from './whatsapp.service'
+import { WhitelistService } from './whitelist.service'
 
 interface SendMessageDto {
   sessionId: string
@@ -19,7 +20,10 @@ interface WebhookPayload {
 export class WhatsAppController {
   private readonly logger = new Logger(WhatsAppController.name)
 
-  constructor(private readonly whatsAppService: WhatsAppService) {}
+  constructor(
+    private readonly whatsAppService: WhatsAppService,
+    private readonly whitelistService: WhitelistService
+  ) {}
 
   @Post('webhook')
   async handleWebhook(
@@ -86,6 +90,48 @@ export class WhatsAppController {
     } catch (error) {
       this.logger.error('Error sending message:', error)
       throw new BadRequestException('Failed to send message: ' + error.message)
+    }
+  }
+
+  @Get('whitelist/stats')
+  async getWhitelistStats(@Query('days') days?: string) {
+    try {
+      const daysNumber = days ? parseInt(days) : 7
+      const stats = await this.whitelistService.getWhitelistStats(daysNumber)
+      
+      return {
+        success: true,
+        data: stats,
+        message: `Whitelist statistics for the last ${daysNumber} days`
+      }
+    } catch (error) {
+      this.logger.error('Error getting whitelist stats:', error)
+      throw new BadRequestException('Failed to get whitelist statistics')
+    }
+  }
+
+  @Post('whitelist/authorize')
+  async updateLeadAuthorization(
+    @Body() body: { leadId: string; authorized: boolean; reason?: string }
+  ) {
+    try {
+      const success = await this.whitelistService.updateLeadAuthorization(
+        body.leadId,
+        body.authorized,
+        body.reason
+      )
+      
+      if (success) {
+        return {
+          success: true,
+          message: `Lead authorization updated to: ${body.authorized}`
+        }
+      } else {
+        throw new BadRequestException('Failed to update lead authorization')
+      }
+    } catch (error) {
+      this.logger.error('Error updating lead authorization:', error)
+      throw new BadRequestException('Failed to update lead authorization: ' + error.message)
     }
   }
 }

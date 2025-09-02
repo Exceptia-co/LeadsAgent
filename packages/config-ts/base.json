@@ -15,7 +15,12 @@
     "preserveWatchOutput": true,
     "skipLibCheck": true,
     "strict": true,
-    "strictNullChecks": true
+    "strictNullChecks": true,
+    "target": "ES2022",
+    "module": "ES2022",
+    "lib": ["ES2022"],
+    "allowImportingTsExtensions": false,
+    "allowArbitraryExtensions": false
   },
   "exclude": ["node_modules"]
 }

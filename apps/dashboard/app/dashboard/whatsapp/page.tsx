@@ -7,6 +7,7 @@ import { useWhatsAppApi } from "../../../hooks/use-whatsapp-api";
 import { WhatsAppSession, WhatsAppMessage } from "../../../types";
 import { LeadSelector } from "../../../components/LeadSelector";
 import { Lead } from "../../../hooks/use-leads";
+import useSocket from "../../../src/hooks/useSocket";
 import {
   Smartphone,
   Plus,
@@ -24,6 +25,8 @@ import {
   Loader2,
   Wifi,
   WifiOff,
+  Zap,
+  Circle,
 } from "lucide-react";
 import { Tooltip } from "../../../components/ui/tooltip";
 import { useToast } from "../../../components/ui/toast";
@@ -72,6 +75,90 @@ export default function WhatsAppPage() {
   const [sessions, setSessions] = useState<WhatsAppSession[]>([]);
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
   const [selectedSession, setSelectedSession] = useState<string>("");
+
+  // Initialize Socket.IO for real-time updates
+  const {
+    connected: socketConnected,
+    connecting: socketConnecting,
+    error: socketError,
+    sessions: socketSessions,
+    connect: socketConnect,
+    disconnect: socketDisconnect,
+    getCurrentState,
+  } = useSocket({
+    autoConnect: true,
+    reconnection: true,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
+  });
+
+  // Sync socket sessions with local state
+  useEffect(() => {
+    if (socketSessions.length > 0) {
+      // Convert socket sessions to WhatsApp sessions format
+      const convertedSessions = socketSessions.map(socketSession => ({
+        id: socketSession.id,
+        name: socketSession.name,
+        status: socketSession.status,
+        phoneNumber: socketSession.phoneNumber,
+        qr: socketSession.qrCode,
+        createdAt: socketSession.timestamp,
+        updatedAt: socketSession.timestamp,
+        lastSeen: socketSession.lastActivity,
+      }));
+      
+      setSessions(convertedSessions);
+      
+      // Auto-select first session if none selected
+      if (convertedSessions.length > 0 && !selectedSession) {
+        setSelectedSession(convertedSessions[0].id);
+      }
+      
+      // Update data loading state
+      setDataLoading(prev => ({ ...prev, sessions: false }));
+    }
+  }, [socketSessions, selectedSession]);
+
+  // Show real-time connection status in console for debugging
+  useEffect(() => {
+    if (socketConnected) {
+      console.log('🔌 WebSocket connected - receiving real-time updates');
+      
+      // Show successful connection toast (only once)
+      showToast({
+        type: "success",
+        title: "🚀 Conectado en tiempo real",
+        description: "Recibirás actualizaciones automáticas de WhatsApp"
+      });
+    } else if (socketError) {
+      console.warn('⚠️ WebSocket error:', socketError);
+      
+      // Show error toast for connection issues
+      showToast({
+        type: "error",
+        title: "⚠️ Error de conexión",
+        description: "No se pudo conectar a actualizaciones en tiempo real"
+      });
+    }
+  }, [socketConnected, socketError]);
+
+  // Handle real-time session updates with visual feedback
+  useEffect(() => {
+    if (socketSessions.length > 0) {
+      // Compare with previous session count for new session detection
+      const previousCount = sessions.length;
+      const currentCount = socketSessions.length;
+      
+      if (currentCount > previousCount && previousCount > 0) {
+        // New session detected
+        showToast({
+          type: "info",
+          title: "📱 Nueva sesión detectada",
+          description: "Se ha agregado una nueva sesión de WhatsApp"
+        });
+      }
+    }
+  }, [socketSessions.length, sessions.length]);
 
   // Template and proactive message states
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -391,20 +478,56 @@ export default function WhatsAppPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold text-gray-900">WhatsApp Manager</h1>
-        <div className="flex items-center space-x-2">
-          {sessions.filter((s) => s.status === "CONNECTED").length > 0 ? (
-            <Tooltip content="Conexión establecida con WhatsApp">
-              <Wifi className="h-5 w-5 text-green-500" />
-            </Tooltip>
-          ) : (
-            <Tooltip content="Sin conexiones activas">
-              <WifiOff className="h-5 w-5 text-gray-400" />
-            </Tooltip>
-          )}
-          <span className="text-sm text-gray-600">
-            {sessions.filter((s) => s.status === "CONNECTED").length} sesiones
-            conectadas
-          </span>
+        <div className="flex items-center space-x-4">
+          {/* WebSocket Connection Status */}
+          <div className="flex items-center space-x-2">
+            {socketConnected ? (
+              <Tooltip content="WebSocket conectado - Actualizaciones en tiempo real">
+                <div className="flex items-center">
+                  <Zap className="h-4 w-4 text-green-500 animate-pulse" />
+                  <span className="text-xs text-green-600 ml-1">En vivo</span>
+                </div>
+              </Tooltip>
+            ) : socketConnecting ? (
+              <Tooltip content="Conectando a WebSocket...">
+                <div className="flex items-center">
+                  <Loader2 className="h-4 w-4 text-yellow-500 animate-spin" />
+                  <span className="text-xs text-yellow-600 ml-1">Conectando</span>
+                </div>
+              </Tooltip>
+            ) : socketError ? (
+              <Tooltip content={`Error de WebSocket: ${socketError}`}>
+                <div className="flex items-center">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                  <span className="text-xs text-red-600 ml-1">Error</span>
+                </div>
+              </Tooltip>
+            ) : (
+              <Tooltip content="WebSocket desconectado">
+                <div className="flex items-center">
+                  <Circle className="h-4 w-4 text-gray-400" />
+                  <span className="text-xs text-gray-500 ml-1">Desconectado</span>
+                </div>
+              </Tooltip>
+            )}
+          </div>
+
+          {/* WhatsApp Sessions Status */}
+          <div className="flex items-center space-x-2">
+            {sessions.filter((s) => s.status === "CONNECTED").length > 0 ? (
+              <Tooltip content="Conexión establecida con WhatsApp">
+                <Wifi className="h-5 w-5 text-green-500" />
+              </Tooltip>
+            ) : (
+              <Tooltip content="Sin conexiones activas">
+                <WifiOff className="h-5 w-5 text-gray-400" />
+              </Tooltip>
+            )}
+            <span className="text-sm text-gray-600">
+              {sessions.filter((s) => s.status === "CONNECTED").length} sesiones
+              conectadas
+            </span>
+          </div>
         </div>
       </div>
 

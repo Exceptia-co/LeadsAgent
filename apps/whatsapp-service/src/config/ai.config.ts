@@ -10,10 +10,10 @@ export const AI_CONFIG = {
   OPENROUTER_MODEL: 'openai/gpt-oss-120b',
   
   // Base URL para OpenRouter
-  OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+  OPENROUTER_BASE_URL: process.env['OPENROUTER_BASE_URL'] || 'https://openrouter.ai/api/v1',
   
   // API Key desde variables de entorno
-  OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY || '',
+  OPENROUTER_API_KEY: process.env['OPENROUTER_API_KEY'] || '',
   
   // Proveedor preferido
   DEFAULT_PROVIDER: 'openrouter' as const,

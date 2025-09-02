@@ -167,6 +167,32 @@ export class PhoneNumberService {
     
     return -1;
   }
+  
+  /**
+   * Verifica si un número de teléfono está autorizado para respuesta automática
+   * 
+   * @param phoneNumber - Número de teléfono a verificar
+   * @returns true si está autorizado, false en caso contrario
+   */
+  public static async checkPhoneNumberAllowed(phoneNumber: string): Promise<boolean> {
+    try {
+      // Import WhatsAppAuthorizationService dynamically to avoid circular dependencies
+      const { default: WhatsAppAuthorizationService } = await import('./WhatsAppAuthorizationService');
+      
+      // Usar el servicio de autorización para verificar el número
+      const authorizationResult = await WhatsAppAuthorizationService.authorize({
+        phoneNumber,
+        sessionId: 'phone-validation',
+        timestamp: new Date(),
+      });
+      
+      return authorizationResult.decision === 'ALLOWED';
+    } catch (error) {
+      logger.error('Error checking phone number authorization:', error);
+      // En caso de error, comportamiento conservador (BLOQUEAR)
+      return false;
+    }
+  }
 }
 
 export default PhoneNumberService;

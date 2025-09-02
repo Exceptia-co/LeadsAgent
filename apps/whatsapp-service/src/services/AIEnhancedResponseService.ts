@@ -1,7 +1,7 @@
 import { logger } from '../utils/logger';
 import DatabaseService, { Lead, ConversationHistory } from './DatabaseService';
 import WhatsAppAuthorizationService from './WhatsAppAuthorizationService';
-import { TrainingInteraction } from './AILearningService';
+import type { TrainingInteraction } from '../types';
 
 export interface AIResponseContext {
   phoneNumber: string;
@@ -758,14 +758,15 @@ class AIEnhancedResponseService {
           phoneNumber: context.phoneNumber,
           sessionId: context.sessionId,
           leadId: (context as any).lead?.id,
-          responseType: result.responseType,
-          conversationStage: result.metadata.conversationStage
+          responseType: result.responseType
         },
         feedbackMetrics: {
-          // processingTime: result.metadata.processingTime, // Commentado temporalmente
+          conversationContinued: result.shouldContinueConversation,
+          responseTime: result.metadata.processingTime,
+          followUpQuestions: 0,
+          userSatisfactionIndicators: [],
           personalizedElements: result.personalizedElements.length,
-          contextFactors: result.contextFactors.length,
-          shouldContinue: result.shouldContinueConversation
+          contextFactors: result.contextFactors.length
         },
         timestamp: new Date()
       };

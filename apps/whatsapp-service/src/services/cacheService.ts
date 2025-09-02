@@ -314,7 +314,7 @@ export class CacheService {
     try {
       const key = `${REDIS_KEYS.SESSION_STATUS}${sessionId}`;
       const status = await redisClient.getObject(key);
-      logger.debug(`Session status retrieved for ${sessionId}:`, status?.status || 'not found');
+      logger.debug(`Session status retrieved for ${sessionId}:`, (status as any)?.status || 'not found');
       return status;
     } catch (error) {
       logger.error('Error getting session status:', error);

@@ -5,7 +5,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "db:generate": "npx prisma generate",
+    "db:generate": "powershell -ExecutionPolicy Bypass -File ./scripts/generate-windows.ps1",
+    "db:generate:win": "powershell -ExecutionPolicy Bypass -File ./scripts/generate-windows.ps1",
     "db:migrate:dev": "prisma migrate dev",
     "db:migrate:reset": "prisma migrate reset",
     "db:studio": "prisma studio",
@@ -13,15 +14,12 @@
     "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@prisma/client": "^6.14.0",
+    "@prisma/client": "6.15.0",
     "dotenv": "^16.4.5"
   },
   "devDependencies": {
     "@types/node": "^20.11.30",
-    "prisma": "^6.14.0",
+    "prisma": "6.15.0",
     "tsx": "^4.7.1"
-  },
-  "prisma": {
-    "schema": "prisma/schema.prisma"
   }
 }

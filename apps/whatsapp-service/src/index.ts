@@ -3,7 +3,9 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import path from 'path'
 import fs from 'fs'
+import { createServer } from 'http'
 import { logger } from './utils/logger'
+import { initializeSocketService } from './services/SocketService'
 
 // Capturar errores no manejados ANTES de cualquier otro código
 process.on('uncaughtException', (error) => {
@@ -115,7 +117,7 @@ async function bootstrap() {
     logger.info('🔄 Loading services...')
     
     // Import services
-    const WhatsAppServiceModule = await import('./services/WhatsAppServiceWithRedis')
+    const WhatsAppServiceModule = await import('./services/WhatsAppService')
     const AIServiceModule = await import('./services/AIService')
     const DatabaseServiceModule = await import('./services/DatabaseService')
     const { redisClient } = await import('./config/redis')
@@ -161,12 +163,13 @@ async function bootstrap() {
       }, 45000);
 
       try {
-        // Import the service to use the new shutdown method
-        const WhatsAppServiceModule = await import('./services/WhatsAppServiceSimple')
-        const whatsappServiceInstance = WhatsAppServiceModule.default
+        // Shutdown Socket.IO service first
+        logger.info('🔌 Shutting down WebSocket service...')
+        await socketServiceForShutdown.shutdown()
+        
         
         logger.info('📱 Shutting down WhatsApp service...')
-        await whatsappServiceInstance.shutdown()
+        await whatsappService.shutdown()
         
         logger.info('🔴 Shutting down Redis service...')
         try {
@@ -206,10 +209,21 @@ async function bootstrap() {
     }
 
     logger.info('🌐 Starting HTTP server...')
-    const server = app.listen(PORT, () => {
+    const httpServer = createServer(app)
+    
+    // Initialize Socket.IO for real-time updates
+    logger.info('🔌 Initializing WebSocket service...')
+    const socketService = initializeSocketService(httpServer)
+    logger.info('✅ WebSocket service initialized')
+    
+    // Make socketService available for shutdown
+    let socketServiceForShutdown = socketService
+    
+    const server = httpServer.listen(PORT, () => {
       logger.info(`🟢 WhatsApp service running on port ${PORT}`)
       logger.info(`📱 Ready to handle WhatsApp sessions`)
       logger.info(`🔗 API endpoints available at http://localhost:${PORT}/api`)
+      logger.info(`🔌 WebSocket endpoints available at ws://localhost:${PORT}/whatsapp-socket/`)
       logger.info('✨ Service startup completed successfully')
     })
 

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { PrismaService } from '../prisma/prisma.service'
+import { WhitelistService } from './whitelist.service'
 import { LeadStatus, MessageType, MessageDirection, MessageStatus } from '@prisma/client'
 
 interface WhatsAppMessage {
@@ -17,7 +18,10 @@ interface WhatsAppMessage {
 export class WhatsAppService {
   private readonly logger = new Logger(WhatsAppService.name)
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private whitelistService: WhitelistService
+  ) {}
 
   async handleIncomingMessage(sessionId: string, messageData: WhatsAppMessage): Promise<void> {
     try {
@@ -37,7 +41,22 @@ export class WhatsAppService {
       
       this.logger.log(`Processing message from ${phoneNumber}: ${messageData.body.substring(0, 50)}...`)
 
-      // Find or create lead
+      // 🔒 CRITICAL: Check whitelist authorization BEFORE creating any leads
+      const whitelistResult = await this.whitelistService.isNumberAuthorized(
+        phoneNumber, 
+        sessionId, 
+        messageData.body
+      )
+
+      if (!whitelistResult.allowed) {
+        this.logger.warn(`🚫 Message from ${phoneNumber} BLOCKED by whitelist: ${whitelistResult.reason}`)
+        // Exit early - DO NOT create lead or store message
+        return
+      }
+
+      this.logger.log(`✅ Message from ${phoneNumber} AUTHORIZED: ${whitelistResult.reason}`)
+
+      // Find existing lead (whitelist check already verified this is safe)
       let lead = await this.prisma.lead.findUnique({
         where: { phone: phoneNumber },
         include: {
@@ -48,23 +67,26 @@ export class WhatsAppService {
         }
       })
 
+      // Create lead ONLY if authorized and doesn't exist
       if (!lead) {
-        // Create new lead
+        // Lead creation is now safe because whitelist was checked first
         lead = await this.prisma.lead.create({
           data: {
             name: `Lead ${phoneNumber}`, // Default name, can be updated later
             phone: phoneNumber,
-            status: LeadStatus.NUEVO
+            status: LeadStatus.NUEVO,
+            whatsappAuthorized: whitelistResult.leadInfo?.whatsappAuthorized ?? true, // Default to authorized if passed whitelist
+            source: 'whatsapp-inbound'
           },
           include: {
             messages: true
           }
         })
 
-        this.logger.log(`Created new lead for ${phoneNumber}`)
+        this.logger.log(`✅ Created new AUTHORIZED lead for ${phoneNumber}`)
       }
 
-      // Store message directly associated with the lead
+      // Store message - now safe because lead is authorized
       await this.prisma.message.create({
         data: {
           leadId: lead.id,
@@ -77,7 +99,7 @@ export class WhatsAppService {
         }
       })
 
-      // Update lead status if it's the first message and currently NUEVO
+      // Update lead status and contact time
       if (lead.status === LeadStatus.NUEVO) {
         await this.prisma.lead.update({
           where: { id: lead.id },
@@ -94,13 +116,10 @@ export class WhatsAppService {
         })
       }
 
-      this.logger.log(`Message stored for lead ${lead.id}`)
-
-      // TODO: Trigger AI analysis for lead classification
-      // TODO: Generate automatic responses if configured
+      this.logger.log(`✅ Message stored for authorized lead ${lead.id}`)
       
     } catch (error) {
-      this.logger.error('Error handling incoming message:', error)
+      this.logger.error('❌ Error handling incoming message:', error)
     }
   }
 
