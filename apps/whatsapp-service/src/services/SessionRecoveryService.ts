@@ -213,7 +213,11 @@ export class SessionRecoveryService {
       logger.info(`🚨 Skipping session ${sessionId}: health check too old (${lastHealthCheck})`)
       await this.persistenceService.updateSessionStatus(sessionId, 'disconnected', {
         lastError: 'Health check expired, manual reconnection required',
-        autoReconnect: false
+        metadata: {
+          autoReconnect: false,
+          healthCheckExpired: true,
+          lastHealthCheck: lastHealthCheck.toISOString(),
+        }
       })
       return false
     }
@@ -968,10 +972,10 @@ export class SessionRecoveryService {
             session.sessionId,
             'disconnected',
             {
-              autoReconnect: false,
               lastError: `Skipped recovery: ${reason}`,
               metadata: {
                 ...session.metadata,
+                autoReconnect: false,
                 lastRecoverySkip: new Date().toISOString(),
                 recoverySkipReason: reason
               }

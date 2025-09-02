@@ -24,6 +24,12 @@ Este directorio contiene los agentes especializados para OpenCode, convertidos a
 
 - **[ai-enhancement.md](./ai-enhancement.md)** - Integración OpenAI y clasificación automática
 
+### Agentes Generalistas
+
+- **[general-purpose.md](./general-purpose.md)** - Agente versátil para tareas generales de desarrollo.
+- **[code-refactor.md](./code-refactor.md)** - Especializado en mejorar la calidad y estructura del código.
+- **[docs-writer.md](./docs-writer.md)** - Dedicado a la creación y mantenimiento de documentación.
+
 ## Uso con OpenCode
 
 ### Invocación Manual
@@ -33,7 +39,7 @@ Puedes invocar agentes específicos usando `@` mention:
 ```bash
 @lead-manager "Crear lead desde WhatsApp +34123456789"
 @ui-component "Crear tabla de leads con filtros avanzados"
-@security-audit "Revisar configuración CORS para producción"
+@code-refactor "Refactoriza el servicio de leads para mejorar su legibilidad"
 ```
 
 ### Invocación Automática
@@ -54,7 +60,7 @@ Cada agente sigue la estructura requerida:
 ---
 description: Descripción clara del propósito del agente
 mode: subagent | primary | all
-model: anthropic/claude-sonnet-4-20250514
+model: sonnet 4
 temperature: 0.1-0.7
 tools:
   write: true|false

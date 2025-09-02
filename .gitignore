@@ -86,3 +86,15 @@ packages/db/prisma/packages/
 .kilocode/
 .roo/
 .claude/
+
+# Testing and temporary files
+test-*.js
+test-*.ts
+*.temp
+*.backup
+temp/
+**/temp/
+check_*.js
+setup_*.js
+inspect*.ts
+inspect*.js

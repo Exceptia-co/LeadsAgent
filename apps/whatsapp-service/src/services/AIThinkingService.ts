@@ -1091,13 +1091,13 @@ class AIThinkingService {
       contextualPrompt += `\n\n🎯 INSTRUCCIÓN: SALUDO PERSONALIZADO Y BREVE\n`;
       contextualPrompt += `RESPUESTA EXACTA: Máximo 25 palabras. Saludo cálido + presentación marca + pregunta abierta.\n`;
       
-      if (context.contactName) {
-        contextualPrompt += `Usuario: ${context.contactName} (usar el nombre para personalizar)\n`;
+      if ((context as any).contactName) {
+        contextualPrompt += `Usuario: ${(context as any).contactName} (usar el nombre para personalizar)\n`;
       }
       
       const timeContext = this.analyzeTimeContext();
       contextualPrompt += `Horario: ${timeContext.timeOfDay} ${timeContext.dayOfWeek}\n`;
-      contextualPrompt += `MODELO: "¡Hola${context.contactName ? ' ' + context.contactName : ''}! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte hoy?"\n\n`;
+      contextualPrompt += `MODELO: "¡Hola${(context as any).contactName ? ' ' + (context as any).contactName : ''}! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte hoy?"\n\n`;
       return contextualPrompt;
     }
     

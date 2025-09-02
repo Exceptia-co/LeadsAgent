@@ -120,7 +120,7 @@ export default function VariablePicker({
             key: 'sitio_web',
             label: 'Sitio Web',
             description: 'URL del sitio web',
-            example: 'www.escortshub.com',
+            example: 'www.escortshub.net',
             category: 'system',
             icon: Globe
           },

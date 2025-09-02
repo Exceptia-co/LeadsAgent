@@ -214,8 +214,8 @@ class MigrationService {
           name: migration.name,
           description: migration.description,
           executed: !!executed,
-          executedAt: executed?.executedAt,
-          executionTime: executed?.executionTime
+          executedAt: (executed as any)?.executedAt,
+          executionTime: (executed as any)?.executionTime
         };
       });
     } catch (error) {

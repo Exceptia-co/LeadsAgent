@@ -134,29 +134,22 @@ export class SessionController {
 
       logger.info(`🔌 Force disconnect requested for session: ${sessionId}`)
       
-      const result = await WhatsAppService.forceDisconnectSession(sessionId)
+      // The service method returns void, so we handle success/error via try/catch
+      await WhatsAppService.forceDisconnectSession(sessionId)
       
-      if (result.success) {
-        res.json({
-          success: true,
-          message: `Session ${sessionId} forcefully disconnected`,
-          data: {
-            sessionId,
-            previousStatus: result.previousStatus,
-            timestamp: new Date().toISOString()
-          }
-        })
-      } else {
-        res.status(404).json({
-          success: false,
-          error: result.error || 'Failed to force disconnect session'
-        })
-      }
+      res.json({
+        success: true,
+        message: `Session ${sessionId} forcefully disconnected`,
+        data: {
+          sessionId,
+          timestamp: new Date().toISOString()
+        }
+      })
     } catch (error) {
       logger.error('Error force disconnecting session:', error)
       res.status(500).json({
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Failed to force disconnect session'
       })
     }
   }
@@ -367,6 +360,39 @@ export class SessionController {
       })
     } catch (error) {
       logger.error('Error getting enhanced sessions:', error)
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+    }
+  }
+
+  // Get WebSocket connection statistics
+  async getSocketStats(req: Request, res: Response): Promise<void> {
+    try {
+      const { getSocketService } = await import('../services/SocketService')
+      const socketService = getSocketService()
+      
+      if (!socketService) {
+        res.status(503).json({
+          success: false,
+          error: 'WebSocket service not available'
+        })
+        return
+      }
+      
+      const stats = socketService.getStats()
+      
+      res.json({
+        success: true,
+        data: {
+          ...stats,
+          timestamp: new Date().toISOString(),
+          status: 'active'
+        }
+      })
+    } catch (error) {
+      logger.error('Error getting socket stats:', error)
       res.status(500).json({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'

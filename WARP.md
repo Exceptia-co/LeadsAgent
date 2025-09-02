@@ -1,854 +1,314 @@
-# WARP.md
+# WARP.md - LeadsAgent Quick Reference
 
-This file provides guidance to WARP (warp.dev) when working with code in this repository.
-
-*Version: 4.0 | Last Updated: December 21, 2024*
-
-## 📚 Tabla de Contenidos
-
-1. [Estado del Proyecto](#-estado-del-proyecto)
-2. [Stack Tecnológico](#stack-tecnológico)
-3. [Estructura del Proyecto](#estructura-del-proyecto)
-4. [Comandos de Desarrollo](#comandos-de-desarrollo)
-5. [Arquitectura del Sistema](#arquitectura-del-sistema)
-6. [Modelo de Datos (Prisma)](#modelo-de-datos-prisma)
-7. [API Endpoints](#api-endpoints)
-8. [Desarrollo y Mejores Prácticas](#desarrollo-y-mejores-prácticas)
-   - [Integración MCP (OBLIGATORIO)](#integración-mcp-para-asistentes-obligatorio)
-   - [Convenciones de Código](#convenciones-de-código-typescript)
-   - [Seguridad](#seguridad)
-   - [Testing](#testing)
-9. [Proveedores de IA](#proveedores-de-ia-y-configuración)
-10. [Configuración de WhatsApp](#configuración-de-whatsapp)
-11. [API del servicio de WhatsApp](#api-del-servicio-de-whatsapp-resumen)
-12. [Troubleshooting](#troubleshooting)
-13. [Hoja de Ruta](#hoja-de-ruta-de-implementación)
-14. [Despliegue](#despliegue)
-
-## 🔗 Documentación Adicional
-
-- [AI Development Guidelines](./docs/AI_DEVELOPMENT_GUIDELINES.md) - Guías completas para desarrollo con IA
-- [Architecture Diagrams](./docs/ARCHITECTURE_DIAGRAMS.md) - Diagramas visuales del sistema
-- [Practical Examples](./docs/PRACTICAL_EXAMPLES.md) - Ejemplos prácticos y troubleshooting
-- [Project Status](./docs/PROJECT_STATUS.md) - Estado detallado de implementación
-
----
-
-# LeadsCRM - Dashboard de Gestión de Leads con WhatsApp e IA
-
-LeadsCRM es un sistema integral de gestión de leads que automatiza la recepción y procesamiento de mensajes de WhatsApp mediante inteligencia artificial, proporcionando un dashboard moderno para la gestión eficiente de leads y conversaciones.
+_Guía optimizada para desarrollo con WARP Terminal_
 
 ## 📊 Estado del Proyecto
 
-**Actual:** ✅ **100% Operativo - Production Ready**  
-**Versión:** 2.1.0 - Diciembre 2024  
-**Estado:** 🎆 Todas las funcionalidades implementadas y funcionando
+**✅ Sistema Completamente Operativo**
+- **Versión:** 2.2.0 (Agosto 2025)
+- **Estado:** Production Ready con 14 tablas activas, 6 leads, múltiples conversaciones
+- **Última actualización:** Sistema de IA multi-proveedor y templates implementado
 
-### 🎯 Objetivo Principal
-Validar y escalar el flujo: **recepción de leads por WhatsApp → persistencia y visualización → sugerencias de respuesta con IA → envío manual/automatizado por agentes**.
+## 🚀 Stack Tecnológico
 
-### 📚 Documentación Clave
-- [`README.md`](./README.md) - Estado actual del proyecto y características
-- [`docs/PROJECT_STATUS.md`](./docs/PROJECT_STATUS.md) - Estado detallado de implementación
-- [`docs/coding-guidelines.md`](./docs/coding-guidelines.md) - Standards y patrones de código
-- [`apps/docs/`](./apps/docs/) - Aplicación de documentación completa
+**Core:**
+- **Frontend:** Next.js 14.2.15 + TypeScript + TailwindCSS + Shadcn/ui
+- **Backend:** NestJS + TypeScript (API completa implementada)
+- **Database:** PostgreSQL + Prisma (Supabase) - 14 tablas operativas
+- **Auth:** Clerk (JWT + guards implementados)
+- **Monorepo:** Turborepo + pnpm
 
-## Stack Tecnológico
+**WhatsApp & IA:**
+- **WhatsApp:** whatsapp-web.js multi-sesión (QR, persistencia, métricas)
+- **IA:** OpenRouter, Google Gemini, OpenAI (intercambiables dinámicamente)
+- **Templates:** Sistema de mensajes proactivos con variables
+- **Analytics:** Métricas completas de tokens, conversaciones, whitelist
 
-### ✅ Implementado Actualmente
-| Componente | Tecnología | Estado | Propósito |
-|------------|------------|--------|-----------|
-| **Frontend** | Next.js 14.2.15 + TypeScript | ✅ Funcional | Dashboard web con App Router y SSR |
-| **Backend** | NestJS + TypeScript | ✅ Base configurada | API REST modular y escalable |
-| **Base de Datos** | PostgreSQL + Prisma | ✅ Funcional | Almacenamiento persistente con Supabase |
-| **ORM** | Prisma | ✅ Funcional | Capa de abstracción typesafe para DB |
-| **Autenticación** | Clerk | ✅ Configurado | Gestión de usuarios y sesiones |
-| **UI/Estilos** | TailwindCSS + Shadcn/ui | ✅ Funcional | Componentes modernos y accesibles |
-| **Monorepo** | Turborepo + pnpm | ✅ Funcional | Gestión eficiente de workspace |
-
-### 🔄 En Desarrollo
-| Componente | Tecnología | Estado | Propósito |
-|------------|------------|--------|-----------|
-| **Mensajería** | whatsapp-web.js | 🔄 En mejora continua | Integración con WhatsApp Web (multi-sesión, QR, métricas) |
-| **IA** | OpenRouter + Google Gemini | 🔄 En mejora continua | Clasificación y generación de respuestas |
-
-### 📋 Planificado
-| Componente | Tecnología | Estado | Propósito |
-|------------|------------|--------|-----------|
-| **Cache/Colas** | Redis + BullMQ | 📋 Pendiente | Tareas asíncronas y cache |
-| **Deploy** | Vercel + Railway/Fly.io | 📋 Configuración pendiente | Frontend y backend en la nube |
-
-## Estructura del Proyecto
-
-El proyecto utiliza un **monorepositorio con Turborepo** para centralizar el código y facilitar la compartición de tipos y configuraciones:
+## 📁 Estructura del Proyecto (Monorepo Turborepo)
 
 ```
-/
+LeadsAgent/
 ├── apps/
-│   ├── dashboard/           # ✅ Next.js 14.2.15 app (frontend)
-│   │   ├── app/            # App Router pages
-│   │   ├── components/     # React components
-│   │   └── lib/           # Utilidades cliente
-│   ├── api/                # ✅ NestJS app (backend)
-│   │   ├── src/
-│   │   │   ├── modules/   # Módulos de negocio (100% implementado)
-│   │   │   ├── guards/    # Auth guards
-│   │   │   └── services/  # Servicios globales
-│   │   └── test/          # Tests E2E
-│   ├── docs/               # ✅ Aplicación de documentación (Next.js 14.2.15)
-│   └── whatsapp-service/   # ✅ Servicio WhatsApp (100% operativo)
-│       ├── src/
-│       └── sessions/      # Persistencia de sesiones WA
+│   ├── dashboard/           # ✅ Frontend Next.js 14.2.15
+│   ├── api/                 # ✅ Backend NestJS (API completa)
+│   ├── whatsapp-service/    # ✅ Servicio WhatsApp (multi-sesión)
+│   └── docs/                # ✅ Documentación Next.js
 ├── packages/
-│   ├── db/                 # ✅ Prisma schema + client (SQLite)
-│   │   ├── prisma/        # Schema y migraciones
-│   │   └── src/          # Cliente Prisma
-│   ├── ui/                # ✅ Componentes React compartidos (shadcn/ui)
-│   ├── config-eslint/     # ✅ Configuración ESLint compartida
-│   └── config-ts/         # ✅ Configuración TypeScript compartida
-├── .github/
-│   └── workflows/         # CI/CD pipelines
-├── docs/                   # ✅ Documentación del proyecto
-│   ├── PROJECT_STATUS.md   # Estado actual detallado
-│   ├── OPTIMIZATIONS.md   # Optimizaciones aplicadas
-│   └── coding-guidelines.md # Standards de desarrollo
-├── turbo.json             # ✅ Configuración Turborepo
-├── pnpm-workspace.yaml   # ✅ Workspace configuration
-└── package.json           # ✅ Scripts y dependencias raíz
+│   ├── db/                  # ✅ Prisma schema + client
+│   ├── ui/                  # ✅ Componentes React (shadcn/ui)
+│   └── config-*/            # ✅ Configs compartidas (ESLint, TS)
+└── docs/                    # 📚 Documentación técnica
 ```
 
-## Comandos de Desarrollo
 
-### Configuración Inicial
+## ⚡ Comandos Esenciales
+
+### 🚀 Quick Start (5 minutos)
 ```bash
-# Instalar dependencias
-pnpm install
-
-# Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tus claves de Supabase, Clerk, OpenAI, etc.
-
-# Inicializar base de datos
-pnpm db:migrate:dev
-pnpm db:generate
+# Setup completo
+git clone <repo> && cd LeadsAgent
+pnpm install && cp .env.example .env
+# ⚠️ Editar .env con tus credenciales
+pnpm db:generate && pnpm db:migrate:dev
+pnpm dev  # Todos los servicios
 ```
 
-### Desarrollo
+### 🔧 Desarrollo Diario
 ```bash
-# Iniciar todos los servicios
-pnpm dev
-
-# Servicios individuales
-pnpm dev:dashboard    # Frontend en http://localhost:3000
-pnpm dev:api         # Backend en http://localhost:3003  
-pnpm dev:whatsapp    # Servicio WhatsApp en http://localhost:3002
+# Desarrollo
+pnpm dev              # 🌐 Todos los servicios
+pnpm dev:dashboard    # Frontend: localhost:3000
+pnpm dev:api         # Backend: localhost:3003  
+pnpm dev:whatsapp    # WhatsApp: localhost:3002
 
 # Base de datos
-pnpm db:studio       # Prisma Studio
-pnpm db:migrate:dev  # Nueva migración
-pnpm db:generate     # Regenerar cliente Prisma
-pnpm db:reset        # Reset completo (cuidado!)
+pnpm db:studio       # 💾 Prisma Studio
+pnpm db:generate     # 🔄 Regenerar cliente
+pnpm db:migrate:dev  # 📊 Nueva migración
+
+# Build & Testing
+pnpm build           # 🏗️ Build producción
+pnpm test            # 🧪 Tests unitarios
+pnpm lint:fix        # ✨ Fix linting
+pnpm typecheck       # 📝 Verificar tipos
 ```
 
-### Testing
+### 🔧 Utilidades
 ```bash
-# Tests unitarios
-pnpm test            # Todos los tests (Jest)
-# Nota: Los comandos específicos por app se ejecutan en cada workspace
-
-# Para API específicamente (desde root o desde apps/api/):
-# pnpm --filter=@leadcrm/api test:watch   # Jest en modo watch
-# pnpm --filter=@leadcrm/api test:debug   # Jest con debugging
-
-# Tests de integración
-pnpm test:e2e        # Tests end-to-end
-
-# Coverage
-pnpm test:cov        # Cobertura de código (no test:coverage)
+pnpm clean:cache     # 🧹 Limpiar cache Turbo
+pnpm rebuild         # 🔄 Reconstrucción completa
 ```
 
-### Construcción y Linting
+## 🏗️ Arquitectura del Sistema
+
+### Flujo Principal
+```
+WhatsApp ↔ whatsapp-service ↔ NestJS API ↔ PostgreSQL/Supabase
+                                    ↕
+               Next.js Dashboard ← → IA Multi-proveedor
+```
+
+### Paquetes Compartidos
+- **`@leadcrm/db`** → Prisma schema + types compartidos  
+- **`@leadcrm/ui`** → Componentes React (shadcn/ui)
+- **`@leadcrm/config-*`** → Configuraciones ESLint/TypeScript
+
+### Puertos de Desarrollo
+- **Dashboard:** `localhost:3000` (Next.js)
+- **API:** `localhost:3003` (NestJS) 
+- **WhatsApp Service:** `localhost:3002`
+- **Prisma Studio:** `pnpm db:studio`
+
+
+
+## 💾 Base de Datos (PostgreSQL + Prisma)
+
+### Estado Actual: 14 Tablas Operativas
+```sql
+-- Core del sistema
+users, leads, messages, whatsapp_conversations
+
+-- Templates y IA  
+message_templates, proactive_messages
+ai_configuration, ai_knowledge_base, ai_training_interactions
+
+-- WhatsApp
+whatsapp_sessions, whatsapp_whitelist_logs
+
+-- Sistema
+system_variables, migrations, _prisma_migrations
+```
+
+### Características Principales
+- ✅ **6 leads activos** con múltiples conversaciones
+- ✅ **JSONB nativo** para metadata flexible
+- ✅ **UUIDs automáticos** (`gen_random_uuid()`)
+- ✅ **Enums personalizados** (lead_status, message_direction, etc.)
+- ✅ **Templates dinámicos** con variables `{{name}}`, `{{company}}`
+- ✅ **IA multi-proveedor** intercambiable (OpenRouter/Gemini/OpenAI)
+- ✅ **Analytics completos** con métricas de tokens y whitelist
+
+> 📋 **Schema completo:** `packages/db/prisma/schema.prisma`
+
+## 🔌 API Endpoints Principales
+
+### NestJS API (Puerto 3003) - Auth: Clerk JWT
+| Endpoint | Método | Descripción |
+|----------|--------|--------------|
+| `/api/health` | GET | Health check |
+| `/api/leads` | GET | Lista leads + filtros |
+| `/api/leads/:id` | GET | Lead + conversaciones |
+| `/api/leads/:id/status` | PATCH | Actualizar estado |
+| `/api/messages/templates` | GET | Templates disponibles |
+| `/api/messages/proactive` | POST | Crear mensaje proactivo |
+
+### WhatsApp Service (Puerto 3002) - No Auth
+| Endpoint | Método | Descripción |
+|----------|--------|--------------|
+| `/health` | GET | Estado servicio |
+| `/sessions` | GET/POST | Gestión sesiones |
+| `/sessions/:id/qr` | GET | QR code |
+| `/messages/send` | POST | Enviar mensaje |
+| `/ai/switch` | POST | Cambiar proveedor IA |
+| `/analytics/messages` | GET | Métricas |
+
+**Formato respuesta:** `{ success: boolean, data: any, error: null }`
+
+## 📋 Reglas de Desarrollo
+
+### 🤖 Para Asistentes de IA (OBLIGATORIO)
+**Servidores MCP requeridos:** `context7`, `perplexity-ask`, `serena`, `sequential-thinking`
+
+**Reglas esenciales:**
+- ✅ Usar TypeScript estricto en todos los proyectos
+- ✅ ESLint + Prettier con configuración compartida
+- ✅ Conventional Commits: `feat:`, `fix:`, `docs:`
+- ❌ NUNCA hardcodear secretos → usar `.env` y `process.env`
+- ✅ Validar inputs externos (APIs, formularios)
+- ✅ Funciones pequeñas de una sola responsabilidad
+- ✅ HTTPS obligatorio en producción
+
+### 📝 Convenciones TypeScript
+- **Variables/Funciones:** `camelCase`
+- **Clases/Componentes:** `PascalCase`  
+- **Archivos:** `kebab-case.ts` o `PascalCase.tsx`
+- **Constantes:** `UPPER_SNAKE_CASE`
+
+### 🔒 Seguridad
+- ✅ JWT en endpoints protegidos (Clerk)
+- ✅ `class-validator` en DTOs
+- ✅ RLS activado en Supabase
+- ✅ Variables de entorno para todos los secretos
+
+## 🤖 Configuración de IA Multi-Proveedor
+
+**Proveedores soportados:** OpenRouter, Google Gemini, OpenAI (intercambiables)
+
+### Variables de Entorno
 ```bash
-# Build de producción
-pnpm build
-pnpm build:api
-pnpm build:dashboard
-
-# Build optimizado (paralelo + sin daemon)
-pnpm build:fast      # Builds más rápidos en desarrollo
-pnpm build:production # Build de producción con NODE_ENV=production
-
-# Verificación de tipos
-pnpm typecheck
-pnpm typecheck:fast  # TypeCheck paralelo sin daemon
-
-# Linting y formateo
-pnpm lint
-pnpm lint:fix
-pnpm format
-
-# Utilidades de limpieza
-pnpm clean           # Limpia builds de todos los paquetes
-pnpm clean:cache     # Limpia Turbo cache y archivos .next/dist
-pnpm rebuild         # Limpia todo, reinstala y regenera
+AI_PROVIDER=openrouter  # openrouter | gemini | openai
+OPENROUTER_API_KEY="{{SECRET}}"
+GEMINI_API_KEY="{{SECRET}}"
+OPENAI_API_KEY="{{SECRET}}"
 ```
 
-### Configuración Rápida
+### Endpoints de Gestión IA
+- `GET /ai/status` → Estado actual y proveedores
+- `POST /ai/switch` → Cambiar proveedor: `{"provider": "gemini"}`
+- `POST /ai/test` → Probar respuesta IA
+
+## 📱 WhatsApp Service (Multi-sesión)
+
+### Setup Inicial
+1. `pnpm dev:whatsapp` → Iniciar servicio
+2. Escanear QR del log → Autenticar WhatsApp  
+3. Sesión persistente en `apps/whatsapp-service/sessions/`
+4. Enviar mensaje de prueba para verificar
+
+### Características
+- ✅ **Multi-sesión:** Múltiples cuentas WhatsApp
+- ✅ **QR automático:** Generación y renovación 
+- ✅ **Persistencia:** LocalAuth + backup sessions
+- ✅ **Métricas:** Analytics de mensajes y whitelist
+- ✅ **Filtrado:** Whitelist automática para IA
+
+## 🔧 Troubleshooting
+
+### Problemas Frecuentes
+
+**Base de Datos:**
 ```bash
-# Setup completo (install + db:generate)
-pnpm setup
-
-# Reconstrucción completa del proyecto
-pnpm rebuild         # clean:cache + install + db:generate + build:fast
+pnpm db:studio          # Verificar conexión
+pnpm db:generate        # Regenerar cliente
+pnpm db:migrate:status  # Estado migraciones
+pnpm db:reset          # Reset completo (dev only)
 ```
 
-### Despliegue
+**Build/Cache:**
 ```bash
-# Deploy frontend (Vercel)
-vercel --prod
-
-# Deploy backend (Railway/Fly.io)
-railway deploy
-# o
-flyctl deploy
+pnpm clean:cache       # Limpiar Turbo cache
+pnpm rebuild           # Reconstrucción completa
+turbo daemon stop      # Reset daemon Turbo
 ```
 
-## Arquitectura del Sistema
+**Auth (Clerk):**
+- ✅ Verificar `CLERK_SECRET_KEY` y `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
+- ✅ URLs coincidan con config Clerk
+- ✅ Middleware configurado en `middleware.ts`
+
+## 🚀 Estado y Roadmap
+
+### ✅ COMPLETADO (Agosto 2025)
+- **Sistema 100% operativo** con 14 tablas, 6 leads activos
+- **Dashboard completo** Next.js + analytics en tiempo real
+- **API NestJS completa** con todos los módulos 
+- **WhatsApp multi-sesión** con QR, persistencia, métricas
+- **IA multi-proveedor** OpenRouter/Gemini/OpenAI intercambiables
+- **Sistema de templates** con variables dinámicas
+- **Base de conocimiento** IA entrenable
+
+### 🔄 EN PROGRESO
+- **Performance:** Redis + BullMQ, query optimization
+- **Deploy:** Producción Vercel + Supabase
+- **UI/UX:** Refinamiento interfaces
+
+### 📋 PRÓXIMO
+- **WebSockets:** Actualizaciones tiempo real
+- **Tests E2E:** Automatización completa
+- **CI/CD:** Pipeline automatizado
+
+## 🌐 Variables de Entorno
 
-### Flujo de Datos Principal
-
-```
-WhatsApp → whatsapp-service → Redis Pub/Sub → NestJS API → PostgreSQL/Supabase
-                                                    ↓
-Frontend (Next.js) ← REST API ← BullMQ Workers ← AI Processing
-```
-
-### Arquitectura Monorepo con Turborepo
-
-**Gestión de Dependencias y Caching:**
-- **Turborepo** maneja automáticamente las dependencias entre tareas
-- **Cache inteligente**: Las builds solo se ejecutan si hay cambios relevantes
-- **Ejecución paralela**: Tareas independientes se ejecutan simultáneamente
-- **Task dependencies**: `build` depende de `db:generate`, `typecheck` depende de `^typecheck`
-
-**Comunicación entre Apps:**
-```
-┌─────────────┐    HTTP REST     ┌──────────────┐    Prisma ORM    ┌────────────────┐
-│  Dashboard  │ ────────────────→ │   NestJS API │ ───────────────→ │  PostgreSQL/   │
-│  (Next.js)  │                  │   (Port 3003)│                 │   Supabase     │
-└─────────────┘                  └──────────────┘                 └────────────────┘
-       ↑                                ↑                                    ↑
-       │                                │                                    │
-   @leadcrm/ui              @leadcrm/db (shared types)            @leadcrm/db (Prisma)
-```
-
-**Shared Packages:**
-- **`@leadcrm/db`**: Prisma schema, cliente de base de datos, types TypeScript compartidos
-- **`@leadcrm/ui`**: Componentes React reutilizables basados en shadcn/ui
-- **`@leadcrm/config-eslint`**: Configuración ESLint compartida
-- **`@leadcrm/config-ts`**: Configuración TypeScript base
-
-**Workspace Configuration (pnpm):**
-```yaml
-# pnpm-workspace.yaml
-packages:
-  - "apps/*"
-  - "packages/*"
-```
-
-**Type Sharing Across Applications:**
-- Los tipos de Prisma se generan automáticamente en `@leadcrm/db`
-- Apps importan tipos: `import { Lead, Message } from '@leadcrm/db'`
-- Turborepo garantiza que `db:generate` se ejecute antes de `build`
-- IntelliSense y type checking funcionan across apps
-
-### Flujo de Procesamiento de Mensajes
-
-**📋 Planificado (Arquitectura futura):**
-1. **WhatsApp** envía mensaje → `whatsapp-service` (whatsapp-web.js)
-2. `whatsapp-service` publica mensaje en Redis (`whatsapp:messages:inbound`)
-3. **NestJS API** consume mensaje y lo persiste en base de datos
-4. **BullMQ Worker** procesa mensaje con IA (clasificación + puntuación)
-5. **Frontend** muestra lead actualizado via polling/SWR
-6. **Agente** puede solicitar sugerencia IA y enviar respuesta
-7. Respuesta se envía via Redis (`whatsapp:messages:outbound`) → `whatsapp-service` → WhatsApp
-
-**✅ Actual (MVP Implementado):**
-- Dashboard funcional con gestión de leads
-- API base con autenticación Clerk configurada
-- Base de datos PostgreSQL con Prisma
-- Componentes UI con shadcn/ui
-- Corrección completa de errores TypeScript (Agosto 21, 2025)
-
-### Módulos del Backend (NestJS)
-
-**✅ Implementado:**
-- **AuthModule**: Autenticación con Clerk, guards JWT
-- **Base API**: Estructura básica de NestJS configurada
-
-**🔄 En desarrollo:**
-- **LeadsModule**: Gestión CRUD de leads y estados
-- **MessagingModule**: Procesamiento de mensajes entrantes/salientes
-- **AIModule**: Servicios de clasificación y generación con OpenAI
-
-**📋 Planificado:**
-- **ContactsModule**: Gestión de contactos y teléfonos
-- **WebhooksModule**: Endpoints para whatsapp-service
-
-## Modelo de Datos (Prisma)
-
-### Entidades Principales (PostgreSQL - Actual)
-
-```prisma
-// Configuración actual: PostgreSQL con Supabase
-generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
-}
-
-model User {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clerkId   String   @unique
-  email     String   @unique
-  name      String
-  role      UserRole @default(AGENT)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
-
-  @@map("users")
-}
-
-model Lead {
-  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  phone         String         @unique
-  name          String?
-  email         String?
-  tags          String[]       @default([])
-  status        LeadStatus     @default(NUEVO)
-  moodScore     Float?
-  lastContact   DateTime?
-  assignedTo    String?
-  source        String         @default("whatsapp")
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @default(now()) @updatedAt
-  campaignLeads CampaignLead[]
-  messages      Message[]
-
-  @@map("leads")
-}
-
-model Campaign {
-  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name          String
-  description   String?
-  status        CampaignStatus @default(ACTIVE)
-  template      String?
-  createdBy     String
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @default(now()) @updatedAt
-  campaignLeads CampaignLead[]
-
-  @@map("campaigns")
-}
-
-model Message {
-  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  leadId       String           @db.Uuid
-  content      String
-  type         MessageType      @default(TEXT)
-  direction    MessageDirection
-  status       MessageStatus    @default(SENT)
-  timestamp    DateTime         @default(now())
-  aiAnalyzed   Boolean          @default(false)
-  sentiment    String?
-  confidence   Float?
-  autoResponse Boolean          @default(false)
-  externalId   String?          @unique
-  vendor       String           @default("whatsapp")
-  lead         Lead             @relation(fields: [leadId], references: [id])
-
-  @@index([leadId])
-  @@index([direction])
-  @@index([timestamp])
-  @@map("messages")
-}
-
-model CampaignLead {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  leadId      String    @db.Uuid
-  campaignId  String    @db.Uuid
-  status      String    @default("PENDING")
-  sentAt      DateTime?
-  deliveredAt DateTime?
-  campaign    Campaign  @relation(fields: [campaignId], references: [id])
-  lead        Lead      @relation(fields: [leadId], references: [id])
-
-  @@index([leadId])
-  @@index([campaignId])
-  @@map("campaign_leads")
-}
-
-// Enums
-enum UserRole {
-  ADMIN
-  AGENT
-
-  @@map("UserRole")
-}
-
-enum LeadStatus {
-  NUEVO
-  CONTACTADO
-  QUALIFIED
-  GANADO
-  PERDIDO
-
-  @@map("LeadStatus")
-}
-
-enum CampaignStatus {
-  ACTIVE
-  PAUSED
-  COMPLETED
-
-  @@map("CampaignStatus")
-}
-
-enum MessageType {
-  TEXT
-  IMAGE
-  AUDIO
-  VIDEO
-  DOCUMENT
-
-  @@map("MessageType")
-}
-
-enum MessageDirection {
-  INBOUND
-  OUTBOUND
-
-  @@map("MessageDirection")
-}
-
-enum MessageStatus {
-  SENT
-  DELIVERED
-  READ      @map("READ")
-  FAILED
-
-  @@map("MessageStatus")
-}
-```
-
-### Características Clave del Schema
-
-- **UUIDs como PKs**: Uso de `gen_random_uuid()` para generar IDs únicos
-- **Relaciones directas**: Messages se relacionan directamente con Leads (no hay tabla Conversation)
-- **Enums tipados**: Estados y tipos en español con mapeo a PostgreSQL
-- **Arrays nativos**: Campo `tags[]` usa arrays nativos de PostgreSQL
-- **Timestamps automáticos**: `@default(now())` y `@updatedAt` para auditoría
-- **Índices optimizados**: Para consultas frecuentes en `leadId`, `direction`, `timestamp`
-
-## API Endpoints
-
-### Autenticación
-Todos los endpoints excepto `/api/webhooks/*` requieren token JWT de Clerk.
-
-### Endpoints Principales
-
-| Método | Endpoint | Descripción | Auth |
-|--------|----------|-------------|------|
-| `POST` | `/api/webhooks/whatsapp` | Recepción de mensajes WhatsApp | ❌ |
-| `GET` | `/api/leads` | Lista leads con filtros | ✅ |
-| `GET` | `/api/leads/:id` | Detalle de lead y conversación | ✅ |
-| `PATCH` | `/api/leads/:id/status` | Actualizar estado de lead | ✅ |
-| `POST` | `/api/leads/:id/messages` | Enviar mensaje a lead | ✅ |
-| `POST` | `/api/ai/suggest` | Sugerencia de respuesta IA | ✅ |
-| `POST` | `/api/ai/classify` | Clasificación de mensaje IA | ✅ |
-| `GET` | `/api/health` | Health check | ❌ |
-
-### Formato de Respuesta Estándar
-```json
-{
-  "success": true,
-  "data": { ... },
-  "error": null
-}
-```
-
-## Desarrollo y Mejores Prácticas
-
-### Integración MCP para asistentes (OBLIGATORIO)
-Para todas las sesiones de chat con IA relacionadas a este repositorio, los asistentes deben activar SIEMPRE los siguientes servidores MCP al inicio de la conversación (según la política de invocación global del usuario):
-- context7: acceso a documentación y contexto actualizados
-- perplexity-ask: recuperación de conocimiento externo en tiempo real
-- serena: recuperación semántica de código y edición vía LSP (navegación por símbolos)
-- sequential-thinking: estructuración de solución en pasos con reflexión y verificación
-
-Recomendaciones de uso:
-- Antes de realizar cambios, recuperar contexto relevante (context7) y mapa de símbolos (serena)
-- Para dudas conceptuales o estado del arte, consultar perplexity-ask y citar fuentes cuando aplique
-- Para problemas complejos, estructurar el razonamiento con sequential-thinking y verificar hipótesis antes de ejecutar cambios
-- Seguir las reglas de seguridad: no revelar secretos; usar variables de entorno; evitar comandos interactivos/paginados
-
-Guía rápida para asistentes:
-- Indexar código con navegación por símbolos (serena) y validar dependencias antes de ediciones
-- Confirmar tareas de 3+ pasos con un plan y marcar progreso al completar cada paso
-- Al usar VCS/CLI, deshabilitar pager (por ejemplo, git --no-pager)
-
-### Convenciones de Código TypeScript
-
-- **Variables/Funciones**: `camelCase`
-- **Clases/Componentes**: `PascalCase`
-- **Archivos**: `kebab-case.ts` o `PascalCase.tsx` (componentes)
-- **Constantes**: `UPPER_SNAKE_CASE`
-
-### Git Workflow
-
-- **Branches**: `feature/descripcion`, `fix/issue-number`, `hotfix/critical-fix`
-- **Commits**: Seguir [Conventional Commits](https://conventionalcommits.org/)
-  - `feat: add lead classification with AI`
-  - `fix: resolve WhatsApp session timeout`
-  - `docs: update API endpoint documentation`
-
-### Seguridad
-
-- **Variables de Entorno**: Nunca hardcodear secrets, usar `.env` y `process.env`
-- **Validación**: Usar `class-validator` en DTOs para validar inputs
-- **Autenticación**: Verificar JWT en todos los endpoints protegidos
-- **HTTPS**: Obligatorio en producción
-- **RLS**: Activar Row Level Security en Supabase
-
-### Testing
-
-**Configuración Jest (API):**
-```json
-{
-  "moduleFileExtensions": ["js", "json", "ts"],
-  "rootDir": "src",
-  "testRegex": ".*\\.spec\\.ts$",
-  "transform": { "^.+\\.(t|j)s$": "ts-jest" },
-  "collectCoverageFrom": ["**/*.(t|j)s"],
-  "coverageDirectory": "../coverage",
-  "testEnvironment": "node"
-}
-```
-
-**Comandos y Patrones:**
-- **Unitarios**: Jest para servicios y utilidades (archivos `*.spec.ts`)
-- **Integración**: Supertest para endpoints API (directorio `test/` en apps/api)
-- **Pattern**: Tests unitarios usan extensión `.spec.ts`, tests E2E en `/test/`
-- **Coverage**: Directorio `coverage/` en cada app, mínimo 80% para código crítico
-- **Ambiente**: Node.js para backend, jsdom para frontend components
-
-### Desarrollo con AI Assistants
-
-Este repositorio está optimizado para asistentes con MCP activo. Ver sección "Integración MCP para asistentes (OBLIGATORIO)" arriba. Usa siempre variables de entorno y evita exponer secretos.
-
-Beneficios:
-- Contexto Persistente: decisiones y estado del proyecto accesibles
-- Colaboración: conocimiento compartido entre sesiones de desarrollo
-- Reducción de Errores: acceso a patrones y convenciones comunes
-- Agilidad: menos tiempo explicando contexto, más tiempo ejecutando
-
-Configuración relacionada:
-- Archivos: `CLAUDE.md`, `.github/copilot-instructions.md`
-- Alcance: Arquitectura, decisiones técnicas, patrones, troubleshooting
-
-## Proveedores de IA y configuración
-
-Soporta múltiples proveedores conmutables en tiempo de ejecución desde el servicio de WhatsApp.
-
-Variables de entorno (usar valores reales en `.env`, no compartir secretos):
 ```bash
-# Proveedor activo por defecto: openrouter | gemini
-AI_PROVIDER=openrouter
-
-# OpenRouter
-OPENROUTER_API_KEY="{{OPENROUTER_API_KEY}}"
-OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
-OPENROUTER_MODEL="openai/gpt-oss-120b"
-
-# Google Gemini
-GEMINI_API_KEY="{{GEMINI_API_KEY}}"
-GEMINI_MODEL="gemini-1.5-pro"
-```
-
-Endpoints de gestión IA (apps/whatsapp-service):
-- GET `/ai/status` → estado de proveedores y proveedor actual
-- POST `/ai/switch` body: `{ "provider": "openrouter" | "gemini" }` → cambia proveedor
-- POST `/ai/test` body: `{ "message": "..." }` → prueba de respuesta IA
-
-Buenas prácticas:
-- Limitar tokens y usar temperatura conservadora para clasificación
-- Registrar costes y latencia por proveedor; aplicar backoff exponencial
-- Implementar fallback entre proveedores en errores transitorios
-
-## Configuración de WhatsApp
-
-### Primera Configuración
-
-1. Iniciar `whatsapp-service` localmente
-2. Escanear QR code que aparece en logs
-3. Sesión se guarda en `/apps/whatsapp-service/sessions`
-4. Verificar conexión enviando mensaje de prueba
-
-### Manejo de Sesiones
-
-- **Persistencia**: LocalAuth guarda sesión en volumen Docker
-- **Expiración**: Monitorear logs por errores `auth`
-- **Recuperación**: Re-escanear QR si sesión expira
-- **Backup**: Respaldar directorio `/sessions` regularmente
-
-## API del servicio de WhatsApp (resumen)
-
-Base: apps/whatsapp-service
-
-- Salud: GET `/health`
-- Sesiones:
-  - POST `/sessions` (crear)
-  - GET `/sessions` (listar)
-  - GET `/sessions/:sessionId` (detalle)
-  - DELETE `/sessions/:sessionId` (eliminar)
-  - GET `/sessions/:sessionId/qr` (QR actual)
-  - GET `/sessions/:sessionId/status` (estado)
-- Mensajes:
-  - POST `/sessions/:sessionId/send` (enviar con sesión)
-  - POST `/messages/send` (enviar directo)
-- Conversaciones y analytics:
-  - GET `/conversations/:phoneNumber` (historial)
-  - POST `/conversations` (búsqueda)
-  - GET `/analytics/messages` (analytics)
-  - GET `/stats` (estadísticas)
-  - GET `/logs/whitelist` (logs whitelist)
-  - GET `/stats/whitelist` (stats whitelist)
-- Leads:
-  - PATCH `/leads/:leadId/whatsapp` body: `{ whatsappAuthorized: boolean }`
-
-Notas:
-- Persistencia de sesiones en `apps/whatsapp-service/sessions`
-- Filtrado automático por whitelist antes de respuestas IA
-
-## Troubleshooting
-
-### Problemas Comunes
-
-**Database Connection Issues (PostgreSQL)**
-```bash
-# Verificar conexión
-pnpm db:studio
-
-# Regenerar cliente
-pnpm db:generate
-
-# Ver estado de migraciones
-pnpm db:migrate:status
-
-# Reset de base de datos (development only)
-pnpm db:reset
-```
-
-**Build Errors**
-```bash
-# Limpiar y reinstalar
-pnpm clean:cache
-rm -rf node_modules
-pnpm install
-
-# Verificar tipos
-pnpm typecheck
-
-# Reconstrucción completa
-pnpm rebuild
-```
-
-**Turborepo Cache Issues**
-```bash
-# Limpiar cache de Turborepo
-turbo daemon stop
-rm -rf .turbo
-
-# Limpiar cache completo
-pnpm clean:cache
-```
-
-**Clerk Authentication Issues**
-- Verificar que las variables `CLERK_SECRET_KEY` y `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` estén configuradas
-- Comprobar que las URLs del proyecto coincidan con la configuración de Clerk
-- Revisar que el middleware esté configurado correctamente en `middleware.ts`
-
-**OpenAI Integration (Futuro)**
-- Verificar límites en dashboard OpenAI
-- Implementar exponential backoff
-- Usar cache local/Redis para respuestas frecuentes
-
-## Hoja de Ruta de Implementación
-
-### ✅ Actualmente Implementado
-- **Dashboard Web**: Next.js 15.4.2 con App Router completo
-- **API Backend**: NestJS con estructura base y autenticación Clerk
-- **Base de Datos**: PostgreSQL con Prisma y Supabase
-- **UI Components**: shadcn/ui con TailwindCSS
-- **Monorepo**: Turborepo optimizado con pnpm
-- **Documentación**: Apps/docs y documentación completa
-- **TypeScript API**: Corrección completa de errores (26 → 0 errores)
-
-### 🔄 En Desarrollo Activo
-- **Módulos NestJS**: LeadsModule, MessagingModule en progreso
-- **Integración WhatsApp**: Servicio whatsapp-web.js
-- **Servicios IA**: Integración con OpenAI API
-
-### 📋 Roadmap Futuro
-
-**Fase 2: Integración Completa**
-- [ ] WhatsApp Service completamente funcional
-- [ ] API endpoints para gestión de leads
-- [ ] Procesamiento IA de mensajes
-- [ ] Interface de chat en tiempo real
-
-**Fase 3: Escalabilidad**
-- [ ] Redis + BullMQ para colas asíncronas
-- [ ] WebSocket para actualizaciones en tiempo real
-- [ ] Sistema de notificaciones
-
-**Fase 4: Producción**
-- [ ] Despliegue automatizado (Vercel + Railway)
-- [ ] Monitoreo y métricas
-- [ ] Tests E2E completos
-- [ ] Optimización de rendimiento
-
-### Path de Migración
-
-1. **SQLite → PostgreSQL**: Cambios en schema.prisma y variables de entorno
-2. **Local → Supabase**: Configuración RLS y migración de datos
-3. **Development → Production**: CI/CD y configuración de despliegue
-
-## Despliegue
-
-### Variables de Entorno Actuales
-
-**Desarrollo (PostgreSQL):**
-```bash
-# Base de datos (PostgreSQL con Supabase)
-DATABASE_URL="postgresql://user:pass@host:5432/dbname"
-DIRECT_URL="postgresql://user:pass@host:5432/dbname"
+# Base de datos (PostgreSQL + Supabase)
+DATABASE_URL="postgresql://..."
+DIRECT_URL="postgresql://..."
 
 # Autenticación (Clerk)
-CLERK_SECRET_KEY="{{CLERK_SECRET_KEY}}"
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="{{CLERK_PUBLISHABLE_KEY}}"
+CLERK_SECRET_KEY="{{SECRET}}"
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="{{PUBLIC_KEY}}"
 
-# IA (selecciona proveedor)
-AI_PROVIDER=openrouter  # o gemini
-OPENROUTER_API_KEY="{{OPENROUTER_API_KEY}}"
-OPENROUTER_MODEL="openai/gpt-oss-120b"
-GEMINI_API_KEY="{{GEMINI_API_KEY}}"
-GEMINI_MODEL="gemini-1.5-pro"
+# IA Multi-proveedor
+AI_PROVIDER=openrouter  # openrouter | gemini | openai
+OPENROUTER_API_KEY="{{SECRET}}"
+GEMINI_API_KEY="{{SECRET}}"
+OPENAI_API_KEY="{{SECRET}}"
+
+# WhatsApp (futuro)
+WHATSAPP_WEBHOOK_SECRET="{{SECRET}}"
+REDIS_URL="redis://..."  # Para cache/colas
 ```
 
-**Producción:**
-```bash
-# Base de datos
-DATABASE_URL="postgresql://user:pass@host:5432/dbname"
-DIRECT_URL="postgresql://user:pass@host:5432/dbname"
+### Monitoreo
+- **Health:** `/api/health`, `/health` endpoints
+- **Logs:** Winston structured logging  
+- **Métricas:** Analytics integradas
+- **Alerts:** Fallos de sesión WhatsApp, errores API
 
-# Autenticación (Clerk)
-CLERK_SECRET_KEY="{{CLERK_SECRET_KEY}}"
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="{{CLERK_PUBLISHABLE_KEY}}"
+## 📚 Documentación Adicional
 
-# IA (usar claves de producción)
-AI_PROVIDER=openrouter  # o gemini
-OPENROUTER_API_KEY="{{OPENROUTER_API_KEY}}"
-OPENROUTER_MODEL="openai/gpt-oss-120b"
-GEMINI_API_KEY="{{GEMINI_API_KEY}}"
-GEMINI_MODEL="gemini-1.5-pro"
+### Documentación Técnica
+- [`README.md`](./README.md) - Información completa del proyecto
+- [`AGENTS.md`](./AGENTS.md) - Guía específica para agentes de IA
+- [`docs/`](./docs/) - Documentación técnica detallada
 
-# Cache y colas (cuando se implemente)
-REDIS_URL="redis://..."
+### Guías Principales
+- [AI Configuration](./docs/AI_CONFIGURATION.md) - Configuración proveedores IA
+- [Authentication Guide](./docs/AUTHENTICATION.md) - Clerk + NestJS + Supabase
+- [Security Guide](./docs/SECURITY.md) - RLS y políticas de seguridad
+- [Coding Guidelines](./docs/coding-guidelines.md) - Estándares de código
+- [Troubleshooting Guide](./docs/TROUBLESHOOTING.md) - Soluciones problemas comunes
 
-# WhatsApp Service
-WHATSAPP_WEBHOOK_SECRET="{{WHATSAPP_WEBHOOK_SECRET}}"
-```
+### Estado y Referencias
+- [Project Status](./docs/PROJECT_STATUS.md) - Estado actual y métricas
+- [Build Optimizations](./docs/OPTIMIZATIONS.md) - Optimizaciones aplicadas
+- [Architecture Diagrams](./docs/ARCHITECTURE_DIAGRAMS.md) - Diagramas del sistema
 
-### CI/CD Pipeline
-
-GitHub Actions ejecuta automáticamente:
-1. **Lint** → ESLint + Prettier
-2. **Type Check** → TypeScript compilation
-3. **Tests** → Jest + Playwright
-4. **Build** → Production build
-5. **Deploy** → Vercel (frontend) + Railway (backend)
-
-### Monitorización
-
-- **Health Checks**: `/api/health` endpoint
-- **Logs**: Structured logging con Winston
-- **Metrics**: Basic metrics con Redis
-- **Alerts**: WhatsApp session failures, API errors
+### Aplicaciones de Documentación
+- **App Docs:** [`apps/docs/`](./apps/docs/) - Documentación integrada Turborepo
+- **API Swagger:** `localhost:3003/api/docs` - Documentación interactiva API
 
 ---
 
-## 🚀 Quick Start para Nuevos Desarrolladores
-
-### Configuración Inicial (5 minutos)
-```bash
-# 1. Clonar e instalar
-git clone <repo-url>
-cd LeadsAgent
-pnpm install
-
-# 2. Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tus credenciales
-
-# 3. Preparar base de datos
-pnpm db:generate
-pnpm db:migrate:dev
-
-# 4. Iniciar todos los servicios
-pnpm dev
-```
-
-### Verificación Rápida
-- **Dashboard**: http://localhost:3000 (Next.js)
-- **API**: http://localhost:3003/health (NestJS)
-- **WhatsApp Service**: http://localhost:3002/health
-- **Prisma Studio**: `pnpm db:studio`
-
-### Para Asistentes de IA
-Recuerda activar **SIEMPRE** los servidores MCP requeridos:
-- `context7` + `perplexity-ask` + `serena` + `sequential-thinking`
-
----
-
-## 📚 Documentación Completa
-
-### 📋 Documentación Principal
-- [AI Configuration](./docs/AI_CONFIGURATION.md) - Configuración de proveedores de IA (OpenRouter, Gemini, OpenAI)
-- [Authentication Guide](./docs/AUTHENTICATION.md) - Arquitectura de autenticación híbrida (Clerk + NestJS + Supabase)
-- [Security Guide](./docs/SECURITY.md) - Row Level Security y políticas de base de datos
-- [Coding Guidelines](./docs/coding-guidelines.md) - Estándares de código y convenciones del proyecto
-
-### 🔧 Guías de Desarrollo  
-- [AI Development Guidelines](./docs/AI_DEVELOPMENT_GUIDELINES.md) - Pautas completas para desarrollo con IA
-- [Supabase Setup](./docs/supabase-setup-instructions.md) - Configuración paso a paso de Supabase
-- [Practical Examples](./docs/PRACTICAL_EXAMPLES.md) - Ejemplos de código y casos de uso
-- [Troubleshooting Guide](./docs/TROUBLESHOOTING.md) - **NUEVO** - Soluciones consolidadas para problemas comunes
-
-### 📊 Referencias y Estado
-- [Architecture Diagrams](./docs/ARCHITECTURE_DIAGRAMS.md) - Diagramas visuales del sistema
-- [Project Status](./docs/PROJECT_STATUS.md) - Estado actual del proyecto y métricas
-- [Build Optimizations](./docs/OPTIMIZATIONS.md) - Guía técnica de optimizaciones (19min → 3min)
-
-### 📁 Documentación Técnica Avanzada
-- [Project History](./docs/technical/PROJECT_HISTORY.md) - **NUEVO** - Historial completo de desarrollo
-- [Implementation Plan](./docs/technical/implementation-plan.md) - Plan detallado de mejoras futuras
-
-### 🚀 Aplicaciones
-- [Documentation App](./apps/docs/) - Aplicación de documentación integrada con Turborepo
-- API Documentation: `http://localhost:3003/api/docs` (Swagger) - Documentación interactiva de la API
+**📝 Última actualización:** Agosto 2025 - Sistema completamente operativo  
+**🎯 Para asistentes IA:** Activar MCP: `context7` + `perplexity-ask` + `serena` + `sequential-thinking`

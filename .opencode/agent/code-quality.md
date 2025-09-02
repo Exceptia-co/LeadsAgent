@@ -1,7 +1,7 @@
 ---
 description: Ejecuta linting, typecheck y formateo en monorepo
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: sonnet 4
 temperature: 0.1
 tools:
   write: true

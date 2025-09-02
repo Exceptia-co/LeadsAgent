@@ -1,7 +1,7 @@
 ---
 description: Crea componentes React con shadcn/ui y Tailwind
 mode: subagent
-model: anthropic/claude-sonnet-4-20250514
+model: sonnet 4
 temperature: 0.3
 tools:
   write: true

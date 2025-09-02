@@ -1,68 +1,10 @@
 import { logger } from '../utils/logger';
 import DatabaseService from './DatabaseService';
-
-// ============================================
-// INTERFACES Y TIPOS
-// ============================================
-
-export interface TrainingInteraction {
-  id?: string;
-  userMessage: string;
-  aiResponse: string;
-  knowledgeBaseIdsUsed: string[];
-  successScore: number;
-  contextData: {
-    phoneNumber: string;
-    sessionId: string;
-    intent?: string;
-    sentiment?: string;
-    responseTime?: number;
-    conversationLength?: number;
-    userEngagement?: string;
-    timeOfDay?: string;
-    dayOfWeek?: string;
-  };
-  feedbackMetrics: {
-    conversationContinued: boolean;
-    responseTime?: number;
-    followUpQuestions: number;
-    userSatisfactionIndicators: string[];
-  };
-  timestamp: Date;
-}
-
-export interface FrequentPattern {
-  pattern: string;
-  frequency: number;
-  averageSuccessScore: number;
-  suggestedKnowledgeEntry?: {
-    title: string;
-    content: string;
-    keywords: string[];
-    category: string;
-  };
-  lastSeen: Date;
-}
-
-export interface LearningInsights {
-  totalInteractions: number;
-  averageSuccessScore: number;
-  mostFrequentPatterns: FrequentPattern[];
-  suggestedKnowledgeEntries: Array<{
-    title: string;
-    content: string;
-    keywords: string[];
-    category: string;
-    confidence: number;
-    frequency: number;
-  }>;
-  performanceMetrics: {
-    responseAccuracy: number;
-    userSatisfaction: number;
-    knowledgeBaseUtilization: number;
-    conversationCompletionRate: number;
-  };
-}
+import type {
+  TrainingInteraction,
+  FrequentPattern,
+  LearningInsights
+} from '../types';
 
 // ============================================
 // CLASE PRINCIPAL DEL SISTEMA DE APRENDIZAJE

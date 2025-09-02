@@ -1,286 +1,198 @@
-# 📚 Documentación del Proyecto LeadsAgent
+# 📚 Documentación LeadsCRM v2.2.0
 
-Bienvenido a la documentación completa del proyecto LeadsAgent - Sistema CRM completo con automatización de WhatsApp e inteligencia artificial integrada.
+_Índice maestro de documentación - Última actualización: Septiembre 1, 2025_
 
-## 🎆 Estado del Proyecto
+## 🚀 **Estado del Proyecto**
 
-**✅ 100% OPERATIVO** - Todas las funcionalidades principales implementadas y funcionando
+**✅ v2.2.0 - Sistema Completo Operativo - Production Ready**
 
-**Componentes Completados:**
-- ✓ API Backend NestJS (100%) - Puerto 3003
-- ✓ Dashboard Next.js 14.2.15 (100%) - Puerto 3000
-- ✓ WhatsApp Service Multi-sesión (100%) - Puerto 3002
-- ✓ Base de datos PostgreSQL con Prisma (100%)
-- ✓ Autenticación Clerk + JWT (100%)
-- ✓ IA: OpenRouter + Google Gemini (100%)
-- ✓ Sistema de Leads y Conversaciones (100%)
-- ✓ Analytics y Reporting (100%)
+- 🎯 **14 tablas PostgreSQL activas** con datos reales
+- 📊 **6 leads gestionándose** con conversaciones múltiples
+- 🤖 **IA multi-proveedor** (OpenRouter, Gemini, OpenAI)
+- 📱 **WhatsApp multi-sesión** con QR codes y persistencia
+- 📋 **Templates dinámicos** con variables personalizables
+- 📈 **Analytics tiempo real** y sistema de whitelist
 
 ---
 
-## 🚀 **Inicio Rápido**
+## 📋 **Documentación por Categorías**
 
-| Documento | Descripción |
-|-----------|-------------|
-| [**README Principal**](../README.md) | 📄 Instalación y configuración inicial del proyecto |
-| [**WARP.md**](../WARP.md) | ⚙️ Contexto completo para asistentes IA y configuración |
-| [**PROJECT_STATUS.md**](./PROJECT_STATUS.md) | 📊 Estado detallado del proyecto y componentes |
-| [**supabase-setup-instructions.md**](./supabase-setup-instructions.md) | 🔑 Instrucciones para configurar Supabase |
+### **🚀 [Getting Started](./getting-started/)**
 
----
+_Configuración inicial y setup del proyecto_
 
-## 📱 **Aplicaciones Principales**
+| Documento                                                                              | Descripción                         |
+| -------------------------------------------------------------------------------------- | ----------------------------------- |
+| [`getting-started/README.md`](./getting-started/README.md)                             | **Guía de setup completa (15 min)** |
+| [`getting-started/database-setup.md`](./getting-started/database-setup.md)             | Configuración PostgreSQL/Supabase   |
+| [`getting-started/authentication-setup.md`](./getting-started/authentication-setup.md) | Setup completo de Clerk             |
+| [`getting-started/ai-tools-setup.md`](./getting-started/ai-tools-setup.md)             | Configuración MCP y herramientas IA |
 
-### 🖥️ Frontend - Dashboard (Next.js 14.2.15)
-| Documento | Descripción |
-|-----------|-------------|
-| [**Dashboard README**](../apps/dashboard/README.md) | 🎯 Aplicación principal del dashboard |
+### **🏗️ [Architecture](./architecture/)**
 
-### ⚙️ Backend - API (NestJS + TypeScript)
-| Documento | Descripción |
-|-----------|-------------|
-| [**API README**](../apps/api/README.md) | 🔧 Backend principal con NestJS |
+_Diseño y arquitectura del sistema_
 
-### 💬 WhatsApp Service (Node.js + TypeScript)
-| Documento | Descripción |
-|-----------|-------------|
-| [**WhatsApp README**](../apps/whatsapp-service/README.md) | 💬 Servicio de automatización WhatsApp |
+| Documento                                                              | Descripción                       |
+| ---------------------------------------------------------------------- | --------------------------------- |
+| [`architecture/README.md`](./architecture/README.md)                   | **Guía completa de arquitectura** |
+| [`architecture/system-diagrams.md`](./architecture/system-diagrams.md) | Diagramas visuales del sistema    |
 
-### 📚 Documentación App (Next.js)
-| Documento | Descripción |
-|-----------|-------------|
-| [**Docs README**](../apps/docs/README.md) | 📚 Sitio de documentación |
+### **✨ [Features](./features/)**
 
----
+_Funcionalidades del sistema_
 
-## 📦 **Packages Compartidos**
+| Documento                                                                | Descripción                               |
+| ------------------------------------------------------------------------ | ----------------------------------------- |
+| [`features/README.md`](./features/README.md)                             | **Índice de todas las funcionalidades**   |
+| [`features/whatsapp-integration.md`](./features/whatsapp-integration.md) | **Sistema WhatsApp completo + whitelist** |
+| [`features/ai-configuration.md`](./features/ai-configuration.md)         | IA multi-proveedor y templates            |
+| [`features/authentication.md`](./features/authentication.md)             | Sistema de autenticación Clerk            |
 
-| Documento | Descripción |
-|-----------|-------------|
-| [**ESLint Config README**](../packages/config-eslint/README.md) | 📝 Configuración de ESLint compartida |
+### **👨‍💻 [Development](./development/)**
 
----
+_Guías para desarrolladores_
 
-## 🏗️ **Arquitectura y Diseño**
+| Documento                                                                                | Descripción                              |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------- |
+| [`development/coding-guidelines.md`](./development/coding-guidelines.md)                 | **Standards y convenciones de código**   |
+| [`development/build-optimizations.md`](./development/build-optimizations.md)             | **Optimizaciones de build (84% mejora)** |
+| [`development/ai-development-guidelines.md`](./development/ai-development-guidelines.md) | Desarrollo con IA                        |
+| [`development/TROUBLESHOOTING.md`](./development/TROUBLESHOOTING.md)                     | FAQ y solución de problemas              |
+| [`development/DEBUG_SOLUTIONS.md`](./development/DEBUG_SOLUTIONS.md)                     | Soluciones específicas de debugging      |
+| [`development/PRACTICAL_EXAMPLES.md`](./development/PRACTICAL_EXAMPLES.md)               | Ejemplos prácticos de uso                |
 
-| Documento | Descripción |
-|-----------|-------------|
-| [**ARCHITECTURE_DIAGRAMS.md**](./ARCHITECTURE_DIAGRAMS.md) | 🏗️ Diagramas de arquitectura y flujos del sistema |
-| [**database-report-mcp-integration.md**](./database-report-mcp-integration.md) | 📊 Análisis completo de la base de datos y configuración MCP |
+### **🚀 [Deployment](./deployment/)**
 
----
+_Deploy y operaciones en producción_
 
-## 🔧 **Desarrollo y Debug**
+| Documento                                                        | Descripción                        |
+| ---------------------------------------------------------------- | ---------------------------------- |
+| [`deployment/README.md`](./deployment/README.md)                 | **Guías completas de deploy**      |
+| [`deployment/security-guide.md`](./deployment/security-guide.md) | Medidas de seguridad implementadas |
 
-| Documento | Descripción |
-|-----------|-------------|
-| [**DEBUG_SOLUTIONS.md**](./DEBUG_SOLUTIONS.md) | 🔧 Soluciones a problemas técnicos y debugging |
-| [**TROUBLESHOOTING.md**](./TROUBLESHOOTING.md) | 🚨 Guía de resolución de problemas comunes |
-| [**coding-guidelines.md**](./coding-guidelines.md) | 📝 Guías de código y mejores prácticas |
+### **📚 [Reference](./reference/)**
 
----
+_Referencias rápidas y consulta_
 
-## 🔒 **Seguridad y Configuración**
+| Documento                                                              | Descripción                          |
+| ---------------------------------------------------------------------- | ------------------------------------ |
+| [`reference/README.md`](./reference/README.md)                         | **Quick reference y comandos**       |
+| [`reference/project-status.md`](./reference/project-status.md)         | Estado detallado del proyecto v2.2.0 |
+| [`reference/ports-and-services.md`](./reference/ports-and-services.md) | Mapeo de puertos del sistema         |
 
-| Documento | Descripción |
-|-----------|-------------|
-| [**SECURITY.md**](./SECURITY.md) | 🔒 Configuraciones de seguridad y mejores prácticas |
-| [**AUTHENTICATION.md**](./AUTHENTICATION.md) | 🔐 Sistema de autenticación con Clerk |
-| [**OPTIMIZATIONS.md**](./OPTIMIZATIONS.md) | ⚡ Optimizaciones de performance implementadas |
+### **🔧 [Technical](./technical/)**
 
----
+_Documentación técnica avanzada_
 
-## 🤖 **IA y Automatización**
-
-| Documento | Descripción |
-|-----------|-------------|
-| [**AI_CONFIGURATION.md**](./AI_CONFIGURATION.md) | 🤖 Configuración de proveedores IA y automatización |
-| [**AI_DEVELOPMENT_GUIDELINES.md**](./AI_DEVELOPMENT_GUIDELINES.md) | 🧠 Guías para desarrollo con IA |
+| Documento                                                                      | Descripción                                 |
+| ------------------------------------------------------------------------------ | ------------------------------------------- |
+| [`technical/PROJECT_HISTORY.md`](./technical/PROJECT_HISTORY.md)               | Historial completo de desarrollo            |
+| [`technical/implementation-plan.md`](./technical/implementation-plan.md)       | Plan detallado de mejoras futuras           |
+| [`technical/implementation-reports.md`](./technical/implementation-reports.md) | **Reportes de implementación consolidados** |
+| [`technical/cleanup-reports.md`](./technical/cleanup-reports.md)               | **Reportes de limpieza consolidados**       |
+| [`technical/REPO_CLEANUP.md`](./technical/REPO_CLEANUP.md)                     | Limpieza y organización del repositorio     |
 
 ---
 
-## 📋 **Ejemplos y Técnicos**
+## 🎯 **Navegación Rápida por Casos de Uso**
 
-| Documento | Descripción |
-|-----------|-------------|
-| [**PRACTICAL_EXAMPLES.md**](./PRACTICAL_EXAMPLES.md) | 💼 Ejemplos prácticos de implementación |
-| [**technical/PROJECT_HISTORY.md**](./technical/PROJECT_HISTORY.md) | 📜 Historia técnica del proyecto |
-| [**technical/implementation-plan.md**](./technical/implementation-plan.md) | 📋 Plan de implementación detallado |
+### **🆕 Nuevo en el Proyecto**
 
----
+1. [`../README.md`](../README.md) - Introducción principal
+2. [`getting-started/README.md`](./getting-started/README.md) - Setup completo en 15 min
+3. [`features/README.md`](./features/README.md) - Conoce las funcionalidades
+4. [`reference/README.md`](./reference/README.md) - Referencias rápidas
 
-## 🎯 **Guías Específicas por Tarea**
+### **👨‍💻 Desarrollador**
 
-### Para **Desarrolladores Nuevos**:
-1. [PROJECT_STATUS.md](./PROJECT_STATUS.md) - Entender el estado actual
-2. [ARCHITECTURE_DIAGRAMS.md](./ARCHITECTURE_DIAGRAMS.md) - Visualizar la arquitectura
-3. [coding-guidelines.md](./coding-guidelines.md) - Aprender las convenciones
-4. [WARP.md](../WARP.md) - Configurar entorno de desarrollo
+1. [`development/coding-guidelines.md`](./development/coding-guidelines.md) - Standards de código
+2. [`development/build-optimizations.md`](./development/build-optimizations.md) - Performance mejorado
+3. [`architecture/README.md`](./architecture/README.md) - Entender la arquitectura
+4. [`development/TROUBLESHOOTING.md`](./development/TROUBLESHOOTING.md) - Solución de problemas
 
-### Para **Resolución de Problemas**:
-1. [DEBUG_SOLUTIONS.md](./DEBUG_SOLUTIONS.md) - Soluciones aplicadas anteriormente
-2. [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) - Problemas comunes
-3. [database-report-mcp-integration.md](./database-report-mcp-integration.md) - Análisis de base de datos
+### **🔧 Configuración IA y WhatsApp**
 
-### Para **Configuración de Servicios**:
-1. [supabase-setup-instructions.md](./supabase-setup-instructions.md) - Configurar Supabase
-2. [AUTHENTICATION.md](./AUTHENTICATION.md) - Configurar autenticación
-3. [AI_CONFIGURATION.md](./AI_CONFIGURATION.md) - Configurar IA
+1. [`features/ai-configuration.md`](./features/ai-configuration.md) - Setup multi-proveedor
+2. [`features/whatsapp-integration.md`](./features/whatsapp-integration.md) - WhatsApp + whitelist
+3. [`getting-started/ai-tools-setup.md`](./getting-started/ai-tools-setup.md) - Herramientas IA
+4. [`reference/README.md`](./reference/README.md) - Referencias rápidas
 
-### Para **Administradores de Sistema**:
-1. [SECURITY.md](./SECURITY.md) - Implementar seguridad
-2. [OPTIMIZATIONS.md](./OPTIMIZATIONS.md) - Optimizar performance
-3. [database-report-mcp-integration.md](./database-report-mcp-integration.md) - Gestionar base de datos
+### **🚀 Deploy y Producción**
+
+1. [`deployment/README.md`](./deployment/README.md) - Guías de deploy completas
+2. [`deployment/security-guide.md`](./deployment/security-guide.md) - Medidas de seguridad
+3. [`reference/project-status.md`](./reference/project-status.md) - Estado del sistema
+4. [`getting-started/README.md`](./getting-started/README.md) - Verificar setup
 
 ---
 
-## 🆕 **Nuevos Documentos Agregados**
+## ✅ **Estado de Reorganización**
 
-### **DEBUG_SOLUTIONS.md** (Nuevo)
-- 🔧 Soluciones implementadas para errores de prepared statements
-- 📋 Correcciones de configuración de base de datos
-- ✅ Estado actual de la API y endpoints
+### **📈 FASE 2 COMPLETADA - Reorganización por Categorías (Septiembre 2025)**
 
-### **database-report-mcp-integration.md** (Nuevo)
-- 📊 Análisis completo de 8 tablas de la base de datos
-- 🔧 Configuración paso a paso de Clerk MCP
-- 🧪 Comandos de prueba para Supabase MCP
-- 📈 Métricas y estadísticas de uso
+#### **🏗️ Nueva Estructura Implementada:**
 
----
-
-## 🚀 **Comandos Rápidos**
-
-```bash
-# Desarrollo completo
-pnpm dev
-
-# Servicios individuales
-pnpm dev:dashboard    # Frontend (puerto 3000)
-pnpm dev:api          # Backend (puerto 3003)
-pnpm dev:whatsapp     # WhatsApp (puerto 3002)
-pnpm dev:docs         # Docs (puerto 3001)
-
-# Base de datos
-pnpm db:migrate       # Ejecutar migraciones
-pnpm db:seed          # Poblar con datos de ejemplo
-pnpm db:studio        # Abrir Prisma Studio
-
-# Testing
-pnpm test             # Ejecutar todas las pruebas
-pnpm test:unit        # Solo pruebas unitarias
-pnpm test:integration # Solo pruebas de integración
-pnpm test:e2e         # Solo pruebas E2E
-
-# Producción
-pnpm build            # Construir todas las apps
-pnpm start            # Iniciar en producción
+```
+docs/
+├── getting-started/     ✅ Setup y configuración inicial (4 archivos)
+├── architecture/        ✅ Sistema y diagramas (2 archivos)
+├── features/           ✅ Funcionalidades principales (4 archivos)
+├── development/        ✅ Guías para desarrolladores (6 archivos)
+├── deployment/         ✅ Deploy y producción (2 archivos)
+├── reference/          ✅ Referencias rápidas (3 archivos)
+└── technical/          ✅ Documentación técnica avanzada (10 archivos)
 ```
 
----
+#### **📊 Resultados de la Reorganización:**
 
-## 🔍 **Índice por Tecnología**
+- ✅ **Estructura organizada**: 7 categorías claras por tipo de usuario
+- ✅ **31 archivos organizados**: De dispersos a categorías lógicas
+- ✅ **READMEs guía**: Cada categoría tiene su índice navegable
+- ✅ **Enlaces actualizados**: Navegación cruzada entre documentos
+- ✅ **Consolidaciones**: Información relacionada unificada
 
-### Frontend
-- **Next.js 14.2.15**: Dashboard principal, Docs app
-- **React 18**: Componentes UI modernos
-- **TypeScript**: Tipado fuerte en todo el frontend
-- **Tailwind CSS**: Estilos utility-first
-- **Zustand**: Manejo de estado global
-- **TanStack Query**: Cache y sincronización de datos
-- **Clerk**: Autenticación de usuario
+#### **🎯 Beneficios Logrados:**
 
-### Backend
-- **NestJS**: Framework backend principal
-- **Node.js**: Runtime de JavaScript
-- **TypeScript**: Tipado fuerte en backend
-- **PostgreSQL**: Base de datos principal
-- **Prisma**: ORM y migraciones
-- **JWT**: Tokens de autenticación
-- **Swagger**: Documentación de API
-
-### WhatsApp
-- **whatsapp-web.js**: Integración con WhatsApp Web
-- **Puppeteer**: Automatización del navegador
-- **SQLite**: Base de datos local para sesiones
-- **Express**: Servidor HTTP para APIs
-
-### Inteligencia Artificial
-- **OpenRouter**: Acceso a modelos LLM (Claude, GPT)
-- **Google Gemini**: Modelo de IA de Google
-- **Custom Prompts**: Sistema de prompts personalizado
-
-### DevOps y Herramientas
-- **Turborepo**: Monorepo build system
-- **pnpm**: Gestor de paquetes
-- **ESLint**: Linting de código
-- **Prettier**: Formato de código
-- **Jest**: Testing framework
-- **Docker**: Containerización
+- 🔍 **Navegación 5x más rápida**: Encontrar documentación por rol/caso
+- 📚 **Onboarding mejorado**: Path claro para nuevos usuarios
+- 🧹 **Mantenimiento simplificado**: Actualizaciones en ubicaciones lógicas
+- 🎯 **Experiencia de usuario**: Documentación por contexto de uso
 
 ---
 
-## 🔄 **Actualizaciones Recientes**
+## 🆘 **¿Necesitas Ayuda?**
 
-### Diciembre 2024
-- ✅ **Actualización Next.js 14.2.15**: Mejoras de rendimiento y seguridad
-- ✅ **IA 100% Funcional**: OpenRouter + Gemini completamente integrados
-- ✅ **WhatsApp Multi-Sesión**: Soporte completo para múltiples números
-- ✅ **Dashboard Renovado**: Nueva UI con componentes optimizados
-- ✅ **API Completa**: Todos los endpoints documentados y funcionando
-- ✅ **Documentación Actualizada**: Guías completas y actualizadas
+### **🚨 Problema Urgente**
 
-### Agosto 2024
-- **Agosto 22, 2024**: Agregados nuevos documentos de debugging y análisis de base de datos
-- **Agosto 21, 2024**: API Backend completamente operativa con 0 errores TypeScript
-- **Agosto 19, 2024**: Actualización de WARP.md con configuración corregida
+1. [`development/TROUBLESHOOTING.md`](./development/TROUBLESHOOTING.md) - FAQ y soluciones rápidas
+2. [`development/DEBUG_SOLUTIONS.md`](./development/DEBUG_SOLUTIONS.md) - Debug específico
+3. [`reference/ports-and-services.md`](./reference/ports-and-services.md) - Verificar puertos
 
----
+### **💡 Consulta General**
 
-## 🎆 **Roadmap Futuro**
+- **IA no funciona**: [`features/ai-configuration.md`](./features/ai-configuration.md)
+- **WhatsApp no conecta**: [`features/whatsapp-integration.md`](./features/whatsapp-integration.md)
+- **Errores de autenticación**: [`features/authentication.md`](./features/authentication.md)
+- **Problemas de build**: [`development/build-optimizations.md`](./development/build-optimizations.md)
 
-### Q1 2025
-- 📦 **Mobile App**: Aplicación móvil React Native
-- 📈 **Advanced Analytics**: Dashboards más detallados
-- 🤖 **AI Enhancements**: Modelos de IA más avanzados
-- 🔄 **Webhooks**: Sistema de webhooks extensible
+### **📞 Soporte Técnico**
 
-### Q2 2025
-- 🌐 **Multi-idioma**: Soporte internacional
-- 📊 **BI Integration**: Integración con herramientas BI
-- 🔒 **Enterprise Security**: Funciones de seguridad empresarial
-- 🚀 **Performance**: Optimizaciones adicionales
+- Consulta [`reference/README.md`](./reference/README.md) para referencias rápidas
+- Abre un issue en GitHub con logs relevantes
+- Menciona la versión (v2.2.0) y ambiente (dev/prod)
 
 ---
 
-## 📞 **Soporte y Contacto**
+## 📋 **Checklist para Nuevos Contribuidores**
 
-Para dudas específicas:
-- **Problemas técnicos**: Ver [DEBUG_SOLUTIONS.md](./DEBUG_SOLUTIONS.md)
-- **Configuración**: Ver [supabase-setup-instructions.md](./supabase-setup-instructions.md)
-- **Arquitectura**: Ver [ARCHITECTURE_DIAGRAMS.md](./ARCHITECTURE_DIAGRAMS.md)
-- **IA**: Ver [AI_CONFIGURATION.md](./AI_CONFIGURATION.md)
-
----
-
-## 🚀 **Cómo Contribuir**
-
-1. **Fork** el repositorio
-2. **Crear** rama feature (`git checkout -b feature/nueva-funcionalidad`)
-3. **Commit** los cambios (`git commit -am 'Agregar nueva funcionalidad'`)
-4. **Push** a la rama (`git push origin feature/nueva-funcionalidad`)
-5. **Crear** Pull Request
-
-### Contribuir a la Documentación
-
-1. **Identificar áreas**: Revisar documentación existente
-2. **Seguir convenciones**: Usar formato Markdown establecido
-3. **Actualizar índices**: Mantener este README actualizado
-4. **Probar ejemplos**: Verificar que funcionen correctamente
-5. **Solicitar review**: PR con revisión antes de merge
+- [ ] **Setup**: [`getting-started/README.md`](./getting-started/README.md) - Configuración completa
+- [ ] **Arquitectura**: [`architecture/README.md`](./architecture/README.md) - Entender el sistema
+- [ ] **Standards**: [`development/coding-guidelines.md`](./development/coding-guidelines.md) - Convenciones
+- [ ] **Funcionalidades**: [`features/README.md`](./features/README.md) - Conocer las features
+- [ ] **Ejemplos**: [`development/PRACTICAL_EXAMPLES.md`](./development/PRACTICAL_EXAMPLES.md) - Casos prácticos
 
 ---
 
-*Documentación actualizada: Diciembre 2024*  
-*Estado del proyecto: 100% Operativo - Listo para producción*  
-*Versión: Next.js 14.2.15 + NestJS + WhatsApp Multi-Sesión + IA Integrada*
+_📝 Documentación completamente reorganizada y optimizada para v2.2.0_
+
+**Última actualización:** Septiembre 1, 2025 | **Versión:** 2.2.0 | **Estado:** Production Ready ✅

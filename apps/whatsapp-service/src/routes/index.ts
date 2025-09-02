@@ -67,6 +67,10 @@ router.get("/sessions/stats", async (req, res) => {
     });
   }
 });
+router.get(
+  "/sessions/socket-stats",
+  sessionController.getSocketStats.bind(sessionController),
+);
 
 // Session routes
 router.post(
@@ -1548,7 +1552,7 @@ Template:`;
       .trim();
 
     // Sugerir nombre y variables detectadas
-    const detectedVariables = [];
+    const detectedVariables: string[] = [];
     const variablePattern = /\{\{([^}]+)\}\}/g;
     let match;
     while ((match = variablePattern.exec(templateContent)) !== null) {
@@ -1650,8 +1654,8 @@ Template mejorado:`;
       .trim();
 
     // Detectar cambios y variables
-    const originalVariables = [];
-    const improvedVariables = [];
+    const originalVariables: string[] = [];
+    const improvedVariables: string[] = [];
     
     const variablePattern = /\{\{([^}]+)\}\}/g;
     let match;

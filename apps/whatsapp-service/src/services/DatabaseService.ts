@@ -1,7 +1,7 @@
 import { Pool, PoolClient } from "pg";
 import { logger } from "../utils/logger";
 import PhoneNumberService from "./PhoneNumberService";
-import { TrainingInteraction } from "./AILearningService";
+import type { TrainingInteraction } from '../types';
 import MigrationService from "./MigrationService";
 
 // Interfaz para datos de conversación
@@ -997,6 +997,7 @@ class DatabaseService {
     aiProvider?: string;
     ipAddress?: string;
     userAgent?: string;
+    createdBy?: string;
   }): Promise<string | null> {
     if (!this.pool) {
       logger.warn(
@@ -1005,18 +1006,19 @@ class DatabaseService {
       return null;
     }
 
+    // ✅ FIXED: Use 'decision' field (NOT 'action') and ensure NOT NULL
     const query = `
       INSERT INTO whatsapp_whitelist_logs (
         phone_number, session_id, decision, reason, lead_id, lead_name,
-        message_preview, ai_provider, ip_address, user_agent
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        message_preview, ai_provider, ip_address, user_agent, created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING id;
     `;
 
     const values = [
       data.phoneNumber,
       data.sessionId || null,
-      data.decision,
+      data.decision, // ✅ This will never be null - REQUIRED field
       data.reason || null,
       data.leadId || null,
       data.leadName || null,
@@ -1024,6 +1026,7 @@ class DatabaseService {
       data.aiProvider || null,
       data.ipAddress || null,
       data.userAgent || null,
+      data.createdBy || 'whatsapp-service'
     ];
 
     try {
@@ -1033,12 +1036,17 @@ class DatabaseService {
       logger.debug("Whitelist decision logged:", {
         id: logId,
         phoneNumber: data.phoneNumber,
-        decision: data.decision,
+        decision: data.decision, // ✅ Now using correct field
       });
 
       return logId;
     } catch (error) {
       logger.error("Error logging whitelist decision:", error);
+      logger.error("Failed query values:", {
+        phoneNumber: data.phoneNumber,
+        decision: data.decision,
+        hasNullDecision: data.decision === null || data.decision === undefined
+      });
       return null;
     }
   }
