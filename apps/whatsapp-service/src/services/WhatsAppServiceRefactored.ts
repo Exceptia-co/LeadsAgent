@@ -5,17 +5,16 @@
 
 import { logger } from '../utils/logger';
 import { LogExecutionTime, SafeExecutor } from '../utils/decorators';
-import { ErrorFactory } from '../errors';
 import { serviceLocator } from '../core/ServiceLocator';
 import { eventBus } from '../events/EventBus';
 import { WhatsAppUtils } from '../utils/whatsappUtils';
-import { 
-  SessionManager, 
-  ConnectionManager, 
-  MessageProcessor, 
-  EventHandler, 
-  MediaHandler, 
-  ContactManager 
+import {
+  SessionManager,
+  ConnectionManager,
+  MessageProcessor,
+  EventHandler,
+  MediaHandler,
+  ContactManager,
 } from './whatsapp';
 import type {
   WhatsAppSession,
@@ -24,8 +23,9 @@ import type {
   SendMessageResponse,
   SendMediaMessageRequest,
   IWhatsAppService,
+  WebhookPayload,
 } from '../types';
-import { isSuccess, isFailure } from '../types';
+import { isFailure } from '../types';
 
 // Import legacy services for AI processing (will be refactored in Phase 3)
 import SessionRecoveryService from './SessionRecoveryService';
@@ -76,7 +76,9 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
         if (process.env.WHATSAPP_ENABLE_AUTO_RECOVERY === 'true') {
           await this.recoverExistingSessions();
         } else {
-          logger.info('⏸️ Auto-recovery disabled. Sessions must be created manually from dashboard.');
+          logger.info(
+            '⏸️ Auto-recovery disabled. Sessions must be created manually from dashboard.'
+          );
         }
 
         // Start health monitoring
@@ -118,7 +120,8 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
 
         // Create connection using ConnectionManager
         const client = await this.connectionManager.createConnection(sessionId, {
-          headless: process.env.PUPPETEER_HEADLESS === 'true' || process.env.NODE_ENV === 'production',
+          headless:
+            process.env.PUPPETEER_HEADLESS === 'true' || process.env.NODE_ENV === 'production',
           executablePath: process.env.CHROME_EXECUTABLE_PATH,
         });
 
@@ -152,7 +155,7 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
   public async sendMessage(
     sessionId: string,
     to: string,
-    message: string,
+    message: string
   ): Promise<SendMessageResponse> {
     return SafeExecutor.execute(
       async () => {
@@ -327,28 +330,28 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
     logger.info('📡 Setting up service-level event listeners...');
 
     // Listen to session events for service orchestration
-    eventBus.subscribe('whatsapp:session-ready', async (event) => {
+    eventBus.subscribe('whatsapp:session-ready', async event => {
       logger.info(`🎉 Session ${event.sessionId} is ready for messaging`);
       await this.onSessionReady(event.sessionId);
     });
 
-    eventBus.subscribe('whatsapp:session-disconnected', async (event) => {
+    eventBus.subscribe('whatsapp:session-disconnected', async event => {
       logger.warn(`🔌 Session ${event.sessionId} disconnected: ${event.reason}`);
       await this.onSessionDisconnected(event.sessionId, event.reason);
     });
 
-    eventBus.subscribe('whatsapp:message-received', async (event) => {
+    eventBus.subscribe('whatsapp:message-received', async event => {
       logger.info(`📨 Message received in session ${event.sessionId} from ${event.from}`);
       await this.onMessageReceived(event);
     });
 
-    eventBus.subscribe('whatsapp:session-auth-failed', async (event) => {
+    eventBus.subscribe('whatsapp:session-auth-failed', async event => {
       logger.error(`🔒 Authentication failed for session ${event.sessionId}: ${event.reason}`);
       await this.onAuthenticationFailed(event.sessionId, event.reason);
     });
 
     // Listen to system events
-    eventBus.subscribe('whatsapp:event-error', async (event) => {
+    eventBus.subscribe('whatsapp:event-error', async event => {
       logger.error(`❌ Event error in session ${event.sessionId}:`, event.error);
       await this.onEventError(event.sessionId, event.eventName, event.error);
     });
@@ -362,16 +365,20 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
   private async onSessionReady(sessionId: string): Promise<void> {
     try {
       // Send webhook notification
-      await this.sendWebhook({
-        event: 'session_ready',
+      const webhookPayload = {
+        event: 'authenticated' as const,
         sessionId,
         data: { status: 'ready' },
         timestamp: WhatsAppUtils.getTimestamp(),
-      });
+      };
+
+      await this.sendWebhook(webhookPayload);
+
+      // Notify SocketService for real-time updates
+      await this.notifySocketEvent(webhookPayload);
 
       // Start additional monitoring if needed
       // This is where you could integrate with external systems
-      
     } catch (error) {
       logger.error(`❌ Error handling session ready for ${sessionId}:`, error);
     }
@@ -383,16 +390,20 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
   private async onSessionDisconnected(sessionId: string, reason: string): Promise<void> {
     try {
       // Send webhook notification
-      await this.sendWebhook({
-        event: 'session_disconnected',
+      const webhookPayload = {
+        event: 'disconnected' as const,
         sessionId,
         data: { reason },
         timestamp: WhatsAppUtils.getTimestamp(),
-      });
+      };
+
+      await this.sendWebhook(webhookPayload);
+
+      // Notify SocketService for real-time updates
+      await this.notifySocketEvent(webhookPayload);
 
       // Handle reconnection logic through ConnectionManager if needed
       // The ConnectionManager already handles auto-reconnection internally
-      
     } catch (error) {
       logger.error(`❌ Error handling session disconnect for ${sessionId}:`, error);
     }
@@ -421,7 +432,6 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
       if (await this.shouldProcessWithAI(event)) {
         await this.processMessageWithAI(event);
       }
-
     } catch (error) {
       logger.error(`❌ Error handling message received for ${event.sessionId}:`, error);
     }
@@ -442,7 +452,6 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
 
       // Mark session as failed
       await this.sessionManager.updateSessionStatus(sessionId, 'auth_failed');
-
     } catch (error) {
       logger.error(`❌ Error handling auth failure for ${sessionId}:`, error);
     }
@@ -453,10 +462,10 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
    */
   private async onEventError(sessionId: string, eventName: string, error: string): Promise<void> {
     logger.error(`❌ Event error in session ${sessionId} (${eventName}): ${error}`);
-    
+
     // Could implement automatic recovery logic here
     // For now, just log and notify via webhook
-    
+
     try {
       await this.sendWebhook({
         event: 'event_error',
@@ -490,7 +499,6 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
       if (recoveryResult.errors.length > 0) {
         logger.warn('⚠️ Errors during smart recovery:', recoveryResult.errors);
       }
-
     } catch (error) {
       logger.error('❌ Error during smart session recovery:', error);
     }
@@ -508,7 +516,7 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
       SessionHealthCheckService.startMonitoring(this);
 
       // Register alert callback for logging
-      SessionHealthCheckService.onAlert((alert) => {
+      SessionHealthCheckService.onAlert(alert => {
         logger.warn(
           `🚨 Health Alert [${alert.severity.toUpperCase()}] ${alert.sessionId}: ${alert.message}`,
           {
@@ -520,7 +528,6 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
       });
 
       logger.info('✅ Health monitoring services started');
-
     } catch (error) {
       logger.error('❌ Error starting health monitoring:', error);
     }
@@ -550,7 +557,6 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
       );
 
       return whitelistResult.allowed;
-
     } catch (error) {
       logger.error('❌ Error checking if should process with AI:', error);
       return false;
@@ -577,7 +583,11 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
         phoneNumber: phoneNumber,
       });
 
-      if (thinkingResult.thinkingProcess.shouldRespond && thinkingResult.success && thinkingResult.content) {
+      if (
+        thinkingResult.thinkingProcess.shouldRespond &&
+        thinkingResult.success &&
+        thinkingResult.content
+      ) {
         // Send response using MessageProcessor
         const response = await this.messageProcessor.sendMessage(event.sessionId, {
           to: event.from,
@@ -593,7 +603,6 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
       } else {
         logger.info(`🤐 AI decided not to respond to ${phoneNumber}`);
       }
-
     } catch (error) {
       logger.error('❌ Error processing message with AI:', error);
     }
@@ -602,7 +611,11 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
   /**
    * Save conversation data to database
    */
-  private async saveConversationToDatabase(event: any, thinkingResult: any, phoneNumber: string): Promise<void> {
+  private async saveConversationToDatabase(
+    event: any,
+    thinkingResult: any,
+    phoneNumber: string
+  ): Promise<void> {
     try {
       const { default: DatabaseService } = await import('./DatabaseService');
 
@@ -633,7 +646,6 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
         tokensUsed: 0,
         isFromUser: false,
       });
-
     } catch (error) {
       logger.error('❌ Error saving conversation to database:', error);
     }
@@ -650,13 +662,12 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
     try {
       const phoneNumber = from.replace('@c.us', '');
       const isAllowed = await PhoneNumberService.checkPhoneNumberAllowed(phoneNumber);
-      
+
       if (isAllowed) {
         return { allowed: true, reason: 'Phone number is whitelisted' };
       } else {
         return { allowed: false, reason: 'Phone number not in whitelist' };
       }
-
     } catch (error) {
       logger.error('❌ Error checking phone number whitelist:', error);
       return { allowed: false, reason: 'Error checking whitelist' };
@@ -682,7 +693,6 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
       //   headers: { 'Content-Type': 'application/json' },
       //   body: JSON.stringify(payload),
       // });
-
     } catch (error) {
       logger.error('❌ Error sending webhook:', error);
     }
@@ -698,7 +708,7 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
     metrics: any;
   } {
     const sessionCount = this.sessionManager?.getActiveSessions().length || 0;
-    
+
     return {
       status: this.isInitialized ? 'healthy' : 'unhealthy',
       components: {
@@ -731,7 +741,7 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
         const sessions = await this.getAllSessions();
 
         // Destroy all sessions gracefully
-        const destroyPromises = sessions.map(session => 
+        const destroyPromises = sessions.map(session =>
           this.destroySession(session.id).catch(error => {
             logger.error(`❌ Error destroying session ${session.id} during shutdown:`, error);
           })
@@ -775,22 +785,30 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
    * Legacy method compatibility - will be removed
    * @deprecated Use the modular approach instead
    */
-  public async processMessageWithAILegacy(originalMessage: any, whatsappMessage: WhatsAppMessage, sessionId: string): Promise<void> {
-    logger.warn('⚠️ Using legacy processMessageWithAI method - this should be migrated to event-driven approach');
-    await this.processMessageWithAI({ 
-      sessionId, 
-      from: whatsappMessage.from, 
-      body: whatsappMessage.body, 
-      type: whatsappMessage.type 
+  public async processMessageWithAILegacy(
+    originalMessage: any,
+    whatsappMessage: WhatsAppMessage,
+    sessionId: string
+  ): Promise<void> {
+    logger.warn(
+      '⚠️ Using legacy processMessageWithAI method - this should be migrated to event-driven approach'
+    );
+    await this.processMessageWithAI({
+      sessionId,
+      from: whatsappMessage.from,
+      body: whatsappMessage.body,
+      type: whatsappMessage.type,
     });
   }
 
   /**
-   * Legacy method compatibility - will be removed  
+   * Legacy method compatibility - will be removed
    * @deprecated Use MessageProcessor directly
    */
   public normalizePhoneNumber(phoneNumber: string): string {
-    logger.warn('⚠️ Using legacy normalizePhoneNumber method - use WhatsAppUtils.formatPhoneForWhatsApp instead');
+    logger.warn(
+      '⚠️ Using legacy normalizePhoneNumber method - use WhatsAppUtils.formatPhoneForWhatsApp instead'
+    );
     return WhatsAppUtils.formatPhoneForWhatsApp(phoneNumber);
   }
 
@@ -801,6 +819,50 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
   public async parseMessage(message: any, sessionId: string): Promise<WhatsAppMessage> {
     logger.warn('⚠️ Using legacy parseMessage method - use MessageProcessor instead');
     return this.messageProcessor.convertWhatsAppMessage(sessionId, message);
+  }
+
+  /**
+   * Get session synchronously (for backward compatibility)
+   * Note: This is a legacy method needed for compatibility with existing controllers
+   * Since SessionManager only has async methods, we return sync access to internal storage
+   */
+  public getSession(sessionId: string): WhatsAppSession | null {
+    logger.warn('⚠️ Using legacy getSession method - prefer getSessionStatus for async operations');
+    // Access session storage directly for synchronous operation
+    const sessions = this.sessionManager['sessions'] as Map<string, WhatsAppSession>;
+    return sessions.get(sessionId) || null;
+  }
+
+  /**
+   * Force disconnect a session (for backward compatibility)
+   * Note: This is a legacy method that delegates to destroySession
+   */
+  public async forceDisconnectSession(sessionId: string): Promise<void> {
+    logger.warn('⚠️ Using legacy forceDisconnectSession method - prefer destroySession');
+    await this.destroySession(sessionId);
+  }
+
+  // =============================================================================
+  // SOCKET INTEGRATION - Real-time event notifications
+  // =============================================================================
+
+  /**
+   * Notify SocketService about events for real-time updates
+   * This method provides communication between refactored service and SocketService
+   */
+  private async notifySocketEvent(payload: WebhookPayload): Promise<void> {
+    try {
+      // Import WhatsApp facade to use unified notification system
+      const WhatsAppServiceModule = await import('./WhatsAppService');
+      const whatsappServiceFacade = WhatsAppServiceModule.default;
+
+      await whatsappServiceFacade.notifySocketEvent(payload);
+      logger.debug(
+        `📡 Socket event notified via facade: ${payload.event} for session ${payload.sessionId}`
+      );
+    } catch (error) {
+      logger.error('❌ Error notifying socket service via facade:', error);
+    }
   }
 }
 

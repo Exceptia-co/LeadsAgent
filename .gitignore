@@ -86,6 +86,8 @@ packages/db/prisma/packages/
 .kilocode/
 .roo/
 .claude/
+.windsurf/
+.bmad-core/
 
 # Testing and temporary files
 test-*.js
@@ -98,3 +100,6 @@ check_*.js
 setup_*.js
 inspect*.ts
 inspect*.js
+
+# acli
+acli.exe

@@ -1,9 +1,10 @@
 import WhatsAppServiceSimple from './WhatsAppServiceSimple';
+import { WhatsAppServiceRefactored } from './WhatsAppServiceRefactored';
 import { cacheService } from './cacheService';
-import { redisClient, REDIS_CHANNELS, REDIS_KEYS } from '../config/redis';
+import { redisClient, REDIS_CHANNELS } from '../config/redis';
 import { logger } from '../utils/logger';
 import DatabaseService from './DatabaseService';
-import { WhatsAppSession, SendMessageResponse } from '../types';
+import { WhatsAppSession, SendMessageResponse, WebhookPayload } from '../types';
 import { WhatsAppUtils, RedisUtils } from '../utils/whatsappUtils';
 import { WhatsAppStatsService } from './whatsapp/WhatsAppStatsService';
 import { RedisMonitoringService } from './whatsapp/RedisMonitoringService';
@@ -34,14 +35,37 @@ interface AIResponseWithCache {
   cacheKey?: string;
 }
 
+/**
+ * Unified WhatsApp Service Facade
+ *
+ * Phase 1 of refactoring plan: Acts as a facade that delegates to either:
+ * - Legacy service (WhatsAppServiceSimple) when USE_WHATSAPP_REFACTORED=false
+ * - Refactored service (WhatsAppServiceRefactored) when USE_WHATSAPP_REFACTORED=true
+ *
+ * This maintains full API compatibility while allowing gradual migration.
+ */
 class WhatsAppService {
   private isRedisConnected: boolean = false;
-  private baseService: typeof WhatsAppServiceSimple;
+  private useRefactoredService: boolean;
+  private simpleService: typeof WhatsAppServiceSimple;
+  private refactoredService: WhatsAppServiceRefactored | null = null;
   private statsService: WhatsAppStatsService;
   private redisMonitoring: RedisMonitoringService;
 
   constructor() {
-    this.baseService = WhatsAppServiceSimple;
+    // Feature toggle: USE_WHATSAPP_REFACTORED environment variable
+    this.useRefactoredService = process.env.USE_WHATSAPP_REFACTORED === 'true';
+
+    logger.info(
+      `🏗️ WhatsApp Service Architecture: ${this.useRefactoredService ? 'REFACTORED (v2.0)' : 'LEGACY (v1.0)'}`
+    );
+
+    // Initialize appropriate service implementation
+    this.simpleService = WhatsAppServiceSimple;
+    if (this.useRefactoredService) {
+      this.refactoredService = new WhatsAppServiceRefactored();
+    }
+
     this.statsService = new WhatsAppStatsService(redisClient);
     this.redisMonitoring = new RedisMonitoringService(redisClient);
     this.initialize();
@@ -50,7 +74,92 @@ class WhatsAppService {
   public async initialize(): Promise<void> {
     await this.checkRedisConnection();
     await this.statsService.loadStatsFromRedis();
+
+    // Initialize the selected service implementation
+    if (this.useRefactoredService && this.refactoredService) {
+      logger.info('🚀 Initializing refactored service implementation...');
+      await this.refactoredService.initialize();
+    } else {
+      logger.info('🚀 Initializing legacy service implementation...');
+      await this.simpleService.initialize();
+    }
   }
+
+  // =============================================================================
+  // CORE WHATSAPP FUNCTIONALITY - Delegated to appropriate service
+  // =============================================================================
+
+  /**
+   * Create a new WhatsApp session
+   */
+  async createSession(sessionId: string): Promise<WhatsAppSession> {
+    if (this.useRefactoredService && this.refactoredService) {
+      return await this.refactoredService.createSession(sessionId);
+    } else {
+      return await this.simpleService.createSession(sessionId);
+    }
+  }
+
+  /**
+   * Get session status
+   */
+  async getSessionStatus(sessionId: string): Promise<WhatsAppSession | null> {
+    if (this.useRefactoredService && this.refactoredService) {
+      return await this.refactoredService.getSessionStatus(sessionId);
+    } else {
+      return await this.simpleService.getSessionStatus(sessionId);
+    }
+  }
+
+  /**
+   * Get all sessions
+   */
+  async getAllSessions(): Promise<WhatsAppSession[]> {
+    if (this.useRefactoredService && this.refactoredService) {
+      return await this.refactoredService.getAllSessions();
+    } else {
+      return await this.simpleService.getAllSessions();
+    }
+  }
+
+  /**
+   * Destroy a session
+   */
+  async destroySession(sessionId: string): Promise<void> {
+    if (this.useRefactoredService && this.refactoredService) {
+      await this.refactoredService.destroySession(sessionId);
+    } else {
+      await this.simpleService.destroySession(sessionId);
+    }
+  }
+
+  /**
+   * Get session (for backward compatibility)
+   */
+  getSession(sessionId: string): WhatsAppSession | null {
+    if (this.useRefactoredService && this.refactoredService) {
+      // The refactored service doesn't have sync getSession, so we need to adapt
+      return this.simpleService.getSession(sessionId);
+    } else {
+      return this.simpleService.getSession(sessionId);
+    }
+  }
+
+  /**
+   * Force disconnect session
+   */
+  async forceDisconnectSession(sessionId: string): Promise<void> {
+    if (this.useRefactoredService && this.refactoredService) {
+      // For now, delegate to simple service until this method is added to refactored
+      await this.simpleService.forceDisconnectSession(sessionId);
+    } else {
+      await this.simpleService.forceDisconnectSession(sessionId);
+    }
+  }
+
+  // =============================================================================
+  // MESSAGE SENDING - Enhanced with caching and stats
+  // =============================================================================
 
   private async checkRedisConnection(): Promise<void> {
     try {
@@ -58,7 +167,9 @@ class WhatsAppService {
       if (this.isRedisConnected) {
         logger.info('🟢 WhatsApp Service: Redis connection verified');
       } else {
-        logger.warn('🟡 WhatsApp Service: Redis not available, falling back to basic functionality');
+        logger.warn(
+          '🟡 WhatsApp Service: Redis not available, falling back to basic functionality'
+        );
       }
     } catch (error) {
       this.isRedisConnected = false;
@@ -72,7 +183,7 @@ class WhatsAppService {
     if (this.isRedisConnected) {
       const normalizedPhone = WhatsAppUtils.normalizePhoneForCache(to);
       const rateLimitOk = await cacheService.checkRateLimit(normalizedPhone, 10, 60);
-      
+
       if (!rateLimitOk) {
         logger.warn(`🚫 Rate limit exceeded for ${normalizedPhone}`);
         this.statsService.incrementErrors();
@@ -83,7 +194,13 @@ class WhatsAppService {
       }
     }
 
-    const result = await this.baseService.sendMessage(sessionId, to, message);
+    // Delegate to appropriate service implementation
+    let result: SendMessageResponse;
+    if (this.useRefactoredService && this.refactoredService) {
+      result = await this.refactoredService.sendMessage(sessionId, to, message);
+    } else {
+      result = await this.simpleService.sendMessage(sessionId, to, message);
+    }
 
     if (result.success && this.isRedisConnected) {
       await RedisUtils.safePublish(redisClient, REDIS_CHANNELS.MESSAGE_EVENTS, {
@@ -92,7 +209,7 @@ class WhatsAppService {
         to: to,
         message: message,
         timestamp: WhatsAppUtils.getTimestamp(),
-        success: true
+        success: true,
       });
     } else if (!result.success) {
       this.statsService.incrementErrors();
@@ -107,7 +224,7 @@ class WhatsAppService {
     }
 
     const normalizedPhone = WhatsAppUtils.normalizePhoneForCache(telefono);
-    
+
     const cachedLead = await cacheService.getLead(normalizedPhone);
     if (cachedLead) {
       logger.debug(`📞 Lead found in cache: ${normalizedPhone}`);
@@ -115,7 +232,7 @@ class WhatsAppService {
     }
 
     const lead = await this.getLeadFromDatabase(normalizedPhone);
-    
+
     if (lead) {
       await cacheService.setLead(normalizedPhone, lead);
     }
@@ -123,21 +240,26 @@ class WhatsAppService {
     return lead;
   }
 
-  async getRecentConversationsWithCache(telefono: string, limit: number = 10): Promise<Conversation[]> {
+  async getRecentConversationsWithCache(
+    telefono: string,
+    limit: number = 10
+  ): Promise<Conversation[]> {
     if (!this.isRedisConnected) {
       return this.getConversationsFromDatabase(telefono, limit);
     }
 
     const normalizedPhone = WhatsAppUtils.normalizePhoneForCache(telefono);
-    
+
     const cachedConversations = await cacheService.getRecentConversations(normalizedPhone, limit);
     if (cachedConversations) {
-      logger.debug(`💬 Conversations found in cache: ${normalizedPhone} (${cachedConversations.length} items)`);
+      logger.debug(
+        `💬 Conversations found in cache: ${normalizedPhone} (${cachedConversations.length} items)`
+      );
       return cachedConversations;
     }
 
     const conversations = await this.getConversationsFromDatabase(normalizedPhone, limit);
-    
+
     if (conversations.length > 0) {
       await cacheService.setRecentConversations(normalizedPhone, conversations, limit);
     }
@@ -145,48 +267,52 @@ class WhatsAppService {
     return conversations;
   }
 
-  async getAIResponseWithCache(telefono: string, mensaje: string, context?: any): Promise<AIResponseWithCache> {
+  async getAIResponseWithCache(
+    telefono: string,
+    mensaje: string,
+    context?: any
+  ): Promise<AIResponseWithCache> {
     if (!this.isRedisConnected) {
       const response = await this.generateAIResponseFromService(telefono, mensaje, context);
       return { response, fromCache: false };
     }
 
     const normalizedPhone = WhatsAppUtils.normalizePhoneForCache(telefono);
-    
+
     const cachedResponse = await cacheService.getAIResponse(normalizedPhone, mensaje);
     if (cachedResponse) {
       logger.debug(`🤖 AI response found in cache: ${normalizedPhone}`);
-      return { 
-        response: cachedResponse, 
+      return {
+        response: cachedResponse,
         fromCache: true,
-        cacheKey: `ai:${normalizedPhone}:${mensaje.slice(0, 20)}`
+        cacheKey: `ai:${normalizedPhone}:${mensaje.slice(0, 20)}`,
       };
     }
 
     const newResponse = await this.generateAIResponseFromService(telefono, mensaje, context);
-    
+
     await cacheService.setAIResponse(normalizedPhone, mensaje, newResponse);
-    
-    return { 
-      response: newResponse, 
-      fromCache: false 
+
+    return {
+      response: newResponse,
+      fromCache: false,
     };
   }
 
   async updateLeadAndInvalidateCache(telefono: string, updateData: Partial<Lead>): Promise<void> {
     const normalizedPhone = WhatsAppUtils.normalizePhoneForCache(telefono);
-    
+
     await this.updateLeadInDatabase(normalizedPhone, updateData);
-    
+
     if (this.isRedisConnected) {
       await cacheService.invalidateLead(normalizedPhone);
       await cacheService.invalidateConversations(normalizedPhone);
-      
+
       await RedisUtils.safePublish(redisClient, REDIS_CHANNELS.LEAD_EVENTS, {
         event: 'lead_updated',
         telefono: normalizedPhone,
         updateData,
-        timestamp: WhatsAppUtils.getTimestamp()
+        timestamp: WhatsAppUtils.getTimestamp(),
       });
     }
 
@@ -195,17 +321,17 @@ class WhatsAppService {
 
   async saveConversationAndUpdateCache(conversation: Omit<Conversation, 'id'>): Promise<void> {
     await this.saveConversationToDatabase(conversation);
-    
+
     const normalizedPhone = WhatsAppUtils.normalizePhoneForCache(conversation.telefono);
-    
+
     if (this.isRedisConnected) {
       await cacheService.invalidateConversations(normalizedPhone);
-      
+
       await RedisUtils.safePublish(redisClient, REDIS_CHANNELS.MESSAGE_EVENTS, {
         event: 'conversation_saved',
         telefono: normalizedPhone,
         conversation,
-        timestamp: WhatsAppUtils.getTimestamp()
+        timestamp: WhatsAppUtils.getTimestamp(),
       });
     }
 
@@ -216,8 +342,17 @@ class WhatsAppService {
     logger.debug(`💬 Conversation saved and cache updated: ${normalizedPhone}`);
   }
 
-  async updateSessionStatus(sessionId: string, status: string, additionalData?: any): Promise<void> {
-    const session = this.baseService.getSession(sessionId);
+  async updateSessionStatus(
+    sessionId: string,
+    status: string,
+    additionalData?: any
+  ): Promise<void> {
+    // Get session using appropriate service
+    const session =
+      this.useRefactoredService && this.refactoredService
+        ? this.simpleService.getSession(sessionId) // For now, use simple service for sync access
+        : this.simpleService.getSession(sessionId);
+
     if (session) {
       session.status = status as any;
       session.lastSeen = new Date();
@@ -225,55 +360,55 @@ class WhatsAppService {
         Object.assign(session, additionalData);
       }
     }
-    
+
     if (this.isRedisConnected) {
       await cacheService.setSessionStatus(sessionId, status, {
         ...additionalData,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       });
-      
+
       await RedisUtils.safePublish(redisClient, REDIS_CHANNELS.SESSION_EVENTS, {
         event: 'session_status_changed',
         sessionId,
         status,
         additionalData,
-        timestamp: WhatsAppUtils.getTimestamp()
+        timestamp: WhatsAppUtils.getTimestamp(),
       });
     }
   }
 
   async getServiceStats(): Promise<any> {
     const baseStats = this.statsService.getStats();
-    
+
     if (!this.isRedisConnected) {
       return {
         redis_connected: false,
         stats: baseStats,
-        message: 'Redis not available, using local stats only'
+        message: 'Redis not available, using local stats only',
       };
     }
 
     const cacheMetrics = [
       'messages_sent_total',
-      'messages_sent_success', 
+      'messages_sent_success',
       'messages_sent_failed',
       'conversations_saved_total',
       'conversations_incoming_total',
       'conversations_outgoing_total',
-      'ai_responses_generated'
+      'ai_responses_generated',
     ];
 
     const cacheStats = await cacheService.getMultipleStats(cacheMetrics);
-    
+
     return {
       redis_connected: true,
       stats: {
         ...baseStats,
-        cache: cacheStats
+        cache: cacheStats,
       },
       cache_info: await cacheService.getCacheInfo(),
       redis_health: await this.redisMonitoring.getLastHealthStatus(),
-      timestamp: WhatsAppUtils.getTimestamp()
+      timestamp: WhatsAppUtils.getTimestamp(),
     };
   }
 
@@ -298,7 +433,10 @@ class WhatsAppService {
     }
   }
 
-  private async getConversationsFromDatabase(telefono: string, limit: number): Promise<Conversation[]> {
+  private async getConversationsFromDatabase(
+    telefono: string,
+    limit: number
+  ): Promise<Conversation[]> {
     try {
       logger.debug(`Getting conversations from database for ${telefono}, limit: ${limit}`);
       return [];
@@ -308,11 +446,17 @@ class WhatsAppService {
     }
   }
 
-  private async generateAIResponseFromService(telefono: string, mensaje: string, context?: any): Promise<string> {
+  private async generateAIResponseFromService(
+    telefono: string,
+    mensaje: string,
+    context?: any
+  ): Promise<string> {
     try {
       const AIService = await import('./AIService');
       const response = await AIService.default.generateResponse(mensaje, context);
-      return typeof response === 'string' ? response : response.content || 'No se pudo generar respuesta';
+      return typeof response === 'string'
+        ? response
+        : response.content || 'No se pudo generar respuesta';
     } catch (error) {
       logger.error('Error generating AI response:', error);
       return 'Lo siento, no pude procesar tu mensaje en este momento. Por favor intenta de nuevo.';
@@ -355,11 +499,11 @@ class WhatsAppService {
 
     this.redisMonitoring.startMonitoring();
 
-    await redisClient.subscribe(REDIS_CHANNELS.SYSTEM_EVENTS, (message) => {
+    await redisClient.subscribe(REDIS_CHANNELS.SYSTEM_EVENTS, message => {
       try {
         const event = JSON.parse(message);
         logger.info(`🔔 System event received:`, event);
-        
+
         if (event.event === 'cache_clear_all') {
           logger.info('🗑️ System-wide cache clear requested');
         }
@@ -381,14 +525,43 @@ class WhatsAppService {
 
   async shutdown(): Promise<void> {
     logger.info('🛑 Shutting down WhatsApp Service...');
-    
+
     await this.stopRedisMonitoring();
-    
+
     this.redisMonitoring.destroy();
-    
-    await this.baseService.shutdown();
-    
+
+    // Shutdown appropriate service implementation
+    if (this.useRefactoredService && this.refactoredService) {
+      await this.refactoredService.shutdown();
+    } else {
+      await this.simpleService.shutdown();
+    }
+
     logger.info('✅ WhatsApp Service shutdown completed');
+  }
+
+  // =============================================================================
+  // SOCKET INTEGRATION - Unified event notification system
+  // =============================================================================
+
+  /**
+   * Notify SocketService about events for real-time updates
+   * This method provides bidirectional communication between WhatsApp services and SocketService
+   */
+  async notifySocketEvent(payload: WebhookPayload): Promise<void> {
+    try {
+      const { getSocketService } = await import('./SocketService');
+      const socketService = getSocketService();
+
+      if (socketService) {
+        socketService.processWebhookEvent(payload);
+        logger.debug(`📡 Socket event notified: ${payload.event} for session ${payload.sessionId}`);
+      } else {
+        logger.debug('📡 SocketService not available, skipping event notification');
+      }
+    } catch (error) {
+      logger.error('❌ Error notifying socket service:', error);
+    }
   }
 
   getStatsSummary(): string {
@@ -400,4 +573,4 @@ class WhatsAppService {
   }
 }
 
-export default WhatsAppService;
+export default new WhatsAppService();
