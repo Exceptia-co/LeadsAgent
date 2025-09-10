@@ -1,10 +1,15 @@
-import { Pool, PoolClient } from "pg";
-import { logger } from "../utils/logger";
-import PhoneNumberService from "./PhoneNumberService";
+import { Pool, PoolClient } from 'pg';
+import { logger } from '../utils/logger';
+import PhoneNumberService from './PhoneNumberService';
 import type { TrainingInteraction } from '../types';
-import MigrationService from "./MigrationService";
+import MigrationService from './MigrationService';
+import { RepositoryFactory, ILeadRepository, IConversationRepository } from './db';
+import { KnowledgeBaseRepository } from './db/KnowledgeBaseRepository';
+import { AIConfigRepository } from './db/AIConfigRepository';
+import { TrainingRepository } from './db/TrainingRepository';
+import { WhitelistLogRepository } from './db/WhitelistLogRepository';
 
-// Interfaz para datos de conversación
+// Re-export types for backward compatibility (will be removed after full migration)
 export interface ConversationData {
   sessionId: string;
   phoneNumber: string;
@@ -19,7 +24,6 @@ export interface ConversationData {
   isFromUser?: boolean;
 }
 
-// Interfaz para historial de conversación
 export interface ConversationHistory {
   id: string;
   sessionId: string;
@@ -37,14 +41,13 @@ export interface ConversationHistory {
   updatedAt: Date;
 }
 
-// Interfaz para leads (basada en la estructura real de Supabase)
 export interface Lead {
   id: string;
   name?: string;
   phone: string;
   email?: string;
   tags?: string[];
-  status: "NUEVO" | "CONTACTADO" | "QUALIFIED" | "PERDIDO" | "GANADO";
+  status: 'NUEVO' | 'CONTACTADO' | 'QUALIFIED' | 'PERDIDO' | 'GANADO';
   moodScore?: number;
   lastContact?: Date;
   assignedTo?: string;
@@ -54,40 +57,63 @@ export interface Lead {
   updatedAt: Date;
 }
 
+/**
+ * Database Service Facade
+ *
+ * Phase 2 of refactoring plan: Acts as a facade that delegates to either:
+ * - Legacy implementation (direct SQL) when USE_DATABASE_REPOSITORIES=false
+ * - Repository pattern when USE_DATABASE_REPOSITORIES=true
+ *
+ * This maintains full API compatibility while allowing gradual migration.
+ */
 class DatabaseService {
   private pool: Pool | null = null;
+  private useRepositories: boolean;
+  private repositoryFactory: RepositoryFactory | null = null;
+  private leadRepository: ILeadRepository | null = null;
+  private conversationRepository: IConversationRepository | null = null;
+  private knowledgeBaseRepository: KnowledgeBaseRepository | null = null;
+  private aiConfigRepository: AIConfigRepository | null = null;
+  private trainingRepository: TrainingRepository | null = null;
+  private whitelistLogRepository: WhitelistLogRepository | null = null;
 
   constructor() {
+    // Feature toggle: USE_DATABASE_REPOSITORIES environment variable
+    this.useRepositories = process.env.USE_DATABASE_REPOSITORIES === 'true';
+
+    logger.info(
+      `🗄️ Database Service Architecture: ${this.useRepositories ? 'REPOSITORIES (v2.0)' : 'LEGACY (v1.0)'}`
+    );
+
     this.initializePool();
+
+    // Note: Repository initialization is async and will be called during initializeTable()
   }
 
   private initializePool(): void {
     try {
       if (!process.env.DATABASE_URL) {
         logger.warn(
-          "DATABASE_URL no está configurado, funcionando sin persistencia de base de datos",
+          'DATABASE_URL no está configurado, funcionando sin persistencia de base de datos'
         );
         return;
       }
 
       this.pool = new Pool({
         connectionString: process.env.DATABASE_URL,
-        ssl:
-          process.env.NODE_ENV === "production"
-            ? { rejectUnauthorized: false }
-            : false,
+        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
         max: 10,
         idleTimeoutMillis: 30000,
         connectionTimeoutMillis: 2000,
       });
 
-      this.pool.on("error", (err) => {
-        logger.error("Error en el pool de conexiones PostgreSQL:", err);
+      this.pool.on('error', err => {
+        logger.error('Error en el pool de conexiones PostgreSQL:', err);
       });
 
-      logger.info("Pool de conexiones PostgreSQL inicializado");
+      logger.info('Pool de conexiones PostgreSQL inicializado');
     } catch (error) {
-      logger.error("Error inicializando pool de base de datos:", error);
+      logger.error('Error inicializando pool de base de datos:', error);
     }
   }
 
@@ -99,21 +125,52 @@ class DatabaseService {
     this.initializePool();
   }
 
+  // Initialize repository pattern (Phase 2 feature)
+  private async initializeRepositories(): Promise<void> {
+    if (!this.pool) {
+      logger.warn('Cannot initialize repositories without database pool');
+      return;
+    }
+
+    try {
+      logger.info('🏭 Initializing repository pattern...');
+
+      this.repositoryFactory = new RepositoryFactory(this.pool);
+      await this.repositoryFactory.initialize();
+
+      // Create repository instances
+      this.leadRepository = this.repositoryFactory.createLeadRepository();
+      this.conversationRepository = this.repositoryFactory.createConversationRepository();
+      this.knowledgeBaseRepository = this.repositoryFactory.createKnowledgeBaseRepository();
+      this.aiConfigRepository = this.repositoryFactory.createAIConfigRepository();
+      this.trainingRepository = this.repositoryFactory.createTrainingRepository();
+      this.whitelistLogRepository = this.repositoryFactory.createWhitelistLogRepository();
+
+      // Initialize repositories
+      await this.repositoryFactory.initializeAllRepositories();
+
+      logger.info('✅ Repository pattern initialized successfully');
+    } catch (error) {
+      logger.error('❌ Failed to initialize repositories:', error);
+      // Fallback to legacy mode
+      this.useRepositories = false;
+      logger.warn('🔄 Falling back to legacy database implementation');
+    }
+  }
+
   // Ejecutar migraciones automáticamente
   private async runMigrations(): Promise<void> {
     if (!this.pool) {
-      logger.warn(
-        "No hay conexión a base de datos disponible para migraciones",
-      );
+      logger.warn('No hay conexión a base de datos disponible para migraciones');
       return;
     }
 
     try {
       const migrationService = new MigrationService(this.pool);
       await migrationService.runMigrations();
-      logger.info("✅ Migraciones ejecutadas correctamente");
+      logger.info('✅ Migraciones ejecutadas correctamente');
     } catch (error) {
-      logger.error("❌ Error ejecutando migraciones:", error);
+      logger.error('❌ Error ejecutando migraciones:', error);
       throw error; // Re-throw para que falle la inicialización si hay problemas críticos
     }
   }
@@ -121,8 +178,13 @@ class DatabaseService {
   // Crear tabla si no existe
   public async initializeTable(): Promise<void> {
     if (!this.pool) {
-      logger.warn("No hay conexión a base de datos disponible");
+      logger.warn('No hay conexión a base de datos disponible');
       return;
+    }
+
+    // Initialize repositories if using repository pattern
+    if (this.useRepositories && !this.repositoryFactory) {
+      await this.initializeRepositories();
     }
 
     // Ejecutar migraciones automáticamente
@@ -271,41 +333,46 @@ class DatabaseService {
     try {
       await this.pool.query(createTablesQuery);
       logger.info(
-        "Tablas whatsapp_conversations y whatsapp_whitelist_logs verificadas/creadas correctamente",
+        'Tablas whatsapp_conversations y whatsapp_whitelist_logs verificadas/creadas correctamente'
       );
     } catch (error) {
-      logger.error("Error creando tablas:", error);
+      logger.error('Error creando tablas:', error);
     }
   }
 
   // Guardar conversación
-  public async saveConversation(
-    data: ConversationData,
-  ): Promise<string | null> {
+  public async saveConversation(data: ConversationData): Promise<string | null> {
+    // Phase 2: Repository pattern delegation
+    if (this.useRepositories && this.conversationRepository) {
+      try {
+        logger.debug('🏛️ Using ConversationRepository for saveConversation');
+        await this.conversationRepository.save(data);
+        // Return a placeholder ID since the repository pattern doesn't return the ID
+        return 'repo-generated-id';
+      } catch (error) {
+        logger.error('❌ Repository method failed, falling back to legacy:', error);
+        // Fallback to legacy implementation below
+      }
+    }
+
+    // Legacy implementation
     // LOG DETALLADO: Estado inicial
-    logger.info("🔍 [DIAGNOSTIC] saveConversation called with data:", {
+    logger.info('🔍 [DIAGNOSTIC] saveConversation called with data:', {
       sessionId: data.sessionId,
       phoneNumber: data.phoneNumber,
-      messageText: data.messageText
-        ? data.messageText.substring(0, 50) + "..."
-        : null,
-      responseText: data.responseText
-        ? data.responseText.substring(0, 50) + "..."
-        : null,
+      messageText: data.messageText ? data.messageText.substring(0, 50) + '...' : null,
+      responseText: data.responseText ? data.responseText.substring(0, 50) + '...' : null,
       isFromUser: data.isFromUser,
     });
 
     // LOG DETALLADO: Estado de la conexión
     if (!this.pool) {
-      logger.error("❌ [DIAGNOSTIC] No database connection available!");
-      logger.error(
-        "❌ [DIAGNOSTIC] DATABASE_URL:",
-        process.env.DATABASE_URL ? "SET" : "NOT SET",
-      );
+      logger.error('❌ [DIAGNOSTIC] No database connection available!');
+      logger.error('❌ [DIAGNOSTIC] DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
       return null;
     }
 
-    logger.info("✅ [DIAGNOSTIC] Database pool connection available");
+    logger.info('✅ [DIAGNOSTIC] Database pool connection available');
 
     const query = `
       INSERT INTO whatsapp_conversations (
@@ -329,7 +396,7 @@ class DatabaseService {
     ];
 
     // LOG DETALLADO: Valores que se van a insertar
-    logger.info("📝 [DIAGNOSTIC] Query values prepared:", {
+    logger.info('📝 [DIAGNOSTIC] Query values prepared:', {
       sessionId: values[0],
       phoneNumber: values[1],
       contactName: values[2],
@@ -338,18 +405,18 @@ class DatabaseService {
     });
 
     try {
-      logger.info("🔄 [DIAGNOSTIC] Executing database query...");
+      logger.info('🔄 [DIAGNOSTIC] Executing database query...');
       const result = await this.pool.query(query, values);
 
       const conversationId = result.rows[0]?.id;
 
-      logger.info("✅ [DIAGNOSTIC] Query executed successfully!", {
+      logger.info('✅ [DIAGNOSTIC] Query executed successfully!', {
         conversationId,
         rowsAffected: result.rowCount,
         returningId: result.rows[0]?.id,
       });
 
-      logger.info("💾 Conversación guardada correctamente:", {
+      logger.info('💾 Conversación guardada correctamente:', {
         id: conversationId,
         phoneNumber: data.phoneNumber,
         sessionId: data.sessionId,
@@ -357,15 +424,15 @@ class DatabaseService {
 
       return conversationId;
     } catch (error: any) {
-      logger.error("❌ [DIAGNOSTIC] Error executing database query:", {
+      logger.error('❌ [DIAGNOSTIC] Error executing database query:', {
         error: error.message,
         code: error.code,
         detail: error.detail,
         hint: error.hint,
         position: error.position,
-        stack: error.stack?.substring(0, 200) + "...",
+        stack: error.stack?.substring(0, 200) + '...',
       });
-      logger.error("❌ Error guardando conversación (legacy):", error);
+      logger.error('❌ Error guardando conversación (legacy):', error);
       return null;
     }
   }
@@ -373,10 +440,10 @@ class DatabaseService {
   // Obtener historial de conversación por número de teléfono
   public async getConversationHistory(
     phoneNumber: string,
-    limit: number = 50,
+    limit: number = 50
   ): Promise<ConversationHistory[]> {
     if (!this.pool) {
-      logger.warn("No hay conexión a base de datos");
+      logger.warn('No hay conexión a base de datos');
       return [];
     }
 
@@ -389,7 +456,7 @@ class DatabaseService {
 
     try {
       const result = await this.pool.query(query, [phoneNumber, limit]);
-      return result.rows.map((row) => ({
+      return result.rows.map(row => ({
         id: row.id,
         sessionId: row.session_id,
         phoneNumber: row.phone_number,
@@ -406,7 +473,7 @@ class DatabaseService {
         updatedAt: new Date(row.updated_at),
       }));
     } catch (error) {
-      logger.error("Error obteniendo historial de conversación:", error);
+      logger.error('Error obteniendo historial de conversación:', error);
       return [];
     }
   }
@@ -415,8 +482,8 @@ class DatabaseService {
   public async getRecentContext(
     phoneNumber: string,
     sessionId: string,
-    limit: number = 10,
-  ): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
+    limit: number = 10
+  ): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
     if (!this.pool) {
       return [];
     }
@@ -430,24 +497,19 @@ class DatabaseService {
     `;
 
     try {
-      const result = await this.pool.query(query, [
-        phoneNumber,
-        sessionId,
-        limit,
-      ]);
-      const context: Array<{ role: "user" | "assistant"; content: string }> =
-        [];
+      const result = await this.pool.query(query, [phoneNumber, sessionId, limit]);
+      const context: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
-      result.rows.forEach((row) => {
+      result.rows.forEach(row => {
         if (row.message_text && row.is_from_user) {
           context.push({
-            role: "user",
+            role: 'user',
             content: row.message_text,
           });
         }
         if (row.response_text && !row.is_from_user) {
           context.push({
-            role: "assistant",
+            role: 'assistant',
             content: row.response_text,
           });
         }
@@ -455,7 +517,7 @@ class DatabaseService {
 
       return context;
     } catch (error) {
-      logger.error("Error obteniendo contexto reciente:", error);
+      logger.error('Error obteniendo contexto reciente:', error);
       return [];
     }
   }
@@ -480,7 +542,7 @@ class DatabaseService {
 
     const values: any[] = [];
     if (sessionId) {
-      query += " WHERE session_id = $1";
+      query += ' WHERE session_id = $1';
       values.push(sessionId);
     }
 
@@ -495,7 +557,7 @@ class DatabaseService {
         averageTokens: 0, // tokens_used functionality not implemented yet
       };
     } catch (error) {
-      logger.error("Error obteniendo estadísticas:", error);
+      logger.error('Error obteniendo estadísticas:', error);
       return {
         totalConversations: 0,
         uniqueContacts: 0,
@@ -509,7 +571,7 @@ class DatabaseService {
   public async searchConversations(
     searchTerm: string,
     sessionId?: string,
-    limit: number = 20,
+    limit: number = 20
   ): Promise<ConversationHistory[]> {
     if (!this.pool) {
       return [];
@@ -523,18 +585,18 @@ class DatabaseService {
     const values: any[] = [`%${searchTerm}%`];
 
     if (sessionId) {
-      query += " AND session_id = $2";
+      query += ' AND session_id = $2';
       values.push(sessionId);
-      query += " ORDER BY created_at DESC LIMIT $3";
+      query += ' ORDER BY created_at DESC LIMIT $3';
       values.push(limit);
     } else {
-      query += " ORDER BY created_at DESC LIMIT $2";
+      query += ' ORDER BY created_at DESC LIMIT $2';
       values.push(limit);
     }
 
     try {
       const result = await this.pool.query(query, values);
-      return result.rows.map((row) => ({
+      return result.rows.map(row => ({
         id: row.id,
         sessionId: row.session_id,
         phoneNumber: row.phone_number,
@@ -551,7 +613,7 @@ class DatabaseService {
         updatedAt: new Date(row.updated_at),
       }));
     } catch (error) {
-      logger.error("Error buscando conversaciones:", error);
+      logger.error('Error buscando conversaciones:', error);
       return [];
     }
   }
@@ -560,7 +622,7 @@ class DatabaseService {
   public async close(): Promise<void> {
     if (this.pool) {
       await this.pool.end();
-      logger.info("Pool de conexiones PostgreSQL cerrado");
+      logger.info('Pool de conexiones PostgreSQL cerrado');
     }
   }
 
@@ -571,17 +633,29 @@ class DatabaseService {
     }
 
     try {
-      const result = await this.pool.query("SELECT NOW()");
-      logger.info("Conexión a base de datos verificada:", result.rows[0]);
+      const result = await this.pool.query('SELECT NOW()');
+      logger.info('Conexión a base de datos verificada:', result.rows[0]);
       return true;
     } catch (error) {
-      logger.error("Error verificando conexión a base de datos:", error);
+      logger.error('Error verificando conexión a base de datos:', error);
       return false;
     }
   }
 
   // Obtener todos los leads (con fallback a datos mockeados)
   public async getAllLeads(): Promise<Lead[]> {
+    // Phase 2: Repository pattern delegation
+    if (this.useRepositories && this.leadRepository) {
+      try {
+        logger.debug('🏛️ Using LeadRepository for getAllLeads');
+        return await this.leadRepository.findAll();
+      } catch (error) {
+        logger.error('❌ Repository method failed, falling back to legacy:', error);
+        // Fallback to legacy implementation below
+      }
+    }
+
+    // Legacy implementation
     // Intentar obtener leads de la base de datos real
     if (this.pool) {
       try {
@@ -608,7 +682,7 @@ class DatabaseService {
           `;
 
           const result = await this.pool.query(query);
-          const realLeads = result.rows.map((row) => ({
+          const realLeads = result.rows.map(row => ({
             id: row.id,
             name: row.name,
             phone: row.phone,
@@ -616,9 +690,7 @@ class DatabaseService {
             tags: row.tags,
             status: row.status,
             moodScore: row.mood_score,
-            lastContact: row.last_contact
-              ? new Date(row.last_contact)
-              : undefined,
+            lastContact: row.last_contact ? new Date(row.last_contact) : undefined,
             assignedTo: row.assigned_to,
             source: row.source,
             whatsappAuthorized: row.whatsapp_authorized,
@@ -626,78 +698,71 @@ class DatabaseService {
             updatedAt: new Date(row.updated_at),
           }));
 
-          logger.info(
-            `✅ Obtenidos ${realLeads.length} leads de la base de datos`,
-          );
+          logger.info(`✅ Obtenidos ${realLeads.length} leads de la base de datos`);
           return realLeads;
         }
       } catch (error) {
-        logger.warn(
-          "Error obteniendo leads de la base de datos, usando datos mockeados:",
-          error,
-        );
+        logger.warn('Error obteniendo leads de la base de datos, usando datos mockeados:', error);
       }
     }
 
     // Fallback: devolver leads mockeados para desarrollo
     const mockLeads: Lead[] = [
       {
-        id: "1",
-        name: "Juan Pérez",
-        phone: "+5491123456789",
-        email: "juan@example.com",
-        tags: ["interesado", "productos"],
-        status: "NUEVO",
+        id: '1',
+        name: 'Juan Pérez',
+        phone: '+5491123456789',
+        email: 'juan@example.com',
+        tags: ['interesado', 'productos'],
+        status: 'NUEVO',
         moodScore: 8.5,
-        source: "website",
+        source: 'website',
         whatsappAuthorized: true,
         createdAt: new Date(),
         updatedAt: new Date(),
       },
       {
-        id: "2",
-        name: "María García",
-        phone: "+5491187654321",
-        email: "maria@example.com",
-        tags: ["información", "precios"],
-        status: "QUALIFIED",
+        id: '2',
+        name: 'María García',
+        phone: '+5491187654321',
+        email: 'maria@example.com',
+        tags: ['información', 'precios'],
+        status: 'QUALIFIED',
         moodScore: 9.2,
-        source: "referral",
+        source: 'referral',
         whatsappAuthorized: true,
         createdAt: new Date(),
         updatedAt: new Date(),
       },
       {
-        id: "3",
-        name: "Carlos López",
-        phone: "+5491155443322",
-        email: "carlos@example.com",
-        tags: ["automatización", "urgente"],
-        status: "NUEVO",
+        id: '3',
+        name: 'Carlos López',
+        phone: '+5491155443322',
+        email: 'carlos@example.com',
+        tags: ['automatización', 'urgente'],
+        status: 'NUEVO',
         moodScore: 7.8,
-        source: "social_media",
+        source: 'social_media',
         whatsappAuthorized: true,
         createdAt: new Date(),
         updatedAt: new Date(),
       },
       {
-        id: "4",
-        name: "Ana Martínez",
-        phone: "+5491166778899",
-        email: "ana@example.com",
-        tags: ["chatbots", "negocio"],
-        status: "GANADO",
+        id: '4',
+        name: 'Ana Martínez',
+        phone: '+5491166778899',
+        email: 'ana@example.com',
+        tags: ['chatbots', 'negocio'],
+        status: 'GANADO',
         moodScore: 9.5,
-        source: "website",
+        source: 'website',
         whatsappAuthorized: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       },
     ];
 
-    logger.info(
-      `🔧 Usando ${mockLeads.length} leads mockeados para desarrollo`,
-    );
+    logger.info(`🔧 Usando ${mockLeads.length} leads mockeados para desarrollo`);
     return mockLeads;
   }
 
@@ -713,12 +778,9 @@ class DatabaseService {
 
       // Use PhoneNumberService to find equivalent phone numbers
       for (const lead of allLeads) {
-        if (
-          lead.phone &&
-          PhoneNumberService.arePhoneNumbersEquivalent(phoneNumber, lead.phone)
-        ) {
+        if (lead.phone && PhoneNumberService.arePhoneNumbersEquivalent(phoneNumber, lead.phone)) {
           logger.info(
-            `📞 Found existing lead with equivalent phone number: ${lead.phone} ≈ ${phoneNumber}`,
+            `📞 Found existing lead with equivalent phone number: ${lead.phone} ≈ ${phoneNumber}`
           );
           return lead;
         }
@@ -726,7 +788,7 @@ class DatabaseService {
 
       return null;
     } catch (error) {
-      logger.error("Error searching for lead by phone:", error);
+      logger.error('Error searching for lead by phone:', error);
       return null;
     }
   }
@@ -771,9 +833,7 @@ class DatabaseService {
             tags: row.tags,
             status: row.status,
             moodScore: row.mood_score,
-            lastContact: row.last_contact
-              ? new Date(row.last_contact)
-              : undefined,
+            lastContact: row.last_contact ? new Date(row.last_contact) : undefined,
             assignedTo: row.assigned_to,
             source: row.source,
             whatsappAuthorized: row.whatsapp_authorized,
@@ -785,7 +845,7 @@ class DatabaseService {
 
       return null;
     } catch (error) {
-      logger.error("Error finding lead by ID:", error);
+      logger.error('Error finding lead by ID:', error);
       return null;
     }
   }
@@ -795,28 +855,26 @@ class DatabaseService {
     name?: string | null;
     email?: string | null;
     phone: string;
-    status?: "NUEVO" | "CONTACTADO" | "QUALIFIED" | "GANADO" | "PERDIDO";
+    status?: 'NUEVO' | 'CONTACTADO' | 'QUALIFIED' | 'GANADO' | 'PERDIDO';
     source?: string;
   }): Promise<Lead | null> {
     if (!this.pool) {
-      logger.warn("No database connection available, cannot create lead");
+      logger.warn('No database connection available, cannot create lead');
       return null;
     }
 
     try {
       // Normalize the phone number before processing
-      const normalizedPhone = PhoneNumberService.normalizePhoneNumber(
-        leadData.phone,
-      );
+      const normalizedPhone = PhoneNumberService.normalizePhoneNumber(leadData.phone);
 
       // Check if a lead with this phone number already exists
       const existingLead = await this.findLeadByPhone(normalizedPhone);
       if (existingLead) {
         logger.warn(
-          `⚠️ Lead with phone number ${leadData.phone} (normalized: ${normalizedPhone}) already exists with ID: ${existingLead.id}`,
+          `⚠️ Lead with phone number ${leadData.phone} (normalized: ${normalizedPhone}) already exists with ID: ${existingLead.id}`
         );
         throw new Error(
-          `Duplicate phone number: A lead with phone ${leadData.phone} already exists`,
+          `Duplicate phone number: A lead with phone ${leadData.phone} already exists`
         );
       }
       // Check if leads table exists
@@ -831,7 +889,7 @@ class DatabaseService {
       const tableExists = await this.pool.query(checkTableQuery);
 
       if (!tableExists.rows[0].exists) {
-        logger.error("Leads table does not exist");
+        logger.error('Leads table does not exist');
         return null;
       }
 
@@ -849,8 +907,8 @@ class DatabaseService {
         leadData.name || null,
         leadData.email || null,
         normalizedPhone, // Use normalized phone number
-        leadData.status || "NUEVO",
-        leadData.source || "manual",
+        leadData.status || 'NUEVO',
+        leadData.source || 'manual',
         true, // Default to WhatsApp authorized
       ];
 
@@ -868,24 +926,20 @@ class DatabaseService {
           tags: [],
           whatsappAuthorized: row.whatsapp_authorized,
           moodScore: row.mood_score ? parseFloat(row.mood_score) : undefined,
-          lastContact: row.last_contact
-            ? new Date(row.last_contact)
-            : undefined,
+          lastContact: row.last_contact ? new Date(row.last_contact) : undefined,
           assignedTo: row.assigned_to,
           createdAt: new Date(row.created_at),
           updatedAt: new Date(row.updated_at),
         };
 
-        logger.info(
-          `✅ Created new lead: ${newLead.name || "Unnamed"} (${newLead.phone})`,
-        );
+        logger.info(`✅ Created new lead: ${newLead.name || 'Unnamed'} (${newLead.phone})`);
         return newLead;
       }
 
-      logger.error("Failed to create lead - no rows returned");
+      logger.error('Failed to create lead - no rows returned');
       return null;
     } catch (error: any) {
-      logger.error("Error creating lead:", error);
+      logger.error('Error creating lead:', error);
 
       // Re-throw the error so the caller can handle it (e.g., for duplicate phone detection)
       throw error;
@@ -895,7 +949,7 @@ class DatabaseService {
   // Update lead WhatsApp authorization status
   public async updateLeadWhatsAppAuth(
     leadId: string,
-    whatsappAuthorized: boolean,
+    whatsappAuthorized: boolean
   ): Promise<boolean> {
     if (this.pool) {
       try {
@@ -906,31 +960,24 @@ class DatabaseService {
           RETURNING id;
         `;
 
-        const result = await this.pool.query(query, [
-          whatsappAuthorized,
-          leadId,
-        ]);
+        const result = await this.pool.query(query, [whatsappAuthorized, leadId]);
 
         if (result.rows.length > 0) {
-          logger.info(
-            `✅ Lead ${leadId} WhatsApp authorization updated to: ${whatsappAuthorized}`,
-          );
+          logger.info(`✅ Lead ${leadId} WhatsApp authorization updated to: ${whatsappAuthorized}`);
           return true;
         } else {
-          logger.warn(
-            `⚠️ Lead ${leadId} not found for WhatsApp authorization update`,
-          );
+          logger.warn(`⚠️ Lead ${leadId} not found for WhatsApp authorization update`);
           return false;
         }
       } catch (error) {
-        logger.error("Error updating lead WhatsApp authorization:", error);
+        logger.error('Error updating lead WhatsApp authorization:', error);
         return false;
       }
     }
 
     // For mock data, we can't actually update, so just log and return true
     logger.info(
-      `🔧 Mock update: Lead ${leadId} WhatsApp authorization would be set to: ${whatsappAuthorized}`,
+      `🔧 Mock update: Lead ${leadId} WhatsApp authorization would be set to: ${whatsappAuthorized}`
     );
     return true;
   }
@@ -938,10 +985,10 @@ class DatabaseService {
   // Get recent conversations across all phone numbers
   public async getRecentConversations(
     sessionId?: string,
-    limit: number = 50,
+    limit: number = 50
   ): Promise<ConversationHistory[]> {
     if (!this.pool) {
-      logger.warn("No hay conexión a base de datos");
+      logger.warn('No hay conexión a base de datos');
       return [];
     }
 
@@ -952,18 +999,18 @@ class DatabaseService {
     const values: any[] = [];
 
     if (sessionId) {
-      query += " WHERE session_id = $1";
+      query += ' WHERE session_id = $1';
       values.push(sessionId);
-      query += " ORDER BY created_at DESC LIMIT $2";
+      query += ' ORDER BY created_at DESC LIMIT $2';
       values.push(limit);
     } else {
-      query += " ORDER BY created_at DESC LIMIT $1";
+      query += ' ORDER BY created_at DESC LIMIT $1';
       values.push(limit);
     }
 
     try {
       const result = await this.pool.query(query, values);
-      return result.rows.map((row) => ({
+      return result.rows.map(row => ({
         id: row.id,
         sessionId: row.session_id,
         phoneNumber: row.phone_number,
@@ -980,7 +1027,7 @@ class DatabaseService {
         updatedAt: new Date(row.updated_at),
       }));
     } catch (error) {
-      logger.error("Error obteniendo conversaciones recientes:", error);
+      logger.error('Error obteniendo conversaciones recientes:', error);
       return [];
     }
   }
@@ -989,7 +1036,7 @@ class DatabaseService {
   public async logWhitelistDecision(data: {
     phoneNumber: string;
     sessionId?: string;
-    decision: "ALLOWED" | "BLOCKED";
+    decision: 'ALLOWED' | 'BLOCKED';
     reason?: string;
     leadId?: string;
     leadName?: string;
@@ -999,10 +1046,20 @@ class DatabaseService {
     userAgent?: string;
     createdBy?: string;
   }): Promise<string | null> {
+    // Phase 2c: Delegate to repository if enabled
+    if (this.useRepositories && this.whitelistLogRepository) {
+      try {
+        logger.debug('🔄 Using WhitelistLogRepository');
+        return await this.whitelistLogRepository.logWhitelistDecision(data);
+      } catch (error) {
+        logger.warn('❌ Repository method failed, falling back to legacy:', error);
+        // Fallback to legacy implementation below
+      }
+    }
+
+    // Legacy implementation
     if (!this.pool) {
-      logger.warn(
-        "No hay conexión a base de datos, log de whitelist no guardado",
-      );
+      logger.warn('No hay conexión a base de datos, log de whitelist no guardado');
       return null;
     }
 
@@ -1026,14 +1083,14 @@ class DatabaseService {
       data.aiProvider || null,
       data.ipAddress || null,
       data.userAgent || null,
-      data.createdBy || 'whatsapp-service'
+      data.createdBy || 'whatsapp-service',
     ];
 
     try {
       const result = await this.pool.query(query, values);
       const logId = result.rows[0]?.id;
 
-      logger.debug("Whitelist decision logged:", {
+      logger.debug('Whitelist decision logged:', {
         id: logId,
         phoneNumber: data.phoneNumber,
         decision: data.decision, // ✅ Now using correct field
@@ -1041,11 +1098,11 @@ class DatabaseService {
 
       return logId;
     } catch (error) {
-      logger.error("Error logging whitelist decision:", error);
-      logger.error("Failed query values:", {
+      logger.error('Error logging whitelist decision:', error);
+      logger.error('Failed query values:', {
         phoneNumber: data.phoneNumber,
         decision: data.decision,
-        hasNullDecision: data.decision === null || data.decision === undefined
+        hasNullDecision: data.decision === null || data.decision === undefined,
       });
       return null;
     }
@@ -1058,11 +1115,23 @@ class DatabaseService {
       offset?: number;
       phoneNumber?: string;
       sessionId?: string;
-      decision?: "ALLOWED" | "BLOCKED";
+      decision?: 'ALLOWED' | 'BLOCKED';
       startDate?: Date;
       endDate?: Date;
-    } = {},
+    } = {}
   ): Promise<any[]> {
+    // Phase 2c: Delegate to repository if enabled
+    if (this.useRepositories && this.whitelistLogRepository) {
+      try {
+        logger.debug('🔄 Using WhitelistLogRepository');
+        return await this.whitelistLogRepository.getWhitelistLogs(options);
+      } catch (error) {
+        logger.warn('❌ Repository method failed, falling back to legacy:', error);
+        // Fallback to legacy implementation below
+      }
+    }
+
+    // Legacy implementation
     if (!this.pool) {
       return [];
     }
@@ -1117,7 +1186,7 @@ class DatabaseService {
 
     try {
       const result = await this.pool.query(query, values);
-      return result.rows.map((row) => ({
+      return result.rows.map(row => ({
         id: row.id,
         phoneNumber: row.phone_number,
         sessionId: row.session_id,
@@ -1127,7 +1196,7 @@ class DatabaseService {
         createdAt: new Date(row.created_at),
       }));
     } catch (error) {
-      logger.error("Error getting whitelist logs:", error);
+      logger.error('Error getting whitelist logs:', error);
       return [];
     }
   }
@@ -1138,7 +1207,7 @@ class DatabaseService {
       sessionId?: string;
       startDate?: Date;
       endDate?: Date;
-    } = {},
+    } = {}
   ): Promise<any> {
     if (!this.pool) {
       return {
@@ -1194,23 +1263,19 @@ class DatabaseService {
         allowedCount,
         blockedCount,
         allowedPercentage:
-          totalDecisions > 0
-            ? ((allowedCount / totalDecisions) * 100).toFixed(1)
-            : "0",
+          totalDecisions > 0 ? ((allowedCount / totalDecisions) * 100).toFixed(1) : '0',
         blockedPercentage:
-          totalDecisions > 0
-            ? ((blockedCount / totalDecisions) * 100).toFixed(1)
-            : "0",
+          totalDecisions > 0 ? ((blockedCount / totalDecisions) * 100).toFixed(1) : '0',
         uniquePhones: parseInt(stats.unique_phones) || 0,
       };
     } catch (error) {
-      logger.error("Error getting whitelist statistics:", error);
+      logger.error('Error getting whitelist statistics:', error);
       return {
         totalDecisions: 0,
         allowedCount: 0,
         blockedCount: 0,
-        allowedPercentage: "0",
-        blockedPercentage: "0",
+        allowedPercentage: '0',
+        blockedPercentage: '0',
         uniquePhones: 0,
       };
     }
@@ -1221,14 +1286,9 @@ class DatabaseService {
   // ============================================
 
   // Obtener conversaciones estructuradas con información de leads
-  public async getConversations(
-    limit: number = 50,
-    offset: number = 0,
-  ): Promise<any[]> {
+  public async getConversations(limit: number = 50, offset: number = 0): Promise<any[]> {
     if (!this.pool) {
-      logger.warn(
-        "No hay conexión a base de datos para obtener conversaciones",
-      );
+      logger.warn('No hay conexión a base de datos para obtener conversaciones');
       return this.getMockConversations(limit, offset);
     }
 
@@ -1269,12 +1329,12 @@ class DatabaseService {
       const leads = await this.getAllLeads();
 
       // Mapear conversaciones con información de leads
-      const conversations = result.rows.map((row) => {
+      const conversations = result.rows.map(row => {
         // Buscar lead correspondiente
-        const lead = leads.find((l) => {
+        const lead = leads.find(l => {
           if (!l.phone) return false;
-          const leadPhone = l.phone.replace(/[^0-9]/g, "");
-          const conversationPhone = row.phone_number.replace(/[^0-9]/g, "");
+          const leadPhone = l.phone.replace(/[^0-9]/g, '');
+          const conversationPhone = row.phone_number.replace(/[^0-9]/g, '');
           return leadPhone.slice(-10) === conversationPhone.slice(-10);
         });
 
@@ -1282,17 +1342,17 @@ class DatabaseService {
           id: `conv_${row.phone_number}`, // ID único para la conversación
           leadId: lead?.id || null,
           lead: lead || {
-            id: "unknown",
-            name: row.contact_name || "Desconocido",
+            id: 'unknown',
+            name: row.contact_name || 'Desconocido',
             phone: row.phone_number,
-            status: "NUEVO",
+            status: 'NUEVO',
           },
           lastMessage: {
             id: `msg_${Date.now()}`,
-            content: row.last_message_content || "",
-            direction: row.is_from_user ? "INBOUND" : "OUTBOUND",
-            messageType: row.message_type || "text",
-            status: "delivered",
+            content: row.last_message_content || '',
+            direction: row.is_from_user ? 'INBOUND' : 'OUTBOUND',
+            messageType: row.message_type || 'text',
+            status: 'delivered',
             createdAt: row.created_at,
           },
           unreadCount: parseInt(row.unread_count) || 0,
@@ -1300,30 +1360,26 @@ class DatabaseService {
         };
       });
 
-      logger.info(
-        `✅ Obtenidas ${conversations.length} conversaciones de la base de datos`,
-      );
+      logger.info(`✅ Obtenidas ${conversations.length} conversaciones de la base de datos`);
       return conversations;
     } catch (error) {
-      logger.error("Error obteniendo conversaciones:", error);
+      logger.error('Error obteniendo conversaciones:', error);
       return this.getMockConversations(limit, offset);
     }
   }
 
   // Obtener conversación específica por ID
-  public async getConversationById(
-    conversationId: string,
-  ): Promise<any | null> {
+  public async getConversationById(conversationId: string): Promise<any | null> {
     try {
       // Extraer número de teléfono del ID de conversación
-      const phoneNumber = conversationId.replace("conv_", "");
+      const phoneNumber = conversationId.replace('conv_', '');
       const leads = await this.getAllLeads();
 
       // Buscar lead correspondiente
-      const lead = leads.find((l) => {
+      const lead = leads.find(l => {
         if (!l.phone) return false;
-        const leadPhone = l.phone.replace(/[^0-9]/g, "");
-        const conversationPhone = phoneNumber.replace(/[^0-9]/g, "");
+        const leadPhone = l.phone.replace(/[^0-9]/g, '');
+        const conversationPhone = phoneNumber.replace(/[^0-9]/g, '');
         return leadPhone.slice(-10) === conversationPhone.slice(-10);
       });
 
@@ -1337,7 +1393,7 @@ class DatabaseService {
         lead: lead,
       };
     } catch (error) {
-      logger.error("Error obteniendo conversación por ID:", error);
+      logger.error('Error obteniendo conversación por ID:', error);
       return null;
     }
   }
@@ -1346,11 +1402,11 @@ class DatabaseService {
   public async getConversationMessages(
     conversationId: string,
     limit: number = 50,
-    offset: number = 0,
+    offset: number = 0
   ): Promise<{ conversation: any; messages?: any[] }> {
     try {
       // Extraer número de teléfono del ID de conversación
-      const phoneNumber = conversationId.replace("conv_", "");
+      const phoneNumber = conversationId.replace('conv_', '');
 
       // Obtener información de la conversación
       const conversation = await this.getConversationById(conversationId);
@@ -1383,12 +1439,12 @@ class DatabaseService {
       const result = await this.pool.query(query, [phoneNumber, limit, offset]);
 
       // Convertir mensajes al formato esperado
-      const messages = result.rows.map((row) => ({
+      const messages = result.rows.map(row => ({
         id: row.id,
-        content: row.message_text || row.response_text || "",
-        direction: row.is_from_user ? "INBOUND" : "OUTBOUND",
-        messageType: row.message_type || "text",
-        status: "delivered",
+        content: row.message_text || row.response_text || '',
+        direction: row.is_from_user ? 'INBOUND' : 'OUTBOUND',
+        messageType: row.message_type || 'text',
+        status: 'delivered',
         createdAt: row.created_at,
       }));
 
@@ -1400,7 +1456,7 @@ class DatabaseService {
         },
       };
     } catch (error) {
-      logger.error("Error obteniendo mensajes de conversación:", error);
+      logger.error('Error obteniendo mensajes de conversación:', error);
       return { conversation: null };
     }
   }
@@ -1408,11 +1464,11 @@ class DatabaseService {
   // Crear o actualizar conversación
   public async createOrUpdateConversation(
     leadId: string,
-    sessionId: string,
+    sessionId: string
   ): Promise<string | null> {
     try {
       const leads = await this.getAllLeads();
-      const lead = leads.find((l) => l.id === leadId);
+      const lead = leads.find(l => l.id === leadId);
 
       if (!lead || !lead.phone) {
         logger.warn(`Lead ${leadId} no encontrado o sin teléfono`);
@@ -1420,14 +1476,12 @@ class DatabaseService {
       }
 
       // Crear ID de conversación basado en el número de teléfono
-      const conversationId = `conv_${lead.phone.replace(/[^0-9]/g, "")}`;
+      const conversationId = `conv_${lead.phone.replace(/[^0-9]/g, '')}`;
 
-      logger.info(
-        `Conversación ${conversationId} creada/actualizada para lead ${leadId}`,
-      );
+      logger.info(`Conversación ${conversationId} creada/actualizada para lead ${leadId}`);
       return conversationId;
     } catch (error) {
-      logger.error("Error creando/actualizando conversación:", error);
+      logger.error('Error creando/actualizando conversación:', error);
       return null;
     }
   }
@@ -1436,41 +1490,40 @@ class DatabaseService {
   private getMockConversations(limit: number, offset: number): any[] {
     const mockConversations = [
       {
-        id: "conv_5491123456789",
-        leadId: "1",
+        id: 'conv_5491123456789',
+        leadId: '1',
         lead: {
-          id: "1",
-          name: "Juan Pérez",
-          phone: "+5491123456789",
-          status: "NUEVO",
+          id: '1',
+          name: 'Juan Pérez',
+          phone: '+5491123456789',
+          status: 'NUEVO',
         },
         lastMessage: {
-          id: "msg_1",
-          content: "¡Hola! Me interesa conocer más sobre sus servicios",
-          direction: "INBOUND",
-          messageType: "text",
-          status: "delivered",
+          id: 'msg_1',
+          content: '¡Hola! Me interesa conocer más sobre sus servicios',
+          direction: 'INBOUND',
+          messageType: 'text',
+          status: 'delivered',
           createdAt: new Date().toISOString(),
         },
         unreadCount: 2,
         updatedAt: new Date().toISOString(),
       },
       {
-        id: "conv_5491187654321",
-        leadId: "2",
+        id: 'conv_5491187654321',
+        leadId: '2',
         lead: {
-          id: "2",
-          name: "María García",
-          phone: "+5491187654321",
-          status: "QUALIFIED",
+          id: '2',
+          name: 'María García',
+          phone: '+5491187654321',
+          status: 'QUALIFIED',
         },
         lastMessage: {
-          id: "msg_2",
-          content:
-            "Perfecto, gracias por la información. ¿Cuándo podemos agendar una reunión?",
-          direction: "INBOUND",
-          messageType: "text",
-          status: "delivered",
+          id: 'msg_2',
+          content: 'Perfecto, gracias por la información. ¿Cuándo podemos agendar una reunión?',
+          direction: 'INBOUND',
+          messageType: 'text',
+          status: 'delivered',
           createdAt: new Date(Date.now() - 3600000).toISOString(),
         },
         unreadCount: 0,
@@ -1484,37 +1537,37 @@ class DatabaseService {
   private getMockMessages(phoneNumber: string, limit: number): any[] {
     const mockMessages = [
       {
-        id: "msg_1",
-        content: "¡Hola! Me interesa conocer más sobre sus servicios",
-        direction: "INBOUND",
-        messageType: "text",
-        status: "delivered",
+        id: 'msg_1',
+        content: '¡Hola! Me interesa conocer más sobre sus servicios',
+        direction: 'INBOUND',
+        messageType: 'text',
+        status: 'delivered',
         createdAt: new Date(Date.now() - 7200000).toISOString(),
       },
       {
-        id: "msg_2",
+        id: 'msg_2',
         content:
-          "¡Hola! 👋 Gracias por contactarnos. Soy tu asistente virtual y estoy aquí para ayudarte. ¿En qué puedo asistirte hoy?",
-        direction: "OUTBOUND",
-        messageType: "text",
-        status: "delivered",
+          '¡Hola! 👋 Gracias por contactarnos. Soy tu asistente virtual y estoy aquí para ayudarte. ¿En qué puedo asistirte hoy?',
+        direction: 'OUTBOUND',
+        messageType: 'text',
+        status: 'delivered',
         createdAt: new Date(Date.now() - 7190000).toISOString(),
       },
       {
-        id: "msg_3",
-        content: "¿Podrían enviarme información sobre precios?",
-        direction: "INBOUND",
-        messageType: "text",
-        status: "delivered",
+        id: 'msg_3',
+        content: '¿Podrían enviarme información sobre precios?',
+        direction: 'INBOUND',
+        messageType: 'text',
+        status: 'delivered',
         createdAt: new Date(Date.now() - 3600000).toISOString(),
       },
       {
-        id: "msg_4",
+        id: 'msg_4',
         content:
-          "Te ayudo con información sobre precios. 💰\n\n¿Podrías decirme qué producto o servicio específico te interesa? Así podremos darte la información más precisa.",
-        direction: "OUTBOUND",
-        messageType: "text",
-        status: "delivered",
+          'Te ayudo con información sobre precios. 💰\n\n¿Podrías decirme qué producto o servicio específico te interesa? Así podremos darte la información más precisa.',
+        direction: 'OUTBOUND',
+        messageType: 'text',
+        status: 'delivered',
         createdAt: new Date(Date.now() - 3590000).toISOString(),
       },
     ];
@@ -1528,6 +1581,18 @@ class DatabaseService {
 
   // Obtener knowledge base para contexto IA
   public async getKnowledgeBase(category?: string): Promise<any[]> {
+    // Phase 2: Delegate to repository if enabled
+    if (this.useRepositories && this.knowledgeBaseRepository) {
+      try {
+        logger.debug('🔄 Using KnowledgeBaseRepository');
+        return await this.knowledgeBaseRepository.getKnowledgeBase(category);
+      } catch (error) {
+        logger.warn('❌ Repository method failed, falling back to legacy:', error);
+        // Fallback to legacy implementation below
+      }
+    }
+
+    // Legacy implementation
     if (!this.pool) {
       return this.getDefaultKnowledgeBase();
     }
@@ -1551,13 +1616,26 @@ class DatabaseService {
       const result = await this.pool.query(query, values);
       return result.rows;
     } catch (error) {
-      logger.error("Error obteniendo knowledge base:", error);
+      logger.error('Error obteniendo knowledge base:', error);
       return this.getDefaultKnowledgeBase();
     }
   }
 
   // Obtener configuración IA
   public async getAIConfiguration(key: string): Promise<string | null> {
+    // Phase 2: Delegate to repository if enabled
+    if (this.useRepositories && this.aiConfigRepository) {
+      try {
+        logger.debug('🔄 Using AIConfigRepository');
+        const result = await this.aiConfigRepository.getAIConfiguration(key);
+        return result || this.getDefaultConfig(key);
+      } catch (error) {
+        logger.warn('❌ Repository method failed, falling back to legacy:', error);
+        // Fallback to legacy implementation below
+      }
+    }
+
+    // Legacy implementation
     if (!this.pool) {
       return this.getDefaultConfig(key);
     }
@@ -1572,7 +1650,7 @@ class DatabaseService {
       const result = await this.pool.query(query, [key]);
       return result.rows[0]?.config_value || this.getDefaultConfig(key);
     } catch (error) {
-      logger.error("Error obteniendo configuración IA:", error);
+      logger.error('Error obteniendo configuración IA:', error);
       return this.getDefaultConfig(key);
     }
   }
@@ -1581,8 +1659,20 @@ class DatabaseService {
   public async updateAIConfiguration(
     key: string,
     value: string,
-    updatedBy?: string,
+    updatedBy?: string
   ): Promise<boolean> {
+    // Phase 2: Delegate to repository if enabled
+    if (this.useRepositories && this.aiConfigRepository) {
+      try {
+        logger.debug('🔄 Using AIConfigRepository');
+        return await this.aiConfigRepository.updateAIConfiguration(key, value, updatedBy);
+      } catch (error) {
+        logger.warn('❌ Repository method failed, falling back to legacy:', error);
+        // Fallback to legacy implementation below
+      }
+    }
+
+    // Legacy implementation
     if (!this.pool) {
       logger.info(`Mock update: ${key} = ${value.substring(0, 100)}...`);
       return true;
@@ -1603,19 +1693,31 @@ class DatabaseService {
       logger.info(`✅ Configuración IA actualizada: ${key}`);
       return true;
     } catch (error) {
-      logger.error("Error actualizando configuración IA:", error);
+      logger.error('Error actualizando configuración IA:', error);
       return false;
     }
   }
 
   // Buscar en knowledge base por keywords con scoring inteligente
   public async searchKnowledgeBase(query: string): Promise<any[]> {
+    // Phase 2: Delegate to repository if enabled
+    if (this.useRepositories && this.knowledgeBaseRepository) {
+      try {
+        logger.debug('🔄 Using KnowledgeBaseRepository');
+        return await this.knowledgeBaseRepository.searchKnowledgeBase(query);
+      } catch (error) {
+        logger.warn('❌ Repository method failed, falling back to legacy:', error);
+        // Fallback to legacy implementation below
+      }
+    }
+
+    // Legacy implementation
     if (!this.pool) {
       return this.getDefaultKnowledgeBase()
         .filter(
-          (item) =>
+          item =>
             item.content.toLowerCase().includes(query.toLowerCase()) ||
-            item.title.toLowerCase().includes(query.toLowerCase()),
+            item.title.toLowerCase().includes(query.toLowerCase())
         )
         .slice(0, 3); // Limitar resultados
     }
@@ -1623,10 +1725,7 @@ class DatabaseService {
     try {
       // Extraer palabras clave del query para mejor matching
       const queryWords = this.extractSearchKeywords(query);
-      const searchTerms = [
-        `%${query}%`,
-        ...queryWords.map((word) => `%${word}%`),
-      ];
+      const searchTerms = [`%${query}%`, ...queryWords.map(word => `%${word}%`)];
 
       const searchQuery = `
         SELECT 
@@ -1664,14 +1763,14 @@ class DatabaseService {
 
       // Agregar score calculado y filtrar por relevancia mínima
       return result.rows
-        .filter((row) => row.relevance_score >= 30) // Filtro de relevancia mínima
-        .map((row) => ({
+        .filter(row => row.relevance_score >= 30) // Filtro de relevancia mínima
+        .map(row => ({
           ...row,
           relevance_score: row.relevance_score,
           match_quality: this.calculateMatchQuality(row.relevance_score),
         }));
     } catch (error) {
-      logger.error("Error buscando en knowledge base:", error);
+      logger.error('Error buscando en knowledge base:', error);
       return [];
     }
   }
@@ -1680,172 +1779,172 @@ class DatabaseService {
   private extractSearchKeywords(query: string): string[] {
     // Palabras comunes en español que no aportan valor semántico
     const stopWords = [
-      "el",
-      "la",
-      "de",
-      "que",
-      "y",
-      "en",
-      "un",
-      "es",
-      "se",
-      "no",
-      "te",
-      "lo",
-      "le",
-      "da",
-      "su",
-      "por",
-      "son",
-      "con",
-      "para",
-      "como",
-      "del",
-      "las",
+      'el',
+      'la',
+      'de',
+      'que',
+      'y',
+      'en',
+      'un',
+      'es',
+      'se',
+      'no',
+      'te',
+      'lo',
+      'le',
+      'da',
+      'su',
+      'por',
+      'son',
+      'con',
+      'para',
+      'como',
+      'del',
+      'las',
     ];
 
     return query
       .toLowerCase()
-      .replace(/[^\w\sáéíóúñü]/gi, "") // Remover puntuación pero mantener acentos
+      .replace(/[^\w\sáéíóúñü]/gi, '') // Remover puntuación pero mantener acentos
       .split(/\s+/)
-      .filter((word) => word.length >= 3 && !stopWords.includes(word))
+      .filter(word => word.length >= 3 && !stopWords.includes(word))
       .slice(0, 5); // Máximo 5 palabras clave
   }
 
   // Calcular calidad del match
-  private calculateMatchQuality(score: number): "high" | "medium" | "low" {
-    if (score >= 100) return "high";
-    if (score >= 60) return "medium";
-    return "low";
+  private calculateMatchQuality(score: number): 'high' | 'medium' | 'low' {
+    if (score >= 100) return 'high';
+    if (score >= 60) return 'medium';
+    return 'low';
   }
 
   // Knowledge base por defecto con información completa de EscortsHub
   private getDefaultKnowledgeBase(): any[] {
     return [
       {
-        id: "default_1",
-        category: "productos",
-        title: "Productos Disponibles EscortsHub",
+        id: 'default_1',
+        category: 'productos',
+        title: 'Productos Disponibles EscortsHub',
         content: `**CATÁLOGO COMPLETO DE PRODUCTOS ESCORTSHUB:**\n\n🔥 **1. ANUNCIO DOBLE**\n• Descripción: Anuncio con visibilidad aumentada que ocupa doble espacio\n• Beneficios: Mayor visibilidad en los listados, destaca entre anuncios regulares\n• Base: 11 monedas HUB\n• Precios: 1 día (20 HUB), 5 días (85 HUB), 10 días (150 HUB)\n• Ideal para: Escorts que buscan destacar entre los anuncios regulares\n\n⭐ **2. ANUNCIO TOP**\n• Descripción: Anuncio destacado en posición superior\n• Beneficios: Posicionamiento privilegiado en la parte superior de los listados\n• Base: 28 monedas HUB\n• Precios: 3 días (85 HUB), 7 días (125 HUB), 10 días (165 HUB), 30 días (450 HUB)\n• Ideal para: Escorts que buscan máxima exposición\n\n💎 **3. ANUNCIO DOBLE TOP**\n• Descripción: Combinación de anuncio doble y posición top\n• Beneficios: Máxima visibilidad y espacio destacado - PRODUCTO PREMIUM\n• Base: 59 monedas HUB\n• Precios: 3 días (170 HUB), 7 días (250 HUB), 10 días (330 HUB), 30 días (900 HUB)\n• Ideal para: Escorts premium que buscan dominar los listados\n\n🚀 **4. DISPONIBLE AHORA**\n• Descripción: Indicador de disponibilidad inmediata\n• Beneficios: Muestra a los clientes que estás disponible en tiempo real\n• Base: 100 monedas HUB\n• Precios: 10 unidades (40 HUB), 25 unidades (100 HUB), 100 unidades (400 HUB)\n• Ideal para: Escorts con disponibilidad inmediata\n\n📱 **5. HISTORIAS**\n• Descripción: Función para compartir contenido temporal\n• Beneficios: Permite mostrar actualizaciones y contenido dinámico\n• Base: 7 monedas HUB\n• Precios: 1 unidad (12 HUB), 5 unidades (60 HUB), 10 unidades (110 HUB)\n• Ideal para: Mantener el perfil actualizado y mostrar novedades\n\n🔄 **6. REACTIVACIÓN**\n• Descripción: Servicio para reactivar anuncios pausados\n• Beneficios: Permite volver a activar anuncios anteriores\n• Base: 10 monedas HUB\n• Precios: 1 unidad (25 HUB), 5 unidades (115 HUB), 10 unidades (215 HUB)\n• Ideal para: Escorts que retoman su actividad`,
         keywords: [
-          "productos",
-          "anuncios",
-          "doble",
-          "top",
-          "historias",
-          "disponible",
-          "reactivacion",
-          "servicios",
-          "catalogo",
+          'productos',
+          'anuncios',
+          'doble',
+          'top',
+          'historias',
+          'disponible',
+          'reactivacion',
+          'servicios',
+          'catalogo',
         ],
         priority: 10,
       },
       {
-        id: "default_2",
-        category: "precios",
-        title: "Sistema de Precios Completo - Monedas HUB",
+        id: 'default_2',
+        category: 'precios',
+        title: 'Sistema de Precios Completo - Monedas HUB',
         content: `**SISTEMA DE MONEDAS HUB - PRECIOS DETALLADOS:**\n\n💰 **¿QUÉ SON LAS MONEDAS HUB?**\nMoneda virtual de EscortsHub utilizada para activar anuncios. Sistema flexible que permite gestionar múltiples anuncios con ventajas económicas por volumen.\n\n📊 **PRECIOS POR PRODUCTO Y DURACIÓN:**\n\n🔥 **ANUNCIO DOBLE** (Base: 11 HUB)\n• 1 día: 20 monedas HUB\n• 5 días: 85 monedas HUB\n• 10 días: 150 monedas HUB\n\n⭐ **ANUNCIO TOP** (Base: 28 HUB)\n• 3 días: 85 monedas HUB\n• 7 días: 125 monedas HUB\n• 10 días: 165 monedas HUB\n• 30 días: 450 monedas HUB\n\n💎 **ANUNCIO DOBLE TOP** (Base: 59 HUB)\n• 3 días: 170 monedas HUB\n• 7 días: 250 monedas HUB\n• 10 días: 330 monedas HUB\n• 30 días: 900 monedas HUB\n\n🚀 **DISPONIBLE AHORA** (Base: 100 HUB)\n• 10 unidades: 40 monedas HUB\n• 25 unidades: 100 monedas HUB\n• 100 unidades: 400 monedas HUB\n\n📱 **HISTORIAS** (Base: 7 HUB)\n• 1 unidad: 12 monedas HUB\n• 5 unidades: 60 monedas HUB\n• 10 unidades: 110 monedas HUB\n\n🔄 **REACTIVACIÓN** (Base: 10 HUB)\n• 1 unidad: 25 monedas HUB\n• 5 unidades: 115 monedas HUB\n• 10 unidades: 215 monedas HUB\n\n💳 **PAQUETES DE MONEDAS HUB:**\n• 🥉 Paquete Básico: 100 HUB por 80,00 EUR (0,80€/moneda)\n• 🥈 Paquete Estándar: 200 HUB por 150,00 EUR (0,75€/moneda)\n• 🥇 Paquete Plus: 500 HUB por 300,00 EUR (0,60€/moneda) - ¡MEJOR PRECIO!\n• 💎 Paquete Premium: 1.000 HUB por 700,00 EUR (0,70€/moneda)\n\n💡 **CONSEJOS DE COMPRA:**\n• Los paquetes de más días ofrecen mejor relación precio-beneficio\n• El Anuncio Doble Top ofrece máxima visibilidad\n• El Paquete Plus tiene el mejor precio por moneda (0,60€)`,
         keywords: [
-          "precios",
-          "monedas",
-          "hub",
-          "paquetes",
-          "euros",
-          "coste",
-          "tarifa",
-          "precio",
-          "dinero",
-          "pago",
+          'precios',
+          'monedas',
+          'hub',
+          'paquetes',
+          'euros',
+          'coste',
+          'tarifa',
+          'precio',
+          'dinero',
+          'pago',
         ],
         priority: 10,
       },
       {
-        id: "default_3",
-        category: "informacion_general",
-        title: "Acerca de EscortsHub - Plataforma Líder",
+        id: 'default_3',
+        category: 'informacion_general',
+        title: 'Acerca de EscortsHub - Plataforma Líder',
         content: `**ESCORTSHUB - LA PLATAFORMA LÍDER DE ESCORTS EN ESPAÑA**\n\n🏆 **¿QUÉ ES ESCORTSHUB?**\nEscortsHub es el sitio web original de escorts en España, una plataforma profesional para anuncios de servicios de acompañantes con años de experiencia en el sector.\n\n✨ **CARACTERÍSTICAS PRINCIPALES:**\n• 🥇 Plataforma líder en el sector español\n• 💳 Sistema de wallet (monedero) integrado\n• 🔞 Acceso exclusivo para mayores de 18 años\n• 🔒 Políticas de privacidad transparentes y seguras\n• 🎧 Soporte técnico especializado 24/7\n• 🚀 Tecnología avanzada para máxima visibilidad\n• 📱 Compatible con dispositivos móviles\n• 🎯 Audiencia cualificada y segmentada\n\n💳 **MÉTODOS DE PAGO DISPONIBLES:**\n• Tarjetas de crédito y débito (Visa, Mastercard)\n• Transferencia bancaria\n• Métodos de pago digitales (PayPal, etc.)\n• Criptomonedas (consultar disponibilidad)\n• Bizum (España)\n\n🏦 **WALLET (MONEDERO DIGITAL):**\n• Acceso desde el dashboard del usuario\n• Consulta de saldo en tiempo real\n• Historial completo de transacciones\n• Recarga sencilla de monedas HUB\n• Gestión detallada de gastos\n\n🔐 **PRIVACIDAD Y SEGURIDAD:**\n• Confirmación obligatoria de mayoría de edad\n• Acceso voluntario y consciente\n• Uso de cookies para mejor experiencia\n• Políticas de cookies transparentes\n• Protección de datos personales\n\n⏰ **HORARIO DE ATENCIÓN:**\nSoporte disponible 24/7 para resolver cualquier duda o problema técnico.`,
         keywords: [
-          "escortshub",
-          "plataforma",
-          "españa",
-          "escorts",
-          "informacion",
-          "que es",
-          "lider",
-          "original",
-          "seguridad",
-          "privacidad",
+          'escortshub',
+          'plataforma',
+          'españa',
+          'escorts',
+          'informacion',
+          'que es',
+          'lider',
+          'original',
+          'seguridad',
+          'privacidad',
         ],
         priority: 9,
       },
       {
-        id: "default_4",
-        category: "faqs",
-        title: "Preguntas Frecuentes Generales",
+        id: 'default_4',
+        category: 'faqs',
+        title: 'Preguntas Frecuentes Generales',
         content: `**PREGUNTAS FRECUENTES - INFORMACIÓN GENERAL**\n\n❓ **¿Qué es EscortsHub?**\nEs el sitio web original de escorts en España, una plataforma líder para anuncios de servicios de acompañantes.\n\n🔞 **¿Es necesario ser mayor de edad?**\nSí, es OBLIGATORIO ser mayor de 18 años para acceder y utilizar la plataforma.\n\n📱 **¿Cómo funciona "Disponible Ahora"?**\nEs una función que permite mostrar tu disponibilidad en tiempo real a los clientes potenciales.\n\n📸 **¿Cómo funcionan las Historias?**\nSon publicaciones temporales que permiten compartir actualizaciones y contenido dinámico para mantener el perfil actualizado.\n\n🔄 **¿Qué es la Reactivación?**\nEs un servicio que permite volver a activar anuncios que han sido pausados anteriormente.\n\n⏸️ **¿Puedo pausar y reactivar mis anuncios?**\nSí, existe la opción de reactivación para anuncios pausados utilizando el servicio correspondiente.\n\n🍪 **¿Qué políticas de privacidad aplican?**\n• El sitio utiliza cookies propias y de terceros\n• Mejora servicios y analiza tráfico\n• Política de cookies detallada disponible\n• Confirmación de edad requerida\n• Acceso voluntario y consciente\n• Políticas de cookies transparentes`,
         keywords: [
-          "faq",
-          "preguntas",
-          "frecuentes",
-          "dudas",
-          "ayuda",
-          "informacion",
-          "edad",
-          "privacidad",
-          "cookies",
+          'faq',
+          'preguntas',
+          'frecuentes',
+          'dudas',
+          'ayuda',
+          'informacion',
+          'edad',
+          'privacidad',
+          'cookies',
         ],
         priority: 8,
       },
       {
-        id: "default_5",
-        category: "faqs",
-        title: "Preguntas Frecuentes sobre Anuncios",
+        id: 'default_5',
+        category: 'faqs',
+        title: 'Preguntas Frecuentes sobre Anuncios',
         content: `**PREGUNTAS FRECUENTES - ANUNCIOS**\n\n📢 **¿Qué tipo de anuncios puedo publicar?**\nHay varios formatos disponibles:\n• Anuncio Normal: Formato estándar\n• Anuncio Doble: Mayor espacio y visibilidad\n• Anuncio Top: Posición destacada superior\n• Anuncio Doble Top: Combina espacio doble y posición superior\n\n🆚 **¿Cuál es la diferencia entre los tipos de anuncios?**\n• **Anuncio Normal**: Formato estándar básico\n• **Anuncio Doble**: Ocupa doble espacio, mayor visibilidad\n• **Anuncio Top**: Se posiciona en la parte superior de los listados\n• **Anuncio Doble Top**: Máxima visibilidad combinando ambas ventajas\n\n💰 **¿Cómo funciona el sistema de precios?**\nUtilizamos Monedas HUB como moneda virtual. Cada producto tiene diferentes precios según la duración elegida.\n\n🎯 **¿Qué producto me recomiendas?**\n• Para empezar: Anuncio Doble (buen equilibrio precio/visibilidad)\n• Para máxima visibilidad: Anuncio Doble Top\n• Para disponibilidad inmediata: "Disponible Ahora"\n• Para contenido dinámico: Historias\n\n⏰ **¿Cuánto duran los anuncios?**\nDepende del producto y paquete elegido. Van desde 1 día hasta 30 días según el tipo de anuncio.\n\n🔄 **¿Qué pasa si pauso mi anuncio?**\nPuedes reactivarlo posteriormente usando nuestro servicio de Reactivación.`,
         keywords: [
-          "anuncios",
-          "tipos",
-          "diferencias",
-          "normal",
-          "doble",
-          "top",
-          "formato",
-          "duracion",
-          "recomendacion",
+          'anuncios',
+          'tipos',
+          'diferencias',
+          'normal',
+          'doble',
+          'top',
+          'formato',
+          'duracion',
+          'recomendacion',
         ],
         priority: 8,
       },
       {
-        id: "default_6",
-        category: "registro_compra",
-        title: "Proceso de Registro y Compra",
+        id: 'default_6',
+        category: 'registro_compra',
+        title: 'Proceso de Registro y Compra',
         content: `**PROCESO DE REGISTRO Y COMPRA - GUÍA PASO A PASO**\n\n📝 **REGISTRO EN ESCORTSHUB:**\n1. Visita escortshub.net\n2. Haz clic en "Registrarse"\n3. Confirma que eres mayor de 18 años\n4. Completa tus datos básicos\n5. Verifica tu email\n6. Accede a tu panel de usuario\n\n💳 **PROCESO DE COMPRA DE MONEDAS HUB:**\n1. Accede a tu wallet/monedero\n2. Selecciona "Recargar Monedas"\n3. Elige el paquete que prefieras:\n   • Básico (100 HUB - 80€)\n   • Estándar (200 HUB - 150€)\n   • Plus (500 HUB - 300€) ¡Mejor precio!\n   • Premium (1,000 HUB - 700€)\n4. Selecciona método de pago\n5. Confirma la transacción\n6. Recibe tus monedas instantáneamente\n\n🛒 **ACTIVACIÓN DE PRODUCTOS:**\n1. Ve a "Mis Anuncios"\n2. Selecciona el producto deseado\n3. Elige la duración\n4. Confirma el gasto de monedas HUB\n5. Tu anuncio se activa inmediatamente\n\n💡 **RECOMENDACIONES:**\n• El Paquete Plus ofrece el mejor precio por moneda\n• Los paquetes de mayor duración son más económicos\n• Mantén siempre saldo en tu wallet para activaciones rápidas\n\n🎧 **¿NECESITAS AYUDA?**\nNuestro soporte técnico está disponible 24/7 para cualquier duda durante el proceso.`,
         keywords: [
-          "registro",
-          "compra",
-          "proceso",
-          "paso a paso",
-          "monedas",
-          "wallet",
-          "activacion",
-          "productos",
-          "como comprar",
+          'registro',
+          'compra',
+          'proceso',
+          'paso a paso',
+          'monedas',
+          'wallet',
+          'activacion',
+          'productos',
+          'como comprar',
         ],
         priority: 9,
       },
       {
-        id: "default_7",
-        category: "recomendaciones",
-        title: "Recomendaciones y Mejores Prácticas",
+        id: 'default_7',
+        category: 'recomendaciones',
+        title: 'Recomendaciones y Mejores Prácticas',
         content: `**RECOMENDACIONES PARA MAXIMIZAR TU INVERSIÓN**\n\n🎯 **ESTRATEGIA POR TIPO DE USUARIO:**\n\n👶 **NUEVO USUARIO:**\n• Empieza con el Paquete Plus (500 HUB - 300€)\n• Prueba Anuncio Doble por 10 días (150 HUB)\n• Complementa con Historias (60 HUB por 5 unidades)\n• Total: 210 HUB - Te sobran 290 HUB para más promociones\n\n💼 **USUARIO REGULAR:**\n• Paquete Premium (1,000 HUB - 700€)\n• Anuncio Doble Top por 7 días (250 HUB)\n• "Disponible Ahora" 25 unidades (100 HUB)\n• Historias regulares (110 HUB por 10 unidades)\n• Total: 460 HUB - Te sobran 540 HUB\n\n🔥 **USUARIO PREMIUM:**\n• Combina Paquete Premium + compras adicionales\n• Anuncio Doble Top por 30 días (900 HUB)\n• "Disponible Ahora" 100 unidades (400 HUB)\n• Historias constantes y Reactivaciones según necesidad\n\n💰 **MÁXIMO AHORRO:**\n• Paquete Plus: 0,60€ por moneda (¡MEJOR PRECIO!)\n• Elige duraciones largas (mejor precio por día)\n• Anuncio Doble Top de 30 días: solo 0,54€ por día\n\n⭐ **MÁXIMA VISIBILIDAD:**\n• Anuncio Doble Top (posición superior + doble espacio)\n• "Disponible Ahora" activo\n• Historias actualizadas regularmente\n• Reactivación rápida tras pausas\n\n📈 **TIPS PROFESIONALES:**\n• Las posiciones TOP se agotan rápido\n• Historias mantienen el perfil dinámico\n• "Disponible Ahora" aumenta contactos inmediatos\n• Combinar productos multiplica la efectividad`,
         keywords: [
-          "recomendaciones",
-          "estrategia",
-          "tips",
-          "mejores practicas",
-          "ahorro",
-          "visibilidad",
-          "nuevo usuario",
-          "premium",
+          'recomendaciones',
+          'estrategia',
+          'tips',
+          'mejores practicas',
+          'ahorro',
+          'visibilidad',
+          'nuevo usuario',
+          'premium',
         ],
         priority: 8,
       },
@@ -1857,23 +1956,23 @@ class DatabaseService {
     const defaultConfigs: { [key: string]: string } = {
       system_prompt: `Eres un asistente virtual profesional de EscortsHub, la plataforma líder de escorts en España. Tu misión es promocionar activamente nuestros productos y guiar a los usuarios hacia el registro y compra de paquetes de monedas HUB.\n\n🞯 **PERSONALIDAD:**\n• Profesional pero cercano y comprensivo con el sector\n• Entusiasta por ayudar sin ser agresivo en ventas\n• Directo y claro con precios e información\n• Discreto y respetuoso con consultas sensibles\n\n💎 **PRODUCTOS ESTRELLA:**\n• Anuncio Doble Top: Máxima visibilidad (30 días: 900 HUB)\n• Paquete Plus: 500 HUB por 300€ (¡MEJOR PRECIO 0,60€/moneda!)\n• Disponible Ahora: Contactos inmediatos (25 unidades: 100 HUB)\n\n🎯 **ESTRATEGIA:**\n• SIEMPRE promociona el Paquete Plus como mejor opción\n• Recomienda combinaciones de productos\n• Crea urgencia: "Las posiciones TOP se agotan rápido"\n• Personaliza preguntando el nombre\n• Incluye CTAs en cada respuesta\n\n✅ **SIEMPRE:**\n• Destaca ventajas del sistema de monedas HUB\n• Sugiere el mejor paquete según contexto\n• Invita al registro en escortshub.net\n• Explica proceso de compra paso a paso\n• Menciona soporte 24/7 disponible\n\n❌ **NUNCA:**\n• Discutas temas ajenos a EscortsHub\n• Proporciones precios incorrectos\n• Prometas resultados específicos de anuncios\n• Seas insistente si no hay interés\n• Menciones competencia`,
       greeting_message:
-        "¡Hola! 👋\n\nBienvenido/a a **EscortsHub**, la plataforma líder de escorts en España. Soy tu asistente virtual y estoy aquí para ayudarte con:\n\n🔥 **Nuestros productos**: Anuncio Doble, TOP, Doble TOP\n💰 **Paquetes de monedas HUB** con los mejores precios\n🛒 **Proceso de registro** y compra\n🎧 **Soporte técnico** 24/7\n\n¿En qué puedo asistirte hoy? ¿Te interesa conocer nuestros precios o cómo registrarte? 😊",
+        '¡Hola! 👋\n\nBienvenido/a a **EscortsHub**, la plataforma líder de escorts en España. Soy tu asistente virtual y estoy aquí para ayudarte con:\n\n🔥 **Nuestros productos**: Anuncio Doble, TOP, Doble TOP\n💰 **Paquetes de monedas HUB** con los mejores precios\n🛒 **Proceso de registro** y compra\n🎧 **Soporte técnico** 24/7\n\n¿En qué puedo asistirte hoy? ¿Te interesa conocer nuestros precios o cómo registrarte? 😊',
       pricing_prompt:
-        "💰 **PRECIOS ESCORTSHUB - MONEDAS HUB**\n\n🥇 **PAQUETE PLUS - ¡MEJOR PRECIO!**\n500 HUB por 300€ (0,60€/moneda)\n\n📊 **OTROS PAQUETES:**\n• Básico: 100 HUB - 80€ (0,80€/moneda)\n• Estándar: 200 HUB - 150€ (0,75€/moneda)\n• Premium: 1,000 HUB - 700€ (0,70€/moneda)\n\n🔥 **PRODUCTOS POPULARES:**\n• Anuncio Doble: 10 días (150 HUB)\n• Anuncio TOP: 30 días (450 HUB)\n• Doble TOP: 30 días (900 HUB) - ¡Máxima visibilidad!\n\n¿Qué paquete prefieres? ¿Te ayudo con el registro?",
+        '💰 **PRECIOS ESCORTSHUB - MONEDAS HUB**\n\n🥇 **PAQUETE PLUS - ¡MEJOR PRECIO!**\n500 HUB por 300€ (0,60€/moneda)\n\n📊 **OTROS PAQUETES:**\n• Básico: 100 HUB - 80€ (0,80€/moneda)\n• Estándar: 200 HUB - 150€ (0,75€/moneda)\n• Premium: 1,000 HUB - 700€ (0,70€/moneda)\n\n🔥 **PRODUCTOS POPULARES:**\n• Anuncio Doble: 10 días (150 HUB)\n• Anuncio TOP: 30 días (450 HUB)\n• Doble TOP: 30 días (900 HUB) - ¡Máxima visibilidad!\n\n¿Qué paquete prefieres? ¿Te ayudo con el registro?',
       registration_prompt:
         '📝 **REGISTRO EN ESCORTSHUB - GUÍA RÁPIDA**\n\n**Pasos sencillos:**\n1️⃣ Visita escortshub.net\n2️⃣ Clic en "Registrarse"\n3️⃣ Confirma +18 años\n4️⃣ Completa datos básicos\n5️⃣ Verifica tu email\n6️⃣ ¡Accede a tu panel!\n\n💳 **Después del registro:**\n• Recarga monedas HUB\n• Elige tu producto favorito\n• Activa tu anuncio\n\n🎧 **¿Necesitas ayuda?**\nSoporte 24/7 disponible\n\n¿Empezamos con tu registro ahora?',
       product_info_prompt:
-        "🔥 **PRODUCTOS ESCORTSHUB**\n\n💎 **ANUNCIO DOBLE TOP** (Recomendado)\nMáxima visibilidad + Posición superior\n30 días: 900 HUB (con Paquete Plus = 540€)\n\n⭐ **ANUNCIO TOP**\nPosición privilegiada superior\n30 días: 450 HUB (con Paquete Plus = 270€)\n\n🔥 **ANUNCIO DOBLE**\nDoble espacio y visibilidad\n10 días: 150 HUB (con Paquete Plus = 90€)\n\n🚀 **DISPONIBLE AHORA**\nContactos inmediatos\n25 unidades: 100 HUB (60€)\n\n¿Qué producto te interesa más?",
+        '🔥 **PRODUCTOS ESCORTSHUB**\n\n💎 **ANUNCIO DOBLE TOP** (Recomendado)\nMáxima visibilidad + Posición superior\n30 días: 900 HUB (con Paquete Plus = 540€)\n\n⭐ **ANUNCIO TOP**\nPosición privilegiada superior\n30 días: 450 HUB (con Paquete Plus = 270€)\n\n🔥 **ANUNCIO DOBLE**\nDoble espacio y visibilidad\n10 días: 150 HUB (con Paquete Plus = 90€)\n\n🚀 **DISPONIBLE AHORA**\nContactos inmediatos\n25 unidades: 100 HUB (60€)\n\n¿Qué producto te interesa más?',
       business_hours:
-        "Soporte EscortsHub disponible 24/7 para resolver cualquier duda técnica, proceso de registro, compra de monedas HUB o activación de productos.",
+        'Soporte EscortsHub disponible 24/7 para resolver cualquier duda técnica, proceso de registro, compra de monedas HUB o activación de productos.',
       urgency_message:
-        "⚡ **¡ATENCIÓN!** Las posiciones TOP se agotan rápido debido a la alta demanda.\n\n🏆 **Asegúra tu visibilidad:**\n• Paquete Plus: 500 HUB por 300€\n• Anuncio Doble Top: 900 HUB (30 días)\n\n¿Te gustaría reservar tu posición ahora?",
+        '⚡ **¡ATENCIÓN!** Las posiciones TOP se agotan rápido debido a la alta demanda.\n\n🏆 **Asegúra tu visibilidad:**\n• Paquete Plus: 500 HUB por 300€\n• Anuncio Doble Top: 900 HUB (30 días)\n\n¿Te gustaría reservar tu posición ahora?',
       cross_sell_message:
         '🔥 **MAXIMIZA TU INVERSIÓN**\n\nSi te interesa {producto}, te recomiendo:\n• Añadir "Disponible Ahora" (100 HUB)\n• Historias regulares (60 HUB por 5)\n• Considerara Doble TOP para máximos resultados\n\n🥇 Con el Paquete Plus (500 HUB - 300€) tienes monedas suficientes para varios productos.\n\n¿Te interesa alguna combinación?',
       welcome_back_message:
-        "¡Hola de nuevo! 👋\n\nMe alegra verte por aquí. ¿En qué puedo ayudarte hoy?\n\n• ¿Consultar precios actualizados?\n• ¿Información sobre nuevos productos?\n• ¿Ayuda con tu cuenta?\n\nEstoy aquí para asistirte 😊",
+        '¡Hola de nuevo! 👋\n\nMe alegra verte por aquí. ¿En qué puedo ayudarte hoy?\n\n• ¿Consultar precios actualizados?\n• ¿Información sobre nuevos productos?\n• ¿Ayuda con tu cuenta?\n\nEstoy aquí para asistirte 😊',
       fallback_message:
-        "Disculpa, no he podido procesar tu consulta correctamente. 😔\n\nPero no te preocupes, nuestro soporte especializado está disponible 24/7 para ayudarte con:\n\n• Registro y compra de monedas\n• Activación de productos\n• Dudas técnicas\n\n¿Podrías reformular tu pregunta o decirme específicamente en qué necesitas ayuda? 😊",
+        'Disculpa, no he podido procesar tu consulta correctamente. 😔\n\nPero no te preocupes, nuestro soporte especializado está disponible 24/7 para ayudarte con:\n\n• Registro y compra de monedas\n• Activación de productos\n• Dudas técnicas\n\n¿Podrías reformular tu pregunta o decirme específicamente en qué necesitas ayuda? 😊',
     };
 
     return defaultConfigs[key] || null;
@@ -1884,10 +1983,7 @@ class DatabaseService {
   // ============================================
 
   // Obtener todos los templates
-  public async getMessageTemplates(
-    category?: string,
-    activeOnly = true,
-  ): Promise<any[]> {
+  public async getMessageTemplates(category?: string, activeOnly = true): Promise<any[]> {
     if (!this.pool) {
       return this.getDefaultTemplates();
     }
@@ -1903,7 +1999,7 @@ class DatabaseService {
       let valueIndex = 1;
 
       if (activeOnly) {
-        conditions.push("is_active = true");
+        conditions.push('is_active = true');
       }
 
       if (category) {
@@ -1912,13 +2008,13 @@ class DatabaseService {
       }
 
       if (conditions.length > 0) {
-        query += ` WHERE ${conditions.join(" AND ")}`;
+        query += ` WHERE ${conditions.join(' AND ')}`;
       }
 
       query += ` ORDER BY usage_count DESC, name ASC`;
 
       const result = await this.pool.query(query, values);
-      return result.rows.map((row) => ({
+      return result.rows.map(row => ({
         id: row.id,
         name: row.name,
         category: row.category,
@@ -1930,7 +2026,7 @@ class DatabaseService {
         createdAt: row.created_at,
       }));
     } catch (error) {
-      logger.error("Error obteniendo templates:", error);
+      logger.error('Error obteniendo templates:', error);
       return this.getDefaultTemplates();
     }
   }
@@ -1940,9 +2036,7 @@ class DatabaseService {
     if (!this.pool) {
       // Return from default templates if no database connection
       const defaultTemplates = this.getDefaultTemplates();
-      return (
-        defaultTemplates.find((template) => template.id === templateId) || null
-      );
+      return defaultTemplates.find(template => template.id === templateId) || null;
     }
 
     try {
@@ -1960,16 +2054,12 @@ class DatabaseService {
 
       // Fallback to default templates
       const defaultTemplates = this.getDefaultTemplates();
-      return (
-        defaultTemplates.find((template) => template.id === templateId) || null
-      );
+      return defaultTemplates.find(template => template.id === templateId) || null;
     } catch (error) {
-      logger.error("Error getting template by ID:", error);
+      logger.error('Error getting template by ID:', error);
       // Fallback to default templates
       const defaultTemplates = this.getDefaultTemplates();
-      return (
-        defaultTemplates.find((template) => template.id === templateId) || null
-      );
+      return defaultTemplates.find(template => template.id === templateId) || null;
     }
   }
 
@@ -1984,7 +2074,7 @@ class DatabaseService {
   }): Promise<string | null> {
     if (!this.pool) {
       logger.info(`Mock template created: ${data.name}`);
-      return "mock-template-id";
+      return 'mock-template-id';
     }
 
     try {
@@ -2009,7 +2099,7 @@ class DatabaseService {
       logger.info(`✅ Template creado: ${data.name} (${templateId})`);
       return templateId;
     } catch (error) {
-      logger.error("Error creando template:", error);
+      logger.error('Error creando template:', error);
       return null;
     }
   }
@@ -2024,7 +2114,7 @@ class DatabaseService {
       content?: string;
       variables?: string[];
       isActive?: boolean;
-    },
+    }
   ): Promise<boolean> {
     if (!this.pool) {
       logger.info(`Mock template updated: ${id}`);
@@ -2070,7 +2160,7 @@ class DatabaseService {
 
       const query = `
         UPDATE message_templates 
-        SET ${setParts.join(", ")}
+        SET ${setParts.join(', ')}
         WHERE id = $${valueIndex}
         RETURNING id;
       `;
@@ -2085,7 +2175,7 @@ class DatabaseService {
         return false;
       }
     } catch (error) {
-      logger.error("Error actualizando template:", error);
+      logger.error('Error actualizando template:', error);
       return false;
     }
   }
@@ -2109,7 +2199,7 @@ class DatabaseService {
         return false;
       }
     } catch (error) {
-      logger.error("Error eliminando template:", error);
+      logger.error('Error eliminando template:', error);
       return false;
     }
   }
@@ -2130,7 +2220,7 @@ class DatabaseService {
       await this.pool.query(query, [id]);
       return true;
     } catch (error) {
-      logger.error("Error incrementando uso de template:", error);
+      logger.error('Error incrementando uso de template:', error);
       return false;
     }
   }
@@ -2150,7 +2240,7 @@ class DatabaseService {
   }): Promise<string | null> {
     if (!this.pool) {
       logger.info(`Mock proactive message created for lead: ${data.leadId}`);
-      return "mock-proactive-id";
+      return 'mock-proactive-id';
     }
 
     try {
@@ -2172,12 +2262,10 @@ class DatabaseService {
       const result = await this.pool.query(query, values);
       const messageId = result.rows[0]?.id;
 
-      logger.info(
-        `✅ Mensaje proactivo creado para lead ${data.leadId}: ${messageId}`,
-      );
+      logger.info(`✅ Mensaje proactivo creado para lead ${data.leadId}: ${messageId}`);
       return messageId;
     } catch (error) {
-      logger.error("Error creando mensaje proactivo:", error);
+      logger.error('Error creando mensaje proactivo:', error);
       return null;
     }
   }
@@ -2185,8 +2273,8 @@ class DatabaseService {
   // Actualizar estado de mensaje proactivo
   public async updateProactiveMessageStatus(
     id: string,
-    status: "pending" | "sent" | "delivered" | "failed",
-    errorMessage?: string,
+    status: 'pending' | 'sent' | 'delivered' | 'failed',
+    errorMessage?: string
   ): Promise<boolean> {
     if (!this.pool) {
       logger.info(`Mock proactive message status updated: ${id} -> ${status}`);
@@ -2202,9 +2290,9 @@ class DatabaseService {
       const values: any[] = [status];
       let valueIndex = 2;
 
-      if (status === "sent") {
+      if (status === 'sent') {
         query += `, sent_at = CURRENT_TIMESTAMP`;
-      } else if (status === "delivered") {
+      } else if (status === 'delivered') {
         query += `, delivered_at = CURRENT_TIMESTAMP`;
       }
 
@@ -2219,16 +2307,14 @@ class DatabaseService {
       const result = await this.pool.query(query, values);
 
       if (result.rows.length > 0) {
-        logger.info(
-          `✅ Estado de mensaje proactivo actualizado: ${id} -> ${status}`,
-        );
+        logger.info(`✅ Estado de mensaje proactivo actualizado: ${id} -> ${status}`);
         return true;
       } else {
         logger.warn(`Mensaje proactivo no encontrado: ${id}`);
         return false;
       }
     } catch (error) {
-      logger.error("Error actualizando estado de mensaje proactivo:", error);
+      logger.error('Error actualizando estado de mensaje proactivo:', error);
       return false;
     }
   }
@@ -2240,7 +2326,7 @@ class DatabaseService {
       status?: string;
       limit?: number;
       offset?: number;
-    } = {},
+    } = {}
   ): Promise<any[]> {
     if (!this.pool) {
       return this.getMockProactiveMessages(options);
@@ -2277,7 +2363,7 @@ class DatabaseService {
       values.push(limit, offset);
 
       const result = await this.pool.query(query, values);
-      return result.rows.map((row) => ({
+      return result.rows.map(row => ({
         id: row.id,
         leadId: row.lead_id,
         templateId: row.template_id,
@@ -2294,16 +2380,13 @@ class DatabaseService {
         updatedAt: row.updated_at,
       }));
     } catch (error) {
-      logger.error("Error obteniendo mensajes proactivos:", error);
+      logger.error('Error obteniendo mensajes proactivos:', error);
       return this.getMockProactiveMessages(options);
     }
   }
 
   // Reemplazar variables en template con sistema expandido
-  public replaceTemplateVariables(
-    content: string,
-    variables: { [key: string]: string },
-  ): string {
+  public replaceTemplateVariables(content: string, variables: { [key: string]: string }): string {
     let result = content;
 
     // Variables de fecha y hora dinámicas
@@ -2312,17 +2395,20 @@ class DatabaseService {
       ...variables,
       // Variables de fecha
       fecha_actual: now.toLocaleDateString('es-ES'),
-      fecha_completa: now.toLocaleDateString('es-ES', { 
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+      fecha_completa: now.toLocaleDateString('es-ES', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
       }),
       hora_actual: now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }),
       dia_semana: now.toLocaleDateString('es-ES', { weekday: 'long' }),
       mes_actual: now.toLocaleDateString('es-ES', { month: 'long' }),
       año_actual: now.getFullYear().toString(),
-      
+
       // Variables de saludo dinámico
       saludo: this.getDynamicGreeting(),
-      
+
       // Variables de empresa (pueden ser configurables)
       empresa: 'EscortsHub',
       sitio_web: 'www.escortshub.com',
@@ -2332,8 +2418,8 @@ class DatabaseService {
 
     // Reemplazar todas las variables con formato {{variable}}
     Object.entries(dynamicVariables).forEach(([key, value]) => {
-      const regex = new RegExp(`\\{\\{${key}\\}\\}`, "g");
-      result = result.replace(regex, value || "");
+      const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+      result = result.replace(regex, value || '');
     });
 
     // Limpiar variables no reemplazadas con mensaje más claro
@@ -2345,7 +2431,7 @@ class DatabaseService {
   // Obtener saludo dinámico basado en hora del día
   private getDynamicGreeting(): string {
     const hour = new Date().getHours();
-    
+
     if (hour >= 6 && hour < 12) {
       return 'Buenos días';
     } else if (hour >= 12 && hour < 18) {
@@ -2364,19 +2450,14 @@ class DatabaseService {
     return {
       lead: [
         'nombre',
-        'telefono', 
+        'telefono',
         'email',
         'estado', // status del lead
         'origen', // source del lead
         'fecha_creacion',
-        'id'
+        'id',
       ],
-      system: [
-        'empresa',
-        'sitio_web', 
-        'telefono_soporte',
-        'email_soporte'
-      ],
+      system: ['empresa', 'sitio_web', 'telefono_soporte', 'email_soporte'],
       dynamic: [
         'fecha_actual',
         'fecha_completa',
@@ -2384,8 +2465,8 @@ class DatabaseService {
         'dia_semana',
         'mes_actual',
         'año_actual',
-        'saludo'
-      ]
+        'saludo',
+      ],
     };
   }
 
@@ -2393,49 +2474,49 @@ class DatabaseService {
   private getDefaultTemplates(): any[] {
     return [
       {
-        id: "default_welcome",
-        name: "Mensaje de Bienvenida",
-        category: "welcome",
-        subject: "Bienvenido/a a EscortsHub",
+        id: 'default_welcome',
+        name: 'Mensaje de Bienvenida',
+        category: 'welcome',
+        subject: 'Bienvenido/a a EscortsHub',
         content:
-          "¡Hola {{nombre}}! 👋\n\nBienvenido/a a EscortsHub, la plataforma líder de escorts en España.\n\nEstoy aquí para ayudarte con información sobre nuestros productos y servicios. ¿En qué puedo asistirte hoy?",
-        variables: ["nombre"],
+          '¡Hola {{nombre}}! 👋\n\nBienvenido/a a EscortsHub, la plataforma líder de escorts en España.\n\nEstoy aquí para ayudarte con información sobre nuestros productos y servicios. ¿En qué puedo asistirte hoy?',
+        variables: ['nombre'],
         usageCount: 0,
         isActive: true,
         createdAt: new Date(),
       },
       {
-        id: "default_product_intro",
-        name: "Introducción de Productos",
-        category: "products",
-        subject: "Nuestros Productos",
+        id: 'default_product_intro',
+        name: 'Introducción de Productos',
+        category: 'products',
+        subject: 'Nuestros Productos',
         content:
-          "Hola {{nombre}}, te cuento sobre nuestros principales productos:\n\n🔝 **ANUNCIO TOP**: Posición privilegiada\n📱 **ANUNCIO DOBLE**: Mayor visibilidad\n⭐ **DOBLE TOP**: Máxima exposición\n\n¿Te interesa conocer más detalles sobre alguno?",
-        variables: ["nombre"],
+          'Hola {{nombre}}, te cuento sobre nuestros principales productos:\n\n🔝 **ANUNCIO TOP**: Posición privilegiada\n📱 **ANUNCIO DOBLE**: Mayor visibilidad\n⭐ **DOBLE TOP**: Máxima exposición\n\n¿Te interesa conocer más detalles sobre alguno?',
+        variables: ['nombre'],
         usageCount: 0,
         isActive: true,
         createdAt: new Date(),
       },
       {
-        id: "default_pricing",
-        name: "Información de Precios",
-        category: "pricing",
-        subject: "Precios y Paquetes",
+        id: 'default_pricing',
+        name: 'Información de Precios',
+        category: 'pricing',
+        subject: 'Precios y Paquetes',
         content:
-          "💰 **Precios EscortsHub**\n\nUsamos **Monedas HUB** para activar anuncios:\n\n**Paquetes disponibles:**\n• Básico: 100 HUB - 80€\n• Estándar: 200 HUB - 150€ \n• Plus: 500 HUB - 300€ (¡Mejor precio!)\n\n¿Qué paquete se adapta mejor a tus necesidades, {{nombre}}?",
-        variables: ["nombre"],
+          '💰 **Precios EscortsHub**\n\nUsamos **Monedas HUB** para activar anuncios:\n\n**Paquetes disponibles:**\n• Básico: 100 HUB - 80€\n• Estándar: 200 HUB - 150€ \n• Plus: 500 HUB - 300€ (¡Mejor precio!)\n\n¿Qué paquete se adapta mejor a tus necesidades, {{nombre}}?',
+        variables: ['nombre'],
         usageCount: 0,
         isActive: true,
         createdAt: new Date(),
       },
       {
-        id: "default_follow_up",
-        name: "Seguimiento",
-        category: "follow_up",
-        subject: "Seguimiento",
+        id: 'default_follow_up',
+        name: 'Seguimiento',
+        category: 'follow_up',
+        subject: 'Seguimiento',
         content:
-          "Hola {{nombre}}, \n\nEspero que estés bien. Quería hacer un seguimiento sobre {{tema}} que comentamos.\n\n¿Tienes alguna pregunta adicional o hay algo más en lo que pueda ayudarte?\n\nQuedo atento a tu respuesta.",
-        variables: ["nombre", "tema"],
+          'Hola {{nombre}}, \n\nEspero que estés bien. Quería hacer un seguimiento sobre {{tema}} que comentamos.\n\n¿Tienes alguna pregunta adicional o hay algo más en lo que pueda ayudarte?\n\nQuedo atento a tu respuesta.',
+        variables: ['nombre', 'tema'],
         usageCount: 0,
         isActive: true,
         createdAt: new Date(),
@@ -2447,51 +2528,48 @@ class DatabaseService {
   private getMockProactiveMessages(options: any): any[] {
     const mockMessages = [
       {
-        id: "mock_proactive_1",
-        leadId: "1",
-        templateId: "default_welcome",
-        templateName: "Mensaje de Bienvenida",
-        sessionId: "default-session",
-        phoneNumber: "+5491123456789",
+        id: 'mock_proactive_1',
+        leadId: '1',
+        templateId: 'default_welcome',
+        templateName: 'Mensaje de Bienvenida',
+        sessionId: 'default-session',
+        phoneNumber: '+5491123456789',
         content:
-          "¡Hola Juan! 👋 Bienvenido/a a EscortsHub, la plataforma líder de escorts en España.",
-        status: "delivered",
+          '¡Hola Juan! 👋 Bienvenido/a a EscortsHub, la plataforma líder de escorts en España.',
+        status: 'delivered',
         sentAt: new Date(Date.now() - 3600000),
         deliveredAt: new Date(Date.now() - 3500000),
         errorMessage: null,
-        createdBy: "admin",
+        createdBy: 'admin',
         createdAt: new Date(Date.now() - 3700000),
         updatedAt: new Date(Date.now() - 3500000),
       },
       {
-        id: "mock_proactive_2",
-        leadId: "2",
-        templateId: "default_product_intro",
-        templateName: "Introducción de Productos",
-        sessionId: "default-session",
-        phoneNumber: "+5491187654321",
+        id: 'mock_proactive_2',
+        leadId: '2',
+        templateId: 'default_product_intro',
+        templateName: 'Introducción de Productos',
+        sessionId: 'default-session',
+        phoneNumber: '+5491187654321',
         content:
-          "Hola María, te cuento sobre nuestros principales productos: ANUNCIO TOP, ANUNCIO DOBLE...",
-        status: "sent",
+          'Hola María, te cuento sobre nuestros principales productos: ANUNCIO TOP, ANUNCIO DOBLE...',
+        status: 'sent',
         sentAt: new Date(Date.now() - 1800000),
         deliveredAt: null,
         errorMessage: null,
-        createdBy: "admin",
+        createdBy: 'admin',
         createdAt: new Date(Date.now() - 1900000),
         updatedAt: new Date(Date.now() - 1800000),
       },
     ];
 
     return mockMessages
-      .filter((msg) => {
+      .filter(msg => {
         if (options.leadId && msg.leadId !== options.leadId) return false;
         if (options.status && msg.status !== options.status) return false;
         return true;
       })
-      .slice(
-        options.offset || 0,
-        (options.offset || 0) + (options.limit || 50),
-      );
+      .slice(options.offset || 0, (options.offset || 0) + (options.limit || 50));
   }
 
   // ============================================
@@ -2499,13 +2577,21 @@ class DatabaseService {
   // ============================================
 
   // Guardar interacción de entrenamiento
-  public async saveTrainingInteraction(
-    interaction: TrainingInteraction,
-  ): Promise<string | null> {
+  public async saveTrainingInteraction(interaction: TrainingInteraction): Promise<string | null> {
+    // Phase 2c: Delegate to repository if enabled
+    if (this.useRepositories && this.trainingRepository) {
+      try {
+        logger.debug('🔄 Using TrainingRepository');
+        return await this.trainingRepository.saveTrainingInteraction(interaction);
+      } catch (error) {
+        logger.warn('❌ Repository method failed, falling back to legacy:', error);
+        // Fallback to legacy implementation below
+      }
+    }
+
+    // Legacy implementation
     if (!this.pool) {
-      logger.warn(
-        "No database connection available, training interaction not saved",
-      );
+      logger.warn('No database connection available, training interaction not saved');
       return null;
     }
 
@@ -2534,19 +2620,27 @@ class DatabaseService {
       logger.debug(`📊 Training interaction saved with ID: ${interactionId}`);
       return interactionId;
     } catch (error) {
-      logger.error("Error saving training interaction:", error);
+      logger.error('Error saving training interaction:', error);
       return null;
     }
   }
 
   // Obtener interacciones de entrenamiento
-  public async getTrainingInteractions(
-    limit: number = 500,
-  ): Promise<TrainingInteraction[]> {
+  public async getTrainingInteractions(limit: number = 500): Promise<TrainingInteraction[]> {
+    // Phase 2c: Delegate to repository if enabled
+    if (this.useRepositories && this.trainingRepository) {
+      try {
+        logger.debug('🔄 Using TrainingRepository');
+        return await this.trainingRepository.getTrainingInteractions({ limit });
+      } catch (error) {
+        logger.warn('❌ Repository method failed, falling back to legacy:', error);
+        // Fallback to legacy implementation below
+      }
+    }
+
+    // Legacy implementation
     if (!this.pool) {
-      logger.warn(
-        "No database connection available, returning empty training interactions",
-      );
+      logger.warn('No database connection available, returning empty training interactions');
       return [];
     }
 
@@ -2562,7 +2656,7 @@ class DatabaseService {
 
       const result = await this.pool.query(query, [limit]);
 
-      return result.rows.map((row) => ({
+      return result.rows.map(row => ({
         id: row.id,
         userMessage: row.user_message,
         aiResponse: row.ai_response,
@@ -2573,7 +2667,7 @@ class DatabaseService {
         timestamp: new Date(row.created_at),
       }));
     } catch (error) {
-      logger.error("Error getting training interactions:", error);
+      logger.error('Error getting training interactions:', error);
       return [];
     }
   }
@@ -2584,7 +2678,7 @@ class DatabaseService {
     content: string;
     keywords: string | string[];
     category: string;
-    priority?: "low" | "medium" | "high" | number;
+    priority?: 'low' | 'medium' | 'high' | number;
     isActive?: boolean;
     source?: string;
     metadata?: any;
@@ -2597,20 +2691,20 @@ class DatabaseService {
     try {
       // Convert priority to numeric
       let numericPriority: number;
-      if (typeof entry.priority === "number") {
+      if (typeof entry.priority === 'number') {
         numericPriority = entry.priority;
       } else {
         const priorityMap = { low: 1, medium: 5, high: 10 };
-        numericPriority = priorityMap[entry.priority || "medium"] || 5;
+        numericPriority = priorityMap[entry.priority || 'medium'] || 5;
       }
 
       // Convert keywords to array if it's a string
       let keywordsArray: string[];
-      if (typeof entry.keywords === "string") {
+      if (typeof entry.keywords === 'string') {
         keywordsArray = entry.keywords
-          .split(",")
-          .map((k) => k.trim())
-          .filter((k) => k.length > 0);
+          .split(',')
+          .map(k => k.trim())
+          .filter(k => k.length > 0);
       } else {
         keywordsArray = entry.keywords;
       }
@@ -2635,15 +2729,13 @@ class DatabaseService {
       const entryId = result.rows[0]?.id;
 
       if (entryId) {
-        logger.info(
-          `✅ Knowledge base entry added: "${entry.title}" (${entryId})`,
-        );
+        logger.info(`✅ Knowledge base entry added: "${entry.title}" (${entryId})`);
         return true;
       }
 
       return false;
     } catch (error) {
-      logger.error("Error adding knowledge base entry:", error);
+      logger.error('Error adding knowledge base entry:', error);
       return false;
     }
   }
@@ -2651,7 +2743,7 @@ class DatabaseService {
   // Limpiar toda la knowledge base
   public async clearKnowledgeBase(): Promise<boolean> {
     if (!this.pool) {
-      logger.info("Mock: Knowledge base cleared");
+      logger.info('Mock: Knowledge base cleared');
       return true;
     }
 
@@ -2662,7 +2754,7 @@ class DatabaseService {
       logger.info(`🧹 Cleared ${result.rowCount} entries from knowledge base`);
       return true;
     } catch (error) {
-      logger.error("Error clearing knowledge base:", error);
+      logger.error('Error clearing knowledge base:', error);
       return false;
     }
   }
@@ -2718,7 +2810,7 @@ class DatabaseService {
         averagePriority: parseFloat(stats.avg_priority) || 0,
       };
     } catch (error) {
-      logger.error("Error getting knowledge base stats:", error);
+      logger.error('Error getting knowledge base stats:', error);
       return {
         totalEntries: 0,
         activeEntries: 0,
@@ -2736,9 +2828,9 @@ class DatabaseService {
       content?: string;
       keywords?: string;
       category?: string;
-      priority?: "low" | "medium" | "high";
+      priority?: 'low' | 'medium' | 'high';
       isActive?: boolean;
-    },
+    }
   ): Promise<boolean> {
     if (!this.pool) {
       logger.info(`Mock knowledge base entry updated: ${id}`);
@@ -2760,9 +2852,9 @@ class DatabaseService {
       }
       if (updates.keywords !== undefined) {
         const keywordsArray = updates.keywords
-          .split(",")
-          .map((k) => k.trim())
-          .filter((k) => k.length > 0);
+          .split(',')
+          .map(k => k.trim())
+          .filter(k => k.length > 0);
         setParts.push(`keywords = $${valueIndex++}`);
         values.push(keywordsArray);
       }
@@ -2790,7 +2882,7 @@ class DatabaseService {
 
       const query = `
         UPDATE ai_knowledge_base 
-        SET ${setParts.join(", ")}
+        SET ${setParts.join(', ')}
         WHERE id = $${valueIndex}
         RETURNING id;
       `;
@@ -2805,7 +2897,7 @@ class DatabaseService {
         return false;
       }
     } catch (error) {
-      logger.error("Error updating knowledge base entry:", error);
+      logger.error('Error updating knowledge base entry:', error);
       return false;
     }
   }
@@ -2867,7 +2959,7 @@ class DatabaseService {
         topPerformingPatterns: [], // Se puede implementar análisis más complejo
       };
     } catch (error) {
-      logger.error("Error getting training statistics:", error);
+      logger.error('Error getting training statistics:', error);
       return {
         totalInteractions: 0,
         averageSuccessScore: 0,
@@ -2882,7 +2974,7 @@ class DatabaseService {
   public async searchTrainingInteractions(
     searchQuery: string,
     minSuccessScore?: number,
-    limit: number = 100,
+    limit: number = 100
   ): Promise<TrainingInteraction[]> {
     if (!this.pool) {
       return [];
@@ -2910,7 +3002,7 @@ class DatabaseService {
 
       const result = await this.pool.query(query, values);
 
-      return result.rows.map((row) => ({
+      return result.rows.map(row => ({
         id: row.id,
         userMessage: row.user_message,
         aiResponse: row.ai_response,
@@ -2921,15 +3013,13 @@ class DatabaseService {
         timestamp: new Date(row.created_at),
       }));
     } catch (error) {
-      logger.error("Error searching training interactions:", error);
+      logger.error('Error searching training interactions:', error);
       return [];
     }
   }
 
   // Eliminar interacciones de entrenamiento antiguas (limpieza de datos)
-  public async cleanupOldTrainingInteractions(
-    daysOld: number = 90,
-  ): Promise<number> {
+  public async cleanupOldTrainingInteractions(daysOld: number = 90): Promise<number> {
     if (!this.pool) {
       return 0;
     }
@@ -2945,14 +3035,12 @@ class DatabaseService {
       const deletedCount = result.rows.length;
 
       if (deletedCount > 0) {
-        logger.info(
-          `🗑️ Cleaned up ${deletedCount} old training interactions (>${daysOld} days)`,
-        );
+        logger.info(`🗑️ Cleaned up ${deletedCount} old training interactions (>${daysOld} days)`);
       }
 
       return deletedCount;
     } catch (error) {
-      logger.error("Error cleaning up old training interactions:", error);
+      logger.error('Error cleaning up old training interactions:', error);
       return 0;
     }
   }
@@ -2986,7 +3074,7 @@ class DatabaseService {
         email_soporte: 'soporte@mi-empresa.com',
         telefono_empresa: '+1234567890',
         direccion: '123 Calle Principal, Ciudad',
-        horario_atencion: 'Lunes a Viernes 9:00 AM - 6:00 PM'
+        horario_atencion: 'Lunes a Viernes 9:00 AM - 6:00 PM',
       };
       this.systemVariablesCache = defaults;
       this.cacheTimestamp = now;
@@ -2998,7 +3086,7 @@ class DatabaseService {
       const result = await this.pool.query(query);
 
       const variables: Record<string, string> = {};
-      result.rows.forEach((row) => {
+      result.rows.forEach(row => {
         variables[row.key] = row.value;
       });
 
@@ -3021,9 +3109,7 @@ class DatabaseService {
   }
 
   // Actualizar múltiples variables del sistema
-  public async updateSystemVariables(
-    updates: Record<string, string>
-  ): Promise<boolean> {
+  public async updateSystemVariables(updates: Record<string, string>): Promise<boolean> {
     if (!this.pool) {
       logger.warn('No database connection for updating system variables');
       // Actualizar cache local al menos
@@ -3062,9 +3148,9 @@ class DatabaseService {
       this.cacheTimestamp = 0;
 
       logger.info(
-        `✅ Updated ${Object.keys(updates).length} system variables: ${Object.keys(
-          updates
-        ).join(', ')}`
+        `✅ Updated ${Object.keys(updates).length} system variables: ${Object.keys(updates).join(
+          ', '
+        )}`
       );
       return true;
     } catch (error) {
@@ -3093,7 +3179,7 @@ class DatabaseService {
         // Validación básica de email
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         return emailRegex.test(value);
-      
+
       case 'sitio_web':
         // Validación básica de URL
         try {
@@ -3102,13 +3188,13 @@ class DatabaseService {
         } catch {
           return false;
         }
-      
+
       case 'telefono_soporte':
       case 'telefono_empresa':
         // Validación básica de teléfono (debe contener al menos algunos dígitos)
         const phoneRegex = /\d{7,}/; // Al menos 7 dígitos
         return phoneRegex.test(value.replace(/[^\d]/g, ''));
-      
+
       default:
         // Para otras variables, solo verificar que no estén vacías
         return value.trim().length > 0;
@@ -3124,7 +3210,7 @@ class DatabaseService {
       email_soporte: 'Email de soporte al cliente',
       telefono_empresa: 'Número de teléfono principal de la empresa',
       direccion: 'Dirección física de la empresa',
-      horario_atencion: 'Horario de atención al cliente'
+      horario_atencion: 'Horario de atención al cliente',
     };
 
     return descriptions[key] || `Variable del sistema: ${key}`;
