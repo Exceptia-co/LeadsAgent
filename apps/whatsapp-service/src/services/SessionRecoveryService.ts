@@ -7,9 +7,6 @@ import { RecoveryRunner, RecoveryOptions } from './session/RecoveryRunner';
 import { HealthMetrics } from './session/HealthMetrics';
 import { AlertsService } from './session/AlertsService';
 
-// Import legacy implementation for fallback
-import SessionRecoveryServiceLegacy from './SessionRecoveryServiceLegacy';
-
 export interface RecoveryResult {
   totalSessions: number;
   recoveredSessions: number;
@@ -39,9 +36,6 @@ export class SessionRecoveryService {
   private healthMetrics = new HealthMetrics();
   private alertsService = new AlertsService();
 
-  // Legacy fallback
-  private legacyService = SessionRecoveryServiceLegacy;
-
   private defaultOptions: RecoveryOptions = {
     maxRetries: 3,
     retryDelayMs: 5000,
@@ -64,10 +58,7 @@ export class SessionRecoveryService {
     whatsAppService: any,
     options: Partial<RecoveryOptions> = {}
   ): Promise<RecoveryResult> {
-    if (!this.useModularImplementation) {
-      logger.debug('🔄 Using legacy implementation for session recovery');
-      return this.legacyService.recoverAllSessions(whatsAppService, options);
-    }
+    logger.debug('🔄 Using modular implementation for session recovery');
 
     const startTime = Date.now();
     const config = { ...this.defaultOptions, ...options };
@@ -180,10 +171,6 @@ export class SessionRecoveryService {
   async checkRecoveredSessionsHealth(
     whatsAppService: any
   ): Promise<{ healthy: number; total: number }> {
-    if (!this.useModularImplementation) {
-      return this.legacyService.checkRecoveredSessionsHealth(whatsAppService);
-    }
-
     const healthStats = await this.healthMetrics.checkSessionsHealth(whatsAppService);
     return {
       healthy: healthStats.healthy,
@@ -192,10 +179,6 @@ export class SessionRecoveryService {
   }
 
   scheduleHealthChecks(whatsAppService: any, intervalMs: number = 5 * 60 * 1000): NodeJS.Timeout {
-    if (!this.useModularImplementation) {
-      return this.legacyService.scheduleHealthChecks(whatsAppService, intervalMs);
-    }
-
     return this.healthMetrics.scheduleHealthChecks(whatsAppService, intervalMs);
   }
 
@@ -206,10 +189,6 @@ export class SessionRecoveryService {
     authHealthScore: number;
     averageRecoveryTime: number;
   }> {
-    if (!this.useModularImplementation) {
-      return this.legacyService.getRecoveryStats();
-    }
-
     const detailedStats = await this.healthMetrics.getDetailedRecoveryStats();
     return {
       lastRecovery: detailedStats.lastRecovery,
@@ -224,10 +203,6 @@ export class SessionRecoveryService {
     whatsAppService: any,
     options: Partial<RecoveryOptions> = {}
   ): Promise<RecoveryResult> {
-    if (!this.useModularImplementation) {
-      return this.legacyService.recoverSessionsWithSmartFiltering(whatsAppService, options);
-    }
-
     return this.recoverAllSessions(whatsAppService, options);
   }
 

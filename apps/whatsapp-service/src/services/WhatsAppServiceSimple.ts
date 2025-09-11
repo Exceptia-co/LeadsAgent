@@ -36,8 +36,8 @@ class WhatsAppServiceSimple {
   private authenticationManager: typeof AuthenticationManager;
 
   constructor() {
-    // Check if modular architecture is enabled
-    this.useModularArchitecture = process.env.USE_WHATSAPP_SERVICE_MODULAR !== 'false';
+    // Force modular architecture to true - Legacy services removed
+    this.useModularArchitecture = true;
 
     if (this.useModularArchitecture) {
       logger.info('🚀 WhatsApp Service initialized with MODULAR architecture');
@@ -57,8 +57,8 @@ class WhatsAppServiceSimple {
   async initialize(): Promise<void> {
     if (!this.useModularArchitecture) {
       // Import and delegate to legacy service
-      const { default: LegacyService } = await import('./WhatsAppServiceSimpleLegacy');
-      return LegacyService.initialize();
+      
+      // return LegacyService.initialize();
     }
 
     logger.info('🚀 Iniciando WhatsApp service con persistencia y monitoreo avanzado (MODULAR)...');
@@ -112,8 +112,8 @@ class WhatsAppServiceSimple {
 
   async createSession(sessionId: string): Promise<WhatsAppSession> {
     if (!this.useModularArchitecture) {
-      const { default: LegacyService } = await import('./WhatsAppServiceSimpleLegacy');
-      return LegacyService.createSession(sessionId);
+      
+      // return LegacyService.createSession(sessionId);
     }
 
     try {
@@ -188,8 +188,8 @@ class WhatsAppServiceSimple {
 
   async sendMessage(sessionId: string, to: string, message: string): Promise<SendMessageResponse> {
     if (!this.useModularArchitecture) {
-      const { default: LegacyService } = await import('./WhatsAppServiceSimpleLegacy');
-      return LegacyService.sendMessage(sessionId, to, message);
+      
+      // return LegacyService.sendMessage(sessionId, to, message);
     }
 
     try {
@@ -228,8 +228,8 @@ class WhatsAppServiceSimple {
 
   async getSessionStatus(sessionId: string): Promise<WhatsAppSession | null> {
     if (!this.useModularArchitecture) {
-      const { default: LegacyService } = await import('./WhatsAppServiceSimpleLegacy');
-      return LegacyService.getSessionStatus(sessionId);
+      
+      // return LegacyService.getSessionStatus(sessionId);
     }
 
     return this.sessionManager.getSession(sessionId);
@@ -237,8 +237,8 @@ class WhatsAppServiceSimple {
 
   async getAllSessions(): Promise<WhatsAppSession[]> {
     if (!this.useModularArchitecture) {
-      const { default: LegacyService } = await import('./WhatsAppServiceSimpleLegacy');
-      return LegacyService.getAllSessions();
+      
+      // return LegacyService.getAllSessions();
     }
 
     return this.sessionManager.getAllSessions();
@@ -246,8 +246,8 @@ class WhatsAppServiceSimple {
 
   async destroySession(sessionId: string): Promise<void> {
     if (!this.useModularArchitecture) {
-      const { default: LegacyService } = await import('./WhatsAppServiceSimpleLegacy');
-      return LegacyService.destroySession(sessionId);
+      
+      // return LegacyService.destroySession(sessionId);
     }
 
     try {
@@ -279,8 +279,8 @@ class WhatsAppServiceSimple {
 
   async shutdown(): Promise<void> {
     if (!this.useModularArchitecture) {
-      const { default: LegacyService } = await import('./WhatsAppServiceSimpleLegacy');
-      return LegacyService.shutdown();
+      
+      // return LegacyService.shutdown();
     }
 
     logger.info('🛑 Starting graceful shutdown with modular architecture...');
@@ -307,8 +307,8 @@ class WhatsAppServiceSimple {
 
   async forceDisconnectSession(sessionId: string): Promise<void> {
     if (!this.useModularArchitecture) {
-      const { default: LegacyService } = await import('./WhatsAppServiceSimpleLegacy');
-      return LegacyService.forceDisconnectSession(sessionId);
+      
+      // return LegacyService.forceDisconnectSession(sessionId);
     }
 
     logger.info(`💪 Force disconnecting session ${sessionId} with modular architecture`);
@@ -414,8 +414,8 @@ class WhatsAppServiceSimple {
   // Session recovery method used by SessionRecoveryService
   async recoverSessionWithAuthValidation(sessionId: string, persistedData: any): Promise<boolean> {
     if (!this.useModularArchitecture) {
-      const { default: LegacyService } = await import('./WhatsAppServiceSimpleLegacy');
-      return LegacyService.recoverSessionWithAuthValidation(sessionId, persistedData);
+      
+      // return LegacyService.recoverSessionWithAuthValidation(sessionId, persistedData);
     }
 
     try {

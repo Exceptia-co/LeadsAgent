@@ -8,9 +8,6 @@ import { RiskAssessment } from './whatsapp-authorization/RiskAssessment';
 import { LeadValidator } from './whatsapp-authorization/LeadValidator';
 import { AuthAuditLogger } from './whatsapp-authorization/AuthAuditLogger';
 
-// Import legacy implementation for fallback
-import WhatsAppAuthorizationServiceLegacy from './WhatsAppAuthorizationServiceLegacy';
-
 // Re-export types for compatibility
 export type {
   AuthorizationDecision,
@@ -84,71 +81,51 @@ class WhatsAppAuthorizationService {
   public async authorize(
     context: import('./whatsapp-authorization/RuleEngine').AuthorizationContext
   ): Promise<import('./whatsapp-authorization/RuleEngine').AuthorizationDecision> {
-    if (this.useModular) {
-      logger.debug('🔄 Using modular authorization components');
-      return await this.authorizeModular(context);
-    } else {
-      logger.debug('🔄 Using legacy authorization implementation');
-      return await WhatsAppAuthorizationServiceLegacy.authorize(context);
-    }
+    logger.debug('🔄 Using modular authorization components');
+    return await this.authorizeModular(context);
   }
 
   /**
    * Actualizar configuración
    */
   public async updateConfiguration(updates: any): Promise<boolean> {
-    if (this.useModular) {
-      logger.debug('🔄 Using modular AuthAuditLogger for updateConfiguration');
-      const result = await this.authAuditLogger.updateConfiguration(updates);
-      if (result.success) {
-        this.configCache = null; // Invalidate cache
-        return true;
-      }
-      return false;
-    } else {
-      logger.debug('🔄 Using legacy implementation for updateConfiguration');
-      return await WhatsAppAuthorizationServiceLegacy.updateConfiguration(updates);
+    logger.debug('🔄 Using modular AuthAuditLogger for updateConfiguration');
+    const result = await this.authAuditLogger.updateConfiguration(updates);
+    if (result.success) {
+      this.configCache = null; // Invalidate cache
+      return true;
     }
+    return false;
   }
 
   /**
    * Obtener estadísticas de autorización
    */
   public async getAuthorizationStats(options: any = {}): Promise<any> {
-    if (this.useModular) {
-      logger.debug('🔄 Using modular AuthAuditLogger for getAuthorizationStats');
-      return await this.authAuditLogger.getAuthorizationStats(options);
-    } else {
-      logger.debug('🔄 Using legacy implementation for getAuthorizationStats');
-      return await WhatsAppAuthorizationServiceLegacy.getAuthorizationStats(options);
-    }
+    logger.debug('🔄 Using modular AuthAuditLogger for getAuthorizationStats');
+    return await this.authAuditLogger.getAuthorizationStats(options);
   }
 
   /**
    * Método para autorizar un número y crear/actualizar el lead si es necesario
    */
   public async authorizeAndManageLead(context: any): Promise<any> {
-    if (this.useModular) {
-      logger.debug('🔄 Using modular LeadValidator for authorizeAndManageLead');
+    logger.debug('🔄 Using modular LeadValidator for authorizeAndManageLead');
 
-      // First get authorization decision
-      const authorizationDecision = await this.authorize(context);
+    // First get authorization decision
+    const authorizationDecision = await this.authorize(context);
 
-      // Then manage lead
-      const leadResult = await this.leadValidator.authorizeAndManageLead(context, {
-        decision: authorizationDecision.decision,
-        leadInfo: authorizationDecision.leadInfo,
-        metadata: authorizationDecision.metadata,
-      });
+    // Then manage lead
+    const leadResult = await this.leadValidator.authorizeAndManageLead(context, {
+      decision: authorizationDecision.decision,
+      leadInfo: authorizationDecision.leadInfo,
+      metadata: authorizationDecision.metadata,
+    });
 
-      return {
-        authorization: authorizationDecision,
-        ...leadResult,
-      };
-    } else {
-      logger.debug('🔄 Using legacy implementation for authorizeAndManageLead');
-      return await WhatsAppAuthorizationServiceLegacy.authorizeAndManageLead(context);
-    }
+    return {
+      authorization: authorizationDecision,
+      ...leadResult,
+    };
   }
 
   // ============================================
