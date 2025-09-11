@@ -103,3 +103,6 @@ inspect*.js
 
 # acli
 acli.exe
+
+#AI
+.opencode/
