@@ -2,19 +2,13 @@ import { logger } from '../utils/logger';
 import DatabaseService, { Lead, ConversationHistory } from './DatabaseService';
 import type { TrainingInteraction } from '../types';
 
-// Import legacy implementation
-import LegacyAIEnhancedResponseService from './AIEnhancedResponseServiceLegacy';
-
 // Import modular components
 import ContextBuilder, {
   type EnrichedContext,
   type ConversationAnalysis,
   type SentimentAnalysis,
 } from './ai-response/ContextBuilder';
-import PromptBuilder, {
-  type PersonalizationElement,
-  type RelevantKnowledge,
-} from './ai-response/PromptBuilder';
+import PromptBuilder, { type RelevantKnowledge } from './ai-response/PromptBuilder';
 import ResponsePersonalizer from './ai-response/ResponsePersonalizer';
 import QualityEvaluator from './ai-response/QualityEvaluator';
 
@@ -104,13 +98,7 @@ class AIEnhancedResponseService {
    * Método principal para generar una respuesta mejorada de IA
    */
   public async generateEnhancedResponse(context: AIResponseContext): Promise<AIResponseResult> {
-    // Usar implementación legacy si el feature toggle está desactivado
-    if (!this.useModularImplementation) {
-      logger.debug('🔄 Delegando a implementación legacy');
-      return LegacyAIEnhancedResponseService.generateEnhancedResponse(context);
-    }
-
-    // Implementación modular
+    logger.debug('🔄 Using modular implementation');
     return this.generateModularResponse(context);
   }
 
@@ -230,9 +218,21 @@ class AIEnhancedResponseService {
     } catch (error) {
       logger.error('❌ Error generando respuesta mejorada de IA (Modular):', error);
 
-      // Fallback a implementación legacy en caso de error
-      logger.warn('🔄 Fallback a implementación legacy debido a error');
-      return LegacyAIEnhancedResponseService.generateEnhancedResponse(context);
+      // Return a fallback response instead of delegating to legacy service
+      return {
+        response:
+          'Lo siento, estoy experimentando dificultades técnicas en este momento. ¿Podrías intentar nuevamente?',
+        confidence: 0.1,
+        responseType: 'fallback',
+        personalizedElements: [],
+        knowledgeBaseUsed: [],
+        contextFactors: ['error_fallback'],
+        shouldContinueConversation: true,
+        metadata: {
+          processingTime: Date.now() - Date.now(),
+          conversationStage: 'initial',
+        },
+      };
     }
   }
 
