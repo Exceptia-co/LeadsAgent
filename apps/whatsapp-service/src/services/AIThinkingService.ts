@@ -3,6 +3,12 @@ import advancedLogger from '../utils/advancedLogger';
 import AIService, { AIResponse, MessageContext } from './AIService';
 import DatabaseService from './DatabaseService';
 import { CacheManager, CacheKeyGenerator } from './ai-thinking/cache';
+import {
+  IntentAnalyzer,
+  ContextEnricher,
+  ComplexityAnalyzer,
+  KnowledgeRetriever,
+} from './ai-thinking/analysis';
 
 // ============================================
 // INTERFACES Y TIPOS
@@ -75,8 +81,18 @@ class AIThinkingService {
   // Cache management through centralized service
   private cacheManager: CacheManager;
 
+  // Analysis services
+  private intentAnalyzer: IntentAnalyzer;
+  private contextEnricher: ContextEnricher;
+  private complexityAnalyzer: ComplexityAnalyzer;
+  private knowledgeRetriever: KnowledgeRetriever;
+
   private constructor() {
     this.cacheManager = CacheManager.getInstance();
+    this.intentAnalyzer = IntentAnalyzer.getInstance();
+    this.contextEnricher = ContextEnricher.getInstance();
+    this.complexityAnalyzer = ComplexityAnalyzer.getInstance();
+    this.knowledgeRetriever = KnowledgeRetriever.getInstance();
   }
 
   public static getInstance(): AIThinkingService {
@@ -148,7 +164,7 @@ class AIThinkingService {
 
     try {
       // 1. ENRIQUECER CONTEXTO
-      const enrichedContext = await this.enrichContext(context, message);
+      const enrichedContext = await this.contextEnricher.enrich(context, message);
 
       // 2. INICIALIZAR PROCESO DE PENSAMIENTO
       const thoughtProcess: ThoughtProcess = {
@@ -334,8 +350,8 @@ class AIThinkingService {
         };
       }
 
-      // Usar el método existente de AIService mejorado
-      const intentAnalysis = await this.analyzeIntentEnhanced(message, context);
+      // Usar el nuevo servicio de análisis de intenciones
+      const intentAnalysis = await this.intentAnalyzer.analyzeEnhanced(message, context);
 
       // Cachear resultado
       this.cacheManager.setIntent(cacheKey, intentAnalysis);
@@ -352,13 +368,15 @@ class AIThinkingService {
       logger.error('Error in intent analysis:', error);
 
       // Fallback intent analysis
-      const fallbackIntent: IntentAnalysis = {
-        intent: 'general_inquiry',
+      const fallbackIntent = this.intentAnalyzer.getFallbackAnalysis();
+
+      return {
+        step: 1,
+        type: 'analysis',
+        title: 'Análisis de Intención (Fallback)',
+        content: 'Error en análisis detallado, usando análisis básico',
         confidence: 0.5,
-        entities: {},
-        sentiment: 'neutral',
-        urgency: 'medium',
-        category: 'general',
+        data: fallbackIntent,
       };
 
       return {
@@ -379,19 +397,8 @@ class AIThinkingService {
     const stepStart = Date.now();
 
     try {
-      // Buscar conocimiento relevante en la base de datos
-      let relevantKnowledge: any[] = [];
-
-      // 1. Búsqueda basada en el mensaje
-      const messageBasedKnowledge = await DatabaseService.searchKnowledgeBase(message);
-
-      // 2. Búsqueda basada en la intención y categoría
-      const intentBasedKnowledge = await DatabaseService.getKnowledgeBase(intentAnalysis.category);
-
-      // 3. Combinar y filtrar conocimiento
-      relevantKnowledge = [...messageBasedKnowledge, ...intentBasedKnowledge]
-        .filter((item, index, self) => index === self.findIndex(t => t.id === item.id))
-        .slice(0, 5); // Limitar a 5 elementos más relevantes
+      // Usar el nuevo servicio de recuperación de conocimiento
+      const relevantKnowledge = await this.knowledgeRetriever.retrieve(message, intentAnalysis);
 
       const content =
         relevantKnowledge.length > 0
@@ -1565,12 +1572,7 @@ class AIThinkingService {
       let complexity = this.cacheManager.getComplexity(complexityKey);
 
       if (!complexity) {
-        const complexityAnalysis = this.getMessageComplexity(message);
-        complexity = {
-          complexity: complexityAnalysis.complexity,
-          confidence: complexityAnalysis.confidence,
-          reasoning: complexityAnalysis.reasoning,
-        };
+        complexity = this.complexityAnalyzer.analyze(message);
         this.cacheManager.setComplexity(complexityKey, complexity);
       }
 
