@@ -9,6 +9,8 @@ import {
   ComplexityAnalyzer,
   KnowledgeRetriever,
 } from './ai-thinking/analysis';
+import { StrategySelector, ResponseStrategy } from './ai-thinking/StrategySelector';
+import { ResponseGenerator } from './ai-thinking/ResponseGenerator';
 
 // ============================================
 // INTERFACES Y TIPOS
@@ -44,16 +46,6 @@ export interface ThoughtProcess {
   processingTimeMs: number;
 }
 
-export interface ResponseStrategy {
-  type: 'direct' | 'contextual' | 'escalate' | 'defer' | 'clarify';
-  tone: 'professional' | 'friendly' | 'technical' | 'sales' | 'supportive';
-  length: 'brief' | 'medium' | 'detailed';
-  shouldQuote: boolean;
-  shouldUseEmojis: boolean;
-  priority: 'low' | 'medium' | 'high';
-  templateCategory?: string;
-}
-
 export interface EnrichedContext extends MessageContext {
   messageText?: string; // El mensaje actual
   leadProfile?: any;
@@ -86,6 +78,8 @@ class AIThinkingService {
   private contextEnricher: ContextEnricher;
   private complexityAnalyzer: ComplexityAnalyzer;
   private knowledgeRetriever: KnowledgeRetriever;
+  private strategySelector: StrategySelector;
+  private responseGenerator: ResponseGenerator;
 
   private constructor() {
     this.cacheManager = CacheManager.getInstance();
@@ -93,6 +87,8 @@ class AIThinkingService {
     this.contextEnricher = ContextEnricher.getInstance();
     this.complexityAnalyzer = ComplexityAnalyzer.getInstance();
     this.knowledgeRetriever = KnowledgeRetriever.getInstance();
+    this.strategySelector = new StrategySelector();
+    this.responseGenerator = new ResponseGenerator();
   }
 
   public static getInstance(): AIThinkingService {
@@ -225,8 +221,7 @@ class AIThinkingService {
           message,
           enrichedContext,
           intentAnalysis,
-          thoughtProcess.responseStrategy,
-          knowledgeStep.data
+          thoughtProcess.responseStrategy
         );
         thoughtProcess.steps.push(responseStep);
         aiResponse = responseStep.data as AIResponse;
@@ -378,15 +373,6 @@ class AIThinkingService {
         confidence: 0.5,
         data: fallbackIntent,
       };
-
-      return {
-        step: 1,
-        type: 'analysis',
-        title: 'Análisis de Intención (Fallback)',
-        content: 'Error en análisis detallado, usando análisis básico',
-        confidence: 0.5,
-        data: fallbackIntent,
-      };
     }
   }
 
@@ -504,135 +490,25 @@ class AIThinkingService {
     const stepStart = Date.now();
 
     try {
-      const strategy: ResponseStrategy = {
-        type: 'direct',
-        tone: 'friendly',
-        length: 'medium',
-        shouldQuote: false,
-        shouldUseEmojis: true,
-        priority: 'medium',
-      };
-
-      let strategyReasons: string[] = [];
-
-      // 0. Verificar si es un saludo simple (override de la lógica de knowledge base)
-      const isGreeting = await this.isGreetingMessage(context.messageText || '');
-      if (isGreeting) {
-        strategy.type = 'contextual';
-        strategy.tone = 'friendly';
-        strategy.length = 'medium';
-        strategyReasons.push('Saludo detectado: respuesta automática de bienvenida');
-        // Para saludos, no requerimos knowledge base
-        return {
-          step: 4,
-          type: 'decision',
-          title: 'Estrategia de Respuesta (Saludo)',
-          content: `Estrategia determinada en ${Date.now() - stepStart}ms: ${strategy.type} (${strategy.tone}, ${strategy.length}). Razones: ${strategyReasons.join(', ')}`,
-          confidence: 0.9, // Alta confianza para saludos
-          data: strategy,
-        };
-      }
-
-      // 1. Determinar tipo de respuesta basado en intención
-      switch (intentAnalysis.intent) {
-        case 'greeting':
-        case 'saludo':
-          strategy.type = 'contextual';
-          strategy.tone = 'friendly';
-          strategy.length = 'brief';
-          strategyReasons.push('Saludo detectado: respuesta amigable y breve');
-          break;
-
-        case 'pricing_inquiry':
-        case 'consulta_precio':
-          strategy.type = 'contextual';
-          strategy.tone = 'sales';
-          strategy.length = 'medium'; // Cambiar de 'detailed' a 'medium'
-          strategy.templateCategory = 'pricing';
-          strategyReasons.push('Consulta de precios: respuesta concisa y orientada a ventas');
-          break;
-
-        case 'product_inquiry':
-        case 'consulta_producto':
-          strategy.type = 'contextual';
-          strategy.tone = 'sales';
-          strategy.length = 'medium'; // Cambiar de 'detailed' a 'medium'
-          strategy.templateCategory = 'products';
-          strategyReasons.push('Consulta de producto: información concisa');
-          break;
-
-        case 'complaint':
-        case 'queja':
-          strategy.type = 'escalate';
-          strategy.tone = 'supportive';
-          strategy.priority = 'high';
-          strategyReasons.push('Queja detectada: tono de apoyo y prioridad alta');
-          break;
-
-        case 'technical_support':
-          strategy.type = 'contextual';
-          strategy.tone = 'technical';
-          strategy.length = 'detailed';
-          strategyReasons.push('Soporte técnico: respuesta detallada y técnica');
-          break;
-
-        default:
-          strategy.type = 'direct';
-          strategyReasons.push('Intención general: respuesta directa');
-      }
-
-      // 2. Ajustes basados en sentimiento
-      if (intentAnalysis.sentiment === 'negative') {
-        strategy.tone = 'supportive';
-        strategy.priority = 'high';
-        strategyReasons.push('Sentimiento negativo: tono de apoyo');
-      }
-
-      // 3. Ajustes basados en urgencia
-      if (intentAnalysis.urgency === 'high') {
-        strategy.priority = 'high';
-        strategy.length = 'brief';
-        strategyReasons.push('Urgencia alta: respuesta prioritaria y concisa');
-      }
-
-      // 4. Ajustes basados en conocimiento disponible (no aplicar a saludos)
-      if (
-        knowledgeData.length === 0 &&
-        !isGreeting &&
-        intentAnalysis.intent !== 'greeting' &&
-        intentAnalysis.intent !== 'saludo'
-      ) {
-        strategy.type = 'defer';
-        strategy.tone = 'professional';
-        strategyReasons.push('Sin conocimiento específico: diferir a humano');
-      }
-
-      // 5. Ajustes basados en historial
-      if (context.messageHistory && context.messageHistory.length > 10) {
-        strategy.shouldQuote = false; // Evitar quotes en conversaciones largas
-        strategyReasons.push('Conversación larga: evitar quotes');
-      }
-
-      // 6. Ajustes basados en tiempo
-      const timeContext = this.analyzeTimeContext();
-      if (timeContext.timeOfDay === 'night') {
-        strategy.tone = 'professional';
-        strategy.shouldUseEmojis = false;
-        strategyReasons.push('Horario nocturno: tono más formal');
-      }
+      // Use the advanced StrategySelector service
+      const strategyAnalysis = await this.strategySelector.determineResponseStrategy(
+        intentAnalysis as any, // Compatible with IntentAnalysisExtended
+        context,
+        knowledgeData as any[] // Will be adapted within StrategySelector
+      );
 
       return {
         step: 4,
         type: 'decision',
         title: 'Estrategia de Respuesta',
-        content: `Estrategia determinada en ${Date.now() - stepStart}ms: ${strategy.type} (${strategy.tone}, ${strategy.length}). Razones: ${strategyReasons.join(', ')}`,
-        confidence: 0.8,
-        data: strategy,
+        content: `Estrategia determinada en ${Date.now() - stepStart}ms: ${strategyAnalysis.strategy.type} (${strategyAnalysis.strategy.tone}, ${strategyAnalysis.strategy.length}). Razones: ${strategyAnalysis.reasoning.join(', ')}`,
+        confidence: strategyAnalysis.confidence,
+        data: strategyAnalysis.strategy,
       };
     } catch (error) {
-      logger.error('Error determining response strategy:', error);
+      logger.error('Error determining response strategy with StrategySelector:', error);
 
-      // Estrategia por defecto
+      // Fallback to simple strategy
       const defaultStrategy: ResponseStrategy = {
         type: 'direct',
         tone: 'friendly',
@@ -646,7 +522,7 @@ class AIThinkingService {
         step: 4,
         type: 'decision',
         title: 'Estrategia de Respuesta (Fallback)',
-        content: 'Error determinando estrategia, usando configuración por defecto',
+        content: 'Error con StrategySelector, usando configuración por defecto',
         confidence: 0.5,
         data: defaultStrategy,
       };
@@ -689,7 +565,6 @@ class AIThinkingService {
       // Obtener datos de pasos anteriores
       const intentStep = steps.find(s => s.type === 'analysis' && s.title.includes('Intención'));
       const knowledgeStep = steps.find(s => s.type === 'knowledge_retrieval');
-      const contextStep = steps.find(s => s.type === 'analysis' && s.title.includes('Contexto'));
       const strategyStep = steps.find(s => s.type === 'decision');
 
       if (!intentStep || !knowledgeStep || !strategyStep) {
@@ -786,186 +661,6 @@ class AIThinkingService {
   // MÉTODOS AUXILIARES
   // ============================================
 
-  private async enrichContext(
-    context: MessageContext,
-    currentMessage: string
-  ): Promise<EnrichedContext> {
-    try {
-      const enriched: EnrichedContext = {
-        ...context,
-        messageText: currentMessage, // Agregar el mensaje actual al contexto
-        previousIntents: [],
-        messageHistory: [],
-        userEngagementLevel: 'medium',
-        timeOfDay: 'morning',
-        dayOfWeek: 'weekday',
-      };
-
-      // Obtener historial de conversación si hay número de teléfono
-      if (context.phoneNumber) {
-        const history = await DatabaseService.getConversationHistory(
-          context.phoneNumber,
-          10 // Últimos 10 mensajes
-        );
-
-        enriched.messageHistory = history.map(h => ({
-          message: h.messageText || h.responseText || '',
-          intent: h.intent,
-          timestamp: h.createdAt,
-          isFromUser: h.isFromUser,
-        }));
-
-        // Obtener perfil del lead si está disponible
-        const leads = await DatabaseService.getAllLeads();
-        enriched.leadProfile = leads.find(
-          lead => lead.phone && lead.phone.includes(context.phoneNumber?.replace(/\D/g, '') || '')
-        );
-      }
-
-      // Añadir contexto temporal
-      const timeContext = this.analyzeTimeContext();
-      enriched.timeOfDay = timeContext.timeOfDay;
-      enriched.dayOfWeek = timeContext.dayOfWeek;
-
-      // Calcular nivel de engagement
-      enriched.userEngagementLevel = this.calculateEngagementLevel(enriched);
-
-      return enriched;
-    } catch (error) {
-      logger.error('Error enriching context:', error);
-      // Retornar contexto básico en caso de error
-      return {
-        ...context,
-        previousIntents: [],
-        messageHistory: [],
-        userEngagementLevel: 'medium',
-        timeOfDay: 'morning',
-        dayOfWeek: 'weekday',
-      } as EnrichedContext;
-    }
-  }
-
-  private async analyzeIntentEnhanced(
-    message: string,
-    context: EnrichedContext
-  ): Promise<IntentAnalysis> {
-    try {
-      // 1. ANÁLISIS DE COMPLEJIDAD DEL MENSAJE
-      const complexityAnalysis = this.getMessageComplexity(message);
-
-      // 2. Para saludos simples, usar análisis simplificado y optimizado
-      if (complexityAnalysis.complexity === 'simple_greeting') {
-        return {
-          intent: 'saludo',
-          confidence: complexityAnalysis.confidence,
-          entities: {},
-          sentiment: 'positive',
-          urgency: 'low',
-          category: 'social',
-          subcategory: 'simple_greeting',
-        };
-      }
-
-      // 3. Para otros casos, usar análisis completo de AIService
-      const baseAnalysis = await AIService.analyzeIntent(message);
-
-      // 4. Mejorar el análisis con contexto adicional y complejidad
-      const enhanced: IntentAnalysis = {
-        intent: baseAnalysis.intent || 'general',
-        confidence: Math.max(baseAnalysis.confidence || 0.5, complexityAnalysis.confidence * 0.8),
-        entities: baseAnalysis.entities || {},
-        sentiment: baseAnalysis.sentiment || 'neutral',
-        urgency: this.detectUrgency(message),
-        category: this.categorizeIntent(baseAnalysis.intent || 'general'),
-        subcategory:
-          this.getSubcategory(message, baseAnalysis.intent || 'general') ||
-          complexityAnalysis.complexity,
-      };
-
-      // 5. Ajustar confianza basado en contexto y complejidad
-      if (context.messageHistory.length > 0) {
-        enhanced.confidence = Math.min(enhanced.confidence + 0.1, 1.0);
-      }
-
-      // Para consultas específicas, aumentar confianza
-      if (complexityAnalysis.complexity === 'specific_query') {
-        enhanced.confidence = Math.min(enhanced.confidence + 0.15, 0.95);
-      }
-
-      // Log del análisis de complejidad para debugging
-      logger.debug('Análisis de complejidad:', {
-        message: message.substring(0, 50),
-        complexity: complexityAnalysis.complexity,
-        confidence: complexityAnalysis.confidence,
-        reasoning: complexityAnalysis.reasoning,
-        finalIntent: enhanced.intent,
-        finalConfidence: enhanced.confidence,
-      });
-
-      return enhanced;
-    } catch (error) {
-      logger.error('Error in enhanced intent analysis:', error);
-
-      // Fallback basic analysis
-      return {
-        intent: 'general',
-        confidence: 0.5,
-        entities: {},
-        sentiment: 'neutral',
-        urgency: 'medium',
-        category: 'general',
-      };
-    }
-  }
-
-  private detectUrgency(message: string): 'low' | 'medium' | 'high' {
-    const urgentKeywords = ['urgente', 'ya', 'inmediato', 'ahora', 'rápido', 'prisa', 'emergency'];
-    const lowUrgencyKeywords = ['cuando puedas', 'sin prisa', 'más tarde', 'eventually'];
-
-    const messageText = message.toLowerCase();
-
-    if (urgentKeywords.some(keyword => messageText.includes(keyword))) {
-      return 'high';
-    }
-
-    if (lowUrgencyKeywords.some(keyword => messageText.includes(keyword))) {
-      return 'low';
-    }
-
-    return 'medium';
-  }
-
-  private categorizeIntent(intent: string): string {
-    const categoryMap: Record<string, string> = {
-      greeting: 'social',
-      saludo: 'social',
-      goodbye: 'social',
-      despedida: 'social',
-      pricing_inquiry: 'commercial',
-      consulta_precio: 'commercial',
-      product_inquiry: 'commercial',
-      consulta_producto: 'commercial',
-      technical_support: 'support',
-      soporte_tecnico: 'support',
-      complaint: 'support',
-      queja: 'support',
-      information_request: 'informational',
-      solicitar_info: 'informational',
-    };
-
-    return categoryMap[intent] || 'general';
-  }
-
-  private getSubcategory(message: string, intent: string): string | undefined {
-    // Implementar lógica más específica según necesidades
-    if (intent === 'consulta_precio' || intent === 'pricing_inquiry') {
-      if (message.toLowerCase().includes('paquete')) return 'packages';
-      if (message.toLowerCase().includes('descuento')) return 'discounts';
-    }
-
-    return undefined;
-  }
-
   private analyzeTimeContext(): {
     timeOfDay: EnrichedContext['timeOfDay'];
     dayOfWeek: EnrichedContext['dayOfWeek'];
@@ -1020,53 +715,30 @@ class AIThinkingService {
     message: string,
     context: EnrichedContext,
     intentAnalysis: IntentAnalysis,
-    strategy: ResponseStrategy,
-    knowledgeData: any[]
+    strategy: ResponseStrategy
   ): Promise<ThinkingStep> {
     const stepStart = Date.now();
 
     try {
-      // Construir prompt contextual
-      let systemPrompt = await DatabaseService.getAIConfiguration('system_prompt');
-
-      // Añadir contexto específico al prompt
-      const contextualPrompt = await this.buildContextualPrompt(
-        systemPrompt || '',
-        intentAnalysis,
+      // Use the advanced ResponseGenerator service
+      const generationResult = await this.responseGenerator.generateContextualResponse(
+        message,
+        context,
+        intentAnalysis as any, // Compatible with IntentAnalysisExtended
         strategy,
-        knowledgeData,
-        context
+        [] // Knowledge data will be handled by ResponseGenerator internally if needed
       );
-
-      // Generar respuesta usando el contexto enriquecido
-      const aiResponse = await AIService.generateResponse(message, {
-        ...context,
-        conversationHistory:
-          context.messageHistory?.map(m => ({
-            role: m.isFromUser ? 'user' : ('assistant' as 'user' | 'assistant'),
-            content: m.message,
-          })) || [],
-      });
-
-      // Aplicar ajustes según la estrategia
-      if (aiResponse.success && aiResponse.content) {
-        aiResponse.content = this.applyStrategyToResponse(
-          aiResponse.content,
-          strategy,
-          intentAnalysis
-        );
-      }
 
       return {
         step: 6,
         type: 'decision',
         title: 'Generación de Respuesta',
-        content: `Respuesta generada en ${Date.now() - stepStart}ms con estrategia ${strategy.type}`,
-        confidence: aiResponse.success ? 0.8 : 0.3,
-        data: aiResponse,
+        content: `Respuesta generada en ${Date.now() - stepStart}ms con estrategia ${strategy.type}. Optimizaciones: ${generationResult.appliedOptimizations.join(', ')}. Calidad: ${(generationResult.qualityScore * 100).toFixed(1)}%`,
+        confidence: generationResult.response.success ? generationResult.qualityScore : 0.3,
+        data: generationResult.response,
       };
     } catch (error) {
-      logger.error('Error generating contextual response:', error);
+      logger.error('Error generating contextual response with ResponseGenerator:', error);
 
       const errorResponse: AIResponse = {
         success: false,
@@ -1078,284 +750,11 @@ class AIThinkingService {
         step: 6,
         type: 'decision',
         title: 'Error en Generación',
-        content: 'Error generando respuesta contextual',
+        content: 'Error generando respuesta contextual con ResponseGenerator',
         confidence: 0.2,
         data: errorResponse,
       };
     }
-  }
-
-  private async buildContextualPrompt(
-    basePrompt: string,
-    intentAnalysis: IntentAnalysis,
-    strategy: ResponseStrategy,
-    knowledgeData: any[],
-    context: EnrichedContext
-  ): Promise<string> {
-    let contextualPrompt = basePrompt;
-
-    // Detectar si es un saludo simple
-    const isGreeting = await this.isGreetingMessage(context.messageText || '');
-
-    if (isGreeting) {
-      // Para saludos, usar prompt ULTRA-SIMPLIFICADO
-      contextualPrompt += `\n\n🎯 INSTRUCCIÓN: SALUDO PERSONALIZADO Y BREVE\n`;
-      contextualPrompt += `RESPUESTA EXACTA: Máximo 25 palabras. Saludo cálido + presentación marca + pregunta abierta.\n`;
-
-      if ((context as any).contactName) {
-        contextualPrompt += `Usuario: ${(context as any).contactName} (usar el nombre para personalizar)\n`;
-      }
-
-      const timeContext = this.analyzeTimeContext();
-      contextualPrompt += `Horario: ${timeContext.timeOfDay} ${timeContext.dayOfWeek}\n`;
-      contextualPrompt += `MODELO: "¡Hola${(context as any).contactName ? ' ' + (context as any).contactName : ''}! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte hoy?"\n\n`;
-      return contextualPrompt;
-    }
-
-    // Para otros tipos de mensajes, usar prompt ULTRA-CONCISO
-    contextualPrompt += `\n\n🎯 INSTRUCCIÓN CRÍTICA: RESPUESTA CONVERSACIONAL BREVE\n`;
-    contextualPrompt += `LÍMITE ABSOLUTO: 60 palabras máximo. Formato WhatsApp natural. `;
-    contextualPrompt += `Responde SOLO lo preguntado + una pregunta final.\n\n`;
-
-    // Añadir contexto de intención
-    contextualPrompt += `CONTEXTO ACTUAL:\n`;
-    contextualPrompt += `Intención detectada: ${intentAnalysis.intent} (${(intentAnalysis.confidence * 100).toFixed(1)}% confianza)\n`;
-    contextualPrompt += `Sentimiento: ${intentAnalysis.sentiment}\n`;
-    contextualPrompt += `Urgencia: ${intentAnalysis.urgency}\n`;
-
-    // Añadir estrategia de respuesta
-    contextualPrompt += `\nESTRATEGIA DE RESPUESTA:\n`;
-    contextualPrompt += `Tono: ${strategy.tone}\n`;
-    contextualPrompt += `Longitud: ${strategy.length === 'brief' ? 'completa pero eficiente' : strategy.length}\n`;
-    contextualPrompt += `Prioridad: ${strategy.priority}\n`;
-
-    // Añadir conocimiento relevante
-    if (knowledgeData.length > 0) {
-      contextualPrompt += `\nCONOCIMIENTO RELEVANTE - USA ESTA INFORMACIÓN PARA RESPUESTA COMPLETA:\n`;
-      knowledgeData.forEach((knowledge, index) => {
-        contextualPrompt += `\n${index + 1}. CATEGORÍA: ${knowledge.category?.toUpperCase()}\n`;
-        contextualPrompt += `TÍTULO: ${knowledge.title}\n`;
-        contextualPrompt += `CONTENIDO: ${knowledge.content}\n`;
-        contextualPrompt += `RELEVANCIA: ${knowledge.match_quality || 'alta'}\n`;
-        contextualPrompt += `---\n`;
-      });
-    }
-
-    // Añadir contexto de conversación
-    if (context.messageHistory && context.messageHistory.length > 0) {
-      contextualPrompt += `\nHISTORIAL DE CONVERSACIÓN:\n`;
-      context.messageHistory.slice(-3).forEach(msg => {
-        const role = msg.isFromUser ? 'Usuario' : 'Asistente';
-        contextualPrompt += `${role}: ${msg.message.substring(0, 150)}...\n`;
-      });
-    }
-
-    // Instrucciones para respuesta breve y directa
-    contextualPrompt += `\n📝 FORMATO DE RESPUESTA:\n`;
-
-    if (intentAnalysis.intent.includes('precio') || intentAnalysis.intent.includes('product')) {
-      contextualPrompt += `\n📝 FORMATO PRECIO: Paquete Plus (500 HUB/300€) = mejor precio. [1 producto específico]. ¿Te interesa? MAX 40 palabras.`;
-    } else if (intentAnalysis.intent.includes('registro')) {
-      contextualPrompt += `\n📝 FORMATO REGISTRO: "Gratis en https://www.escortshub.net/es/sign-up. Solo pagas productos que actives. ¿Te ayudo?" MAX 25 palabras.`;
-    } else {
-      contextualPrompt += `\n📝 FORMATO GENERAL: Respuesta directa en 30-40 palabras + pregunta final. Nada más.`;
-    }
-
-    contextualPrompt += `\n\n⚡ REGLAS ABSOLUTAS:\n`;
-    contextualPrompt += `- MÁXIMO 50 palabras TOTAL\n`;
-    contextualPrompt += `- CERO tablas, CERO listas, CERO secciones\n`;
-    contextualPrompt += `- Mensaje WhatsApp natural y directo\n`;
-    contextualPrompt += `- SIEMPRE EscortsHub.net/es/sign-up para registro\n`;
-    contextualPrompt += `- Terminar con UNA pregunta corta\n`;
-
-    return contextualPrompt;
-  }
-
-  private applyStrategyToResponse(
-    response: string,
-    strategy: ResponseStrategy,
-    intentAnalysis: IntentAnalysis
-  ): string {
-    let adjustedResponse = response;
-
-    // Log inicial para diagnóstico
-    logger.debug('AIThinking.applyStrategyToResponse: original', {
-      length: adjustedResponse.length,
-      wordCount: adjustedResponse.split(' ').length,
-      sample: adjustedResponse.slice(0, 100),
-    });
-
-    // 1. APLICAR LÍMITES REALISTAS DE PALABRAS SEGÚN INTENCIÓN
-    const wordLimits = {
-      saludo: 25, // Más personalizable (15-25 palabras)
-      greeting: 25, // Más personalizable
-      precio: 80, // Suficiente para explicar opciones (60-80 palabras)
-      pricing_inquiry: 80,
-      producto: 100, // Descripción útil (80-100 palabras)
-      product_inquiry: 100,
-      registro: 50, // Proceso claro (40-50 palabras)
-      general: 120, // Respuesta completa (100-120 palabras)
-    };
-
-    const maxWords = wordLimits[intentAnalysis.intent] || 60;
-    const words = adjustedResponse.split(/\s+/);
-
-    if (words.length > maxWords) {
-      // Truncamiento inteligente preservando información clave
-      adjustedResponse = this.intelligentTruncate(
-        adjustedResponse,
-        maxWords,
-        intentAnalysis.intent
-      );
-    }
-
-    // 2. ELIMINAR SECCIONES PROMOCIONALES EXCESIVAS
-    adjustedResponse = this.removeExcessivePromotions(adjustedResponse);
-
-    // 3. LIMPIAR TABLAS Y LISTAS LARGAS
-    adjustedResponse = this.removeTablesAndLists(adjustedResponse);
-
-    // 4. ASEGURAR PREGUNTA FINAL
-    adjustedResponse = this.ensureFinalQuestion(adjustedResponse, intentAnalysis.intent);
-
-    // 5. APLICAR EMOJIS SEGÚN ESTRATEGIA
-    if (!strategy.shouldUseEmojis) {
-      const emojiRegex =
-        /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E6}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu;
-      adjustedResponse = adjustedResponse.replace(emojiRegex, '');
-    }
-
-    // 6. VALIDACIÓN FINAL DE LONGITUD
-    adjustedResponse = this.validateFinalLength(adjustedResponse, maxWords);
-
-    // Log final
-    logger.debug('AIThinking.applyStrategyToResponse: processed', {
-      originalLength: response.length,
-      finalLength: adjustedResponse.length,
-      originalWords: response.split(' ').length,
-      finalWords: adjustedResponse.split(' ').length,
-      maxWords,
-      sample: adjustedResponse,
-    });
-
-    return adjustedResponse;
-  }
-
-  /**
-   * Truncamiento inteligente que preserva información clave
-   */
-  private intelligentTruncate(text: string, maxWords: number, intent: string): string {
-    const words = text.split(/\s+/);
-
-    if (words.length <= maxWords) {
-      return text;
-    }
-
-    // Para saludos, usar template fijo
-    if (intent === 'saludo' || intent === 'greeting') {
-      return '¡Hola! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte?';
-    }
-
-    // Para otros casos, truncar inteligentemente
-    let truncated = words.slice(0, maxWords - 5).join(' '); // Reservar 5 palabras para pregunta
-
-    // Añadir pregunta apropiada según intención
-    if (intent.includes('precio')) {
-      truncated += '. ¿Te interesa algún paquete?';
-    } else if (intent.includes('producto')) {
-      truncated += '. ¿Necesitas más información?';
-    } else if (intent.includes('registro')) {
-      truncated += '. ¿Te ayudo con el registro?';
-    } else {
-      truncated += '. ¿Te ayudo con algo más?';
-    }
-
-    return truncated;
-  }
-
-  /**
-   * Eliminar promociones excesivas y redundantes
-   */
-  private removeExcessivePromotions(text: string): string {
-    // Eliminar secciones con múltiples bullet points
-    text = text.replace(/([•\-*]\s+.+\n){3,}/g, '');
-
-    // Eliminar texto entre ### o ** repetitivos
-    text = text.replace(/(\*\*[^*]+\*\*\s*\n){2,}/g, '');
-
-    // Eliminar secciones "SIEMPRE", "NUNCA", etc.
-    text = text.replace(/\n\n(SIEMPRE|NUNCA|IMPORTANTE|NOTA):.*$/gm, '');
-
-    return text;
-  }
-
-  /**
-   * Optimizar tablas y listas largas
-   */
-  private removeTablesAndLists(text: string): string {
-    // Eliminar tablas markdown (siempre)
-    text = text.replace(/\|[\s\S]*?\|/g, '');
-
-    // Optimizar listas bulleted: mantener hasta 3 ítems y eliminar el resto
-    text = text.replace(/(([•\-*]\s+.+\n){4,})/g, match => {
-      // Mantener los primeros 3 ítems
-      const lines = match.split('\n');
-      const keptItems = lines.filter(line => /^[•\-*]\s+/.test(line)).slice(0, 3);
-      return keptItems.join('\n') + '\n';
-    });
-
-    // Optimizar listas numeradas: mantener hasta 3 ítems
-    text = text.replace(/(\d+\.\s+.+\n){4,}/g, match => {
-      const lines = match.split('\n');
-      const keptItems = lines.filter(line => /^\d+\.\s+/.test(line)).slice(0, 3);
-      return keptItems.join('\n') + '\n';
-    });
-
-    return text;
-  }
-
-  /**
-   * Asegurar que hay una pregunta al final
-   */
-  private ensureFinalQuestion(text: string, intent: string): string {
-    // Si ya tiene pregunta, mantener
-    if (text.includes('?')) {
-      return text;
-    }
-
-    // Añadir pregunta apropiada
-    const questions = {
-      saludo: ' ¿En qué puedo ayudarte?',
-      greeting: ' ¿En qué puedo ayudarte?',
-      precio: ' ¿Te interesa algún paquete?',
-      pricing_inquiry: ' ¿Te interesa algún paquete?',
-      producto: ' ¿Necesitas más información?',
-      product_inquiry: ' ¿Necesitas más información?',
-      registro: ' ¿Te ayudo con el registro?',
-      general: ' ¿Te ayudo con algo más?',
-    };
-
-    const question = questions[intent] || ' ¿En qué más puedo ayudarte?';
-
-    // Asegurar que no termine con punto antes de la pregunta
-    text = text.replace(/\.$/, '');
-
-    return text + question;
-  }
-
-  /**
-   * Validación final de longitud
-   */
-  private validateFinalLength(text: string, maxWords: number): string {
-    const words = text.split(/\s+/);
-
-    if (words.length <= maxWords) {
-      return text;
-    }
-
-    // Truncamiento de emergencia
-    const truncated = words.slice(0, maxWords - 3).join(' ');
-    return truncated + '... ¿Te ayudo?';
   }
 
   private async saveThinkingProcess(
@@ -1408,110 +807,6 @@ class AIThinkingService {
       return ['hola', 'hi', 'buenas', 'buenos'].some(keyword =>
         message.toLowerCase().trim().includes(keyword)
       );
-    }
-  }
-
-  /**
-   * Determinar la complejidad del mensaje para optimizar respuestas
-   */
-  private getMessageComplexity(
-    message: string,
-    intentAnalysis?: IntentAnalysis
-  ): {
-    complexity: 'simple_greeting' | 'specific_query' | 'general_inquiry';
-    confidence: number;
-    reasoning: string;
-  } {
-    try {
-      const normalizedMessage = message.toLowerCase().trim();
-      const wordCount = normalizedMessage.split(/\s+/).length;
-      const messageLength = normalizedMessage.length;
-
-      // 1. SALUDOS SIMPLES (mayor prioridad)
-      const greetingKeywords = [
-        'hola',
-        'hi',
-        'buenas',
-        'buenos días',
-        'buenas tardes',
-        'hey',
-        'hello',
-        'saludos',
-      ];
-      const isExactGreeting = greetingKeywords.some(keyword => normalizedMessage === keyword);
-      const startsWithGreeting = greetingKeywords.some(keyword =>
-        normalizedMessage.startsWith(keyword)
-      );
-
-      if (isExactGreeting) {
-        return {
-          complexity: 'simple_greeting',
-          confidence: 0.95,
-          reasoning: 'Saludo exacto detectado',
-        };
-      }
-
-      if (startsWithGreeting && wordCount <= 3 && messageLength <= 20) {
-        return {
-          complexity: 'simple_greeting',
-          confidence: 0.9,
-          reasoning: 'Saludo simple con pocas palabras',
-        };
-      }
-
-      // 2. CONSULTAS ESPECÍFICAS (productos, precios, servicios)
-      const specificKeywords = {
-        precio: ['precio', 'cuesta', 'costo', 'coste', 'tarifa', 'paquete', 'plan'],
-        producto: ['servicio', 'anuncio', 'destacado', 'premium', 'vip', 'top'],
-        registro: ['registrar', 'cuenta', 'alta', 'sign up', 'crear'],
-        tecnico: ['error', 'problema', 'fallo', 'no funciona', 'bug'],
-      };
-
-      let specificMatches = 0;
-      let matchedCategory = '';
-
-      for (const [category, keywords] of Object.entries(specificKeywords)) {
-        const matches = keywords.filter(keyword => normalizedMessage.includes(keyword));
-        if (matches.length > 0) {
-          specificMatches += matches.length;
-          matchedCategory = category;
-        }
-      }
-
-      if (specificMatches > 0) {
-        return {
-          complexity: 'specific_query',
-          confidence: Math.min(0.7 + specificMatches * 0.1, 0.9),
-          reasoning: `Consulta específica sobre ${matchedCategory} detectada`,
-        };
-      }
-
-      // 3. CONSULTAS GENERALES (preguntas abiertas, información general)
-      const questionWords = ['qué', 'cómo', 'cuándo', 'dónde', 'por qué', 'cuál', 'quién'];
-      const hasQuestionWords = questionWords.some(word => normalizedMessage.includes(word));
-      const hasQuestionMark = message.includes('?');
-
-      if (hasQuestionWords || hasQuestionMark || wordCount > 5) {
-        return {
-          complexity: 'general_inquiry',
-          confidence: 0.6 + (wordCount > 10 ? 0.2 : 0),
-          reasoning: 'Consulta general o pregunta abierta',
-        };
-      }
-
-      // 4. FALLBACK - Si no encaja en las categorías anteriores
-      return {
-        complexity: 'general_inquiry',
-        confidence: 0.5,
-        reasoning: 'Mensaje no categorizado, tratado como consulta general',
-      };
-    } catch (error) {
-      logger.error('Error determinando complejidad del mensaje:', error);
-      return {
-        complexity: 'general_inquiry',
-        confidence: 0.3,
-        reasoning: 'Error en análisis, usando fallback',
-      };
     }
   }
 
@@ -1597,11 +892,7 @@ class AIThinkingService {
 
       if (complexity.complexity === 'specific_query' && complexity.confidence > 0.7) {
         // CONSULTAS ESPECÍFICAS - Respuesta contextual rápida
-        const quickContextualResponse = await this.generateQuickContextualResponse(
-          message,
-          context,
-          complexity
-        );
+        const quickContextualResponse = await this.generateQuickContextualResponse(message);
         if (quickContextualResponse) {
           this.cacheManager.setResponse(cacheKey, quickContextualResponse);
           logger.debug('⚡ Consulta específica procesada en modo express:', { processingTime });
@@ -1627,11 +918,7 @@ class AIThinkingService {
   /**
    * Generar respuesta contextual rápida para consultas específicas
    */
-  private async generateQuickContextualResponse(
-    message: string,
-    context: MessageContext,
-    complexity: any
-  ): Promise<string | null> {
+  private async generateQuickContextualResponse(message: string): Promise<string | null> {
     try {
       // Detectar el tipo específico de consulta
       const normalizedMessage = message.toLowerCase();
