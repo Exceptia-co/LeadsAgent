@@ -1,8 +1,8 @@
 {
     "$schema": "https://openapi.vercel.sh/vercel.json",
     "framework": "nextjs",
-    "buildCommand": "cd ../.. && npx turbo run db:generate --filter=@leadcrm/db && npx turbo run build --filter=@leadcrm/dashboard",
-    "installCommand": "cd ../.. && pnpm install --no-frozen-lockfile",
+    "buildCommand": "cd ../.. && cd packages/db && npx prisma generate && cd ../../apps/dashboard && npm run build",
+    "installCommand": "cd ../.. && npm install",
     "outputDirectory": ".next",
     "regions": [
         "iad1"
