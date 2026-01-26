@@ -102,8 +102,8 @@ async function migrateExistingUsers() {
       }
     ]
 
-    const migratedUsers = []
-    const errors = []
+    const migratedUsers: Record<string, unknown>[] = []
+    const errors: { clerkId: string; error: string }[] = []
 
     for (const clerkUser of mockClerkUsers) {
       try {
@@ -223,8 +223,8 @@ async function createTestUsers() {
       }
     ]
 
-    const createdUsers = []
-    
+    const createdUsers: Record<string, unknown>[] = []
+
     for (const user of testUsers) {
       const { data: newUser, error } = await supabase
         .from('users')

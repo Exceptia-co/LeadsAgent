@@ -102,9 +102,9 @@ async function migrateRealClerkUsers() {
     const clerkUsers = await response.json()
     console.log(`Found ${clerkUsers.length} users in Clerk to migrate`)
 
-    const migratedUsers = []
-    const errors = []
-    const skippedUsers = []
+    const migratedUsers: Record<string, unknown>[] = []
+    const errors: { clerkId: string; error: string }[] = []
+    const skippedUsers: { clerkId: string; email?: string; reason: string }[] = []
 
     for (const clerkUser of clerkUsers) {
       try {
