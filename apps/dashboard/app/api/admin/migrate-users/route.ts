@@ -174,9 +174,9 @@ async function migrateExistingUsers() {
         if (error) {
           console.error(`Error creating user ${clerkUser.id}:`, error)
           errors.push({ clerkId: clerkUser.id, error: error.message })
-        } else {
+        } else if (newUser) {
           console.log(`✅ Migrated user: ${primaryEmail} (${role})`)
-          migratedUsers.push(newUser)
+          migratedUsers.push(newUser as MigratedUser)
         }
       } catch (err) {
         console.error(`Error processing user ${clerkUser.id}:`, err)
@@ -250,8 +250,8 @@ async function createTestUsers() {
         .select()
         .single()
 
-      if (!error) {
-        createdUsers.push(newUser)
+      if (!error && newUser) {
+        createdUsers.push(newUser as MigratedUser)
       }
     }
 

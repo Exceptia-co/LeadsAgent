@@ -114,7 +114,7 @@ async function migrateRealClerkUsers() {
     console.log(`Found ${clerkUsers.length} users in Clerk to migrate`)
 
     const migratedUsers: MigratedUser[] = []
-    const errors: { clerkId: string; error: string }[] = []
+    const errors: { clerkId: string; email?: string; error: string }[] = []
     const skippedUsers: { clerkId: string; email?: string; reason: string }[] = []
 
     for (const clerkUser of clerkUsers) {
@@ -183,14 +183,14 @@ async function migrateRealClerkUsers() {
 
         if (error) {
           console.error(`Error creating user ${clerkUser.id}:`, error)
-          errors.push({ 
-            clerkId: clerkUser.id, 
+          errors.push({
+            clerkId: clerkUser.id,
             email: primaryEmail,
-            error: error.message 
+            error: error.message
           })
-        } else {
+        } else if (newUser) {
           console.log(`✅ Migrated real user: ${primaryEmail} (${role}) - Clerk ID: ${clerkUser.id}`)
-          migratedUsers.push(newUser)
+          migratedUsers.push(newUser as MigratedUser)
         }
       } catch (err) {
         console.error(`Error processing user ${clerkUser.id}:`, err)
