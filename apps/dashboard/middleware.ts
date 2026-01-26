@@ -16,18 +16,18 @@ const isProtectedRoute = createRouteMatcher([
   '/dashboard(.*)',
 ])
 
-export default clerkMiddleware((auth, request) => {
+export default clerkMiddleware(async (auth, request) => {
   const { nextUrl } = request
-  
+
   // Si es una ruta pública, permitir acceso SIN llamar a auth() para evitar errores de clerk
   if (isPublicRoute(request)) {
     // Para rutas API públicas, evitar cualquier procesamiento de autenticación
     if (nextUrl.pathname.startsWith('/api/public/')) {
       return NextResponse.next()
     }
-    
+
     // Para otras rutas públicas, verificar autenticación solo si es necesario
-    const { userId } = auth()
+    const { userId } = await auth()
     if (userId && nextUrl.pathname === '/') {
       return NextResponse.redirect(new URL('/dashboard', request.url))
     }
@@ -35,7 +35,7 @@ export default clerkMiddleware((auth, request) => {
   }
 
   // Para rutas protegidas, verificar autenticación
-  const { userId } = auth()
+  const { userId } = await auth()
   if (isProtectedRoute(request) && !userId) {
     return NextResponse.redirect(new URL('/sign-in', request.url))
   }
@@ -46,4 +46,9 @@ export default clerkMiddleware((auth, request) => {
 
 export const config = {
   matcher: ["/((?!.+\\.[\\w]+$|_next).*)", "/", "/(api|trpc)(.*)"],
+  // Allow Clerk packages that use dynamic imports
+  unstable_allowDynamic: [
+    '/node_modules/@clerk/**',
+    '/node_modules/.pnpm/@clerk*/**',
+  ],
 };

@@ -11,7 +11,7 @@ export async function PATCH(
 ) {
   try {
     // Get authentication token
-    const { getToken } = auth()
+    const { getToken } = await auth()
     const token = await getToken()
 
     if (!token) {
@@ -84,7 +84,7 @@ export async function DELETE(
 ) {
   try {
     // Get authentication token
-    const { getToken } = auth()
+    const { getToken } = await auth()
     const token = await getToken()
 
     if (!token) {

@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
       description: 'Usando auth() de Clerk para verificar JWT'
     })
 
-    const { userId, sessionId } = auth()
+    const { userId, sessionId } = await auth()
     
     debugInfo.steps.push({
       step: 2,

@@ -51,7 +51,7 @@ export class UnifiedAuthError extends Error {
 export async function getUnifiedUser(): Promise<UnifiedUser | null> {
   try {
     // 1. Verificar autenticación con Clerk
-    const { userId } = auth()
+    const { userId } = await auth()
     
     if (!userId) {
       return null

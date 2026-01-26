@@ -1,8 +1,8 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 
-export default function Home() {
-  const { userId } = auth()
+export default async function Home() {
+  const { userId } = await auth()
   
   // Si el usuario está autenticado, ir al dashboard
   if (userId) {

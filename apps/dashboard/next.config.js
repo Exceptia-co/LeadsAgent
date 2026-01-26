@@ -6,6 +6,7 @@ const nextConfig = {
       // Configuración básica de Turbopack para Next.js 14
     },
   },
+
   poweredByHeader: false,
   
   // Configuración de TypeScript
