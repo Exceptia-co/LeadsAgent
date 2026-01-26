@@ -2,7 +2,6 @@ import React, { useState } from 'react'
 import { useUnifiedUser } from '../hooks/use-unified-user'
 import { Card } from './ui/card'
 import { Badge } from './ui/badge'
-import { Button } from '@leadcrm/ui'
 import { Loader2, Settings, User, Shield, Activity } from 'lucide-react'
 
 /**
@@ -56,9 +55,12 @@ export function UserProfile() {
         <div className="text-red-800">
           <h3 className="font-semibold">Error de autenticación</h3>
           <p className="text-sm mt-1">{error}</p>
-          <Button onClick={refreshUser} variant="outline" size="sm" className="mt-3">
+          <button
+            onClick={refreshUser}
+            className="mt-3 px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+          >
             Reintentar
-          </Button>
+          </button>
         </div>
       </Card>
     )
@@ -124,9 +126,12 @@ export function UserProfile() {
               </div>
             </div>
           </div>
-          <Button onClick={refreshUser} variant="outline" size="sm">
+          <button
+            onClick={refreshUser}
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+          >
             Actualizar
-          </Button>
+          </button>
         </div>
 
         {/* Información de sesión */}
@@ -266,9 +271,12 @@ export function AuthenticatedUserProfile() {
         <p className="text-gray-600 mb-4">
           Necesitas iniciar sesión para ver esta página
         </p>
-        <Button onClick={() => window.location.href = '/sign-in'}>
+        <button
+          onClick={() => window.location.href = '/sign-in'}
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+        >
           Iniciar sesión
-        </Button>
+        </button>
       </div>
     )
   }
