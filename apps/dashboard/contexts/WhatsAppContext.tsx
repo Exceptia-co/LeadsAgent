@@ -7,7 +7,7 @@ export interface WhatsAppSession {
   id: string
   name?: string
   phoneNumber?: string
-  status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'QR_PENDING'
+  status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'QR_PENDING' | 'QR_READY'
   qrCode?: string
   lastActivity?: string
   createdAt?: string
@@ -26,7 +26,7 @@ interface WhatsAppContextType {
   // Session validation
   validateSessionForSending: (sessionId?: string) => Promise<{ isValid: boolean; session?: WhatsAppSession; error?: string }>
   getActiveSessions: () => WhatsAppSession[]
-  getBestSessionForSending: () => WhatsAppSession | null
+  getBestSessionForSending: () => WhatsAppSession | undefined
   
   // Refresh methods
   refreshSessions: () => void
@@ -189,15 +189,15 @@ export function WhatsAppProvider({ children }: { children: React.ReactNode }) {
     return sessions.filter(s => s.status === 'CONNECTED')
   }, [sessions])
 
-  const getBestSessionForSending = useCallback((): WhatsAppSession | null => {
+  const getBestSessionForSending = useCallback((): WhatsAppSession | undefined => {
     const connectedSessions = getActiveSessions()
     if (connectedSessions.length > 0) {
       // Return the first connected session
       return connectedSessions[0]
     }
-    
+
     // If no connected sessions, return the first available session
-    return sessions.length > 0 ? sessions[0] : null
+    return sessions.length > 0 ? sessions[0] : undefined
   }, [sessions, getActiveSessions])
 
   const refreshSessions = useCallback(() => {

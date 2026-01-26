@@ -23,7 +23,7 @@ interface Message {
 
 interface Lead {
   id: string
-  name: string
+  name: string | null
   phone: string
   status: string
   score?: number
