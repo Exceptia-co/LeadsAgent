@@ -395,7 +395,7 @@ export default function AdvancedPreview({
                     {variables.filter(v => !['nombre', 'telefono', 'email', 'estado', 'origen'].includes(v)).map(variable => (
                       <div key={variable}>
                         <label className="block text-xs text-gray-600 mb-1">
-                          {{`{{${variable}}}`}}
+                          {`{{${variable}}}`}
                         </label>
                         <input
                           type="text"
