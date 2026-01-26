@@ -496,7 +496,7 @@ export default function TemplatesPage() {
                     
                     return variables.map(variable => (
                       <span key={variable} className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800 border border-blue-200">
-                        {{`{{${variable}}}`}}
+                        {`{{${variable}}}`}
                       </span>
                     ))
                   })()} 
