@@ -205,7 +205,7 @@ export function useWhatsAppApi() {
     message: string,
     type: 'text' | 'image' | 'document' | 'audio' | 'video' = 'text'
   ): Promise<boolean> => {
-    const result = await makeApiCall('/whatsapp/send', {
+    const result = await makeApiCall<{ success?: boolean }>('/whatsapp/send', {
       method: 'POST',
       body: JSON.stringify({
         sessionId,
