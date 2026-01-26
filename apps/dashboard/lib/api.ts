@@ -1,6 +1,7 @@
 import useSWR, { mutate } from 'swr'
 import { useAuth } from '@clerk/nextjs'
 import { CACHE_KEYS, createCacheKey, globalFetcher, globalErrorHandler, globalSuccessHandler, REFRESH_INTERVALS, getDynamicInterval } from './swr-config'
+import type { Lead } from '../types'
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
@@ -117,8 +118,15 @@ export const useLeads = (
   )
   
   return {
-    leads: data?.data || [], // La API devuelve data: [...]
-    pagination: data?.meta,
+    leads: (data?.data || []) as Lead[], // La API devuelve data: [...]
+    pagination: data?.meta as {
+      page: number
+      limit: number
+      total: number
+      totalPages: number
+      hasNext: boolean
+      hasPrev: boolean
+    } | undefined,
     isLoading: !error && !data,
     isError: error,
     isRefreshing: isValidating,
