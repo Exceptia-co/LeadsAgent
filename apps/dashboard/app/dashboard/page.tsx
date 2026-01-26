@@ -25,7 +25,7 @@ export default function DashboardPage() {
     pagination, 
     isRefreshing: leadsRefreshing,
     refreshInterval: leadsRefreshInterval
-  } = useLeads(1, 5, undefined, {
+  } = useLeads(1, 5, undefined, undefined, undefined, {
     priority: 'standard' // 5-minute intervals for lead list
   })
   
