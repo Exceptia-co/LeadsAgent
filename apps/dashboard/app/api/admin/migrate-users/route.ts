@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireRole, UnifiedAuthError } from '../../../../lib/auth/unified-auth'
 
+interface MigratedUser {
+  id: string
+  email: string
+  role: string
+  clerk_id: string
+  first_name?: string
+  last_name?: string
+  is_active?: boolean
+  settings?: Record<string, unknown>
+}
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -102,7 +113,7 @@ async function migrateExistingUsers() {
       }
     ]
 
-    const migratedUsers: Record<string, unknown>[] = []
+    const migratedUsers: MigratedUser[] = []
     const errors: { clerkId: string; error: string }[] = []
 
     for (const clerkUser of mockClerkUsers) {
@@ -223,7 +234,7 @@ async function createTestUsers() {
       }
     ]
 
-    const createdUsers: Record<string, unknown>[] = []
+    const createdUsers: MigratedUser[] = []
 
     for (const user of testUsers) {
       const { data: newUser, error } = await supabase

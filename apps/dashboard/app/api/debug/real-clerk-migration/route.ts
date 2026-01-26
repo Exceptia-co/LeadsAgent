@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
+interface MigratedUser {
+  id: string
+  email: string
+  role: string
+  clerk_id: string
+  first_name?: string
+  last_name?: string
+  is_active?: boolean
+  settings?: Record<string, unknown>
+}
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -102,7 +113,7 @@ async function migrateRealClerkUsers() {
     const clerkUsers = await response.json()
     console.log(`Found ${clerkUsers.length} users in Clerk to migrate`)
 
-    const migratedUsers: Record<string, unknown>[] = []
+    const migratedUsers: MigratedUser[] = []
     const errors: { clerkId: string; error: string }[] = []
     const skippedUsers: { clerkId: string; email?: string; reason: string }[] = []
 
