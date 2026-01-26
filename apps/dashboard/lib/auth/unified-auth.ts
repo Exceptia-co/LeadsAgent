@@ -1,6 +1,5 @@
 import { auth } from '@clerk/nextjs/server'
 import { createClient } from '@supabase/supabase-js'
-import { User } from '@clerk/nextjs/server'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -10,7 +9,7 @@ const supabase = createClient(
 export interface UnifiedUser {
   // Datos de Clerk
   clerkId: string
-  clerkUser?: User
+  clerkUser?: unknown
   
   // Datos de Supabase
   supabaseId: string
