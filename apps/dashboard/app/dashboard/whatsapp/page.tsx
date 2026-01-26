@@ -51,6 +51,7 @@ const SESSION_STATUS_VARIANTS = {
   CONNECTING: "warning" as const,
   CONNECTED: "success" as const,
   QR_READY: "secondary" as const,
+  QR_PENDING: "secondary" as const,
 };
 
 const SESSION_STATUS_LABELS = {
@@ -58,6 +59,7 @@ const SESSION_STATUS_LABELS = {
   CONNECTING: "Conectando",
   CONNECTED: "Conectado",
   QR_READY: "QR Listo",
+  QR_PENDING: "QR Pendiente",
 };
 
 export default function WhatsAppPage() {
@@ -96,17 +98,17 @@ export default function WhatsAppPage() {
   useEffect(() => {
     if (socketSessions.length > 0) {
       // Convert socket sessions to WhatsApp sessions format
-      const convertedSessions = socketSessions.map(socketSession => ({
+      const convertedSessions: WhatsAppSession[] = socketSessions.map(socketSession => ({
         id: socketSession.id,
         name: socketSession.name,
-        status: socketSession.status,
+        status: socketSession.status as WhatsAppSession['status'],
         phoneNumber: socketSession.phoneNumber,
         qr: socketSession.qrCode,
         createdAt: socketSession.timestamp,
         updatedAt: socketSession.timestamp,
         lastSeen: socketSession.lastActivity,
       }));
-      
+
       setSessions(convertedSessions);
       
       // Auto-select first session if none selected

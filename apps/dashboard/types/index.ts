@@ -125,7 +125,7 @@ export interface BulkUpdateWhatsAppData {
 export interface WhatsAppSession {
   id: string
   name?: string
-  status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'QR_READY'
+  status: 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'QR_READY' | 'QR_PENDING'
   qr?: string
   phoneNumber?: string
   createdAt: string
