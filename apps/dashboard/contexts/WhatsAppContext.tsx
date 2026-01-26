@@ -47,8 +47,8 @@ export function WhatsAppProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { showToast } = useToast()
-  const showError = (title: string, message?: string) => showToast(title, message, 'destructive')
-  const showWarning = (title: string, message?: string) => showToast(title, message, 'warning')
+  const showError = (title: string, message?: string) => showToast({ type: 'error', title, description: message })
+  const showWarning = (title: string, message?: string) => showToast({ type: 'warning', title, description: message })
 
   const fetchSessions = useCallback(async () => {
     setLoading(true)
