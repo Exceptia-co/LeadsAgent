@@ -108,7 +108,7 @@ export const STATUS_LABELS: Record<LeadStatus, string> = {
 
 // Sorting types
 export type SortOrder = 'asc' | 'desc'
-export type SortableLeadField = 'name' | 'phone' | 'status' | 'score' | 'createdAt' | 'whatsappAuthorized'
+export type SortableLeadField = 'name' | 'phone' | 'status' | 'score' | 'createdAt' | 'updatedAt' | 'whatsappAuthorized'
 
 export interface LeadSortConfig {
   sortBy?: SortableLeadField
