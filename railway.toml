@@ -1,0 +1,20 @@
+# Railway configuration for LeadsCRM API
+# Root Directory debe estar configurado como "/" en Railway Dashboard
+
+[build]
+builder = "nixpacks"
+buildCommand = "pnpm install --frozen-lockfile && pnpm db:generate && pnpm build --filter=@leadcrm/api"
+
+[deploy]
+startCommand = "node apps/api/dist/main.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
+
+[nixpacks]
+providers = ["node"]
+
+[nixpacks.apt]
+# Dependencias adicionales si se necesitan
+pkgs = []
