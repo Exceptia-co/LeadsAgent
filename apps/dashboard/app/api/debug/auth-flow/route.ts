@@ -7,12 +7,28 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+interface DebugStep {
+  step: number | string
+  action: string
+  description?: string
+  data?: Record<string, unknown>
+  error?: unknown
+  result?: string
+  query?: string
+  wouldHappen?: string
+}
+
 /**
  * Endpoint de debugging para mostrar exactamente cómo funciona el flujo de autenticación
  * Muestra información paso a paso de Clerk → Supabase
  */
 export async function GET(request: NextRequest) {
-  const debugInfo = {
+  const debugInfo: {
+    timestamp: string
+    steps: DebugStep[]
+    finalResult: Record<string, unknown> | null
+    error: string | null
+  } = {
     timestamp: new Date().toISOString(),
     steps: [],
     finalResult: null,
@@ -192,7 +208,11 @@ export async function POST(request: NextRequest) {
 }
 
 async function simulateUser(clerkId: string) {
-  const simulation = {
+  const simulation: {
+    simulated_clerk_id: string
+    timestamp: string
+    steps: DebugStep[]
+  } = {
     simulated_clerk_id: clerkId,
     timestamp: new Date().toISOString(),
     steps: []
