@@ -9,9 +9,8 @@ const nextConfig = {
   poweredByHeader: false,
   
   // Configuración de TypeScript
-  // Temporarily ignore TS errors to identify if that's the build issue
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   
   eslint: {
