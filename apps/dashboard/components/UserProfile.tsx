@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useUnifiedUser } from '../hooks/use-unified-user'
 import { Card } from './ui/card'
 import { Badge } from './ui/badge'
-import { Button } from '@/components/ui/button'
+import { Button } from '@leadcrm/ui'
 import { Loader2, Settings, User, Shield, Activity } from 'lucide-react'
 
 /**
