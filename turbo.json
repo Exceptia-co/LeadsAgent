@@ -5,8 +5,10 @@
     "NODE_ENV",
     "NEXT_PUBLIC_*",
     "DATABASE_URL",
+    "DIRECT_URL",
     "OPENAI_API_KEY",
-    "CLERK_*"
+    "CLERK_*",
+    "SUPABASE_SERVICE_ROLE_KEY"
   ],
   "tasks": {
     "build": {

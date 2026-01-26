@@ -1,10 +1,22 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { UnifiedUser, UnifiedAuthError } from '../auth/unified-auth'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// Lazy initialization to avoid build-time errors
+let supabaseInstance: SupabaseClient | null = null
+
+function getSupabase(): SupabaseClient {
+  if (!supabaseInstance) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!url || !key) {
+      throw new Error('Missing Supabase environment variables')
+    }
+
+    supabaseInstance = createClient(url, key)
+  }
+  return supabaseInstance
+}
 
 export interface CreateUserData {
   clerkId: string
@@ -48,7 +60,7 @@ export class UserService {
    */
   static async getUserByClerkId(clerkId: string): Promise<UnifiedUser | null> {
     try {
-      const { data: user, error } = await supabase
+      const { data: user, error } = await getSupabase()
         .from('users')
         .select('*')
         .eq('clerk_id', clerkId)
@@ -77,7 +89,7 @@ export class UserService {
    */
   static async getUserById(id: string): Promise<UnifiedUser | null> {
     try {
-      const { data: user, error } = await supabase
+      const { data: user, error } = await getSupabase()
         .from('users')
         .select('*')
         .eq('id', id)
@@ -106,7 +118,7 @@ export class UserService {
    */
   static async createUser(userData: CreateUserData): Promise<UnifiedUser> {
     try {
-      const { data: newUser, error } = await supabase
+      const { data: newUser, error } = await getSupabase()
         .from('users')
         .insert({
           clerk_id: userData.clerkId,
@@ -174,7 +186,7 @@ export class UserService {
       if (updateData.isActive !== undefined) updates.is_active = updateData.isActive
       if (updateData.settings !== undefined) updates.settings = updateData.settings
 
-      const { data: updatedUser, error } = await supabase
+      const { data: updatedUser, error } = await getSupabase()
         .from('users')
         .update(updates)
         .eq('clerk_id', clerkId)
@@ -210,7 +222,7 @@ export class UserService {
    */
   static async deactivateUser(clerkId: string): Promise<boolean> {
     try {
-      const { error } = await supabase
+      const { error } = await getSupabase()
         .from('users')
         .update({
           is_active: false,
@@ -246,7 +258,7 @@ export class UserService {
         orderDirection = 'desc'
       } = pagination
 
-      let query = supabase
+      let query = getSupabase()
         .from('users')
         .select('*', { count: 'exact' })
 
@@ -313,16 +325,16 @@ export class UserService {
    */
   static async getUsersStats() {
     try {
-      const { count: totalUsers } = await supabase
+      const { count: totalUsers } = await getSupabase()
         .from('users')
         .select('*', { count: 'exact', head: true })
 
-      const { count: activeUsers } = await supabase
+      const { count: activeUsers } = await getSupabase()
         .from('users')
         .select('*', { count: 'exact', head: true })
         .eq('is_active', true)
 
-      const { count: admins } = await supabase
+      const { count: admins } = await getSupabase()
         .from('users')
         .select('*', { count: 'exact', head: true })
         .eq('role', 'admin')
@@ -332,7 +344,7 @@ export class UserService {
       const thirtyDaysAgo = new Date()
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
-      const { count: recentUsers } = await supabase
+      const { count: recentUsers } = await getSupabase()
         .from('users')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', thirtyDaysAgo.toISOString())
@@ -359,7 +371,7 @@ export class UserService {
    */
   static async updateLastLogin(clerkId: string): Promise<boolean> {
     try {
-      const { error } = await supabase
+      const { error } = await getSupabase()
         .from('users')
         .update({
           last_login_at: new Date().toISOString()

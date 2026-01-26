@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { requireRole, UnifiedAuthError } from '../../../../lib/auth/unified-auth'
 
 interface MigratedUser {
@@ -13,10 +13,22 @@ interface MigratedUser {
   settings?: Record<string, unknown>
 }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// Lazy initialization to avoid build-time errors
+let supabaseInstance: SupabaseClient | null = null
+
+function getSupabase(): SupabaseClient {
+  if (!supabaseInstance) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!url || !key) {
+      throw new Error('Missing Supabase environment variables')
+    }
+
+    supabaseInstance = createClient(url, key)
+  }
+  return supabaseInstance
+}
 
 /**
  * Endpoint para migrar usuarios existentes de Clerk a Supabase
@@ -125,7 +137,7 @@ async function migrateExistingUsers() {
         }
 
         // Verificar si el usuario ya existe
-        const { data: existingUser } = await supabase
+        const { data: existingUser } = await getSupabase()
           .from('users')
           .select('id, clerk_id')
           .eq('clerk_id', clerkUser.id)
@@ -142,7 +154,7 @@ async function migrateExistingUsers() {
         else if (primaryEmail.includes('manager')) role = 'manager'
 
         // Crear usuario en Supabase
-        const { data: newUser, error } = await supabase
+        const { data: newUser, error } = await getSupabase()
           .from('users')
           .insert({
             clerk_id: clerkUser.id,
@@ -237,7 +249,7 @@ async function createTestUsers() {
     const createdUsers: MigratedUser[] = []
 
     for (const user of testUsers) {
-      const { data: newUser, error } = await supabase
+      const { data: newUser, error } = await getSupabase()
         .from('users')
         .insert({
           ...user,

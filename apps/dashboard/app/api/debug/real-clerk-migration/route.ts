@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 interface MigratedUser {
   id: string
@@ -12,10 +12,22 @@ interface MigratedUser {
   settings?: Record<string, unknown>
 }
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// Lazy initialization to avoid build-time errors
+let supabaseInstance: SupabaseClient | null = null
+
+function getSupabase(): SupabaseClient {
+  if (!supabaseInstance) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!url || !key) {
+      throw new Error('Missing Supabase environment variables')
+    }
+
+    supabaseInstance = createClient(url, key)
+  }
+  return supabaseInstance
+}
 
 /**
  * Endpoint para obtener usuarios reales de Clerk y migrarlos a Supabase
@@ -127,7 +139,7 @@ async function migrateRealClerkUsers() {
         }
 
         // Verificar si el usuario ya existe en Supabase
-        const { data: existingUser } = await supabase
+        const { data: existingUser } = await getSupabase()
           .from('users')
           .select('id, clerk_id')
           .eq('clerk_id', clerkUser.id)
@@ -152,7 +164,7 @@ async function migrateRealClerkUsers() {
         }
 
         // Crear usuario en Supabase con datos reales de Clerk
-        const { data: newUser, error } = await supabase
+        const { data: newUser, error } = await getSupabase()
           .from('users')
           .insert({
             clerk_id: clerkUser.id,

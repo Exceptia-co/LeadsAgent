@@ -1,10 +1,22 @@
 import { auth } from '@clerk/nextjs/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// Lazy initialization to avoid build-time errors
+let supabaseInstance: SupabaseClient | null = null
+
+function getSupabase(): SupabaseClient {
+  if (!supabaseInstance) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!url || !key) {
+      throw new Error('Missing Supabase environment variables')
+    }
+
+    supabaseInstance = createClient(url, key)
+  }
+  return supabaseInstance
+}
 
 export interface UnifiedUser {
   // Datos de Clerk
@@ -46,7 +58,7 @@ export async function getUnifiedUser(): Promise<UnifiedUser | null> {
     }
 
     // 2. Buscar usuario en Supabase por clerk_id
-    const { data: supabaseUser, error } = await supabase
+    const { data: supabaseUser, error } = await getSupabase()
       .from('users')
       .select('*')
       .eq('clerk_id', userId)
@@ -73,7 +85,7 @@ export async function getUnifiedUser(): Promise<UnifiedUser | null> {
     }
 
     // 3. Actualizar last_login_at
-    await supabase
+    await getSupabase()
       .from('users')
       .update({ last_login_at: new Date().toISOString() })
       .eq('id', supabaseUser.id)
@@ -118,7 +130,7 @@ async function createUserFromClerk(clerkId: string): Promise<UnifiedUser | null>
     // para obtener los datos del usuario. Por ahora, creamos un usuario básico
     console.log('Creating user from Clerk ID:', clerkId)
     
-    const { data: newUser, error } = await supabase
+    const { data: newUser, error } = await getSupabase()
       .from('users')
       .insert({
         clerk_id: clerkId,
@@ -211,7 +223,7 @@ export async function updateUserSettings(
   settings: Record<string, any>
 ): Promise<boolean> {
   try {
-    const { error } = await supabase
+    const { error } = await getSupabase()
       .from('users')
       .update({ 
         settings: settings,
@@ -237,7 +249,7 @@ export async function updateUserSettings(
 export async function getUserStats(userId: string) {
   try {
     // Obtener datos del usuario
-    const { data: user } = await supabase
+    const { data: user } = await getSupabase()
       .from('users')
       .select('id')
       .eq('clerk_id', userId)
@@ -246,12 +258,12 @@ export async function getUserStats(userId: string) {
     if (!user) return null
 
     // Obtener estadísticas de leads asignados al usuario
-    const { count: totalLeads } = await supabase
+    const { count: totalLeads } = await getSupabase()
       .from('leads')
       .select('*', { count: 'exact', head: true })
       .eq('assigned_to', user.id)
 
-    const { count: activeLeads } = await supabase
+    const { count: activeLeads } = await getSupabase()
       .from('leads')
       .select('*', { count: 'exact', head: true })
       .eq('assigned_to', user.id)

@@ -1,11 +1,23 @@
 import { headers } from 'next/headers'
 import { Webhook } from 'svix'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// Lazy initialization to avoid build-time errors
+let supabaseInstance: SupabaseClient | null = null
+
+function getSupabase(): SupabaseClient {
+  if (!supabaseInstance) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!url || !key) {
+      throw new Error('Missing Supabase environment variables')
+    }
+
+    supabaseInstance = createClient(url, key)
+  }
+  return supabaseInstance
+}
 
 // Definir los tipos de eventos de Clerk que manejamos
 type ClerkWebhookEvent = {
@@ -98,7 +110,7 @@ async function handleUserCreated(data: ClerkWebhookEvent['data']) {
     return
   }
 
-  const { data: user, error } = await supabase
+  const { data: user, error } = await getSupabase()
     .from('users')
     .insert({
       clerk_id: data.id,
@@ -141,7 +153,7 @@ async function handleUserUpdated(data: ClerkWebhookEvent['data']) {
     return
   }
 
-  const { data: user, error } = await supabase
+  const { data: user, error } = await getSupabase()
     .from('users')
     .update({
       email: primaryEmail,
@@ -166,7 +178,7 @@ async function handleUserDeleted(data: ClerkWebhookEvent['data']) {
   console.log('🔄 Deactivating user in Supabase:', { clerkId: data.id })
 
   // En lugar de eliminar el usuario, lo desactivamos para mantener la integridad referencial
-  const { data: user, error } = await supabase
+  const { data: user, error } = await getSupabase()
     .from('users')
     .update({
       is_active: false,

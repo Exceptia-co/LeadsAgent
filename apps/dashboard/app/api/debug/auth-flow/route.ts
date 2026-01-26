@@ -1,11 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+// Lazy initialization to avoid build-time errors
+let supabaseInstance: SupabaseClient | null = null
+
+function getSupabase(): SupabaseClient {
+  if (!supabaseInstance) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!url || !key) {
+      throw new Error('Missing Supabase environment variables')
+    }
+
+    supabaseInstance = createClient(url, key)
+  }
+  return supabaseInstance
+}
 
 interface DebugStep {
   step: number | string
@@ -73,7 +85,7 @@ export async function GET(request: NextRequest) {
       description: `Looking for user with clerk_id = "${userId}"`
     })
 
-    const { data: supabaseUser, error: supabaseError } = await supabase
+    const { data: supabaseUser, error: supabaseError } = await getSupabase()
       .from('users')
       .select('*')
       .eq('clerk_id', userId)
@@ -141,14 +153,14 @@ export async function GET(request: NextRequest) {
         description: 'Updating last_login_at in Supabase'
       })
 
-      await supabase
+      await getSupabase()
         .from('users')
         .update({ last_login_at: new Date().toISOString() })
         .eq('id', supabaseUser.id)
     }
 
     // Información adicional sobre usuarios disponibles
-    const { data: allUsers, count } = await supabase
+    const { data: allUsers, count } = await getSupabase()
       .from('users')
       .select('clerk_id, email, role', { count: 'exact' })
 
@@ -226,7 +238,7 @@ async function simulateUser(clerkId: string) {
     query: `SELECT * FROM users WHERE clerk_id = '${clerkId}'`
   })
 
-  const { data: user, error } = await supabase
+  const { data: user, error } = await getSupabase()
     .from('users')
     .select('*')
     .eq('clerk_id', clerkId)
