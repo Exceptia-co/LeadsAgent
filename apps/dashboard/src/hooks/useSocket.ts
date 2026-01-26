@@ -82,7 +82,7 @@ interface UseSocketReturn {
   disconnect: () => void;
   emit: (event: string, data?: any) => void;
   on: <T extends SocketEventName>(event: T, handler: SocketEvents[T]) => void;
-  off: (event: SocketEventName, handler?: Function) => void;
+  off: (event: SocketEventName, handler?: (...args: any[]) => void) => void;
   getCurrentState: () => void;
 }
 
@@ -369,11 +369,12 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
 
   const on = useCallback(<T extends SocketEventName>(event: T, handler: SocketEvents[T]) => {
     if (socketRef.current) {
-      socketRef.current.on(event, handler);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      socketRef.current.on(event, handler as any);
     }
   }, []);
 
-  const off = useCallback((event: SocketEventName, handler?: Function) => {
+  const off = useCallback((event: SocketEventName, handler?: (...args: any[]) => void) => {
     if (socketRef.current) {
       if (handler) {
         socketRef.current.off(event, handler);

@@ -269,10 +269,12 @@ export async function getUserStats(userId: string) {
       .eq('assigned_to', user.id)
       .neq('status', 'CERRADO')
 
+    const total = totalLeads ?? 0
+    const active = activeLeads ?? 0
     return {
-      totalLeads: totalLeads || 0,
-      activeLeads: activeLeads || 0,
-      completionRate: totalLeads > 0 ? ((totalLeads - (activeLeads || 0)) / totalLeads) * 100 : 0
+      totalLeads: total,
+      activeLeads: active,
+      completionRate: total > 0 ? ((total - active) / total) * 100 : 0
     }
   } catch (error) {
     console.error('Error getting user stats:', error)

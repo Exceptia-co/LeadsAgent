@@ -1,9 +1,9 @@
 {
     "$schema": "https://openapi.vercel.sh/vercel.json",
-    "framework": null,
-    "installCommand": "cd ../.. && corepack enable && pnpm install --frozen-lockfile",
-    "buildCommand": "cd ../.. && pnpm run db:generate && cd apps/dashboard && pnpm run build",
-    "outputDirectory": ".next",
+    "framework": "nextjs",
+    "buildCommand": "pnpm run db:generate && pnpm run build --filter=@leadcrm/dashboard",
+    "outputDirectory": "apps/dashboard/.next",
+    "installCommand": "pnpm install --frozen-lockfile",
     "regions": [
         "iad1"
     ],
