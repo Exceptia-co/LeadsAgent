@@ -9,13 +9,14 @@ const supabase = createClient(
 
 interface DebugStep {
   step: number | string
-  action: string
+  action?: string
   description?: string
   data?: Record<string, unknown>
   error?: unknown
   result?: string
   query?: string
   wouldHappen?: string
+  user?: Record<string, unknown>
 }
 
 /**
