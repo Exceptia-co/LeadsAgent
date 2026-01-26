@@ -33,7 +33,7 @@
     "rewrites": [
         {
             "source": "/api/:path*",
-            "destination": "https://api.TUDOMINIO.com/:path*"
+            "destination": "https://leadcrmapi-production.up.railway.app/:path*"
         }
     ]
 }
