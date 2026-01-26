@@ -2,10 +2,20 @@ import { useState, useEffect } from 'react'
 import { useUser } from '@clerk/nextjs'
 import { UnifiedUser } from '../lib/auth/unified-auth'
 
+interface UseUnifiedUserReturn {
+  user: UnifiedUser | null
+  clerkUser: ReturnType<typeof useUser>['user']
+  isLoading: boolean
+  error: string | null
+  isAuthenticated: boolean
+  updateSettings: (settings: Record<string, unknown>) => Promise<boolean>
+  refreshUser: () => Promise<void>
+}
+
 /**
  * Hook personalizado para obtener el usuario unificado (Clerk + Supabase)
  */
-export function useUnifiedUser() {
+export function useUnifiedUser(): UseUnifiedUserReturn {
   const { user: clerkUser, isLoaded: clerkLoaded, isSignedIn } = useUser()
   const [unifiedUser, setUnifiedUser] = useState<UnifiedUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -50,7 +60,7 @@ export function useUnifiedUser() {
     fetchUnifiedUser()
   }, [clerkLoaded, isSignedIn, clerkUser?.id])
 
-  const updateSettings = async (settings: Record<string, any>) => {
+  const updateSettings = async (settings: Record<string, unknown>): Promise<boolean> => {
     if (!unifiedUser) return false
 
     try {
@@ -79,7 +89,7 @@ export function useUnifiedUser() {
     }
   }
 
-  const refreshUser = async () => {
+  const refreshUser = async (): Promise<void> => {
     if (!isSignedIn || !clerkUser) return
 
     try {
