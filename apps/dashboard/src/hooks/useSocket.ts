@@ -107,6 +107,12 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
 
   // Get WebSocket server URL from environment or use default
   const getSocketUrl = useCallback(() => {
+    // For production, check for dedicated WebSocket URL
+    const wsUrl = process.env.NEXT_PUBLIC_WEBSOCKET_URL;
+    if (wsUrl) {
+      return wsUrl;
+    }
+    
     // Try to get from environment variables
     if (typeof window !== 'undefined') {
       const hostname = window.location.hostname;
@@ -116,8 +122,11 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
         return getWhatsAppUrl(); // WhatsApp service port
       }
       
-      // For production, use the same host as the dashboard
-      return `${window.location.protocol}//${window.location.hostname}:3002`;
+      // For production without NEXT_PUBLIC_WEBSOCKET_URL:
+      // WebSocket requires SSL when page is HTTPS
+      // The WhatsApp API proxy handles HTTP requests but not WebSocket
+      // Return the WhatsApp URL for graceful fallback (will fail but error handled)
+      return getWhatsAppUrl();
     }
     
     return getWhatsAppUrl(); // Default fallback
