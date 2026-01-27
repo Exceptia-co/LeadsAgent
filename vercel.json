@@ -1,7 +1,7 @@
 {
     "$schema": "https://openapi.vercel.sh/vercel.json",
     "framework": "nextjs",
-    "buildCommand": "pnpm run db:generate && pnpm run build --filter=@leadcrm/dashboard",
+    "buildCommand": "pnpm run build --filter=@leadcrm/dashboard",
     "outputDirectory": "apps/dashboard/.next",
     "installCommand": "pnpm install --frozen-lockfile",
     "regions": [

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
+import { getApiUrl } from '../../../../lib/api-config'
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -26,7 +27,7 @@ export async function PATCH(
     console.log('Updating lead:', params.id, 'with data:', { ...body, phone: body.phone ? '***' : undefined })
     
     // Forward the request to the backend service
-    const backendUrl = `http://127.0.0.1:3001/leads/${params.id}`
+    const backendUrl = `${getApiUrl()}/leads/${params.id}`
     const response = await fetch(backendUrl, {
       method: 'PATCH',
       headers: {
@@ -97,7 +98,7 @@ export async function DELETE(
     console.log('Deleting lead:', params.id)
     
     // Forward the request to the backend service
-    const backendUrl = `http://127.0.0.1:3001/leads/${params.id}`
+    const backendUrl = `${getApiUrl()}/leads/${params.id}`
     const response = await fetch(backendUrl, {
       method: 'DELETE',
       headers: {

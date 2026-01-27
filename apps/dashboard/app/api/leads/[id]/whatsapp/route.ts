@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getApiUrl } from '../../../../../lib/api-config'
 
 export async function PATCH(
   request: NextRequest,
@@ -7,8 +8,8 @@ export async function PATCH(
   try {
     const { id } = params
     const body = await request.json()
-    
-    const response = await fetch(`http://localhost:3001/public/leads/${id}/whatsapp`, {
+
+    const response = await fetch(`${getApiUrl()}/public/leads/${id}/whatsapp`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',

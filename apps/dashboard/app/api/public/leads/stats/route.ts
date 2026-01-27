@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getApiUrl } from '../../../../../lib/api-config'
 
 export async function GET(request: NextRequest) {
   try {
-    const response = await fetch('http://localhost:3001/public/leads/stats')
+    const response = await fetch(`${getApiUrl()}/public/leads/stats`)
     
     if (!response.ok) {
       return NextResponse.json(

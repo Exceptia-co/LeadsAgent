@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getApiUrl } from '../../../../lib/api-config'
 
 // Force dynamic rendering for this route
 export const dynamic = 'force-dynamic'
@@ -17,12 +18,12 @@ async function fetchWithRetry(url: string, retries: number = 3, delay: number = 
       return response
     } catch (error) {
       console.warn(`Attempt ${i + 1} failed for ${url}:`, error)
-      
+
       // If this is the last retry, throw the error
       if (i === retries - 1) {
         throw error
       }
-      
+
       // Wait before retrying
       await new Promise(resolve => setTimeout(resolve, delay))
     }
@@ -33,9 +34,9 @@ async function fetchWithRetry(url: string, retries: number = 3, delay: number = 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
-    
+
     // Construir la URL del backend con los parámetros de búsqueda
-    const backendUrl = new URL('http://127.0.0.1:3001/public/leads') // Use 127.0.0.1 instead of localhost
+    const backendUrl = new URL(`${getApiUrl()}/public/leads`)
     searchParams.forEach((value, key) => {
       backendUrl.searchParams.set(key, value)
     })
@@ -96,7 +97,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Forward the request to the backend service
-    const backendUrl = 'http://127.0.0.1:3001/public/leads'
+    const backendUrl = `${getApiUrl()}/public/leads`
     const response = await fetch(backendUrl, {
       method: 'POST',
       headers: {
