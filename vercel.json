@@ -32,8 +32,16 @@
     ],
     "rewrites": [
         {
-            "source": "/api/:path*",
-            "destination": "https://leadcrmapi-production.up.railway.app/:path*"
+            "source": "/api/leads/:path*",
+            "destination": "https://leadcrmapi-production.up.railway.app/leads/:path*"
+        },
+        {
+            "source": "/api/public/:path*",
+            "destination": "https://leadcrmapi-production.up.railway.app/public/:path*"
+        },
+        {
+            "source": "/api/backend-whatsapp/:path*",
+            "destination": "https://leadcrmapi-production.up.railway.app/whatsapp/:path*"
         }
     ]
 }
