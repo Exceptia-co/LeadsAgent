@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
+export const dynamic = 'force-dynamic'
+
 interface MigratedUser {
   id: string
   email: string

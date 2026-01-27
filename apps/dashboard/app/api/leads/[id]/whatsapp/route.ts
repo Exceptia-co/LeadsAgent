@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getApiUrl } from '../../../../../lib/api-config'
 
+export const dynamic = 'force-dynamic'
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }

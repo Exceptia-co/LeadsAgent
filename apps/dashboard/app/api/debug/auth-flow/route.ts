@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
+export const dynamic = 'force-dynamic'
+
 // Lazy initialization to avoid build-time errors
 let supabaseInstance: SupabaseClient | null = null
 

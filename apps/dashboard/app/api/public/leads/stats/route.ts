@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getApiUrl } from '../../../../../lib/api-config'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: NextRequest) {
   try {
     const response = await fetch(`${getApiUrl()}/public/leads/stats`)

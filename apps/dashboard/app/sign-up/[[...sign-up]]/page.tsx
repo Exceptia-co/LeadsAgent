@@ -14,6 +14,7 @@ export default function Page() {
         </div>
         <div className="flex justify-center">
           <SignUp 
+            fallbackRedirectUrl="/dashboard"
             appearance={{
               elements: {
                 formButtonPrimary: 

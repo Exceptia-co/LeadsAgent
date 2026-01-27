@@ -2,6 +2,8 @@ import { headers } from 'next/headers'
 import { Webhook } from 'svix'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
+export const dynamic = 'force-dynamic'
+
 // Lazy initialization to avoid build-time errors
 let supabaseInstance: SupabaseClient | null = null
 
