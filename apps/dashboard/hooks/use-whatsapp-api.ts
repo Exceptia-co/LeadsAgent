@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
-import { WHATSAPP_API_URL } from '../lib/api-config'
+import { getWhatsAppUrl } from './use-whatsapp-url'
 
-const WHATSAPP_API_BASE_URL = WHATSAPP_API_URL
+const WHATSAPP_API_BASE_URL = getWhatsAppUrl()
 const MAX_RETRIES = 3
 const BASE_RETRY_DELAY = 1000 // 1 second
 

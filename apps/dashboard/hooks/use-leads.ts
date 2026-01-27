@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { WHATSAPP_API_URL } from '../lib/api-config'
+import { getWhatsAppUrl } from './use-whatsapp-url'
 
 export interface Lead {
   id: string
@@ -21,7 +21,7 @@ export interface UseLeadsResult {
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'
-const WHATSAPP_API_BASE_URL = WHATSAPP_API_URL
+const WHATSAPP_API_BASE_URL = getWhatsAppUrl()
 
 export function useLeads(): UseLeadsResult {
   const [leads, setLeads] = useState<Lead[]>([])

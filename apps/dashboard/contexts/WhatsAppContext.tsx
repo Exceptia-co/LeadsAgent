@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useToast } from '../components/ui/toast'
-import { WHATSAPP_API_URL } from '../lib/api-config'
+import { getWhatsAppUrl } from '../hooks/use-whatsapp-url'
 
 export interface WhatsAppSession {
   id: string
@@ -56,7 +56,7 @@ export function WhatsAppProvider({ children }: { children: React.ReactNode }) {
     setError(null)
     
     try {
-      const response = await fetch(`${WHATSAPP_API_URL}/sessions`)
+      const response = await fetch(`${getWhatsAppUrl()}/sessions`)
       const result = await response.json()
       
       if (result.success) {
@@ -77,7 +77,7 @@ export function WhatsAppProvider({ children }: { children: React.ReactNode }) {
 
   const createSession = useCallback(async (sessionData: any): Promise<boolean> => {
     try {
-      const response = await fetch(`${WHATSAPP_API_URL}/sessions`, {
+      const response = await fetch(`${getWhatsAppUrl()}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(sessionData)
@@ -101,7 +101,7 @@ export function WhatsAppProvider({ children }: { children: React.ReactNode }) {
 
   const deleteSession = useCallback(async (sessionId: string): Promise<boolean> => {
     try {
-      const response = await fetch(`${WHATSAPP_API_URL}/sessions/${sessionId}`, {
+      const response = await fetch(`${getWhatsAppUrl()}/sessions/${sessionId}`, {
         method: 'DELETE'
       })
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { WHATSAPP_API_URL } from '../../lib/api-config';
+import { getWhatsAppUrl } from '../../hooks/use-whatsapp-url';
 
 export interface WhatsAppSession {
   id: string;
@@ -113,14 +113,14 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
       const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
       
       if (isLocal) {
-        return WHATSAPP_API_URL; // WhatsApp service port
+        return getWhatsAppUrl(); // WhatsApp service port
       }
       
       // For production, use the same host as the dashboard
       return `${window.location.protocol}//${window.location.hostname}:3002`;
     }
     
-    return WHATSAPP_API_URL; // Default fallback
+    return getWhatsAppUrl(); // Default fallback
   }, []);
 
   const handleConnectionEstablished = useCallback((data: any) => {

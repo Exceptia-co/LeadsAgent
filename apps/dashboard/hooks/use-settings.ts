@@ -10,9 +10,9 @@ import {
   BackupSettings,
   GeneralSettings
 } from '../types/settings'
-import { WHATSAPP_API_URL } from '../lib/api-config'
+import { getWhatsAppUrl } from './use-whatsapp-url'
 
-const WHATSAPP_SERVICE_BASE_URL = WHATSAPP_API_URL
+const WHATSAPP_SERVICE_BASE_URL = getWhatsAppUrl()
 
 export function useSettings() {
   // System status states

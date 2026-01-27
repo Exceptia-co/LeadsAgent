@@ -1,7 +1,7 @@
 'use client'
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { WHATSAPP_API_URL } from '../lib/api-config'
+import { getWhatsAppUrl } from '../hooks/use-whatsapp-url'
 
 export interface Template {
   id: string
@@ -52,7 +52,7 @@ export function TemplateProvider({ children }: { children: React.ReactNode }) {
     setError(null)
     
     try {
-      const response = await fetch(`${WHATSAPP_API_URL}/templates`)
+      const response = await fetch(`${getWhatsAppUrl()}/templates`)
       const result = await response.json()
       
       if (result.success) {
@@ -84,7 +84,7 @@ export function TemplateProvider({ children }: { children: React.ReactNode }) {
 
   const createTemplate = useCallback(async (templateData: any): Promise<boolean> => {
     try {
-      const response = await fetch(`${WHATSAPP_API_URL}/templates`, {
+      const response = await fetch(`${getWhatsAppUrl()}/templates`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(templateData)
@@ -108,7 +108,7 @@ export function TemplateProvider({ children }: { children: React.ReactNode }) {
 
   const updateTemplate = useCallback(async (id: string, templateData: any): Promise<boolean> => {
     try {
-      const response = await fetch(`${WHATSAPP_API_URL}/templates/${id}`, {
+      const response = await fetch(`${getWhatsAppUrl()}/templates/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(templateData)
@@ -137,7 +137,7 @@ export function TemplateProvider({ children }: { children: React.ReactNode }) {
 
   const deleteTemplate = useCallback(async (id: string): Promise<boolean> => {
     try {
-      const response = await fetch(`${WHATSAPP_API_URL}/templates/${id}`, {
+      const response = await fetch(`${getWhatsAppUrl()}/templates/${id}`, {
         method: 'DELETE'
       })
 

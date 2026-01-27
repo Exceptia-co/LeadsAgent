@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { WHATSAPP_API_URL } from '../../../lib/api-config'
+import { getWhatsAppUrl } from '../../../hooks/use-whatsapp-url'
 import { Card } from '../../../components/ui/card'
 import { Badge } from '../../../components/ui/badge'
 import { 
@@ -141,9 +141,9 @@ export default function MessagingPage() {
     setLoading(true)
     try {
       const [leadsRes, templatesRes, messagesRes] = await Promise.all([
-        fetch(`${WHATSAPP_API_URL}/leads`),
-        fetch(`${WHATSAPP_API_URL}/templates`),
-        fetch(`${WHATSAPP_API_URL}/proactive-messages`)
+        fetch(`${getWhatsAppUrl()}/leads`),
+        fetch(`${getWhatsAppUrl()}/templates`),
+        fetch(`${getWhatsAppUrl()}/proactive-messages`)
       ])
 
       const [leadsResult, templatesResult, messagesResult] = await Promise.all([
@@ -226,8 +226,8 @@ export default function MessagingPage() {
       }
 
       const url = editingTemplate 
-        ? `${WHATSAPP_API_URL}/templates/${editingTemplate.id}`
-        : `${WHATSAPP_API_URL}/templates`
+        ? `${getWhatsAppUrl()}/templates/${editingTemplate.id}`
+        : `${getWhatsAppUrl()}/templates`
       
       const method = editingTemplate ? 'PUT' : 'POST'
       
@@ -257,7 +257,7 @@ export default function MessagingPage() {
     if (!confirm('¿Estás seguro de eliminar este template?')) return
     
     try {
-      const response = await fetch(`${WHATSAPP_API_URL}/templates/${id}`, {
+      const response = await fetch(`${getWhatsAppUrl()}/templates/${id}`, {
         method: 'DELETE'
       })
       
@@ -282,7 +282,7 @@ export default function MessagingPage() {
     try {
       const content = selectedTemplate ? previewContent : customMessage
       
-      const sessionsResponse = await fetch(`${WHATSAPP_API_URL}/sessions`)
+      const sessionsResponse = await fetch(`${getWhatsAppUrl()}/sessions`)
       const sessionsResult = await sessionsResponse.json()
       
       let sessionId = 'demo-session'
@@ -291,7 +291,7 @@ export default function MessagingPage() {
         sessionId = sessionsResult.sessions[0].id
       }
       
-      const response = await fetch(`${WHATSAPP_API_URL}/proactive-messages`, {
+      const response = await fetch(`${getWhatsAppUrl()}/proactive-messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

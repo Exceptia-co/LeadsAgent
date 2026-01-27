@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { WHATSAPP_API_URL } from "../../lib/api-config";
+import { getWhatsAppUrl } from "../../hooks/use-whatsapp-url";
 import { X, Send, Users, AlertTriangle, RefreshCw } from "lucide-react";
 import { Template } from "../templates/TemplateCard";
 import { Lead } from "./ProactiveMessageSender";
@@ -97,7 +97,7 @@ export default function BulkSendMessageModal({
   const handleRefreshTemplates = async () => {
     setRefreshingTemplates(true);
     try {
-      const response = await fetch(`${WHATSAPP_API_URL}/templates`);
+      const response = await fetch(`${getWhatsAppUrl()}/templates`);
       const result = await response.json();
       if (result.success) {
         setLocalTemplates(result.data || []);

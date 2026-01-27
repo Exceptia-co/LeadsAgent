@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { WHATSAPP_API_URL } from '../../../lib/api-config'
+import { getWhatsAppUrl } from '../../../hooks/use-whatsapp-url'
 import { Card } from '../../../components/ui/card'
 import { Badge } from '../../../components/ui/badge'
 import { 
@@ -116,11 +116,11 @@ export default function ProactivePage() {
     setLoading(true)
     try {
       // Fetch leads
-      const leadsResponse = await fetch(`${WHATSAPP_API_URL}/leads`)
+      const leadsResponse = await fetch(`${getWhatsAppUrl()}/leads`)
       const leadsResult = await leadsResponse.json()
       
       // Fetch proactive messages
-      const messagesResponse = await fetch(`${WHATSAPP_API_URL}/proactive-messages`)
+      const messagesResponse = await fetch(`${getWhatsAppUrl()}/proactive-messages`)
       const messagesResult = await messagesResponse.json()
       
       if (leadsResult.success) {
@@ -200,7 +200,7 @@ export default function ProactivePage() {
       
       const content = selectedTemplate ? previewContent : customMessage
       
-      const response = await fetch(`${WHATSAPP_API_URL}/proactive-messages`, {
+      const response = await fetch(`${getWhatsAppUrl()}/proactive-messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

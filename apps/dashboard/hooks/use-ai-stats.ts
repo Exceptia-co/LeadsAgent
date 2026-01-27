@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AIStats } from '../types/ai'
-import { WHATSAPP_API_URL } from '../lib/api-config'
+import { getWhatsAppUrl } from './use-whatsapp-url'
 
-const WHATSAPP_SERVICE_BASE_URL = WHATSAPP_API_URL
+const WHATSAPP_SERVICE_BASE_URL = getWhatsAppUrl()
 
 export function useAIStats() {
   const [stats, setStats] = useState<AIStats | null>(null)

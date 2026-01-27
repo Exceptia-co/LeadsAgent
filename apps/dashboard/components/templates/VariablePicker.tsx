@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { WHATSAPP_API_URL } from '../../lib/api-config'
+import { getWhatsAppUrl } from '../../hooks/use-whatsapp-url'
 import { Card } from '../ui/card'
 import { Badge } from '../ui/badge'
 import { 
@@ -60,7 +60,7 @@ export default function VariablePicker({
 
   const fetchAvailableVariables = async () => {
     try {
-      const response = await fetch(`${WHATSAPP_API_URL}/templates/variables`)
+      const response = await fetch(`${getWhatsAppUrl()}/templates/variables`)
       const result = await response.json()
       
       if (result.success) {
