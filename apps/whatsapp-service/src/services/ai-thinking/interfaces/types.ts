@@ -1,4 +1,4 @@
-import { AIResponse, MessageContext } from '../../AIService';
+import type { AIResponse, MessageContext } from '../../AIService';
 
 export interface IntentAnalysis {
   intent: string;

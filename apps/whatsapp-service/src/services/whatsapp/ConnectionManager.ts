@@ -7,14 +7,16 @@ import { Client, LocalAuth } from 'whatsapp-web.js';
 import path from 'path';
 import fs from 'fs';
 import { logger } from '../../utils/logger';
-import { LogExecutionTime, Retry, SafeExecutor, isSuccess, isFailure } from '../../utils/decorators';
+import {
+  LogExecutionTime,
+  Retry,
+  SafeExecutor,
+  isSuccess,
+  isFailure,
+} from '../../utils/decorators';
 import { ErrorFactory } from '../../errors';
 import { eventBus } from '../../events/EventBus';
-import type { 
-  IConnectionManager, 
-  ConnectionHealth, 
-  Result 
-} from '../../types';
+import type { IConnectionManager, ConnectionHealth, Result } from '../../types';
 
 /**
  * ConnectionManager handles Puppeteer client connections and reconnection logic
@@ -108,7 +110,7 @@ export class ConnectionManager implements IConnectionManager {
         this.reconnectionAttempts.delete(sessionId);
 
         // Update connection health
-        this.updateConnectionHealth(sessionId, { 
+        this.updateConnectionHealth(sessionId, {
           isHealthy: false,
           lastPingTime: new Date(),
         });
@@ -146,7 +148,9 @@ export class ConnectionManager implements IConnectionManager {
           );
         }
 
-        logger.info(`🔄 Reconnecting session: ${sessionId} (attempt ${currentAttempts + 1}/${effectiveMaxAttempts})`);
+        logger.info(
+          `🔄 Reconnecting session: ${sessionId} (attempt ${currentAttempts + 1}/${effectiveMaxAttempts})`
+        );
 
         // Update reconnection attempts
         this.reconnectionAttempts.set(sessionId, currentAttempts + 1);
@@ -198,7 +202,7 @@ export class ConnectionManager implements IConnectionManager {
    */
   public async getConnectionHealth(sessionId: string): Promise<ConnectionHealth> {
     const health = this.connectionHealth.get(sessionId);
-    
+
     if (!health) {
       return {
         isHealthy: false,
@@ -211,7 +215,7 @@ export class ConnectionManager implements IConnectionManager {
 
     // Calculate uptime
     const uptime = Date.now() - health.lastPingTime.getTime();
-    
+
     return {
       ...health,
       uptime,
@@ -226,7 +230,7 @@ export class ConnectionManager implements IConnectionManager {
     return SafeExecutor.execute(
       async () => {
         const startTime = Date.now();
-        
+
         // This would typically involve sending a ping to the WhatsApp Web client
         // For now, we'll just check if the health record exists and is healthy
         const health = this.connectionHealth.get(sessionId);
@@ -247,7 +251,7 @@ export class ConnectionManager implements IConnectionManager {
         context: { sessionId },
         timeout: 5000,
       }
-    ).then(result => result.success ? result.data : false);
+    ).then(result => (result.success ? result.data : false));
   }
 
   /**
@@ -269,14 +273,11 @@ export class ConnectionManager implements IConnectionManager {
    * Handle browser disconnect events
    */
   @LogExecutionTime({ operationId: 'handle-browser-disconnect' })
-  public async handleBrowserDisconnect(
-    sessionId: string, 
-    reason: string
-  ): Promise<void> {
+  public async handleBrowserDisconnect(sessionId: string, reason: string): Promise<void> {
     logger.warn(`🚨 Browser disconnected for session ${sessionId}: ${reason}`);
 
     // Update connection health
-    this.updateConnectionHealth(sessionId, { 
+    this.updateConnectionHealth(sessionId, {
       isHealthy: false,
       errorCount: (this.connectionHealth.get(sessionId)?.errorCount || 0) + 1,
     });
@@ -292,7 +293,7 @@ export class ConnectionManager implements IConnectionManager {
     const attempts = this.getReconnectionAttempts(sessionId);
     if (attempts < this.MAX_RECONNECTION_ATTEMPTS) {
       logger.info(`🔄 Attempting automatic reconnection for session: ${sessionId}`);
-      
+
       setTimeout(async () => {
         try {
           await this.reconnect(sessionId);
@@ -315,7 +316,8 @@ export class ConnectionManager implements IConnectionManager {
         dataPath: authDataPath,
       }),
       puppeteer: {
-        headless: process.env.PUPPETEER_HEADLESS === 'true' || process.env.NODE_ENV === 'production',
+        headless:
+          process.env.PUPPETEER_HEADLESS === 'true' || process.env.NODE_ENV === 'production',
         executablePath: process.env.CHROME_EXECUTABLE_PATH || undefined,
         devtools: process.env.NODE_ENV === 'development',
         timeout: this.CONNECTION_TIMEOUT_MS,
@@ -323,37 +325,36 @@ export class ConnectionManager implements IConnectionManager {
           // Security
           '--no-sandbox',
           '--disable-setuid-sandbox',
-          
+
           // Memory optimization
           '--disable-dev-shm-usage',
           '--disable-gpu',
           '--disable-gpu-sandbox',
           '--no-first-run',
-          
+
           // WhatsApp Web stability
           '--disable-web-security',
           '--disable-features=VizDisplayCompositor',
           '--disable-background-timer-throttling',
           '--disable-backgrounding-occluded-windows',
           '--disable-renderer-backgrounding',
-          
+
           // Memory leak prevention
           '--memory-pressure-off',
           '--max_old_space_size=4096',
-          
+
           // Windows specific
           '--disable-win32k-lockdown',
           '--disable-component-cloud-policy',
           '--disable-domain-reliability',
-          
+
           // User agent
           '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-          
+
           // Development logging
-          ...(process.env.NODE_ENV === 'development' ? [
-            '--enable-logging=stderr',
-            '--log-level=1'
-          ] : [])
+          ...(process.env.NODE_ENV === 'development'
+            ? ['--enable-logging=stderr', '--log-level=1']
+            : []),
         ],
       },
     };
@@ -364,7 +365,9 @@ export class ConnectionManager implements IConnectionManager {
    */
   private setupConnectionTimeout(sessionId: string, client: Client): NodeJS.Timeout {
     const timeoutId = setTimeout(() => {
-      logger.error(`⏰ Session ${sessionId} initialization timeout after ${this.CONNECTION_TIMEOUT_MS}ms`);
+      logger.error(
+        `⏰ Session ${sessionId} initialization timeout after ${this.CONNECTION_TIMEOUT_MS}ms`
+      );
       this.handleBrowserDisconnect(sessionId, 'INIT_TIMEOUT');
     }, this.CONNECTION_TIMEOUT_MS);
 
@@ -391,10 +394,7 @@ export class ConnectionManager implements IConnectionManager {
   /**
    * Update connection health for a session
    */
-  private updateConnectionHealth(
-    sessionId: string, 
-    updates: Partial<ConnectionHealth>
-  ): void {
+  private updateConnectionHealth(sessionId: string, updates: Partial<ConnectionHealth>): void {
     const current = this.connectionHealth.get(sessionId) || {
       isHealthy: false,
       lastPingTime: new Date(),
@@ -420,12 +420,9 @@ export class ConnectionManager implements IConnectionManager {
   /**
    * Validate and clean corrupted auth files
    */
-  private async validateAndCleanAuthFiles(
-    sessionId: string, 
-    authDataPath: string
-  ): Promise<void> {
+  private async validateAndCleanAuthFiles(sessionId: string, authDataPath: string): Promise<void> {
     const sessionPath = path.join(authDataPath, `session-${sessionId}`);
-    
+
     if (!fs.existsSync(sessionPath)) {
       logger.debug(`📁 Session path does not exist, will be created: ${sessionPath}`);
       return;
@@ -434,13 +431,13 @@ export class ConnectionManager implements IConnectionManager {
     try {
       // Basic validation - check if essential files exist
       const wwebSessionPath = path.join(sessionPath, 'wwebSession');
-      
+
       if (fs.existsSync(wwebSessionPath)) {
         const stats = await fs.promises.stat(wwebSessionPath);
-        
+
         // If session directory is very old (>30 days), consider it stale
-        const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-        
+        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
         if (stats.mtime.getTime() < thirtyDaysAgo) {
           logger.warn(`🧹 Cleaning stale auth files for session ${sessionId}`);
           await fs.promises.rm(sessionPath, { recursive: true, force: true });
@@ -448,13 +445,16 @@ export class ConnectionManager implements IConnectionManager {
       }
     } catch (error) {
       logger.warn(`⚠️ Error validating auth files for session ${sessionId}:`, error);
-      
+
       // If validation fails, clean up corrupted files
       try {
         await fs.promises.rm(sessionPath, { recursive: true, force: true });
         logger.info(`🧹 Cleaned up corrupted auth files for session ${sessionId}`);
       } catch (cleanupError) {
-        logger.error(`❌ Failed to cleanup corrupted auth files for session ${sessionId}:`, cleanupError);
+        logger.error(
+          `❌ Failed to cleanup corrupted auth files for session ${sessionId}:`,
+          cleanupError
+        );
       }
     }
   }
@@ -536,12 +536,12 @@ export class ConnectionManager implements IConnectionManager {
     return SafeExecutor.execute(
       async () => {
         logger.info(`🚀 Initializing connection for session: ${sessionId}`);
-        
+
         // This would typically involve:
         // 1. Setting up event listeners
         // 2. Starting the client initialization process
         // 3. Waiting for ready state
-        
+
         // Update connection health to indicate initialization started
         this.updateConnectionHealth(sessionId, {
           lastPingTime: new Date(),

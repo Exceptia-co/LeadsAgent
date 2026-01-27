@@ -1,8 +1,8 @@
-import { Client, Message } from 'whatsapp-web.js';
+import type { Client, Message } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import { logger } from '../../utils/logger';
 import advancedLogger from '../../utils/advancedLogger';
-import { WhatsAppMessage, WebhookPayload } from '../../types';
+import type { WhatsAppMessage, WebhookPayload } from '../../types';
 
 /**
  * EventDispatcher - Handles all WhatsApp client events, webhooks, and event-driven operations

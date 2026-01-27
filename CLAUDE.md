@@ -9,14 +9,20 @@ LeadsCRM is an AI-powered CRM with WhatsApp automation. Turborepo monorepo with 
 ## Commands
 
 ### Development
+
 ```bash
-pnpm dev                   # Start all services (dashboard:3000, api:3003, whatsapp:3002)
-pnpm dev:dashboard         # Dashboard only
-pnpm dev:api               # API only
-pnpm dev:whatsapp          # WhatsApp service only
+pnpm dev                   # Start all services (dashboard:3001, api:3003, whatsapp:3002)
+pnpm dev:dashboard         # Dashboard only (port 3001)
+pnpm dev:api               # API only (port 3003)
+pnpm dev:whatsapp          # WhatsApp service only (port 3002)
+
+# Docker (PostgreSQL + Redis)
+docker compose up -d       # Start database services
+docker compose down        # Stop database services
 ```
 
 ### Build & Quality
+
 ```bash
 pnpm build                 # Full build with dependencies
 pnpm build:fast            # Parallel build without daemon
@@ -27,6 +33,7 @@ pnpm format                # Prettier formatting
 ```
 
 ### Testing
+
 ```bash
 pnpm test                  # Run all tests
 pnpm test:e2e              # E2E tests
@@ -38,6 +45,7 @@ cd apps/api && pnpm test:watch
 ```
 
 ### Database
+
 ```bash
 pnpm db:generate           # Generate Prisma client (run after schema changes)
 pnpm db:generate:win       # Windows-specific generation
@@ -47,6 +55,7 @@ pnpm db:reset              # Reset database
 ```
 
 ### Maintenance
+
 ```bash
 pnpm clean:cache           # Clear Turborepo cache
 pnpm rebuild               # Full cleanup and rebuild
@@ -69,6 +78,7 @@ packages/
 ```
 
 **Data Flow:**
+
 ```
 WhatsApp <-> WhatsApp Service <-> NestJS API <-> PostgreSQL
                                        |
@@ -76,17 +86,20 @@ WhatsApp <-> WhatsApp Service <-> NestJS API <-> PostgreSQL
 ```
 
 ### Key Technologies
+
 - **API**: NestJS 10, class-validator DTOs, Clerk JWT auth, Swagger docs
 - **Dashboard**: Next.js 14, Tailwind CSS, Radix UI, Clerk auth, SWR
 - **WhatsApp**: Express, whatsapp-web.js, Puppeteer, Redis caching, Winston logging
 - **Database**: PostgreSQL with Prisma 6.15, UUID primary keys
 
 ### Workspace Packages
+
 Use workspace imports: `@leadcrm/db`, `@leadcrm/ui`, `@leadcrm/config-eslint`, `@leadcrm/config-ts`
 
 ## Database Schema
 
 **Core Models:**
+
 - `Lead` - CRM entity with unique phone, WhatsApp authorization tracking
 - `Message` - Conversation history with direction (INBOUND/OUTBOUND) and status
 - `WhatsAppConversation` - Session tracking with AI provider info
@@ -94,6 +107,7 @@ Use workspace imports: `@leadcrm/db`, `@leadcrm/ui`, `@leadcrm/config-eslint`, `
 - `ai_knowledge_base` - Knowledge base with categories and keywords
 
 **Enums (Spanish domain):**
+
 - `LeadStatus`: NUEVO, CONTACTADO, QUALIFIED, GANADO, PERDIDO
 - `MessageDirection`: INBOUND, OUTBOUND
 - `MessageStatus`: PENDING, SENT, DELIVERED, READ, FAILED
@@ -101,17 +115,25 @@ Use workspace imports: `@leadcrm/db`, `@leadcrm/ui`, `@leadcrm/config-eslint`, `
 ## Code Patterns
 
 ### NestJS API
+
 - Module-based: AuthModule, LeadsModule, WhatsAppModule, PrismaModule
 - Guards: ClerkAuthGuard for protected routes
 - Decorators: `@CurrentUser()` for user context injection
 - Response format: `{ success: boolean, data?: any, error?: string }`
 
 ### WhatsApp Service Path Aliases
+
 ```typescript
-"@/*", "@/types/*", "@/services/*", "@/controllers/*", "@/utils/*", "@/config/*"
+("@/*",
+  "@/types/*",
+  "@/services/*",
+  "@/controllers/*",
+  "@/utils/*",
+  "@/config/*");
 ```
 
 ### Naming Conventions
+
 - Variables/functions: `camelCase`
 - Classes/Components: `PascalCase`
 - Files: `kebab-case.ts` or `PascalCase.tsx`
@@ -121,6 +143,7 @@ Use workspace imports: `@leadcrm/db`, `@leadcrm/ui`, `@leadcrm/config-eslint`, `
 ## Active Refactoring
 
 Branch `refactor/whatsapp-service` contains ongoing AIThinkingService modularization:
+
 - Extracting 1,686-line monolith into focused modules
 - New structure in `src/services/ai-thinking/`
 - Components: CacheManager, IntentAnalyzer, ContextEnricher, ComplexityAnalyzer, KnowledgeRetriever, ResponseGenerator, StrategySelector, DecisionEngine
@@ -128,12 +151,27 @@ Branch `refactor/whatsapp-service` contains ongoing AIThinkingService modulariza
 
 ## Environment Variables
 
-Required in `.env`:
+Environment files:
+
+- `.env` → Development (Docker local)
+- `.env.production` → Production (Supabase)
+- `.env.example` → Template (committed to repo)
+
+**Service Ports:**
+| Service | Port | URL |
+|------------|------|------------------------|
+| Dashboard | 3001 | http://localhost:3001 |
+| API | 3003 | http://localhost:3003 |
+| WhatsApp | 3002 | http://localhost:3002 |
+| PostgreSQL | 5433 | localhost:5433 |
+| Redis | 6379 | localhost:6379 |
+| Adminer | 8080 | http://localhost:8080 |
+
+**Quick Start:**
+
 ```bash
-DATABASE_URL="postgresql://..."
-DIRECT_URL="postgresql://..."
-CLERK_SECRET_KEY="sk_test_..."
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
-AI_PROVIDER=openrouter  # openrouter | gemini | openai
-OPENROUTER_API_KEY="..."  # or GEMINI_API_KEY or OPENAI_API_KEY
+docker compose up -d       # Start PostgreSQL + Redis
+pnpm db:generate           # Generate Prisma client
+pnpm db:migrate:dev        # Run migrations
+pnpm dev                   # Start all services
 ```

@@ -194,7 +194,7 @@ export class PatternAnalyzer {
         if (!groups.has(pattern)) {
           groups.set(pattern, []);
         }
-        groups.get(pattern)!.push(interaction);
+        groups.get(pattern).push(interaction);
       }
     }
 
@@ -211,7 +211,7 @@ export class PatternAnalyzer {
 
     const intentCounts = new Map<string, number>();
     intents.forEach(intent => {
-      intentCounts.set(intent!, (intentCounts.get(intent!) || 0) + 1);
+      intentCounts.set(intent, (intentCounts.get(intent) || 0) + 1);
     });
 
     return Array.from(intentCounts.entries())

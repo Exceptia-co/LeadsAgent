@@ -5,6 +5,7 @@ Este directorio contiene scripts utilitarios esenciales para el proyecto LeadsAg
 ## 🎯 Script Principal
 
 ### 📊 `whitelist-admin.js` - Herramienta de Administración de Whitelist
+
 **🆕 SCRIPT TODO-EN-UNO** - Herramienta consolidada para gestionar y monitorear el sistema de whitelist
 
 ```bash
@@ -29,36 +30,44 @@ node scripts/whitelist-admin.js test +1234567890 "Test message"
 ## 🔧 Scripts de Soporte
 
 ### ✅ `verify-whitelist-fix.js` - Verificación del Sistema
+
 **Para debugging y validación del esquema de base de datos**
+
 ```bash
 node scripts/verify-whitelist-fix.js
 ```
 
 ### 🗄️ `fix-database-schema.js` - Migración Histórica
+
 **Migración de referencia (ya aplicada) - NO ejecutar en producción**
 
 ### 🤖 `mcp-monitor.ps1` - Monitor MCP
+
 **Script independiente para monitoreo MCP (no relacionado con whitelist)**
 
 ## 🚀 Comandos Más Usados
 
 ### 📈 Monitoreo diario:
+
 ```bash
 node scripts/whitelist-admin.js dashboard
 ```
 
 ### 🔓 Autorizar cliente nuevo:
+
 ```bash
 node scripts/whitelist-admin.js authorize +34600123456 "María García"
 ```
 
 ### 🔍 Investigar problema:
+
 ```bash
 node scripts/whitelist-admin.js activity 20
 node scripts/verify-whitelist-fix.js
 ```
 
 ### 🧪 Testing rápido:
+
 ```bash
 node scripts/whitelist-admin.js test +34suspected123
 ```

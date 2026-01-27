@@ -2,16 +2,17 @@
 
 ## 📋 **Esquema de Puertos**
 
-| Aplicación | Puerto | URL | Descripción |
-|------------|--------|-----|-------------|
-| **Dashboard** | `3000` | http://localhost:3000 | Aplicación web principal (Next.js) |
-| **API** | `3001` | http://localhost:3001 | Servidor backend (NestJS) |
-| **WhatsApp Service** | `3002` | http://localhost:3002 | Servicio de mensajería WhatsApp |
-| **Docs** | `3003` | http://localhost:3003 | Documentación del proyecto |
+| Aplicación           | Puerto | URL                   | Descripción                        |
+| -------------------- | ------ | --------------------- | ---------------------------------- |
+| **Dashboard**        | `3000` | http://localhost:3000 | Aplicación web principal (Next.js) |
+| **API**              | `3001` | http://localhost:3001 | Servidor backend (NestJS)          |
+| **WhatsApp Service** | `3002` | http://localhost:3002 | Servicio de mensajería WhatsApp    |
+| **Docs**             | `3003` | http://localhost:3003 | Documentación del proyecto         |
 
 ## 🔧 **Configuración por Aplicación**
 
 ### Dashboard (Puerto 3000)
+
 - **Framework**: Next.js
 - **Script de desarrollo**: `next dev --port 3000`
 - **Variables de entorno**:
@@ -19,6 +20,7 @@
   - `NEXTAUTH_URL=http://localhost:3000`
 
 ### API (Puerto 3001)
+
 - **Framework**: NestJS
 - **Script de desarrollo**: `nest start --watch`
 - **Variables de entorno**:
@@ -27,6 +29,7 @@
 - **Puerto configurado en**: `src/main.ts` → `process.env.API_PORT || 3003`
 
 ### WhatsApp Service (Puerto 3002)
+
 - **Framework**: Express + TypeScript
 - **Script de desarrollo**: `tsx watch src/index.ts`
 - **Variables de entorno**:
@@ -35,6 +38,7 @@
 - **Puerto configurado en**: `src/index.ts` → `process.env.WHATSAPP_SERVICE_PORT || process.env.PORT || 3002`
 
 ### Docs (Puerto 3003)
+
 - **Framework**: Next.js
 - **Script de desarrollo**: `next dev --port 3003`
 - **Puerto hardcodeado en**: `package.json`
@@ -50,11 +54,13 @@ CORS_ORIGIN="http://localhost:3000,http://localhost:3001,http://localhost:3002,h
 ## 🚀 **Comandos para Ejecutar**
 
 ### Ejecutar todo el proyecto
+
 ```bash
 pnpm dev
 ```
 
 ### Ejecutar aplicaciones individualmente
+
 ```bash
 # Dashboard
 cd apps/dashboard && pnpm dev
@@ -72,6 +78,7 @@ cd apps/docs && pnpm dev
 ## 🔍 **Verificación de Puertos**
 
 ### Windows (PowerShell/CMD)
+
 ```bash
 # Ver procesos usando puertos específicos
 netstat -ano | findstr ":3000 :3001 :3002 :3003"
@@ -87,6 +94,7 @@ taskkill /f /im node.exe
 ```
 
 ### Linux/Mac
+
 ```bash
 # Ver procesos usando puertos específicos
 lsof -i :3000 -i :3001 -i :3002 -i :3003
@@ -101,14 +109,17 @@ pkill -f node
 ## 🔧 **Troubleshooting**
 
 ### Error: Puerto en uso
+
 Si recibes errores como "port already in use":
 
 1. **Verificar procesos activos**:
+
    ```bash
    netstat -ano | findstr ":<PUERTO>" | findstr "LISTENING"
    ```
 
 2. **Matar proceso específico**:
+
    ```bash
    taskkill /F /PID <PID>
    ```
@@ -119,9 +130,11 @@ Si recibes errores como "port already in use":
    ```
 
 ### Error: CORS
+
 Si hay problemas de CORS entre aplicaciones:
 
 1. Verificar que `CORS_ORIGIN` incluya todos los puertos:
+
    ```env
    CORS_ORIGIN="http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003"
    ```
@@ -129,6 +142,7 @@ Si hay problemas de CORS entre aplicaciones:
 2. Reiniciar todas las aplicaciones después de cambios en variables de entorno.
 
 ### Error: Variables de entorno no encontradas
+
 1. Verificar que existe `.env` en la raíz del proyecto
 2. Verificar que existe `.env.local` en `apps/dashboard/` para las variables de Clerk
 3. Reiniciar las aplicaciones después de cambios en `.env`

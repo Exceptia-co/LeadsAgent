@@ -57,15 +57,18 @@ export default function BulkSendMessageModal({
   // Click fuera del modal para cerrarlo
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+      if (
+        modalRef.current &&
+        !modalRef.current.contains(event.target as Node)
+      ) {
         onClose();
       }
     };
 
     if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener("mousedown", handleClickOutside);
       return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
+        document.removeEventListener("mousedown", handleClickOutside);
       };
     }
   }, [isOpen, onClose]);
@@ -103,7 +106,7 @@ export default function BulkSendMessageModal({
         setLocalTemplates(result.data || []);
       }
     } catch (error) {
-      console.error('Error refreshing templates:', error);
+      console.error("Error refreshing templates:", error);
     } finally {
       setRefreshingTemplates(false);
     }
@@ -133,11 +136,14 @@ export default function BulkSendMessageModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
-      <div ref={modalRef} className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white rounded-lg shadow-lg border">
+      <div
+        ref={modalRef}
+        className="w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-white rounded-lg shadow-lg border"
+      >
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-3">
-              <Users className="h-6 w-6 text-blue-600" />
+              <Users className="h-6 w-6 text-green-600" />
               <div>
                 <h2 className="text-xl font-semibold">Enviar Mensaje Masivo</h2>
                 <p className="text-sm text-gray-600">
@@ -191,7 +197,9 @@ export default function BulkSendMessageModal({
                   className="flex items-center space-x-1 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border transition-colors disabled:opacity-50"
                   title="Refrescar templates"
                 >
-                  <RefreshCw className={`h-3 w-3 ${refreshingTemplates ? 'animate-spin' : ''}`} />
+                  <RefreshCw
+                    className={`h-3 w-3 ${refreshingTemplates ? "animate-spin" : ""}`}
+                  />
                   <span>Refrescar</span>
                 </button>
               </div>
@@ -203,7 +211,7 @@ export default function BulkSendMessageModal({
                   );
                   setCurrentTemplate(template || null);
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
               >
                 <option value="">Sin template - Mensaje personalizado</option>
                 {localTemplates.map((template) => (
@@ -214,7 +222,6 @@ export default function BulkSendMessageModal({
               </select>
             </div>
 
-
             {!currentTemplate && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -224,7 +231,7 @@ export default function BulkSendMessageModal({
                   value={customMessage}
                   onChange={(e) => setCustomMessage(e.target.value)}
                   rows={6}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 resize-none"
                   placeholder="Escribe tu mensaje personalizado..."
                 />
               </div>
@@ -275,7 +282,7 @@ export default function BulkSendMessageModal({
             <button
               onClick={handleSend}
               disabled={sending || (!currentTemplate && !customMessage)}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               <Send className="h-4 w-4 mr-2" />
               {sending

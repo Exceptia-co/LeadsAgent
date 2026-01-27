@@ -1,11 +1,11 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { io, Socket } from 'socket.io-client';
-import { getWhatsAppUrl } from '../../hooks/use-whatsapp-url';
+import { useEffect, useState, useCallback, useRef } from "react";
+import { io, Socket } from "socket.io-client";
+import { getWhatsAppUrl } from "../../hooks/use-whatsapp-url";
 
 export interface WhatsAppSession {
   id: string;
   name: string;
-  status: 'CONNECTED' | 'CONNECTING' | 'DISCONNECTED' | 'QR_PENDING';
+  status: "CONNECTED" | "CONNECTING" | "DISCONNECTED" | "QR_PENDING";
   phoneNumber?: string;
   qrCode?: string;
   lastActivity?: string;
@@ -13,18 +13,18 @@ export interface WhatsAppSession {
 }
 
 export interface SocketEvents {
-  'connection:established': (data: {
+  "connection:established": (data: {
     clientId: string;
     timestamp: string;
     message: string;
   }) => void;
-  
-  'sessions:current_state': (data: {
+
+  "sessions:current_state": (data: {
     sessions: WhatsAppSession[];
     timestamp: string;
   }) => void;
-  
-  'session:status_changed': (data: {
+
+  "session:status_changed": (data: {
     sessionId: string;
     status: string;
     phoneNumber?: string;
@@ -32,36 +32,30 @@ export interface SocketEvents {
     timestamp: string;
     metadata?: any;
   }) => void;
-  
-  'session:qr_updated': (data: {
+
+  "session:qr_updated": (data: {
     sessionId: string;
     qrCode: string;
     timestamp: string;
   }) => void;
-  
-  'session:connected': (data: {
+
+  "session:connected": (data: {
     sessionId: string;
     status: string;
     phoneNumber: string;
     timestamp: string;
   }) => void;
-  
-  'session:disconnected': (data: {
+
+  "session:disconnected": (data: {
     sessionId: string;
     status: string;
     reason?: string;
     timestamp: string;
   }) => void;
-  
-  'server:shutdown': (data: {
-    message: string;
-    timestamp: string;
-  }) => void;
-  
-  'error': (data: {
-    message: string;
-    timestamp: string;
-  }) => void;
+
+  "server:shutdown": (data: { message: string; timestamp: string }) => void;
+
+  error: (data: { message: string; timestamp: string }) => void;
 }
 
 export type SocketEventName = keyof SocketEvents;
@@ -100,7 +94,7 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<WhatsAppSession[]>([]);
-  
+
   const socketRef = useRef<Socket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectAttemptsRef = useRef(0);
@@ -112,149 +106,167 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
     if (wsUrl) {
       return wsUrl;
     }
-    
+
     // Try to get from environment variables
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       const hostname = window.location.hostname;
-      const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
-      
+      const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+
       if (isLocal) {
         return getWhatsAppUrl(); // WhatsApp service port
       }
-      
+
       // For production without NEXT_PUBLIC_WEBSOCKET_URL:
       // WebSocket requires SSL when page is HTTPS
       // The WhatsApp API proxy handles HTTP requests but not WebSocket
       // Return the WhatsApp URL for graceful fallback (will fail but error handled)
       return getWhatsAppUrl();
     }
-    
+
     return getWhatsAppUrl(); // Default fallback
   }, []);
 
   const handleConnectionEstablished = useCallback((data: any) => {
-    console.log('🔌 Socket.IO connection established:', data);
+    console.log("🔌 Socket.IO connection established:", data);
     setConnected(true);
     setConnecting(false);
     setError(null);
     reconnectAttemptsRef.current = 0;
-    
+
     // Request current state when connected
-    console.log('📊 Requesting current sessions state from server...');
-    socketRef.current?.emit('sessions:get_current_state');
+    console.log("📊 Requesting current sessions state from server...");
+    socketRef.current?.emit("sessions:get_current_state");
   }, []);
 
-  const handleCurrentState = useCallback((data: { sessions: WhatsAppSession[]; timestamp: string }) => {
-    console.log('📊 Received current sessions state:', data);
-    setSessions(data.sessions);
-  }, []);
+  const handleCurrentState = useCallback(
+    (data: { sessions: WhatsAppSession[]; timestamp: string }) => {
+      console.log("📊 Received current sessions state:", data);
+      setSessions(data.sessions);
+    },
+    [],
+  );
 
-  const handleStatusChanged = useCallback((data: {
-    sessionId: string;
-    status: string;
-    phoneNumber?: string;
-    qrCode?: string;
-    timestamp: string;
-  }) => {
-    console.log('🔄 Session status changed:', data);
-    
-    setSessions(current => {
-      const updated = current.map(session => {
-        if (session.id === data.sessionId) {
-          return {
-            ...session,
-            status: data.status as WhatsAppSession['status'],
-            phoneNumber: data.phoneNumber || session.phoneNumber,
-            qrCode: data.qrCode || session.qrCode,
-            timestamp: data.timestamp,
-          };
-        }
-        return session;
-      });
+  const handleStatusChanged = useCallback(
+    (data: {
+      sessionId: string;
+      status: string;
+      phoneNumber?: string;
+      qrCode?: string;
+      timestamp: string;
+    }) => {
+      console.log("🔄 Session status changed:", data);
 
-      // If session doesn't exist, add it
-      if (!updated.find(s => s.id === data.sessionId)) {
-        updated.push({
-          id: data.sessionId,
-          name: data.sessionId,
-          status: data.status as WhatsAppSession['status'],
-          phoneNumber: data.phoneNumber,
-          qrCode: data.qrCode,
-          timestamp: data.timestamp,
+      setSessions((current) => {
+        const updated = current.map((session) => {
+          if (session.id === data.sessionId) {
+            return {
+              ...session,
+              status: data.status as WhatsAppSession["status"],
+              phoneNumber: data.phoneNumber || session.phoneNumber,
+              qrCode: data.qrCode || session.qrCode,
+              timestamp: data.timestamp,
+            };
+          }
+          return session;
         });
-      }
 
-      return updated;
-    });
-  }, []);
+        // If session doesn't exist, add it
+        if (!updated.find((s) => s.id === data.sessionId)) {
+          updated.push({
+            id: data.sessionId,
+            name: data.sessionId,
+            status: data.status as WhatsAppSession["status"],
+            phoneNumber: data.phoneNumber,
+            qrCode: data.qrCode,
+            timestamp: data.timestamp,
+          });
+        }
 
-  const handleQRUpdated = useCallback((data: {
-    sessionId: string;
-    qrCode: string;
-    timestamp: string;
-  }) => {
-    console.log('📱 QR code updated for session:', data.sessionId);
-    
-    setSessions(current =>
-      current.map(session =>
-        session.id === data.sessionId
-          ? { ...session, qrCode: data.qrCode, status: 'QR_PENDING' as const, timestamp: data.timestamp }
-          : session
-      )
-    );
-  }, []);
+        return updated;
+      });
+    },
+    [],
+  );
 
-  const handleSessionConnected = useCallback((data: {
-    sessionId: string;
-    phoneNumber: string;
-    timestamp: string;
-  }) => {
-    console.log('✅ Session connected:', data);
-    
-    setSessions(current =>
-      current.map(session =>
-        session.id === data.sessionId
-          ? { 
-              ...session, 
-              status: 'CONNECTED' as const, 
-              phoneNumber: data.phoneNumber,
-              qrCode: undefined, // Clear QR code when connected
-              timestamp: data.timestamp 
-            }
-          : session
-      )
-    );
-  }, []);
+  const handleQRUpdated = useCallback(
+    (data: { sessionId: string; qrCode: string; timestamp: string }) => {
+      console.log("📱 QR code updated for session:", data.sessionId);
 
-  const handleSessionDisconnected = useCallback((data: {
-    sessionId: string;
-    reason?: string;
-    timestamp: string;
-  }) => {
-    console.log('❌ Session disconnected:', data);
-    
-    setSessions(current =>
-      current.map(session =>
-        session.id === data.sessionId
-          ? { ...session, status: 'DISCONNECTED' as const, timestamp: data.timestamp }
-          : session
-      )
-    );
-  }, []);
+      setSessions((current) =>
+        current.map((session) =>
+          session.id === data.sessionId
+            ? {
+                ...session,
+                qrCode: data.qrCode,
+                status: "QR_PENDING" as const,
+                timestamp: data.timestamp,
+              }
+            : session,
+        ),
+      );
+    },
+    [],
+  );
 
-  const handleError = useCallback((data: { message: string; timestamp: string }) => {
-    console.error('❌ Socket error:', data);
-    setError(data.message);
-  }, []);
+  const handleSessionConnected = useCallback(
+    (data: { sessionId: string; phoneNumber: string; timestamp: string }) => {
+      console.log("✅ Session connected:", data);
 
-  const handleServerShutdown = useCallback((data: { message: string; timestamp: string }) => {
-    console.warn('🔄 Server shutdown:', data);
-    setError('Server is restarting, reconnecting automatically...');
-  }, []);
+      setSessions((current) =>
+        current.map((session) =>
+          session.id === data.sessionId
+            ? {
+                ...session,
+                status: "CONNECTED" as const,
+                phoneNumber: data.phoneNumber,
+                qrCode: undefined, // Clear QR code when connected
+                timestamp: data.timestamp,
+              }
+            : session,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleSessionDisconnected = useCallback(
+    (data: { sessionId: string; reason?: string; timestamp: string }) => {
+      console.log("❌ Session disconnected:", data);
+
+      setSessions((current) =>
+        current.map((session) =>
+          session.id === data.sessionId
+            ? {
+                ...session,
+                status: "DISCONNECTED" as const,
+                timestamp: data.timestamp,
+              }
+            : session,
+        ),
+      );
+    },
+    [],
+  );
+
+  const handleError = useCallback(
+    (data: { message: string; timestamp: string }) => {
+      console.error("❌ Socket error:", data);
+      setError(data.message);
+    },
+    [],
+  );
+
+  const handleServerShutdown = useCallback(
+    (data: { message: string; timestamp: string }) => {
+      console.warn("🔄 Server shutdown:", data);
+      setError("Server is restarting, reconnecting automatically...");
+    },
+    [],
+  );
 
   const connect = useCallback(() => {
     if (socketRef.current?.connected) {
-      console.log('Socket already connected');
+      console.log("Socket already connected");
       return;
     }
 
@@ -263,11 +275,11 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
 
     try {
       const socketUrl = getSocketUrl();
-      console.log('🔌 Connecting to WebSocket:', socketUrl);
+      console.log("🔌 Connecting to WebSocket:", socketUrl);
 
       const newSocket = io(`${socketUrl}/whatsapp-sessions`, {
-        path: '/whatsapp-socket/',
-        transports: ['websocket', 'polling'],
+        path: "/whatsapp-socket/",
+        transports: ["websocket", "polling"],
         reconnection,
         reconnectionAttempts,
         reconnectionDelay,
@@ -276,70 +288,71 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
       });
 
       // Set up event handlers
-      newSocket.on('connect', () => {
-        console.log('🔌 Socket connected with ID:', newSocket.id);
+      newSocket.on("connect", () => {
+        console.log("🔌 Socket connected with ID:", newSocket.id);
         setConnected(true);
         setConnecting(false);
         setError(null);
         reconnectAttemptsRef.current = 0;
       });
 
-      newSocket.on('disconnect', (reason) => {
-        console.log('🔌 Socket disconnected:', reason);
+      newSocket.on("disconnect", (reason) => {
+        console.log("🔌 Socket disconnected:", reason);
         setConnected(false);
         setConnecting(false);
-        
-        if (reason === 'io server disconnect') {
+
+        if (reason === "io server disconnect") {
           // Server disconnected, try to reconnect
-          setError('Server disconnected, attempting to reconnect...');
+          setError("Server disconnected, attempting to reconnect...");
         }
       });
 
-      newSocket.on('connect_error', (error) => {
-        console.error('🔌 Socket connection error:', error);
+      newSocket.on("connect_error", (error) => {
+        console.error("🔌 Socket connection error:", error);
         setConnecting(false);
         setConnected(false);
         setError(`Connection failed: ${error.message}`);
-        
+
         reconnectAttemptsRef.current++;
         if (reconnectAttemptsRef.current >= reconnectionAttempts) {
-          setError('Failed to connect after multiple attempts');
+          setError("Failed to connect after multiple attempts");
         }
       });
 
-      newSocket.on('reconnect', (attemptNumber) => {
+      newSocket.on("reconnect", (attemptNumber) => {
         console.log(`🔌 Socket reconnected after ${attemptNumber} attempts`);
         setError(null);
         reconnectAttemptsRef.current = 0;
       });
 
-      newSocket.on('reconnect_error', (error) => {
-        console.error('🔌 Socket reconnection error:', error);
+      newSocket.on("reconnect_error", (error) => {
+        console.error("🔌 Socket reconnection error:", error);
         setError(`Reconnection failed: ${error.message}`);
       });
 
       // Set up custom event handlers
-      newSocket.on('connection:established', handleConnectionEstablished);
-      newSocket.on('sessions:current_state', handleCurrentState);
-      newSocket.on('session:status_changed', handleStatusChanged);
-      newSocket.on('session:qr_updated', handleQRUpdated);
-      newSocket.on('session:connected', handleSessionConnected);
-      newSocket.on('session:disconnected', handleSessionDisconnected);
-      newSocket.on('error', handleError);
-      newSocket.on('server:shutdown', handleServerShutdown);
+      newSocket.on("connection:established", handleConnectionEstablished);
+      newSocket.on("sessions:current_state", handleCurrentState);
+      newSocket.on("session:status_changed", handleStatusChanged);
+      newSocket.on("session:qr_updated", handleQRUpdated);
+      newSocket.on("session:connected", handleSessionConnected);
+      newSocket.on("session:disconnected", handleSessionDisconnected);
+      newSocket.on("error", handleError);
+      newSocket.on("server:shutdown", handleServerShutdown);
 
       socketRef.current = newSocket;
       setSocket(newSocket);
-
     } catch (error) {
-      console.error('🔌 Error creating socket:', error);
+      console.error("🔌 Error creating socket:", error);
       setConnecting(false);
-      setError(`Failed to initialize connection: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setError(
+        `Failed to initialize connection: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
     }
   }, [
-    getSocketUrl, 
-    reconnection, 
-    reconnectionAttempts, 
+    getSocketUrl,
+    reconnection,
+    reconnectionAttempts,
     reconnectionDelay,
     handleConnectionEstablished,
     handleCurrentState,
@@ -353,7 +366,7 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {
-      console.log('🔌 Disconnecting socket');
+      console.log("🔌 Disconnecting socket");
       socketRef.current.disconnect();
       socketRef.current = null;
       setSocket(null);
@@ -373,29 +386,34 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
     if (socketRef.current?.connected) {
       socketRef.current.emit(event, data);
     } else {
-      console.warn('Socket not connected, cannot emit event:', event);
+      console.warn("Socket not connected, cannot emit event:", event);
     }
   }, []);
 
-  const on = useCallback(<T extends SocketEventName>(event: T, handler: SocketEvents[T]) => {
-    if (socketRef.current) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      socketRef.current.on(event, handler as any);
-    }
-  }, []);
-
-  const off = useCallback((event: SocketEventName, handler?: (...args: any[]) => void) => {
-    if (socketRef.current) {
-      if (handler) {
-        socketRef.current.off(event, handler);
-      } else {
-        socketRef.current.off(event);
+  const on = useCallback(
+    <T extends SocketEventName>(event: T, handler: SocketEvents[T]) => {
+      if (socketRef.current) {
+        socketRef.current.on(event, handler as any);
       }
-    }
-  }, []);
+    },
+    [],
+  );
+
+  const off = useCallback(
+    (event: SocketEventName, handler?: (...args: any[]) => void) => {
+      if (socketRef.current) {
+        if (handler) {
+          socketRef.current.off(event, handler);
+        } else {
+          socketRef.current.off(event);
+        }
+      }
+    },
+    [],
+  );
 
   const getCurrentState = useCallback(() => {
-    emit('sessions:get_current_state');
+    emit("sessions:get_current_state");
   }, [emit]);
 
   // Auto-connect on mount if enabled

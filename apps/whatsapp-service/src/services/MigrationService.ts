@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import type { Pool } from 'pg';
 import { logger } from '../utils/logger';
 import fs from 'fs';
 import path from 'path';
@@ -48,10 +48,7 @@ class MigrationService {
    */
   private async isMigrationExecuted(name: string): Promise<boolean> {
     try {
-      const result = await this.pool.query(
-        'SELECT 1 FROM migrations WHERE name = $1',
-        [name]
-      );
+      const result = await this.pool.query('SELECT 1 FROM migrations WHERE name = $1', [name]);
       return result.rows.length > 0;
     } catch (error) {
       logger.error('Error checking migration status:', error);
@@ -63,8 +60,8 @@ class MigrationService {
    * Mark migration as executed
    */
   private async markMigrationAsExecuted(
-    name: string, 
-    description: string, 
+    name: string,
+    description: string,
     executionTime: number
   ): Promise<void> {
     try {
@@ -84,13 +81,14 @@ class MigrationService {
    */
   private async loadMigrations(): Promise<Migration[]> {
     const migrationsDir = path.join(__dirname, '..', 'migrations');
-    
+
     if (!fs.existsSync(migrationsDir)) {
       logger.warn('Migrations directory not found, skipping migrations');
       return [];
     }
 
-    const files = fs.readdirSync(migrationsDir)
+    const files = fs
+      .readdirSync(migrationsDir)
       .filter(file => file.endsWith('.js'))
       .sort();
 
@@ -101,7 +99,7 @@ class MigrationService {
         const migrationPath = path.join(migrationsDir, file);
         delete require.cache[migrationPath]; // Clear require cache
         const migrationModule = require(migrationPath);
-        
+
         if (migrationModule.name && migrationModule.up && migrationModule.down) {
           migrations.push(migrationModule as Migration);
           logger.debug(`📁 Loaded migration: ${migrationModule.name}`);
@@ -122,13 +120,13 @@ class MigrationService {
   public async runMigrations(): Promise<void> {
     try {
       logger.info('🚀 Starting database migrations...');
-      
+
       // Initialize migrations table
       await this.initializeMigrationsTable();
-      
+
       // Load migration files
       const migrations = await this.loadMigrations();
-      
+
       if (migrations.length === 0) {
         logger.info('ℹ️ No migrations found');
         return;
@@ -152,13 +150,9 @@ class MigrationService {
         try {
           await migration.up(this.pool);
           const executionTime = Date.now() - startTime;
-          
-          await this.markMigrationAsExecuted(
-            migration.name, 
-            migration.description, 
-            executionTime
-          );
-          
+
+          await this.markMigrationAsExecuted(migration.name, migration.description, executionTime);
+
           executedCount++;
           logger.info(`✅ Migration ${migration.name} completed in ${executionTime}ms`);
         } catch (error) {
@@ -172,7 +166,6 @@ class MigrationService {
       } else {
         logger.info('ℹ️ All migrations are up to date');
       }
-
     } catch (error) {
       logger.error('❌ Migration process failed:', error);
       throw error;
@@ -182,29 +175,31 @@ class MigrationService {
   /**
    * Get migration status
    */
-  public async getMigrationStatus(): Promise<Array<{
-    name: string;
-    description?: string;
-    executed: boolean;
-    executedAt?: Date;
-    executionTime?: number;
-  }>> {
+  public async getMigrationStatus(): Promise<
+    Array<{
+      name: string;
+      description?: string;
+      executed: boolean;
+      executedAt?: Date;
+      executionTime?: number;
+    }>
+  > {
     try {
       await this.initializeMigrationsTable();
-      
+
       const migrations = await this.loadMigrations();
       const executedMigrations = await this.pool.query(
         'SELECT name, description, executed_at, execution_time_ms FROM migrations ORDER BY executed_at'
       );
-      
+
       const executedMap = new Map(
         executedMigrations.rows.map(row => [
-          row.name, 
+          row.name,
           {
             executedAt: new Date(row.executed_at),
             executionTime: row.execution_time_ms,
-            description: row.description
-          }
+            description: row.description,
+          },
         ])
       );
 
@@ -215,7 +210,7 @@ class MigrationService {
           description: migration.description,
           executed: !!executed,
           executedAt: (executed as any)?.executedAt,
-          executionTime: (executed as any)?.executionTime
+          executionTime: (executed as any)?.executionTime,
         };
       });
     } catch (error) {
@@ -247,11 +242,11 @@ class MigrationService {
       }
 
       logger.info(`🔄 Rolling back migration: ${migrationName}`);
-      
+
       await migration.down(this.pool);
-      
+
       await this.pool.query('DELETE FROM migrations WHERE name = $1', [migrationName]);
-      
+
       logger.info(`✅ Migration ${migrationName} rolled back successfully`);
     } catch (error) {
       logger.error('❌ Rollback failed:', error);

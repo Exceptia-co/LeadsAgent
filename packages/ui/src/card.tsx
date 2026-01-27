@@ -32,13 +32,18 @@ interface CardFooterProps {
 
 export function Card({ className = "", children }: CardProps): JSX.Element {
   return (
-    <div className={`rounded-lg border bg-card text-card-foreground shadow-sm ${className}`}>
+    <div
+      className={`rounded-lg border bg-card text-card-foreground shadow-sm ${className}`}
+    >
       {children}
     </div>
   );
 }
 
-export function CardHeader({ className = "", children }: CardHeaderProps): JSX.Element {
+export function CardHeader({
+  className = "",
+  children,
+}: CardHeaderProps): JSX.Element {
   return (
     <div className={`flex flex-col space-y-1.5 p-6 ${className}`}>
       {children}
@@ -46,34 +51,40 @@ export function CardHeader({ className = "", children }: CardHeaderProps): JSX.E
   );
 }
 
-export function CardTitle({ className = "", children }: CardTitleProps): JSX.Element {
+export function CardTitle({
+  className = "",
+  children,
+}: CardTitleProps): JSX.Element {
   return (
-    <h3 className={`text-2xl font-semibold leading-none tracking-tight ${className}`}>
+    <h3
+      className={`text-2xl font-semibold leading-none tracking-tight ${className}`}
+    >
       {children}
     </h3>
   );
 }
 
-export function CardDescription({ className = "", children }: CardDescriptionProps): JSX.Element {
+export function CardDescription({
+  className = "",
+  children,
+}: CardDescriptionProps): JSX.Element {
   return (
-    <p className={`text-sm text-muted-foreground ${className}`}>
-      {children}
-    </p>
+    <p className={`text-sm text-muted-foreground ${className}`}>{children}</p>
   );
 }
 
-export function CardContent({ className = "", children }: CardContentProps): JSX.Element {
-  return (
-    <div className={`p-6 pt-0 ${className}`}>
-      {children}
-    </div>
-  );
+export function CardContent({
+  className = "",
+  children,
+}: CardContentProps): JSX.Element {
+  return <div className={`p-6 pt-0 ${className}`}>{children}</div>;
 }
 
-export function CardFooter({ className = "", children }: CardFooterProps): JSX.Element {
+export function CardFooter({
+  className = "",
+  children,
+}: CardFooterProps): JSX.Element {
   return (
-    <div className={`flex items-center p-6 pt-0 ${className}`}>
-      {children}
-    </div>
+    <div className={`flex items-center p-6 pt-0 ${className}`}>{children}</div>
   );
 }

@@ -5,6 +5,7 @@ Este documento describe la configuración de los servicios de IA disponibles en 
 ## 🤖 Servicios Configurados
 
 ### OpenRouter
+
 OpenRouter proporciona acceso a múltiples modelos de IA a través de una sola API:
 
 ```env
@@ -14,17 +15,20 @@ OPENROUTER_MODEL="openai/gpt-oss-120b"
 ```
 
 **Modelo FIJO en LeadsCRM:**
+
 - `openai/gpt-oss-120b` - **MODELO OBLIGATORIO** - GPT Open Source 120B, hardcodeado en la configuración
 - ⚠️ **IMPORTANTE**: El modelo está fijo en el código y NO puede cambiarse via variables de entorno
 - ✅ **Configuración centralizada**: Se usa `ai.config.ts` para prevenir uso de Claude 3.5 Sonnet
 
 **Otros modelos disponibles en OpenRouter (NO UTILIZADOS):**
+
 - `anthropic/claude-3.5-sonnet` - BLOQUEADO por configuración
 - `openai/gpt-4o` - No usado
 - `google/gemini-pro-1.5` - No usado
 - `meta-llama/llama-3.1-405b` - No usado
 
 ### Google Gemini
+
 Servicio de IA nativo de Google:
 
 ```env
@@ -33,11 +37,13 @@ GEMINI_MODEL="gemini-2.5-flash"
 ```
 
 **Características de Gemini:**
+
 - Excelente para análisis de contenido multimodal
 - Ventana de contexto muy amplia
 - Optimizado para tareas de comprensión y análisis
 
 ### OpenAI (Compatibilidad)
+
 Mantenemos la configuración de OpenAI para compatibilidad:
 
 ```env
@@ -48,8 +54,9 @@ OPENAI_MODEL="gpt-3.5-turbo"
 ## 🔧 Uso en el Código
 
 ### Ejemplo con OpenRouter
+
 ```typescript
-import OpenAI from 'openai';
+import OpenAI from "openai";
 
 const openrouter = new OpenAI({
   baseURL: process.env.OPENROUTER_BASE_URL,
@@ -58,22 +65,25 @@ const openrouter = new OpenAI({
 
 const completion = await openrouter.chat.completions.create({
   model: process.env.OPENROUTER_MODEL || "openai/gpt-oss-120b",
-  messages: [
-    { role: "user", content: "Analiza este mensaje de WhatsApp..." }
-  ],
+  messages: [{ role: "user", content: "Analiza este mensaje de WhatsApp..." }],
   max_tokens: 2048,
-  temperature: 0.7
+  temperature: 0.7,
 });
 ```
 
 ### Ejemplo con Google Gemini
+
 ```typescript
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || "gemini-1.5-pro" });
+const model = genAI.getGenerativeModel({
+  model: process.env.GEMINI_MODEL || "gemini-1.5-pro",
+});
 
-const result = await model.generateContent("Analiza este mensaje de WhatsApp...");
+const result = await model.generateContent(
+  "Analiza este mensaje de WhatsApp...",
+);
 ```
 
 ## 💡 Configuración de Uso
@@ -98,6 +108,7 @@ const result = await model.generateContent("Analiza este mensaje de WhatsApp..."
 ## 🚀 Configuración en Producción
 
 Para producción, asegúrate de:
+
 1. Configurar OPENROUTER_API_KEY en variables de entorno
 2. ✅ El modelo `openai/gpt-oss-120b` ya está hardcodeado
 3. Implementar rate limiting apropiado

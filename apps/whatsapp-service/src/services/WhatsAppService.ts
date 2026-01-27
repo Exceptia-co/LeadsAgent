@@ -4,7 +4,7 @@ import { cacheService } from './cacheService';
 import { redisClient, REDIS_CHANNELS } from '../config/redis';
 import { logger } from '../utils/logger';
 import DatabaseService from './DatabaseService';
-import { WhatsAppSession, SendMessageResponse, WebhookPayload } from '../types';
+import type { WhatsAppSession, SendMessageResponse, WebhookPayload } from '../types';
 import { WhatsAppUtils, RedisUtils } from '../utils/whatsappUtils';
 import { WhatsAppStatsService } from './whatsapp/WhatsAppStatsService';
 import { RedisMonitoringService } from './whatsapp/RedisMonitoringService';

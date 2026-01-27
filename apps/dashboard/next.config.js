@@ -7,6 +7,9 @@ const nextConfig = {
     },
   },
 
+  // Handle Clerk packages for Edge Runtime compatibility
+  serverExternalPackages: ["@clerk/backend", "@clerk/shared"],
+
   poweredByHeader: false,
   
   // Configuración de TypeScript

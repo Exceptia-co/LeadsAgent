@@ -29,9 +29,7 @@ export interface ExecutionContext {
 /**
  * Type guards for Result<T, E> pattern
  */
-export type Result<T, E = BaseError> = 
-  | { success: true; data: T }
-  | { success: false; error: E };
+export type Result<T, E = BaseError> = { success: true; data: T } | { success: false; error: E };
 
 /**
  * Type guard to check if a result is successful
@@ -68,10 +66,10 @@ export function LogExecutionTime(context?: Partial<ExecutionContext>) {
       const startTime = Date.now();
       const startMemory = process.memoryUsage().heapUsed;
       const methodName = `${target.constructor.name}.${propertyName}`;
-      
+
       // Generate correlation ID if not provided
       const correlationId = context?.correlationId || Math.random().toString(36).substring(7);
-      
+
       const logContext = {
         method: methodName,
         correlationId,
@@ -132,25 +130,25 @@ export function Retry(maxAttempts: number = 3, baseDelayMs: number = 1000) {
 
     descriptor.value = async function (...args: any[]) {
       const methodName = `${target.constructor.name}.${propertyName}`;
-      
+
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
           return await method.apply(this, args);
         } catch (error) {
           const isLastAttempt = attempt === maxAttempts;
-          
+
           if (isLastAttempt) {
-            logger.error(`❌ ${methodName} failed after ${maxAttempts} attempts`, { 
-              error: error instanceof Error ? error.message : String(error) 
+            logger.error(`❌ ${methodName} failed after ${maxAttempts} attempts`, {
+              error: error instanceof Error ? error.message : String(error),
             });
             throw error;
           }
 
           const delay = baseDelayMs * Math.pow(2, attempt - 1);
           logger.warn(`⚠️ ${methodName} attempt ${attempt} failed, retrying in ${delay}ms`, {
-            error: error instanceof Error ? error.message : String(error)
+            error: error instanceof Error ? error.message : String(error),
           });
-          
+
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
@@ -167,11 +165,13 @@ export function ValidateArgs(validator: (args: any[]) => boolean | string) {
 
     descriptor.value = function (...args: any[]) {
       const validationResult = validator(args);
-      
+
       if (typeof validationResult === 'string') {
-        throw new Error(`Validation failed for ${target.constructor.name}.${propertyName}: ${validationResult}`);
+        throw new Error(
+          `Validation failed for ${target.constructor.name}.${propertyName}: ${validationResult}`
+        );
       }
-      
+
       if (validationResult === false) {
         throw new Error(`Invalid arguments for ${target.constructor.name}.${propertyName}`);
       }
@@ -205,9 +205,9 @@ export class SafeExecutor {
 
     try {
       logger.debug(`🔄 Executing ${operationName}`, logContext);
-      
+
       let result: T;
-      
+
       if (timeout > 0) {
         result = await Promise.race([
           operation(),
@@ -221,7 +221,6 @@ export class SafeExecutor {
 
       logger.debug(`✅ Successfully executed ${operationName}`, logContext);
       return { success: true, data: result };
-      
     } catch (error) {
       logger.error(`❌ Failed to execute ${operationName}`, {
         ...logContext,
@@ -235,7 +234,8 @@ export class SafeExecutor {
 
       return {
         success: false,
-        error: error instanceof Error ? error as BaseError : new Error(String(error)) as BaseError,
+        error:
+          error instanceof Error ? (error as BaseError) : (new Error(String(error)) as BaseError),
       };
     }
   }
@@ -272,7 +272,7 @@ export class SafeExecutor {
     failed: Array<{ name: string; error: BaseError }>;
   }> {
     const results = await Promise.allSettled(
-      operations.map(async (op) => {
+      operations.map(async op => {
         const result = await this.execute(op.operation, {
           operationName: op.name,
           context,
@@ -286,21 +286,22 @@ export class SafeExecutor {
 
     results.forEach((result, index) => {
       const { name, required } = operations[index];
-      
+
       if (result.status === 'fulfilled' && result.value.result.success) {
         successful.push({
           name,
           result: result.value.result.data,
         });
       } else {
-        const error = result.status === 'rejected' 
-          ? new Error(result.reason) as BaseError
-          : result.status === 'fulfilled' && !result.value.result.success
-            ? (result.value.result as { success: false; error: BaseError }).error
-            : new Error('Unknown error') as BaseError;
-          
+        const error =
+          result.status === 'rejected'
+            ? (new Error(result.reason) as BaseError)
+            : result.status === 'fulfilled' && !result.value.result.success
+              ? (result.value.result as { success: false; error: BaseError }).error
+              : (new Error('Unknown error') as BaseError);
+
         failed.push({ name, error });
-        
+
         if (required) {
           logger.error(`❌ Required operation ${name} failed`, {
             ...context,
@@ -325,7 +326,7 @@ export class ContextManager {
       correlationId: Math.random().toString(36).substring(7),
       ...data,
     };
-    
+
     this.contexts.set(context.correlationId, context);
     return context;
   }

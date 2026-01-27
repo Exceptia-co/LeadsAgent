@@ -12,7 +12,7 @@ async function main() {
       case 'status':
         await showSessionsStatus();
         break;
-      
+
       case 'cleanup':
         const sessionId = args[1];
         if (!sessionId) {
@@ -22,11 +22,11 @@ async function main() {
         }
         await cleanupSession(sessionId);
         break;
-      
+
       case 'cleanup-all':
         await cleanupAllOrphanedSessions();
         break;
-      
+
       case 'force-cleanup':
         const forceSessionId = args[1];
         if (!forceSessionId) {
@@ -36,7 +36,7 @@ async function main() {
         }
         await forceCleanupSession(forceSessionId);
         break;
-      
+
       default:
         showUsage();
         break;
@@ -49,9 +49,9 @@ async function main() {
 
 async function showSessionsStatus() {
   console.log('\n🔍 Estado de las sesiones de WhatsApp:\n');
-  
+
   const sessions = await SessionCleanupUtil.getSessionsStatus('./sessions');
-  
+
   if (sessions.length === 0) {
     console.log('✅ No se encontraron sesiones');
     return;
@@ -59,15 +59,16 @@ async function showSessionsStatus() {
 
   sessions.forEach(session => {
     const status = session.hasLockFiles ? '🔒 CON LOCKS' : '✅ LIMPIO';
-    const size = session.sizeKB > 1024 ? `${(session.sizeKB / 1024).toFixed(1)} MB` : `${session.sizeKB} KB`;
-    
+    const size =
+      session.sizeKB > 1024 ? `${(session.sizeKB / 1024).toFixed(1)} MB` : `${session.sizeKB} KB`;
+
     console.log(`📱 ${session.sessionId}:`);
     console.log(`   Estado: ${status} (${session.lockFilesCount} locks)`);
     console.log(`   Tamaño: ${size}`);
     console.log(`   Modificado: ${session.lastModified.toLocaleString()}`);
     console.log('');
   });
-  
+
   const totalWithLocks = sessions.filter(s => s.hasLockFiles).length;
   if (totalWithLocks > 0) {
     console.log(`⚠️  ${totalWithLocks} sesiones tienen archivos bloqueados`);
@@ -77,7 +78,7 @@ async function showSessionsStatus() {
 
 async function cleanupSession(sessionId: string) {
   console.log(`\n🧹 Limpiando sesión: ${sessionId}`);
-  
+
   try {
     await SessionCleanupUtil.cleanupSession(sessionId, './sessions');
     console.log(`✅ Sesión ${sessionId} limpiada exitosamente`);
@@ -89,7 +90,7 @@ async function cleanupSession(sessionId: string) {
 
 async function cleanupAllOrphanedSessions() {
   console.log('\n🧹 Limpiando todas las sesiones huérfanas...');
-  
+
   try {
     await SessionCleanupUtil.cleanupOrphanedSessions('./sessions');
     console.log('✅ Limpieza de sesiones huérfanas completada');
@@ -102,11 +103,11 @@ async function cleanupAllOrphanedSessions() {
 async function forceCleanupSession(sessionId: string) {
   console.log(`\n💥 Forzando limpieza de sesión: ${sessionId}`);
   console.log('⚠️  Esto eliminará todos los archivos sin verificaciones');
-  
+
   try {
     // Detener cualquier proceso Node.js que pueda estar usando la sesión
     const { execSync } = await import('child_process');
-    
+
     // En Windows, usar taskkill para cerrar procesos Node.js
     if (process.platform === 'win32') {
       try {
@@ -116,10 +117,10 @@ async function forceCleanupSession(sessionId: string) {
         // Ignorar si no hay procesos para terminar
       }
     }
-    
+
     // Esperar un momento para que se liberen los archivos
     await new Promise(resolve => setTimeout(resolve, 3000));
-    
+
     // Forzar limpieza
     await SessionCleanupUtil.cleanupSession(sessionId, './sessions');
     console.log(`✅ Sesión ${sessionId} limpiada forzadamente`);

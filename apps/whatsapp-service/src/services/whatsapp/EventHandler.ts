@@ -3,17 +3,14 @@
  * Part of WhatsAppServiceSimple refactoring following SRP
  */
 
-import { Client, Message, MessageAck } from 'whatsapp-web.js';
+import type { Client } from 'whatsapp-web.js';
+import { Message, MessageAck } from 'whatsapp-web.js';
 import { logger } from '../../utils/logger';
 import { LogExecutionTime, SafeExecutor } from '../../utils/decorators';
 import { ErrorFactory } from '../../errors';
 import { eventBus } from '../../events/EventBus';
 import { serviceLocator } from '../../core/ServiceLocator';
-import type { 
-  IEventHandler,
-  WhatsAppMessage,
-  SessionStatus,
-} from '../../types';
+import type { IEventHandler, WhatsAppMessage, SessionStatus } from '../../types';
 
 /**
  * EventHandler manages WhatsApp client event listeners
@@ -139,7 +136,6 @@ export class EventHandler implements IEventHandler {
       listeners.add(onLoadingScreen);
 
       logger.info(`✅ Event listeners setup completed for session ${sessionId}`);
-
     } catch (error) {
       logger.error(`❌ Failed to setup event listeners for session ${sessionId}:`, error);
       throw ErrorFactory.whatsapp(
@@ -164,10 +160,10 @@ export class EventHandler implements IEventHandler {
         listeners.forEach(listener => {
           client.removeAllListeners();
         });
-        
+
         // Clear stored listeners
         this.eventListeners.delete(sessionId);
-        
+
         logger.info(`✅ Event listeners removed for session ${sessionId}`);
       }
     } catch (error) {
@@ -178,26 +174,24 @@ export class EventHandler implements IEventHandler {
   /**
    * Create a wrapped event listener with error handling
    */
-  private createEventListener(
-    eventName: string, 
-    sessionId: string, 
-    handler: Function
-  ): Function {
+  private createEventListener(eventName: string, sessionId: string, handler: Function): Function {
     return async (...args: any[]) => {
       try {
         await handler(...args);
       } catch (error) {
         logger.error(`❌ Error in ${eventName} event handler for session ${sessionId}:`, error);
-        
+
         // Emit error event
-        eventBus.publish('whatsapp:event-error', {
-          sessionId,
-          eventName,
-          error: error instanceof Error ? error.message : String(error),
-          timestamp: new Date(),
-        }).catch(eventError => {
-          logger.warn('Failed to emit event-error:', eventError);
-        });
+        eventBus
+          .publish('whatsapp:event-error', {
+            sessionId,
+            eventName,
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: new Date(),
+          })
+          .catch(eventError => {
+            logger.warn('Failed to emit event-error:', eventError);
+          });
       }
     };
   }
@@ -311,7 +305,7 @@ export class EventHandler implements IEventHandler {
     // Try to reconnect if it's not a clean shutdown
     if (reason !== 'NAVIGATION' && reason !== 'LOGOUT') {
       logger.info(`🔄 Attempting to reconnect session ${sessionId}...`);
-      
+
       // Get connection manager for reconnection
       const connectionManager = serviceLocator.get('connectionManager');
       if (connectionManager && sessionManager) {
@@ -354,12 +348,11 @@ export class EventHandler implements IEventHandler {
         type: message.type as any,
         mediaUrl: message.hasMedia ? (message as any).mediaUrl : undefined,
         isGroup: message.from.includes('@g.us'),
-        fromMe: message.fromMe
+        fromMe: message.fromMe,
       };
 
       // Process the message
       await messageProcessor.processIncomingMessage(sessionId, whatsAppMessage);
-
     } catch (error) {
       logger.error(`❌ Error handling message in session ${sessionId}:`, error);
     }
@@ -380,7 +373,6 @@ export class EventHandler implements IEventHandler {
 
       // This event can be used for tracking sent messages
       // or implementing delivery confirmations
-
     } catch (error) {
       logger.error(`❌ Error handling message create in session ${sessionId}:`, error);
     }
@@ -390,7 +382,11 @@ export class EventHandler implements IEventHandler {
    * Handle message acknowledgment event
    */
   @LogExecutionTime({ operationId: 'handle-message-ack' })
-  private async handleMessageAck(sessionId: string, message: Message, ack: MessageAck): Promise<void> {
+  private async handleMessageAck(
+    sessionId: string,
+    message: Message,
+    ack: MessageAck
+  ): Promise<void> {
     try {
       const ackStatus = this.getAckStatus(ack);
       logger.debug(`📋 Message ${message.id._serialized} acknowledgment: ${ackStatus}`);
@@ -402,7 +398,6 @@ export class EventHandler implements IEventHandler {
         ackType: ackStatus,
         timestamp: new Date(),
       });
-
     } catch (error) {
       logger.error(`❌ Error handling message ack in session ${sessionId}:`, error);
     }
@@ -423,7 +418,6 @@ export class EventHandler implements IEventHandler {
         participants: notification.recipientIds || [],
         timestamp: new Date(),
       });
-
     } catch (error) {
       logger.error(`❌ Error handling group join in session ${sessionId}:`, error);
     }
@@ -444,7 +438,6 @@ export class EventHandler implements IEventHandler {
         participants: notification.recipientIds || [],
         timestamp: new Date(),
       });
-
     } catch (error) {
       logger.error(`❌ Error handling group leave in session ${sessionId}:`, error);
     }
@@ -454,7 +447,11 @@ export class EventHandler implements IEventHandler {
    * Handle loading screen updates
    */
   @LogExecutionTime({ operationId: 'handle-loading-screen' })
-  private async handleLoadingScreen(sessionId: string, percent: number, message: string): Promise<void> {
+  private async handleLoadingScreen(
+    sessionId: string,
+    percent: number,
+    message: string
+  ): Promise<void> {
     logger.debug(`⏳ Loading progress for session ${sessionId}: ${percent}% - ${message}`);
 
     // Emit loading progress event
@@ -491,33 +488,28 @@ export class EventHandler implements IEventHandler {
   /**
    * Register custom event handlers
    */
-  public registerCustomHandler(
-    sessionId: string, 
-    eventName: string, 
-    handler: Function
-  ): void {
+  public registerCustomHandler(sessionId: string, eventName: string, handler: Function): void {
     logger.info(`🔌 Registering custom handler for ${eventName} in session ${sessionId}`);
 
     try {
       const sessionManager = serviceLocator.get('sessionManager');
       const client = sessionManager?.getClient(sessionId);
-      
+
       if (!client) {
         throw ErrorFactory.session(`No active client for session ${sessionId}`, sessionId);
       }
 
       // Wrap handler with error handling
       const wrappedHandler = this.createEventListener(eventName, sessionId, handler);
-      
+
       // Add to client and track
       client.on(eventName, wrappedHandler);
-      
+
       const listeners = this.eventListeners.get(sessionId) || new Set();
       listeners.add(wrappedHandler);
       this.eventListeners.set(sessionId, listeners);
 
       logger.info(`✅ Custom handler registered for ${eventName}`);
-
     } catch (error) {
       logger.error(`❌ Failed to register custom handler for ${eventName}:`, error);
       throw error;
@@ -527,17 +519,13 @@ export class EventHandler implements IEventHandler {
   /**
    * Remove custom event handler
    */
-  public removeCustomHandler(
-    sessionId: string, 
-    eventName: string, 
-    handler: Function
-  ): void {
+  public removeCustomHandler(sessionId: string, eventName: string, handler: Function): void {
     logger.info(`🔌 Removing custom handler for ${eventName} in session ${sessionId}`);
 
     try {
       const sessionManager = serviceLocator.get('sessionManager');
       const client = sessionManager?.getClient(sessionId);
-      
+
       if (!client) {
         logger.warn(`⚠️ No active client for session ${sessionId}, cannot remove handler`);
         return;
@@ -545,7 +533,7 @@ export class EventHandler implements IEventHandler {
 
       // Remove from client
       client.removeListener(eventName, handler);
-      
+
       // Remove from tracking
       const listeners = this.eventListeners.get(sessionId);
       if (listeners) {
@@ -553,7 +541,6 @@ export class EventHandler implements IEventHandler {
       }
 
       logger.info(`✅ Custom handler removed for ${eventName}`);
-
     } catch (error) {
       logger.error(`❌ Failed to remove custom handler for ${eventName}:`, error);
     }
@@ -576,7 +563,7 @@ export class EventHandler implements IEventHandler {
     try {
       const sessionManager = serviceLocator.get('sessionManager');
       const client = sessionManager?.getClient(sessionId);
-      
+
       if (client) {
         this.removeEventListeners(sessionId, client);
       }
@@ -585,7 +572,6 @@ export class EventHandler implements IEventHandler {
       this.eventListeners.delete(sessionId);
 
       logger.info(`✅ Event listener cleanup completed for session ${sessionId}`);
-
     } catch (error) {
       logger.warn(`⚠️ Error during event listener cleanup for session ${sessionId}:`, error);
     }
@@ -630,7 +616,7 @@ export class EventHandler implements IEventHandler {
     // Convert our WhatsAppMessage back to whatsapp-web.js Message if needed
     // For now, we'll use the existing handleMessage logic
     logger.info(`💬 Processing message from interface: ${message.id}`);
-    
+
     const messageProcessor = serviceLocator.get('messageProcessor');
     if (messageProcessor) {
       await messageProcessor.processIncomingMessage(sessionId, message);

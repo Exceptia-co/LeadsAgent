@@ -1,6 +1,7 @@
 import { logger } from '../../utils/logger';
 import { SessionCleanupUtil } from '../../utils/sessionCleanup';
-import SessionPersistenceService, { SessionPersistenceData } from '../SessionPersistenceService';
+import type { SessionPersistenceData } from '../SessionPersistenceService';
+import SessionPersistenceService from '../SessionPersistenceService';
 import fs from 'fs';
 import path from 'path';
 

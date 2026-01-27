@@ -1,10 +1,10 @@
 /**
  * Template Service Interfaces
- * 
+ *
  * Defines interfaces for managing predefined response templates.
  */
 
-import { MessageContext, IntentCategory } from './IIntentAnalysis';
+import type { MessageContext, IntentCategory } from './IIntentAnalysis';
 
 /**
  * Template configuration
@@ -59,11 +59,7 @@ export interface ITemplateService {
    * @param confidence - Intent confidence score
    * @param messageLength - Length of original message
    */
-  shouldUseTemplate(
-    intent: IntentCategory,
-    confidence: number,
-    messageLength: number
-  ): boolean;
+  shouldUseTemplate(intent: IntentCategory, confidence: number, messageLength: number): boolean;
 
   /**
    * Apply template fallback for long AI responses
@@ -71,11 +67,7 @@ export interface ITemplateService {
    * @param intent - Detected intent
    * @param maxWords - Maximum allowed words
    */
-  applyFallback(
-    originalResponse: string,
-    intent: IntentCategory,
-    maxWords?: number
-  ): string;
+  applyFallback(originalResponse: string, intent: IntentCategory, maxWords?: number): string;
 
   /**
    * Add or update template

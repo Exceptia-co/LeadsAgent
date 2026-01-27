@@ -5,7 +5,6 @@ import { logger } from './logger';
  * Extrae funcionalidades comunes para evitar duplicación de código
  */
 export class WhatsAppUtils {
-  
   /**
    * Normalizar teléfono para uso consistente en cache
    * @param telefono - Número de teléfono a normalizar
@@ -13,7 +12,7 @@ export class WhatsAppUtils {
    */
   public static normalizePhoneForCache(telefono: string): string {
     if (!telefono) return '';
-    
+
     // Remover caracteres no numéricos y '1' inicial
     return telefono.replace(/[^0-9]/g, '').replace(/^1/, '');
   }
@@ -25,30 +24,28 @@ export class WhatsAppUtils {
    */
   public static formatPhoneForWhatsApp(phoneNumber: string): string {
     if (!phoneNumber) {
-      throw new Error("Phone number is required");
+      throw new Error('Phone number is required');
     }
 
     // Remove WhatsApp suffix if present
-    let normalized = phoneNumber.replace(/@c\.us$/, "").replace(/@g\.us$/, "");
+    let normalized = phoneNumber.replace(/@c\.us$/, '').replace(/@g\.us$/, '');
 
     // Remove '+' prefix that causes issues with WhatsApp Web
-    normalized = normalized.replace(/^\+/, "");
+    normalized = normalized.replace(/^\+/, '');
 
     // Remove any spaces, dashes, or parentheses
-    normalized = normalized.replace(/[\s\-\(\)]/g, "");
+    normalized = normalized.replace(/[\s\-\(\)]/g, '');
 
     // Ensure it's only digits
-    normalized = normalized.replace(/[^\d]/g, "");
+    normalized = normalized.replace(/[^\d]/g, '');
 
     // Validate the result
     if (!normalized || normalized.length < 8 || normalized.length > 15) {
-      throw new Error(
-        `Invalid phone number format: ${phoneNumber}. Expected 8-15 digits.`
-      );
+      throw new Error(`Invalid phone number format: ${phoneNumber}. Expected 8-15 digits.`);
     }
 
     // Add WhatsApp suffix if not present
-    return normalized.includes("@c.us") ? normalized : `${normalized}@c.us`;
+    return normalized.includes('@c.us') ? normalized : `${normalized}@c.us`;
   }
 
   /**
@@ -57,9 +54,7 @@ export class WhatsAppUtils {
    * @returns Número limpio sin sufijos
    */
   public static cleanPhoneNumber(phoneWithSuffix: string): string {
-    return phoneWithSuffix
-      .replace("@c.us", "")
-      .replace("@g.us", "");
+    return phoneWithSuffix.replace('@c.us', '').replace('@g.us', '');
   }
 
   /**
@@ -69,8 +64,8 @@ export class WhatsAppUtils {
    */
   public static isValidPhoneNumber(phoneNumber: string): boolean {
     if (!phoneNumber) return false;
-    
-    const cleaned = phoneNumber.replace(/[^\d]/g, "");
+
+    const cleaned = phoneNumber.replace(/[^\d]/g, '');
     return cleaned.length >= 8 && cleaned.length <= 15;
   }
 
@@ -91,12 +86,9 @@ export class WhatsAppUtils {
    * @param complexity - Factor de complejidad
    * @returns Delay en milisegundos
    */
-  public static calculateHumanizedDelay(
-    messageLength: number, 
-    complexity: number = 1.0
-  ): number {
-    const minDelay = parseInt(process.env.AI_RESPONSE_DELAY_MIN || "2000");
-    const maxDelay = parseInt(process.env.AI_RESPONSE_DELAY_MAX || "6000");
+  public static calculateHumanizedDelay(messageLength: number, complexity: number = 1.0): number {
+    const minDelay = parseInt(process.env.AI_RESPONSE_DELAY_MIN || '2000');
+    const maxDelay = parseInt(process.env.AI_RESPONSE_DELAY_MAX || '6000');
 
     // Calculate delay based on message length
     const baseDelay = Math.min(messageLength * 50, 2000);
@@ -145,7 +137,6 @@ export class WhatsAppUtils {
  * Utilidades específicas para Redis/Cache
  */
 export class RedisUtils {
-  
   /**
    * Verificar conexión a Redis de manera segura
    * @param redisClient - Cliente de Redis
@@ -168,8 +159,8 @@ export class RedisUtils {
    * @param data - Datos a publicar
    */
   public static async safePublish(
-    redisClient: any, 
-    channel: string, 
+    redisClient: any,
+    channel: string,
     data: Record<string, any>
   ): Promise<void> {
     try {

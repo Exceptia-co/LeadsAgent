@@ -1,23 +1,23 @@
-'use client'
+"use client";
 
-import React from 'react'
-import * as AlertDialog from '@radix-ui/react-alert-dialog'
-import { AlertTriangle } from 'lucide-react'
+import React from "react";
+import * as AlertDialog from "@radix-ui/react-alert-dialog";
+import { AlertTriangle } from "lucide-react";
 
 interface DeleteConfirmDialogProps {
-  isOpen: boolean
-  onClose: () => void
-  onConfirm: () => void
-  leadName?: string | null
-  leadPhone?: string
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  leadName?: string | null;
+  leadPhone?: string;
 }
 
-export function DeleteConfirmDialog({ 
-  isOpen, 
-  onClose, 
-  onConfirm, 
-  leadName, 
-  leadPhone 
+export function DeleteConfirmDialog({
+  isOpen,
+  onClose,
+  onConfirm,
+  leadName,
+  leadPhone,
 }: DeleteConfirmDialogProps) {
   return (
     <AlertDialog.Root open={isOpen} onOpenChange={onClose}>
@@ -35,14 +35,17 @@ export function DeleteConfirmDialog({
                 Eliminar Lead
               </AlertDialog.Title>
               <AlertDialog.Description className="mt-2 text-sm text-gray-600">
-                ¿Estás seguro de que quieres eliminar el lead{' '}
-                <span className="font-semibold">{leadName || 'Sin nombre'}</span>{' '}
-                con el número{' '}
-                <span className="font-semibold">{leadPhone}</span>?
+                ¿Estás seguro de que quieres eliminar el lead{" "}
+                <span className="font-semibold">
+                  {leadName || "Sin nombre"}
+                </span>{" "}
+                con el número <span className="font-semibold">{leadPhone}</span>
+                ?
               </AlertDialog.Description>
               <div className="mt-3 bg-yellow-50 border border-yellow-200 rounded-md p-3">
                 <p className="text-sm text-yellow-800">
-                  Esta acción no se puede deshacer. Se eliminarán permanentemente todos los datos asociados a este lead.
+                  Esta acción no se puede deshacer. Se eliminarán
+                  permanentemente todos los datos asociados a este lead.
                 </p>
               </div>
             </div>
@@ -50,9 +53,7 @@ export function DeleteConfirmDialog({
 
           <div className="mt-6 flex gap-3">
             <AlertDialog.Cancel asChild>
-              <button
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
-              >
+              <button className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors">
                 Cancelar
               </button>
             </AlertDialog.Cancel>
@@ -68,5 +69,5 @@ export function DeleteConfirmDialog({
         </AlertDialog.Content>
       </AlertDialog.Portal>
     </AlertDialog.Root>
-  )
+  );
 }

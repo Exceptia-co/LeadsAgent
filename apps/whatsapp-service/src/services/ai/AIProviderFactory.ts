@@ -1,17 +1,17 @@
 /**
  * AI Provider Factory
- * 
+ *
  * Implements the Factory pattern for creating and managing AI provider instances.
  * Handles provider initialization, health monitoring, and fallback strategies.
  */
 
 import { logger } from '../../utils/logger';
 import { aiConfig } from '../../config/enhanced-ai.config';
-import { 
-  IAIProvider, 
+import type {
+  IAIProvider,
   IAIProviderFactory,
-  AIProviderType, 
-  ProviderStatus 
+  AIProviderType,
+  ProviderStatus,
 } from './interfaces/IAIProvider';
 
 // Import concrete providers
@@ -37,7 +37,7 @@ export class AIProviderFactory implements IAIProviderFactory {
     if (this.initialized) return;
 
     logger.info('🏭 Initializing AI Provider Factory...');
-    
+
     try {
       // Initialize all configured providers
       await this.initializeAllProviders();
@@ -56,26 +56,28 @@ export class AIProviderFactory implements IAIProviderFactory {
     const config = aiConfig.getConfig();
     const providerTypes: AIProviderType[] = ['openrouter', 'gemini'];
 
-    const initPromises = providerTypes.map(async (providerType) => {
+    const initPromises = providerTypes.map(async providerType => {
       try {
         const provider = await this.createProviderInstance(providerType);
         const providerConfig = config.providers[providerType];
-        
+
         // Only initialize if API key is available
         if (providerConfig.apiKey) {
           await provider.initialize(providerConfig);
           this.providers.set(providerType, provider);
-          
+
           const status = provider.getStatus();
           this.providersStatus.set(providerType, status);
-          
-          logger.info(`✅ ${providerType} provider initialized: ${status.ready ? 'Ready' : 'Failed'}`);
+
+          logger.info(
+            `✅ ${providerType} provider initialized: ${status.ready ? 'Ready' : 'Failed'}`
+          );
         } else {
           logger.warn(`⚠️  ${providerType} provider skipped: No API key configured`);
           this.providersStatus.set(providerType, {
             ready: false,
             lastError: 'No API key configured',
-            lastHealthCheck: new Date()
+            lastHealthCheck: new Date(),
           });
         }
       } catch (error) {
@@ -83,7 +85,7 @@ export class AIProviderFactory implements IAIProviderFactory {
         this.providersStatus.set(providerType, {
           ready: false,
           lastError: error instanceof Error ? error.message : 'Initialization failed',
-          lastHealthCheck: new Date()
+          lastHealthCheck: new Date(),
         });
       }
     });
@@ -104,14 +106,14 @@ export class AIProviderFactory implements IAIProviderFactory {
     // Create new provider instance
     const provider = await this.createProviderInstance(type);
     const config = aiConfig.getProviderConfig(type);
-    
+
     // Initialize the provider
     await provider.initialize(config);
-    
+
     // Store provider and update status
     this.providers.set(type, provider);
     this.providersStatus.set(type, provider.getStatus());
-    
+
     logger.info(`✅ Created and initialized ${type} provider`);
     return provider;
   }
@@ -123,10 +125,10 @@ export class AIProviderFactory implements IAIProviderFactory {
     switch (type) {
       case 'openrouter':
         return new OpenRouterProvider();
-        
+
       case 'gemini':
         return new GeminiProvider();
-        
+
       default:
         throw new Error(`Unsupported provider type: ${type}`);
     }
@@ -137,7 +139,7 @@ export class AIProviderFactory implements IAIProviderFactory {
    */
   public async getRecommendedProvider(): Promise<IAIProvider> {
     const config = aiConfig.getConfig();
-    
+
     // Try default provider first
     const defaultProvider = this.providers.get(config.defaultProvider);
     if (defaultProvider && defaultProvider.isReady()) {
@@ -149,19 +151,25 @@ export class AIProviderFactory implements IAIProviderFactory {
     if (config.features.enableProviderFallback) {
       for (const [providerType, provider] of this.providers.entries()) {
         if (provider.isReady()) {
-          logger.info(`🔄 Using fallback provider: ${providerType} (default ${config.defaultProvider} unavailable)`);
+          logger.info(
+            `🔄 Using fallback provider: ${providerType} (default ${config.defaultProvider} unavailable)`
+          );
           return provider;
         }
       }
     }
 
     // If no providers are ready, try to reinitialize default
-    logger.warn(`⚠️  No ready providers found, attempting to reinitialize ${config.defaultProvider}`);
+    logger.warn(
+      `⚠️  No ready providers found, attempting to reinitialize ${config.defaultProvider}`
+    );
     try {
       return await this.createProvider(config.defaultProvider);
     } catch (error) {
       logger.error(`❌ Failed to reinitialize default provider ${config.defaultProvider}:`, error);
-      throw new Error(`No AI providers available. Last error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `No AI providers available. Last error: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
@@ -178,13 +186,13 @@ export class AIProviderFactory implements IAIProviderFactory {
 
     // Convert Map to Record
     const statusRecord: Record<AIProviderType, ProviderStatus> = {} as any;
-    
+
     const allTypes: AIProviderType[] = ['openrouter', 'gemini', 'openai', 'claude'];
     allTypes.forEach(type => {
       statusRecord[type] = this.providersStatus.get(type) || {
         ready: false,
         lastError: 'Not initialized',
-        lastHealthCheck: new Date()
+        lastHealthCheck: new Date(),
       };
     });
 
@@ -196,7 +204,7 @@ export class AIProviderFactory implements IAIProviderFactory {
    */
   public getProvider(type: AIProviderType): IAIProvider | null {
     const provider = this.providers.get(type);
-    return (provider && provider.isReady()) ? provider : null;
+    return provider && provider.isReady() ? provider : null;
   }
 
   /**
@@ -222,27 +230,29 @@ export class AIProviderFactory implements IAIProviderFactory {
    */
   public async performHealthChecks(): Promise<void> {
     logger.debug('🔍 Performing health checks for all providers...');
-    
-    const healthCheckPromises = Array.from(this.providers.entries()).map(async ([type, provider]) => {
-      try {
-        const isHealthy = await provider.healthCheck?.() ?? provider.isReady();
-        const status = provider.getStatus();
-        this.providersStatus.set(type, {
-          ...status,
-          ready: isHealthy,
-          lastHealthCheck: new Date()
-        });
-        
-        logger.debug(`Health check ${type}: ${isHealthy ? '✅ Healthy' : '❌ Unhealthy'}`);
-      } catch (error) {
-        logger.warn(`Health check failed for ${type}:`, error);
-        this.providersStatus.set(type, {
-          ready: false,
-          lastError: error instanceof Error ? error.message : 'Health check failed',
-          lastHealthCheck: new Date()
-        });
+
+    const healthCheckPromises = Array.from(this.providers.entries()).map(
+      async ([type, provider]) => {
+        try {
+          const isHealthy = (await provider.healthCheck?.()) ?? provider.isReady();
+          const status = provider.getStatus();
+          this.providersStatus.set(type, {
+            ...status,
+            ready: isHealthy,
+            lastHealthCheck: new Date(),
+          });
+
+          logger.debug(`Health check ${type}: ${isHealthy ? '✅ Healthy' : '❌ Unhealthy'}`);
+        } catch (error) {
+          logger.warn(`Health check failed for ${type}:`, error);
+          this.providersStatus.set(type, {
+            ready: false,
+            lastError: error instanceof Error ? error.message : 'Health check failed',
+            lastHealthCheck: new Date(),
+          });
+        }
       }
-    });
+    );
 
     await Promise.allSettled(healthCheckPromises);
     logger.debug('🏁 Health checks completed');
@@ -254,14 +264,14 @@ export class AIProviderFactory implements IAIProviderFactory {
   public getFactoryStatus() {
     const totalProviders = this.providers.size;
     const readyProviders = Array.from(this.providers.values()).filter(p => p.isReady()).length;
-    
+
     return {
       initialized: this.initialized,
       totalProviders,
       readyProviders,
       readyPercentage: totalProviders > 0 ? (readyProviders / totalProviders) * 100 : 0,
       defaultProvider: aiConfig.getDefaultProvider(),
-      lastHealthCheck: new Date()
+      lastHealthCheck: new Date(),
     };
   }
 
@@ -270,8 +280,8 @@ export class AIProviderFactory implements IAIProviderFactory {
    */
   public async cleanup(): Promise<void> {
     logger.info('🧹 Cleaning up AI Provider Factory...');
-    
-    const cleanupPromises = Array.from(this.providers.values()).map(async (provider) => {
+
+    const cleanupPromises = Array.from(this.providers.values()).map(async provider => {
       try {
         await provider.cleanup?.();
       } catch (error) {
@@ -280,11 +290,11 @@ export class AIProviderFactory implements IAIProviderFactory {
     });
 
     await Promise.allSettled(cleanupPromises);
-    
+
     this.providers.clear();
     this.providersStatus.clear();
     this.initialized = false;
-    
+
     logger.info('✅ AI Provider Factory cleanup completed');
   }
 }

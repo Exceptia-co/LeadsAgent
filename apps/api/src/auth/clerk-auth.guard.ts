@@ -37,9 +37,10 @@ export class ClerkAuthGuard implements CanActivate {
       // Verificar el token con Clerk
       const payload = await verifyToken(token, {
         secretKey: this.configService.get<string>('CLERK_SECRET_KEY'),
-        issuer: (iss) => iss.startsWith('https://clerk.') || iss.includes('.clerk.accounts'),
+        issuer: (iss) =>
+          iss.startsWith('https://clerk.') || iss.includes('.clerk.accounts'),
       });
-      
+
       if (!payload.sub) {
         throw new UnauthorizedException('Invalid token payload');
       }
@@ -53,8 +54,15 @@ export class ClerkAuthGuard implements CanActivate {
 
       return true;
     } catch (error) {
+      // Log detailed error for debugging (server-side only)
+      console.error(
+        '[ClerkAuthGuard] Token verification failed:',
+        error.message,
+      );
+
+      // Return generic message to client (don't expose internal details)
       throw new UnauthorizedException(
-        'Invalid authentication token: ' + error.message,
+        'Invalid or expired authentication token',
       );
     }
   }

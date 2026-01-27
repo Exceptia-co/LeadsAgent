@@ -1,21 +1,21 @@
-import { PrismaClient } from '@leadcrm/db'
-import { logger } from '../utils/logger'
-import { WhatsAppSession } from '../types'
+import { PrismaClient } from '@leadcrm/db';
+import { logger } from '../utils/logger';
+import { WhatsAppSession } from '../types';
 
 export interface SessionPersistenceData {
-  id?: string
-  sessionId: string
-  name?: string
-  status: string
-  qrCode?: string
-  connectedNumber?: string
-  authData?: any
-  lastSeen: Date
-  isActive?: boolean
-  reconnectCount?: number
-  lastError?: string
-  webhookUrl?: string
-  metadata?: any
+  id?: string;
+  sessionId: string;
+  name?: string;
+  status: string;
+  qrCode?: string;
+  connectedNumber?: string;
+  authData?: any;
+  lastSeen: Date;
+  isActive?: boolean;
+  reconnectCount?: number;
+  lastError?: string;
+  webhookUrl?: string;
+  metadata?: any;
 }
 
 /**
@@ -23,10 +23,10 @@ export interface SessionPersistenceData {
  * Implements the Repository pattern for session data management
  */
 export class SessionPersistenceService {
-  private prisma: PrismaClient
+  private prisma: PrismaClient;
 
   constructor() {
-    this.prisma = new PrismaClient()
+    this.prisma = new PrismaClient();
   }
 
   /**
@@ -50,7 +50,7 @@ export class SessionPersistenceService {
           lastError: sessionData.lastError,
           webhookUrl: sessionData.webhookUrl,
           metadata: sessionData.metadata,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         },
         create: {
           sessionId: sessionData.sessionId,
@@ -64,15 +64,15 @@ export class SessionPersistenceService {
           reconnectCount: sessionData.reconnectCount ?? 0,
           lastError: sessionData.lastError,
           webhookUrl: sessionData.webhookUrl,
-          metadata: sessionData.metadata
-        }
-      })
+          metadata: sessionData.metadata,
+        },
+      });
 
-      logger.debug(`Session ${sessionData.sessionId} saved to database`)
-      return true
+      logger.debug(`Session ${sessionData.sessionId} saved to database`);
+      return true;
     } catch (error) {
-      logger.error(`Error saving session ${sessionData.sessionId}:`, error)
-      return false
+      logger.error(`Error saving session ${sessionData.sessionId}:`, error);
+      return false;
     }
   }
 
@@ -84,18 +84,18 @@ export class SessionPersistenceService {
     try {
       const sessions = await this.prisma.whatsAppSession.findMany({
         where: {
-          isActive: true
+          isActive: true,
         },
         orderBy: {
-          lastSeen: 'desc'
-        }
-      })
+          lastSeen: 'desc',
+        },
+      });
 
-      logger.info(`Loaded ${sessions.length} active sessions from database`)
-      return sessions.map(this.mapToSessionData)
+      logger.info(`Loaded ${sessions.length} active sessions from database`);
+      return sessions.map(this.mapToSessionData);
     } catch (error) {
-      logger.error('Error loading active sessions:', error)
-      return []
+      logger.error('Error loading active sessions:', error);
+      return [];
     }
   }
 
@@ -107,17 +107,17 @@ export class SessionPersistenceService {
   async getSession(sessionId: string): Promise<SessionPersistenceData | null> {
     try {
       const session = await this.prisma.whatsAppSession.findUnique({
-        where: { sessionId }
-      })
+        where: { sessionId },
+      });
 
       if (!session) {
-        return null
+        return null;
       }
 
-      return this.mapToSessionData(session)
+      return this.mapToSessionData(session);
     } catch (error) {
-      logger.error(`Error getting session ${sessionId}:`, error)
-      return null
+      logger.error(`Error getting session ${sessionId}:`, error);
+      return null;
     }
   }
 
@@ -133,15 +133,15 @@ export class SessionPersistenceService {
         data: {
           isActive: false,
           status: 'disconnected',
-          updatedAt: new Date()
-        }
-      })
+          updatedAt: new Date(),
+        },
+      });
 
-      logger.info(`Session ${sessionId} marked as inactive`)
-      return true
+      logger.info(`Session ${sessionId} marked as inactive`);
+      return true;
     } catch (error) {
-      logger.error(`Error deactivating session ${sessionId}:`, error)
-      return false
+      logger.error(`Error deactivating session ${sessionId}:`, error);
+      return false;
     }
   }
 
@@ -153,34 +153,36 @@ export class SessionPersistenceService {
    * @returns Promise<boolean> - Success status
    */
   async updateSessionStatus(
-    sessionId: string, 
-    status: string, 
+    sessionId: string,
+    status: string,
     additionalData?: Partial<SessionPersistenceData>
   ): Promise<boolean> {
     try {
       const updateData: any = {
         status,
         lastSeen: new Date(),
-        updatedAt: new Date()
-      }
+        updatedAt: new Date(),
+      };
 
       // Add optional fields if provided
-      if (additionalData?.qrCode !== undefined) updateData.qrCode = additionalData.qrCode
-      if (additionalData?.connectedNumber !== undefined) updateData.connectedNumber = additionalData.connectedNumber
-      if (additionalData?.lastError !== undefined) updateData.lastError = additionalData.lastError
-      if (additionalData?.reconnectCount !== undefined) updateData.reconnectCount = additionalData.reconnectCount
-      if (additionalData?.metadata !== undefined) updateData.metadata = additionalData.metadata
+      if (additionalData?.qrCode !== undefined) updateData.qrCode = additionalData.qrCode;
+      if (additionalData?.connectedNumber !== undefined)
+        updateData.connectedNumber = additionalData.connectedNumber;
+      if (additionalData?.lastError !== undefined) updateData.lastError = additionalData.lastError;
+      if (additionalData?.reconnectCount !== undefined)
+        updateData.reconnectCount = additionalData.reconnectCount;
+      if (additionalData?.metadata !== undefined) updateData.metadata = additionalData.metadata;
 
       await this.prisma.whatsAppSession.update({
         where: { sessionId },
-        data: updateData
-      })
+        data: updateData,
+      });
 
-      logger.debug(`Session ${sessionId} status updated to ${status}`)
-      return true
+      logger.debug(`Session ${sessionId} status updated to ${status}`);
+      return true;
     } catch (error) {
-      logger.error(`Error updating session ${sessionId} status:`, error)
-      return false
+      logger.error(`Error updating session ${sessionId} status:`, error);
+      return false;
     }
   }
 
@@ -191,23 +193,20 @@ export class SessionPersistenceService {
    */
   async cleanupOldSessions(daysOld: number = 7): Promise<number> {
     try {
-      const cutoffDate = new Date()
-      cutoffDate.setDate(cutoffDate.getDate() - daysOld)
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysOld);
 
       const result = await this.prisma.whatsAppSession.deleteMany({
         where: {
-          AND: [
-            { isActive: false },
-            { updatedAt: { lt: cutoffDate } }
-          ]
-        }
-      })
+          AND: [{ isActive: false }, { updatedAt: { lt: cutoffDate } }],
+        },
+      });
 
-      logger.info(`Cleaned up ${result.count} old sessions`)
-      return result.count
+      logger.info(`Cleaned up ${result.count} old sessions`);
+      return result.count;
     } catch (error) {
-      logger.error('Error cleaning up old sessions:', error)
-      return 0
+      logger.error('Error cleaning up old sessions:', error);
+      return 0;
     }
   }
 
@@ -216,11 +215,11 @@ export class SessionPersistenceService {
    * @returns Promise<SessionStats> - Session statistics
    */
   async getSessionStats(): Promise<{
-    total: number
-    active: number
-    connected: number
-    connecting: number
-    disconnected: number
+    total: number;
+    active: number;
+    connected: number;
+    connecting: number;
+    disconnected: number;
   }> {
     try {
       const [total, active, connected, connecting, disconnected] = await Promise.all([
@@ -228,13 +227,13 @@ export class SessionPersistenceService {
         this.prisma.whatsAppSession.count({ where: { isActive: true } }),
         this.prisma.whatsAppSession.count({ where: { status: 'ready' } }),
         this.prisma.whatsAppSession.count({ where: { status: 'connecting' } }),
-        this.prisma.whatsAppSession.count({ where: { status: 'disconnected' } })
-      ])
+        this.prisma.whatsAppSession.count({ where: { status: 'disconnected' } }),
+      ]);
 
-      return { total, active, connected, connecting, disconnected }
+      return { total, active, connected, connecting, disconnected };
     } catch (error) {
-      logger.error('Error getting session stats:', error)
-      return { total: 0, active: 0, connected: 0, connecting: 0, disconnected: 0 }
+      logger.error('Error getting session stats:', error);
+      return { total: 0, active: 0, connected: 0, connecting: 0, disconnected: 0 };
     }
   }
 
@@ -249,15 +248,15 @@ export class SessionPersistenceService {
         where: { sessionId },
         data: {
           reconnectCount: { increment: 1 },
-          updatedAt: new Date()
-        }
-      })
+          updatedAt: new Date(),
+        },
+      });
 
-      logger.debug(`Reconnect count incremented for session ${sessionId}`)
-      return true
+      logger.debug(`Reconnect count incremented for session ${sessionId}`);
+      return true;
     } catch (error) {
-      logger.error(`Error incrementing reconnect count for ${sessionId}:`, error)
-      return false
+      logger.error(`Error incrementing reconnect count for ${sessionId}:`, error);
+      return false;
     }
   }
 
@@ -279,17 +278,17 @@ export class SessionPersistenceService {
       reconnectCount: dbSession.reconnectCount,
       lastError: dbSession.lastError,
       webhookUrl: dbSession.webhookUrl,
-      metadata: dbSession.metadata
-    }
+      metadata: dbSession.metadata,
+    };
   }
 
   /**
    * Close database connection
    */
   async disconnect(): Promise<void> {
-    await this.prisma.$disconnect()
+    await this.prisma.$disconnect();
   }
 }
 
 // Export singleton instance
-export default new SessionPersistenceService()
+export default new SessionPersistenceService();

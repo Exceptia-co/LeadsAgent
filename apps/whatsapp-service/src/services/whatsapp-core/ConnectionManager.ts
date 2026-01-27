@@ -178,8 +178,8 @@ export class ConnectionManager {
           });
 
           // Target crashed detection
-          browser.on('targetcrashed', async target => {
-            if (target.url().includes('web.whatsapp.com')) {
+          browser.on('targetcrashed', async (target: any) => {
+            if (target?.url?.().includes('web.whatsapp.com')) {
               logger.error(`💥 WhatsApp target crashed for session ${sessionId}`);
               await onBrowserDisconnect(sessionId, 'TARGET_CRASHED');
             }

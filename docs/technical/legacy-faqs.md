@@ -49,14 +49,12 @@
 ### Precios de los Productos (en Monedas HUB)
 
 1. **ANUNCIO DOBLE** (11 monedas HUB base)
-
    - 1 día: 20 monedas HUB
    - 5 días: 85 monedas HUB
    - 10 días: 150 monedas HUB
    - Beneficio: Mayor visibilidad con espacio doble
 
 2. **ANUNCIO TOP** (28 monedas HUB base)
-
    - 3 días: 85 monedas HUB
    - 7 días: 125 monedas HUB
    - 10 días: 165 monedas HUB
@@ -64,7 +62,6 @@
    - Beneficio: Posicionamiento superior garantizado
 
 3. **ANUNCIO DOBLE TOP** (59 monedas HUB base)
-
    - 3 días: 170 monedas HUB
    - 7 días: 250 monedas HUB
    - 10 días: 330 monedas HUB
@@ -72,14 +69,12 @@
    - Beneficio: Máxima visibilidad combinada
 
 4. **DISPONIBLE AHORA** (100 monedas HUB base)
-
    - 10 unidades: 40 monedas HUB
    - 25 unidades: 100 monedas HUB
    - 100 unidades: 400 monedas HUB
    - Beneficio: Indicador de disponibilidad inmediata
 
 5. **HISTORIAS** (seven monedas HUB base)
-
    - 1 unidad: 12 monedas HUB
    - 5 unidades: 60 monedas HUB
    - 10 unidades: 110 monedas HUB
@@ -135,7 +130,6 @@
 ### Generales
 
 1. **¿Qué es EscortsHub?**
-
    - Es el sitio web original de escorts en España, una plataforma para anuncios de servicios de acompañantes.
 
 2. **¿Es necesario ser mayor de edad?**
@@ -144,7 +138,6 @@
 ### Sobre los Anuncios
 
 1. **¿Qué tipo de anuncios puedo publicar?**
-
    - Hay varios formatos disponibles: normal, doble, top, y doble top.
 
 2. **¿Cuál es la diferencia entre los tipos de anuncios?**
@@ -156,7 +149,6 @@
 ### Funcionalidades
 
 1. **¿Qué es "Disponible Ahora"?**
-
    - Es una función que permite mostrar tu disponibilidad en tiempo real a los clientes.
 
 2. **¿Cómo funcionan las Historias?**
@@ -165,7 +157,6 @@
 ### Privacidad y Seguridad
 
 1. **¿Qué políticas de privacidad aplican?**
-
    - El sitio utiliza cookies propias y de terceros para mejorar servicios y analizar tráfico.
    - Existe una política de cookies detallada disponible para consulta.
 
@@ -177,7 +168,6 @@
 ### Gestión de Cuenta
 
 1. **¿Qué es la Reactivación?**
-
    - Es un servicio que permite volver a activar anuncios que han sido pausados.
 
 2. **¿Puedo pausar y reactivar mis anuncios?**

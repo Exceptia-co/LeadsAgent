@@ -27,17 +27,17 @@ Hemos implementado una solución robusta que incluye:
 
 ```typescript
 // Antes (problemático)
-await client.destroy()
-this.clients.delete(sessionId)
+await client.destroy();
+this.clients.delete(sessionId);
 
 // Ahora (robusto)
 try {
-  await client.destroy()
+  await client.destroy();
 } catch (clientError) {
-  logger.warn('Error destroying client:', clientError)
+  logger.warn('Error destroying client:', clientError);
   // Continúa con limpieza
 }
-await SessionCleanupUtil.cleanupSession(sessionId, './sessions')
+await SessionCleanupUtil.cleanupSession(sessionId, './sessions');
 ```
 
 ### 3. Script CLI de Mantenimiento
@@ -66,6 +66,7 @@ npm run cleanup-sessions status
 ```
 
 **Output esperado:**
+
 ```
 🔍 Estado de las sesiones de WhatsApp:
 
@@ -137,9 +138,12 @@ process.on('SIGTERM', async () => {
 
 ```typescript
 // Ejecutar limpieza periódica (ej: cada hora)
-setInterval(async () => {
-  await SessionCleanupUtil.cleanupOrphanedSessions('./sessions');
-}, 60 * 60 * 1000);
+setInterval(
+  async () => {
+    await SessionCleanupUtil.cleanupOrphanedSessions('./sessions');
+  },
+  60 * 60 * 1000
+);
 ```
 
 ## 🔍 Diagnóstico de Problemas

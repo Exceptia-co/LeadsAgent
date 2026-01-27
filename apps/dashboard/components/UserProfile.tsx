@@ -1,42 +1,43 @@
-import React, { useState } from 'react'
-import { useUnifiedUser } from '../hooks/use-unified-user'
-import { Card } from './ui/card'
-import { Badge } from './ui/badge'
-import { Loader2, Settings, User, Shield, Activity } from 'lucide-react'
+import React, { useState } from "react";
+import { useUnifiedUser } from "../hooks/use-unified-user";
+import { Card } from "./ui/card";
+import { Badge } from "./ui/badge";
+import { Loader2, Settings, User, Shield, Activity } from "lucide-react";
 
 /**
  * Componente de perfil de usuario que demuestra el uso del sistema unificado
  * Utiliza tanto datos de Clerk como de Supabase de forma seamless
  */
 export function UserProfile() {
-  const { user, clerkUser, isLoading, error, updateSettings, refreshUser } = useUnifiedUser()
-  const [isUpdatingSettings, setIsUpdatingSettings] = useState(false)
+  const { user, clerkUser, isLoading, error, updateSettings, refreshUser } =
+    useUnifiedUser();
+  const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
 
   const handleUpdateNotifications = async () => {
-    if (!user) return
+    if (!user) return;
 
-    setIsUpdatingSettings(true)
+    setIsUpdatingSettings(true);
     try {
       const newSettings = {
         ...user.settings,
         notifications: {
           ...user.settings.notifications,
-          whatsapp: !user.settings.notifications?.whatsapp
-        }
-      }
+          whatsapp: !user.settings.notifications?.whatsapp,
+        },
+      };
 
-      const success = await updateSettings(newSettings)
+      const success = await updateSettings(newSettings);
       if (success) {
-        console.log('✅ Settings updated successfully')
+        console.log("✅ Settings updated successfully");
       } else {
-        console.error('❌ Failed to update settings')
+        console.error("❌ Failed to update settings");
       }
     } catch (error) {
-      console.error('Error updating settings:', error)
+      console.error("Error updating settings:", error);
     } finally {
-      setIsUpdatingSettings(false)
+      setIsUpdatingSettings(false);
     }
-  }
+  };
 
   if (isLoading) {
     return (
@@ -46,7 +47,7 @@ export function UserProfile() {
           <span>Cargando perfil...</span>
         </div>
       </Card>
-    )
+    );
   }
 
   if (error) {
@@ -63,7 +64,7 @@ export function UserProfile() {
           </button>
         </div>
       </Card>
-    )
+    );
   }
 
   if (!user) {
@@ -74,19 +75,19 @@ export function UserProfile() {
           <p className="text-gray-600">No hay sesión activa</p>
         </div>
       </Card>
-    )
+    );
   }
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
-      case 'admin':
-        return 'destructive'
-      case 'manager':
-        return 'secondary'
+      case "admin":
+        return "destructive";
+      case "manager":
+        return "secondary";
       default:
-        return 'default'
+        return "default";
     }
-  }
+  };
 
   return (
     <div className="space-y-6">
@@ -104,17 +105,23 @@ export function UserProfile() {
             <div>
               <h2 className="text-xl font-semibold">
                 {user.firstName || user.lastName
-                  ? `${user.firstName || ''} ${user.lastName || ''}`.trim()
-                  : 'Usuario'}
+                  ? `${user.firstName || ""} ${user.lastName || ""}`.trim()
+                  : "Usuario"}
               </h2>
               <p className="text-gray-600">{user.email}</p>
               <div className="flex items-center space-x-2 mt-1">
-                <Badge variant={getRoleBadgeColor(user.role)} className="text-xs">
+                <Badge
+                  variant={getRoleBadgeColor(user.role)}
+                  className="text-xs"
+                >
                   <Shield className="h-3 w-3 mr-1" />
                   {user.role.toUpperCase()}
                 </Badge>
                 {user.isActive ? (
-                  <Badge variant="default" className="text-xs bg-green-100 text-green-800">
+                  <Badge
+                    variant="default"
+                    className="text-xs bg-green-100 text-green-800"
+                  >
                     <Activity className="h-3 w-3 mr-1" />
                     Activo
                   </Badge>
@@ -140,14 +147,14 @@ export function UserProfile() {
             <span className="text-gray-600">Último acceso:</span>
             <p className="font-medium">
               {user.lastLoginAt
-                ? new Date(user.lastLoginAt).toLocaleString('es-ES')
-                : 'Nunca'}
+                ? new Date(user.lastLoginAt).toLocaleString("es-ES")
+                : "Nunca"}
             </p>
           </div>
           <div>
             <span className="text-gray-600">Miembro desde:</span>
             <p className="font-medium">
-              {new Date(user.createdAt).toLocaleDateString('es-ES')}
+              {new Date(user.createdAt).toLocaleDateString("es-ES")}
             </p>
           </div>
         </div>
@@ -207,15 +214,19 @@ export function UserProfile() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-600">Idioma:</span>
-                <span>{user.settings.preferences?.language || 'es'}</span>
+                <span>{user.settings.preferences?.language || "es"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Zona horaria:</span>
-                <span>{user.settings.preferences?.timezone || 'Europe/Madrid'}</span>
+                <span>
+                  {user.settings.preferences?.timezone || "Europe/Madrid"}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Vista del dashboard:</span>
-                <span>{user.settings.preferences?.dashboard_view || 'grid'}</span>
+                <span>
+                  {user.settings.preferences?.dashboard_view || "grid"}
+                </span>
               </div>
             </div>
           </div>
@@ -223,7 +234,7 @@ export function UserProfile() {
       </Card>
 
       {/* Información técnica (solo en desarrollo) */}
-      {process.env.NODE_ENV === 'development' && (
+      {process.env.NODE_ENV === "development" && (
         <Card className="p-6 bg-gray-50">
           <h3 className="text-lg font-semibold mb-4">Información técnica</h3>
           <div className="space-y-2 text-sm font-mono">
@@ -237,20 +248,20 @@ export function UserProfile() {
             </div>
             <div>
               <span className="text-gray-600">Última actualización:</span>
-              <p>{new Date(user.updatedAt).toLocaleString('es-ES')}</p>
+              <p>{new Date(user.updatedAt).toLocaleString("es-ES")}</p>
             </div>
           </div>
         </Card>
       )}
     </div>
-  )
+  );
 }
 
 /**
  * Componente wrapper que maneja la autenticación
  */
 export function AuthenticatedUserProfile() {
-  const { user, isLoading } = useUnifiedUser()
+  const { user, isLoading } = useUnifiedUser();
 
   if (isLoading) {
     return (
@@ -258,7 +269,7 @@ export function AuthenticatedUserProfile() {
         <Loader2 className="h-8 w-8 animate-spin mr-2" />
         <span>Cargando...</span>
       </div>
-    )
+    );
   }
 
   if (!user) {
@@ -272,14 +283,14 @@ export function AuthenticatedUserProfile() {
           Necesitas iniciar sesión para ver esta página
         </p>
         <button
-          onClick={() => window.location.href = '/sign-in'}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          onClick={() => (window.location.href = "/sign-in")}
+          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
         >
           Iniciar sesión
         </button>
       </div>
-    )
+    );
   }
 
-  return <UserProfile />
+  return <UserProfile />;
 }

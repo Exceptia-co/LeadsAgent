@@ -10,7 +10,7 @@
 
 import { logger } from '../../utils/logger';
 import DatabaseService from '../DatabaseService';
-import { IntentAnalysisExtended } from './ContextEnricher';
+import type { IntentAnalysisExtended } from './ContextEnricher';
 
 // ============================================
 // INTERFACES Y TIPOS
@@ -264,7 +264,7 @@ export class KnowledgeRetrieval {
    */
   private async searchIntentFocused(params: KnowledgeSearchParams): Promise<KnowledgeItem[]> {
     try {
-      let items: KnowledgeItem[] = [];
+      const items: KnowledgeItem[] = [];
 
       // Search by category first
       if (params.category) {
@@ -293,7 +293,7 @@ export class KnowledgeRetrieval {
     try {
       // Extract key terms from query
       const keyTerms = this.extractKeyTerms(params.query);
-      let items: KnowledgeItem[] = [];
+      const items: KnowledgeItem[] = [];
 
       // Search for each key term
       for (const term of keyTerms) {
@@ -317,7 +317,7 @@ export class KnowledgeRetrieval {
    */
   private async searchHybridKnowledge(params: KnowledgeSearchParams): Promise<KnowledgeItem[]> {
     try {
-      let items: KnowledgeItem[] = [];
+      const items: KnowledgeItem[] = [];
 
       // 1. Intent-based search
       if (params.intent && params.category) {

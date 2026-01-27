@@ -5,7 +5,7 @@
     "lib": ["ES2022", "DOM"],
     "outDir": "./dist",
     "rootDir": "./src",
-    
+
     // Strict Type Checking
     "strict": false,
     // "noImplicitAny": true,
@@ -15,7 +15,7 @@
     // "strictPropertyInitialization": true,
     // "noImplicitThis": true,
     // "alwaysStrict": true,
-    
+
     // Additional Checks
     // "noUnusedLocals": true,
     // "noUnusedParameters": true,
@@ -25,7 +25,7 @@
     // "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
     // "noPropertyAccessFromIndexSignature": true,
-    
+
     // Module Resolution
     "moduleResolution": "node",
     "baseUrl": "./src",
@@ -39,33 +39,24 @@
       "@/middleware/*": ["middleware/*"],
       "@/routes/*": ["routes/*"]
     },
-    
+
     // ES Module Support
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "resolveJsonModule": true,
-    
+
     // Output
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
     "removeComments": false,
-    
+
     // Other
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true
   },
-  "include": [
-    "src/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "logs",
-    "sessions",
-    "**/*.test.ts",
-    "**/*.spec.ts"
-  ]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "logs", "sessions", "**/*.test.ts", "**/*.spec.ts"]
 }

@@ -11,10 +11,12 @@ Tu aplicación tiene los siguientes problemas:
 ## ✅ Soluciones Implementadas
 
 ### 1. **Sentry Deshabilitado**
+
 - ✅ Comenté las variables de Sentry en `.env`
 - ✅ Esto resolverá los errores `net::ERR_BLOCKED_BY_CLIENT`
 
 ### 2. **Variables de Clerk Actualizadas**
+
 - ✅ Reemplacé las claves inválidas con placeholders claros
 - ✅ Agregué comentarios explicativos
 
@@ -25,7 +27,7 @@ Tu aplicación tiene los siguientes problemas:
 1. Ve a [dashboard.clerk.dev](https://dashboard.clerk.dev)
 2. Haz clic en **"Create application"**
 3. **Nombre**: `LeadsCRM` (o el que prefieras)
-4. **Providers de autenticación**: 
+4. **Providers de autenticación**:
    - ✅ Email
    - ✅ Google (opcional)
    - ✅ Username + Password
@@ -38,7 +40,7 @@ En la configuración del proyecto, establece:
 # Home URL
 http://localhost:3000
 
-# Sign-in URL  
+# Sign-in URL
 http://localhost:3000/sign-in
 
 # Sign-up URL
@@ -47,7 +49,7 @@ http://localhost:3000/sign-up
 # After sign-in URL
 http://localhost:3000/dashboard
 
-# After sign-up URL  
+# After sign-up URL
 http://localhost:3000/dashboard
 ```
 
@@ -124,6 +126,7 @@ http://localhost:3000/test-clerk
 ### **Logs Útiles**
 
 Revisa la consola del navegador para:
+
 - ✅ Sin errores `net::ERR_BLOCKED_BY_CLIENT` (Sentry resuelto)
 - ✅ Sin redirecciones a `assuring-possum-6.accounts.dev`
 - ✅ Mensajes de Clerk indicando desarrollo: `Clerk has been loaded with development keys`
@@ -140,7 +143,7 @@ Después de seguir estos pasos:
 ## 🆘 Si Sigues Teniendo Problemas
 
 1. **Verifica las URLs** en Clerk Dashboard coincidan exactamente
-2. **Asegúrate** de que las claves sean de **desarrollo** (`pk_test_`, `sk_test_`)  
+2. **Asegúrate** de que las claves sean de **desarrollo** (`pk_test_`, `sk_test_`)
 3. **Reinicia completamente** el servidor después de cambiar `.env`
 4. **Revisa** que no haya ad blockers interfiriendo
 

@@ -1,5 +1,5 @@
 import { logger } from '../../../utils/logger';
-import {
+import type {
   ICacheManager,
   CacheStats,
   CacheConfig,

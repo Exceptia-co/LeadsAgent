@@ -1,4 +1,5 @@
-import express, { Express } from 'express';
+import type { Express } from 'express';
+import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
@@ -73,14 +74,26 @@ async function bootstrap() {
     // Middleware
     logger.info('🔧 Configuring middleware...');
 
+    // CORS configuration - only allow localhost in development
+    const isProduction = process.env.NODE_ENV === 'production';
+    const corsOrigins = process.env.CORS_ORIGIN?.split(',');
+
+    if (isProduction && !corsOrigins) {
+      logger.warn('⚠️  CORS_ORIGIN not configured in production! Using restrictive defaults.');
+    }
+
     app.use(
       cors({
-        origin: process.env.CORS_ORIGIN?.split(',') || [
-          'http://localhost:3000',
-          'http://localhost:3001',
-          'http://localhost:3002',
-          'http://localhost:3003',
-        ],
+        origin:
+          corsOrigins ||
+          (isProduction
+            ? false // Block all in production if not configured
+            : [
+                'http://localhost:3000',
+                'http://localhost:3001',
+                'http://localhost:3002',
+                'http://localhost:3003',
+              ]),
         credentials: true,
       })
     );
@@ -227,7 +240,7 @@ async function bootstrap() {
     logger.info('✅ WebSocket service initialized');
 
     // Make socketService available for shutdown
-    let socketServiceForShutdown = socketService;
+    const socketServiceForShutdown = socketService;
 
     const server = httpServer.listen(PORT, () => {
       logger.info(`🟢 WhatsApp service running on port ${PORT}`);

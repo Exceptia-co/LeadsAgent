@@ -6,12 +6,12 @@
 import { logger } from '../utils/logger';
 import type { IDataPersistence } from '../interfaces/IDataPersistence';
 import type { IWhatsAppSessionManager } from '../interfaces/IWhatsAppSessionManager';
-import type { 
+import type {
   IMessageProcessor,
   IEventHandler,
   IMediaHandler,
   IContactManager,
-  IConnectionManager
+  IConnectionManager,
 } from '../types';
 
 /**
@@ -49,13 +49,13 @@ export class ServiceLocator {
    * Register a service in the locator
    */
   public register<K extends keyof ServiceRegistry>(
-    serviceName: K, 
+    serviceName: K,
     service: ServiceRegistry[K]
   ): void {
     if (this.services[serviceName]) {
       logger.warn(`🔄 Service '${serviceName}' is being replaced in ServiceLocator`);
     }
-    
+
     this.services[serviceName] = service;
     logger.debug(`✅ Service '${serviceName}' registered in ServiceLocator`);
   }
@@ -65,14 +65,14 @@ export class ServiceLocator {
    */
   public get<K extends keyof ServiceRegistry>(serviceName: K): ServiceRegistry[K] {
     const service = this.services[serviceName];
-    
+
     if (!service) {
       throw new Error(
         `Service '${serviceName}' not found in ServiceLocator. ` +
-        `Available services: ${Object.keys(this.services).join(', ')}`
+          `Available services: ${Object.keys(this.services).join(', ')}`
       );
     }
-    
+
     return service;
   }
 
@@ -85,7 +85,7 @@ export class ServiceLocator {
   ): Promise<ServiceRegistry[K]> {
     // Check if service is already registered
     if (this.services[serviceName]) {
-      return this.services[serviceName]!;
+      return this.services[serviceName];
     }
 
     // Check if service is currently being initialized to prevent circular init
@@ -96,7 +96,7 @@ export class ServiceLocator {
     // Initialize if initializer provided
     if (initializer) {
       this.isInitializing.add(serviceName);
-      
+
       try {
         logger.debug(`🔄 Lazy initializing service '${serviceName}'`);
         const service = await initializer();
@@ -112,7 +112,7 @@ export class ServiceLocator {
 
     throw new Error(
       `Service '${serviceName}' not found and no initializer provided. ` +
-      `Available services: ${Object.keys(this.services).join(', ')}`
+        `Available services: ${Object.keys(this.services).join(', ')}`
     );
   }
 
@@ -160,7 +160,7 @@ export class ServiceLocator {
     return {
       registeredServices: Object.keys(this.services).length,
       initializingServices: this.isInitializing.size,
-      serviceNames: Object.keys(this.services)
+      serviceNames: Object.keys(this.services),
     };
   }
 }

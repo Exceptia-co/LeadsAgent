@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import RedisController from '../controllers/RedisController';
 
-const router = Router();
+const router: Router = Router();
 
 // ============ RUTAS DE ESTADO Y MONITOREO ============
 

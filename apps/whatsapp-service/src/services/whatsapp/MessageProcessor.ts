@@ -9,14 +9,8 @@ import { LogExecutionTime, SafeExecutor, isSuccess, isFailure } from '../../util
 import { ErrorFactory } from '../../errors';
 import { eventBus } from '../../events/EventBus';
 import { serviceLocator } from '../../core/ServiceLocator';
-import type { 
-  IMessageProcessor,
-  WhatsAppMessage, 
-  SendMessageRequest,
-  SendMessageResponse,
-  SendMediaMessageRequest,
-  Result
-} from '../../types';
+import { WhatsAppMessage, SendMessageRequest, SendMediaMessageRequest } from '../../types';
+import type { IMessageProcessor, SendMessageResponse, Result } from '../../types';
 
 /**
  * MessageProcessor handles all message-related operations
@@ -28,7 +22,7 @@ export class MessageProcessor implements IMessageProcessor {
    */
   @LogExecutionTime({ operationId: 'send-message' })
   public async sendMessage(
-    sessionId: string, 
+    sessionId: string,
     request: SendMessageRequest
   ): Promise<SendMessageResponse> {
     return SafeExecutor.execute(
@@ -36,7 +30,11 @@ export class MessageProcessor implements IMessageProcessor {
         // Get session manager to access client
         const sessionManager = serviceLocator.get('sessionManager');
         if (!sessionManager) {
-          throw ErrorFactory.whatsapp('Session manager not available', 'SERVICE_UNAVAILABLE', sessionId);
+          throw ErrorFactory.whatsapp(
+            'Session manager not available',
+            'SERVICE_UNAVAILABLE',
+            sessionId
+          );
         }
 
         // Validate session is ready
@@ -52,7 +50,7 @@ export class MessageProcessor implements IMessageProcessor {
 
         // Normalize phone number
         const normalizedNumber = this.normalizePhoneNumber(request.to);
-        
+
         // Validate message content
         this.validateMessageContent(request.message);
 
@@ -70,7 +68,7 @@ export class MessageProcessor implements IMessageProcessor {
         // Emit message sent event
         await eventBus.publish('whatsapp:message-sent', {
           sessionId,
-          messageId: response.messageId!,
+          messageId: response.messageId,
           to: normalizedNumber,
           body: request.message,
           success: true,
@@ -94,16 +92,18 @@ export class MessageProcessor implements IMessageProcessor {
         };
 
         // Emit failed message event
-        eventBus.publish('whatsapp:message-sent', {
-          sessionId,
-          messageId: 'failed',
-          to: request.to,
-          body: request.message,
-          success: false,
-          timestamp: new Date(),
-        }).catch(eventError => {
-          logger.warn('Failed to emit message-sent event:', eventError);
-        });
+        eventBus
+          .publish('whatsapp:message-sent', {
+            sessionId,
+            messageId: 'failed',
+            to: request.to,
+            body: request.message,
+            success: false,
+            timestamp: new Date(),
+          })
+          .catch(eventError => {
+            logger.warn('Failed to emit message-sent event:', eventError);
+          });
 
         return errorResponse;
       }
@@ -116,7 +116,7 @@ export class MessageProcessor implements IMessageProcessor {
    */
   @LogExecutionTime({ operationId: 'send-media-message' })
   public async sendMediaMessage(
-    sessionId: string, 
+    sessionId: string,
     request: SendMediaMessageRequest
   ): Promise<SendMessageResponse> {
     return SafeExecutor.execute(
@@ -124,7 +124,11 @@ export class MessageProcessor implements IMessageProcessor {
         // Get session manager to access client
         const sessionManager = serviceLocator.get('sessionManager');
         if (!sessionManager) {
-          throw ErrorFactory.whatsapp('Session manager not available', 'SERVICE_UNAVAILABLE', sessionId);
+          throw ErrorFactory.whatsapp(
+            'Session manager not available',
+            'SERVICE_UNAVAILABLE',
+            sessionId
+          );
         }
 
         // Validate session is ready
@@ -140,11 +144,13 @@ export class MessageProcessor implements IMessageProcessor {
 
         // Normalize phone number
         const normalizedNumber = this.normalizePhoneNumber(request.to);
-        
+
         // Validate media file
         await this.validateMediaFile(request.mediaPath, request.mediaType);
 
-        logger.info(`📤 Sending media message from ${sessionId} to ${normalizedNumber}: ${request.mediaType}`);
+        logger.info(
+          `📤 Sending media message from ${sessionId} to ${normalizedNumber}: ${request.mediaType}`
+        );
 
         // Prepare media message
         const messageData: any = {
@@ -168,7 +174,7 @@ export class MessageProcessor implements IMessageProcessor {
         // Emit message sent event
         await eventBus.publish('whatsapp:message-sent', {
           sessionId,
-          messageId: response.messageId!,
+          messageId: response.messageId,
           to: normalizedNumber,
           body: `[${request.mediaType.toUpperCase()}] ${request.caption || request.filename || 'Media file'}`,
           success: true,
@@ -192,16 +198,18 @@ export class MessageProcessor implements IMessageProcessor {
         };
 
         // Emit failed message event
-        eventBus.publish('whatsapp:message-sent', {
-          sessionId,
-          messageId: 'failed',
-          to: request.to,
-          body: `[${request.mediaType.toUpperCase()}] ${request.caption || 'Media file'}`,
-          success: false,
-          timestamp: new Date(),
-        }).catch(eventError => {
-          logger.warn('Failed to emit message-sent event:', eventError);
-        });
+        eventBus
+          .publish('whatsapp:message-sent', {
+            sessionId,
+            messageId: 'failed',
+            to: request.to,
+            body: `[${request.mediaType.toUpperCase()}] ${request.caption || 'Media file'}`,
+            success: false,
+            timestamp: new Date(),
+          })
+          .catch(eventError => {
+            logger.warn('Failed to emit message-sent event:', eventError);
+          });
 
         return errorResponse;
       }
@@ -213,10 +221,7 @@ export class MessageProcessor implements IMessageProcessor {
    * Process an incoming WhatsApp message
    */
   @LogExecutionTime({ operationId: 'process-incoming-message' })
-  public async processIncomingMessage(
-    sessionId: string, 
-    message: WhatsAppMessage
-  ): Promise<void> {
+  public async processIncomingMessage(sessionId: string, message: WhatsAppMessage): Promise<void> {
     return SafeExecutor.execute(
       async () => {
         logger.info(`📨 Processing incoming message from ${message.from} in session ${sessionId}`);
@@ -265,7 +270,7 @@ export class MessageProcessor implements IMessageProcessor {
       timestamp: (message.timestamp || Date.now()) * (message.timestamp < 2000000000 ? 1000 : 1), // Convert to milliseconds if needed
       type: this.determineMessageType(message),
       mediaUrl: message.hasMedia ? `media://${message.id?._serialized || message.id}` : undefined,
-      isGroup: message.fromMe ? false : (message.isGroup || false),
+      isGroup: message.fromMe ? false : message.isGroup || false,
       fromMe: message.fromMe || false,
     };
   }
@@ -297,12 +302,12 @@ export class MessageProcessor implements IMessageProcessor {
   private normalizePhoneNumber(phoneNumber: string): string {
     // Remove all non-digit characters
     const cleaned = phoneNumber.replace(/\D/g, '');
-    
+
     // If number doesn't end with @c.us, add it
     if (!phoneNumber.includes('@c.us')) {
       return `${cleaned}@c.us`;
     }
-    
+
     return phoneNumber;
   }
 
@@ -315,19 +320,23 @@ export class MessageProcessor implements IMessageProcessor {
     }
 
     if (content.length > 4096) {
-      throw ErrorFactory.validation('Message content exceeds maximum length (4096 characters)', 'message', content.length);
+      throw ErrorFactory.validation(
+        'Message content exceeds maximum length (4096 characters)',
+        'message',
+        content.length
+      );
     }
 
     // Check for potentially problematic content
-    const suspiciousPatterns = [
-      /javascript:/i,
-      /<script/i,
-      /eval\(/i,
-    ];
+    const suspiciousPatterns = [/javascript:/i, /<script/i, /eval\(/i];
 
     for (const pattern of suspiciousPatterns) {
       if (pattern.test(content)) {
-        throw ErrorFactory.validation('Message contains potentially unsafe content', 'message', content);
+        throw ErrorFactory.validation(
+          'Message contains potentially unsafe content',
+          'message',
+          content
+        );
       }
     }
   }
@@ -341,7 +350,7 @@ export class MessageProcessor implements IMessageProcessor {
     // 2. Validate file type matches declared type
     // 3. Check file size limits
     // 4. Scan for malware (in production)
-    
+
     if (!mediaPath) {
       throw ErrorFactory.validation('Media path is required', 'mediaPath');
     }
@@ -359,12 +368,12 @@ export class MessageProcessor implements IMessageProcessor {
    * Enrich message data with additional context
    */
   private async enrichMessageData(
-    sessionId: string, 
+    sessionId: string,
     message: WhatsAppMessage
   ): Promise<WhatsAppMessage> {
     // Add any enrichment logic here
     // For example: contact resolution, spam detection, etc.
-    
+
     return {
       ...message,
       // Add any enriched fields
@@ -375,7 +384,7 @@ export class MessageProcessor implements IMessageProcessor {
    * Route message for further processing based on content and type
    */
   private async routeMessageForProcessing(
-    sessionId: string, 
+    sessionId: string,
     message: WhatsAppMessage
   ): Promise<void> {
     try {
@@ -383,7 +392,7 @@ export class MessageProcessor implements IMessageProcessor {
       // 1. Check if message needs AI processing
       // 2. Route to appropriate handler
       // 3. Apply business rules
-      
+
       logger.debug(`🔄 Routing message for processing: ${message.id}`);
 
       // This is where you'd integrate with:
@@ -391,7 +400,6 @@ export class MessageProcessor implements IMessageProcessor {
       // - Business logic for lead processing
       // - External webhooks
       // - Database persistence
-      
     } catch (error) {
       logger.warn(`⚠️ Error during message routing for ${message.id}:`, error);
       // Don't throw here to avoid failing the entire message processing
@@ -418,7 +426,7 @@ export class MessageProcessor implements IMessageProcessor {
           return 'document'; // Default for unknown media types
       }
     }
-    
+
     return 'text';
   }
 }

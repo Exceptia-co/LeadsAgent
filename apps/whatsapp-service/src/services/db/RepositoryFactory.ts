@@ -3,12 +3,8 @@
  * Creates and manages repository instances with working stubs
  */
 
-import {
-  IRepositoryFactory,
-  ILeadRepository,
-  IConversationRepository,
-  IDatabaseConnection,
-} from './types';
+import type { ILeadRepository, IConversationRepository, IDatabaseConnection } from './types';
+import { IRepositoryFactory } from './types';
 import { LeadRepository } from './LeadRepository';
 import { ConversationRepository } from './ConversationRepository';
 import { KnowledgeBaseRepository } from './KnowledgeBaseRepository';
@@ -124,7 +120,7 @@ export class RepositoryFactory {
         this.whitelistLogRepository,
       ].filter(Boolean);
 
-      await Promise.all(repositories.map(repo => repo!.close()));
+      await Promise.all(repositories.map(repo => repo.close()));
       await this.connection.close();
 
       logger.info('✅ All repository connections closed');

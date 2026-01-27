@@ -1,6 +1,6 @@
-import { Client, Message } from 'whatsapp-web.js';
+import type { Client, Message } from 'whatsapp-web.js';
 import { logger } from '../../utils/logger';
-import { WhatsAppMessage, SendMessageResponse } from '../../types';
+import type { WhatsAppMessage, SendMessageResponse } from '../../types';
 
 /**
  * MessageHandler - Handles all message sending, receiving, and processing operations

@@ -56,7 +56,7 @@ const Checkbox = ({
         if (el) el.indeterminate = indeterminate || false;
       }}
       onChange={onChange}
-      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-2 focus:ring-offset-0"
+      className="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500 focus:ring-2 focus:ring-offset-0"
       {...props}
     />
   );
@@ -174,7 +174,6 @@ export default function BulkProactiveMessageSender({
     }
   };
 
-
   // Check states for "select all" checkbox
   const currentPageLeadIds = new Set(currentLeads.map((lead) => lead.id));
   const selectedCurrentPageLeads = Array.from(currentPageLeadIds).filter((id) =>
@@ -213,7 +212,7 @@ export default function BulkProactiveMessageSender({
             placeholder="Buscar leads por nombre o teléfono..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10 pr-3 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            className="pl-10 pr-3 py-2 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
           />
         </div>
       </Card>
@@ -258,7 +257,7 @@ export default function BulkProactiveMessageSender({
               {currentLeads.map((lead) => (
                 <tr
                   key={lead.id}
-                  className={`hover:bg-gray-50 ${selectedLeads.has(lead.id) ? "bg-blue-50" : ""}`}
+                  className={`hover:bg-gray-50 ${selectedLeads.has(lead.id) ? "bg-green-50" : ""}`}
                 >
                   <td className="px-6 py-4 whitespace-nowrap">
                     <Checkbox

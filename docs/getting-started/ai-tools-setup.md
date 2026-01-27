@@ -10,6 +10,7 @@
 Este documento contiene la configuración completa y guía de troubleshooting para los servidores MCP (Model Context Protocol) en Warp Terminal para el proyecto LeadsCRM.
 
 ### **✅ ESTADO ACTUAL (2025-08-28):**
+
 - **4 servidores MCP activos y estables**
 - **Serena funcionando perfectamente** (2+ días de uptime)
 - **Problemas de comunicación intermitentes** en algunos servidores
@@ -21,27 +22,28 @@ Este documento contiene la configuración completa y guía de troubleshooting pa
 
 ### **✅ SERVIDORES FUNCIONANDO:**
 
-| Servidor | Estado | Uptime | Función | Notas |
-|----------|--------|---------|---------|-------|
-| **serena** | 🟢 ESTABLE | 2d 5h 11m | Análisis semántico de código | ✅ Funciona perfectamente |
-| **mcp-server-fetch** | 🟢 ESTABLE | 9h 8m | Búsquedas web y fetch | ✅ 2 instancias activas |
-| **mcp-server-sentry** | 🟢 ESTABLE | 6h 57m | Monitoreo y errores | ✅ Funcionando |
-| **Browser MCP** | 🟡 INTERMITENTE | Variable | Automatización del navegador | ⚠️ Se desconecta ocasionalmente |
-| **Perplexity-Ask** | 🟡 INTERMITENTE | Variable | Búsquedas inteligentes | ⚠️ Problemas de canal cerrado |
+| Servidor              | Estado          | Uptime    | Función                      | Notas                           |
+| --------------------- | --------------- | --------- | ---------------------------- | ------------------------------- |
+| **serena**            | 🟢 ESTABLE      | 2d 5h 11m | Análisis semántico de código | ✅ Funciona perfectamente       |
+| **mcp-server-fetch**  | 🟢 ESTABLE      | 9h 8m     | Búsquedas web y fetch        | ✅ 2 instancias activas         |
+| **mcp-server-sentry** | 🟢 ESTABLE      | 6h 57m    | Monitoreo y errores          | ✅ Funcionando                  |
+| **Browser MCP**       | 🟡 INTERMITENTE | Variable  | Automatización del navegador | ⚠️ Se desconecta ocasionalmente |
+| **Perplexity-Ask**    | 🟡 INTERMITENTE | Variable  | Búsquedas inteligentes       | ⚠️ Problemas de canal cerrado   |
 
 ### **❌ SERVIDORES FALTANTES:**
 
-| Servidor | Prioridad | Función Requerida | Estado |
-|----------|-----------|-------------------|---------|
-| **Supabase MCP** | 🔴 CRÍTICA | Acceso directo a base de datos PostgreSQL de LeadsCRM | ❌ No configurado |
-| **Context7** | 🟡 ALTA | Documentación actualizada de librerías (Next.js, React, etc.) | ❌ No configurado |
-| **Sequential Thinking** | 🟡 MEDIA | Resolución de problemas complejos paso a paso | ❌ No configurado |
+| Servidor                | Prioridad  | Función Requerida                                             | Estado            |
+| ----------------------- | ---------- | ------------------------------------------------------------- | ----------------- |
+| **Supabase MCP**        | 🔴 CRÍTICA | Acceso directo a base de datos PostgreSQL de LeadsCRM         | ❌ No configurado |
+| **Context7**            | 🟡 ALTA    | Documentación actualizada de librerías (Next.js, React, etc.) | ❌ No configurado |
+| **Sequential Thinking** | 🟡 MEDIA   | Resolución de problemas complejos paso a paso                 | ❌ No configurado |
 
 ---
 
 ## 🔍 Diagnóstico del Problema
 
 ### **PROBLEMA PRINCIPAL IDENTIFICADO:**
+
 Los servidores MCP están **configurados correctamente** pero experimentan **problemas de comunicación intermitentes**:
 
 - ✅ **Procesos ejecutándose** - Los servidores están activos
@@ -50,6 +52,7 @@ Los servidores MCP están **configurados correctamente** pero experimentan **pro
 - ❌ **Reinicio requerido** - Warp necesita reinicio para reconectar
 
 ### **CAUSAS IDENTIFICADAS:**
+
 1. **Timeout de inactividad** - Los servidores se desconectan tras períodos sin uso
 2. **Problemas de stdio** - Canal de comunicación entre Warp y los servidores MCP
 3. **Falta de keep-alive** - No hay mecanismo para mantener conexiones activas
@@ -81,6 +84,7 @@ C:\Users\admin\Desktop\LeadsAgent\WARP.md                  # Configuración gene
 ```
 
 ### **Logs MCP más Recientes:**
+
 - `BhYbABxCuHKGAw3dOWOwyI.log` - Browser MCP (Puppeteer)
 - `IHATEPo9JiWIrrd7hnqkEs.log` - Browser MCP v0.1.3
 - `LjkJWK5avY3awjQdjKvHyO.log` - Perplexity-Ask MCP
@@ -95,6 +99,7 @@ C:\Users\admin\Desktop\LeadsAgent\WARP.md                  # Configuración gene
 **Función**: Monitorea el estado de los servidores MCP y proporciona herramientas de diagnóstico.
 
 #### **Comandos Disponibles:**
+
 ```powershell
 # Mostrar estado actual de servidores MCP
 .\scripts\mcp-monitor.ps1 -Status
@@ -110,6 +115,7 @@ C:\Users\admin\Desktop\LeadsAgent\WARP.md                  # Configuración gene
 ```
 
 #### **Características:**
+
 - ✅ **Detección automática** de procesos MCP
 - ✅ **Monitoreo en tiempo real** con intervalos configurables
 - ✅ **Logging detallado** con timestamps
@@ -120,6 +126,7 @@ C:\Users\admin\Desktop\LeadsAgent\WARP.md                  # Configuración gene
 ### **2. Análisis de Estado de Salud**
 
 **Salida Ejemplo del Script:**
+
 ```
 [2025-08-28 17:40:24] [INFO] 🔍 Estado general: HEALTHY - Multiple MCP servers active
 [2025-08-28 17:40:24] [INFO] 📊 Procesos MCP activos: 4
@@ -146,7 +153,7 @@ C:\Users\admin\Desktop\LeadsAgent\WARP.md                  # Configuración gene
       "gallery": true
     },
     "sequentialthinking": {
-      "type": "stdio", 
+      "type": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-sequential-thinking@latest"],
       "gallery": true
@@ -173,7 +180,7 @@ C:\Users\admin\Desktop\LeadsAgent\WARP.md                  # Configuración gene
       }
     },
     "context7": {
-      "command": "npx", 
+      "command": "npx",
       "args": ["-y", "@upstash/context7-mcp@latest"],
       "env": {
         "DEFAULT_MINIMUM_TOKENS": "10000"
@@ -190,10 +197,12 @@ C:\Users\admin\Desktop\LeadsAgent\WARP.md                  # Configuración gene
 ### **Problema 1: "sending into a closed channel"**
 
 **Síntomas:**
+
 - Error al invocar herramientas MCP
 - Servidores se desconectan inesperadamente
 
 **Solución:**
+
 ```powershell
 # 1. Reiniciar completamente Warp
 # Cerrar Warp → Esperar 5 segundos → Reabrir
@@ -208,10 +217,12 @@ C:\Users\admin\Desktop\LeadsAgent\WARP.md                  # Configuración gene
 ### **Problema 2: "server exited" en logs**
 
 **Síntomas:**
+
 - Logs muestran "MCP CLI: server exited"
 - Herramientas MCP no responden
 
 **Solución:**
+
 ```powershell
 # Monitoreo continuo para detectar caídas
 .\scripts\mcp-monitor.ps1 -Monitor
@@ -223,12 +234,14 @@ C:\Users\admin\Desktop\LeadsAgent\WARP.md                  # Configuración gene
 ### **Problema 3: Servidores MCP faltantes**
 
 **Síntomas:**
+
 - Herramientas específicas no disponibles
 - Error "tool not found"
 
 **Solución:**
+
 1. **Configurar Supabase MCP** (pendiente)
-2. **Configurar Context7** (pendiente) 
+2. **Configurar Context7** (pendiente)
 3. **Configurar Sequential Thinking** (pendiente)
 
 ---
@@ -236,6 +249,7 @@ C:\Users\admin\Desktop\LeadsAgent\WARP.md                  # Configuración gene
 ## ⚡ Comandos de Diagnóstico Rápido
 
 ### **Verificar Estado MCP:**
+
 ```powershell
 # Estado actual de procesos MCP
 Get-Process | Where-Object {$_.ProcessName -like "*mcp*" -or $_.ProcessName -like "*serena*"}
@@ -248,6 +262,7 @@ Get-ChildItem "$env:USERPROFILE\AppData\Local\warp\Warp\data\logs\mcp" | Sort-Ob
 ```
 
 ### **Limpiar Procesos MCP:**
+
 ```powershell
 # Terminar todos los procesos MCP
 Get-Process | Where-Object {$_.ProcessName -like "*mcp*"} | Stop-Process -Force
@@ -257,6 +272,7 @@ Get-Process | Where-Object {$_.ProcessName -like "*mcp*"} | Stop-Process -Force
 ```
 
 ### **Verificar Warp:**
+
 ```powershell
 # Verificar si Warp está ejecutándose
 Get-Process -Name "warp" -ErrorAction SilentlyContinue
@@ -270,14 +286,16 @@ Get-Process | Where-Object {$_.ProcessName -like "*warp*"}
 ## 📊 Herramientas MCP Disponibles
 
 ### **✅ SERENA (Análisis de Código):**
+
 - `activate_project` - Activar proyecto para análisis
-- `list_dir` - Listar directorios 
+- `list_dir` - Listar directorios
 - `find_symbol` - Buscar símbolos en código
 - `read_file` - Leer archivos
 - `create_text_file` - Crear archivos
 - `get_symbols_overview` - Vista general de símbolos
 
 ### **✅ BROWSER MCP:**
+
 - `browser_navigate` - Navegar a URL
 - `browser_screenshot` - Capturar pantalla
 - `browser_click` - Hacer click en elementos
@@ -285,9 +303,11 @@ Get-Process | Where-Object {$_.ProcessName -like "*warp*"}
 - `browser_wait` - Esperar tiempo específico
 
 ### **⚠️ PERPLEXITY-ASK (Intermitente):**
+
 - `perplexity_ask` - Búsquedas inteligentes web
 
 ### **⚠️ MCP-SERVER-FETCH:**
+
 - Herramientas de fetch web (detalles por confirmar)
 
 ---
@@ -295,16 +315,19 @@ Get-Process | Where-Object {$_.ProcessName -like "*warp*"}
 ## 🎯 Plan de Acción Futuro
 
 ### **Prioridad ALTA:**
+
 1. **Configurar Supabase MCP** para acceso directo a base de datos LeadsCRM
 2. **Resolver problemas de keep-alive** para conexiones estables
 3. **Implementar health checks automáticos**
 
 ### **Prioridad MEDIA:**
+
 1. **Configurar Context7** para documentación actualizada
 2. **Configurar Sequential Thinking** para resolución de problemas
 3. **Optimizar configuración de timeouts**
 
 ### **Prioridad BAJA:**
+
 1. **Documentar configuraciones específicas de Warp**
 2. **Crear scripts de backup y restauración**
 3. **Implementar notificaciones automáticas**
@@ -316,6 +339,7 @@ Get-Process | Where-Object {$_.ProcessName -like "*warp*"}
 ### **Si TODOS los servidores MCP fallan:**
 
 1. **Verificar Warp:**
+
    ```powershell
    Get-Process -Name "warp" -ErrorAction SilentlyContinue
    ```
@@ -326,6 +350,7 @@ Get-Process | Where-Object {$_.ProcessName -like "*warp*"}
    - Volver a abrir Warp
 
 3. **Verificar con script:**
+
    ```powershell
    .\scripts\mcp-monitor.ps1 -Status
    ```
@@ -339,6 +364,7 @@ Get-Process | Where-Object {$_.ProcessName -like "*warp*"}
 ### **Si solo Serena funciona:**
 
 Serena es el servidor más estable. Úsalo como referencia:
+
 ```
 # Probar Serena
 list_dir con path="."
@@ -347,12 +373,12 @@ activate_project con project="C:\Users\admin\Desktop\LeadsAgent"
 
 ### **Logs de Error Comunes:**
 
-| Error | Causa | Solución |
-|-------|-------|----------|
-| "server exited" | Timeout/Inactividad | Reiniciar Warp |
-| "sending into a closed channel" | Canal de comunicación cerrado | Restart MCP processes |
-| "Internal error occurred" | Error del servidor MCP | Verificar logs específicos |
-| Tool "cancelled" | Timeout de herramienta | Usar herramienta más simple primero |
+| Error                           | Causa                         | Solución                            |
+| ------------------------------- | ----------------------------- | ----------------------------------- |
+| "server exited"                 | Timeout/Inactividad           | Reiniciar Warp                      |
+| "sending into a closed channel" | Canal de comunicación cerrado | Restart MCP processes               |
+| "Internal error occurred"       | Error del servidor MCP        | Verificar logs específicos          |
+| Tool "cancelled"                | Timeout de herramienta        | Usar herramienta más simple primero |
 
 ---
 
@@ -368,21 +394,23 @@ activate_project con project="C:\Users\admin\Desktop\LeadsAgent"
 
 ## 📝 Historial de Cambios
 
-| Fecha | Versión | Cambios |
-|-------|---------|---------|
-| 2025-08-28 | 1.0 | Documento inicial, diagnóstico completo, script de monitoreo |
+| Fecha      | Versión | Cambios                                                      |
+| ---------- | ------- | ------------------------------------------------------------ |
+| 2025-08-28 | 1.0     | Documento inicial, diagnóstico completo, script de monitoreo |
 
 ---
 
 ## ✅ Checklist de Verificación MCP
 
 **Antes de usar MCP:**
+
 - [ ] Warp Terminal está ejecutándose
 - [ ] Al menos un servidor MCP está activo (`.\scripts\mcp-monitor.ps1 -Status`)
 - [ ] Logs de MCP no muestran errores recientes
 - [ ] Serena responde correctamente (`list_dir` test)
 
 **Si hay problemas:**
+
 - [ ] Reiniciar Warp Terminal
 - [ ] Esperar 30 segundos para reconexión automática
 - [ ] Verificar estado con script de monitoreo
@@ -391,6 +419,7 @@ activate_project con project="C:\Users\admin\Desktop\LeadsAgent"
 ---
 
 **🎯 Este documento debe actualizarse cuando:**
+
 - Se configuren nuevos servidores MCP
 - Se resuelvan los problemas de keep-alive
 - Se encuentre la configuración específica de Warp

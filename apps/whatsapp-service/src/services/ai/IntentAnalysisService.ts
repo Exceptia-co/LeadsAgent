@@ -1,6 +1,6 @@
 /**
  * Intent Analysis Service
- * 
+ *
  * Handles message intent detection and analysis using both rule-based
  * and AI-powered approaches for optimal accuracy and performance.
  */
@@ -8,13 +8,13 @@
 import { logger } from '../../utils/logger';
 import { aiConfig } from '../../config/enhanced-ai.config';
 import { aiProviderFactory } from './AIProviderFactory';
-import { 
+import type {
   IIntentAnalysisService,
-  IntentAnalysis, 
-  IntentCategory, 
+  IntentAnalysis,
+  IntentCategory,
   IntentMapping,
   IntentAnalysisConfig,
-  MessageContext 
+  MessageContext,
 } from './interfaces/IIntentAnalysis';
 
 /**
@@ -27,13 +27,13 @@ export class IntentAnalysisService implements IIntentAnalysisService {
 
   constructor(config?: Partial<IntentAnalysisConfig>) {
     const intentConfig = aiConfig.getIntentConfig();
-    
+
     this.config = {
       confidenceThreshold: config?.confidenceThreshold ?? intentConfig.confidenceThreshold,
       enableCaching: config?.enableCaching ?? intentConfig.enableCache,
       cacheTimeout: config?.cacheTimeout ?? intentConfig.cacheTimeout,
       fallbackIntent: config?.fallbackIntent ?? intentConfig.fallbackIntent,
-      mappings: config?.mappings ?? this.createDefaultMappings()
+      mappings: config?.mappings ?? this.createDefaultMappings(),
     };
 
     this.initializeMappings();
@@ -46,66 +46,104 @@ export class IntentAnalysisService implements IIntentAnalysisService {
   private createDefaultMappings(): Record<IntentCategory, IntentMapping> {
     return {
       saludo: {
-        keywords: ['hola', 'hi', 'buenas', 'buenos días', 'buenas tardes', 'buenas noches', 'hey', 'hello', 'saludos'],
+        keywords: [
+          'hola',
+          'hi',
+          'buenas',
+          'buenos días',
+          'buenas tardes',
+          'buenas noches',
+          'hey',
+          'hello',
+          'saludos',
+        ],
         patterns: ['^(hola|hi|buenas|hey)', 'buenos (días|tardes)', 'buenas (tardes|noches)'],
         confidence: 0.9,
         category: 'saludo',
-        responseTemplates: ['greeting-basic']
+        responseTemplates: ['greeting-basic'],
       },
       despedida: {
-        keywords: ['adiós', 'bye', 'hasta luego', 'hasta pronto', 'nos vemos', 'chao', 'gracias', 'vale'],
+        keywords: [
+          'adiós',
+          'bye',
+          'hasta luego',
+          'hasta pronto',
+          'nos vemos',
+          'chao',
+          'gracias',
+          'vale',
+        ],
         patterns: ['(adiós|bye|hasta)', 'gracias.*no.*interesa', 'no.*necesito.*más'],
         confidence: 0.8,
         category: 'despedida',
-        responseTemplates: ['goodbye-basic']
+        responseTemplates: ['goodbye-basic'],
       },
       precio: {
-        keywords: ['precio', 'cuánto', 'cuesta', 'coste', 'dinero', 'euros', 'pago', 'tarifa', 'hub'],
+        keywords: [
+          'precio',
+          'cuánto',
+          'cuesta',
+          'coste',
+          'dinero',
+          'euros',
+          'pago',
+          'tarifa',
+          'hub',
+        ],
         patterns: ['cuánto.*cuesta', '(precio|coste).*de', 'cuánto.*vale', 'cuánto.*dinero'],
         confidence: 0.85,
         category: 'precio',
-        responseTemplates: ['pricing-basic']
+        responseTemplates: ['pricing-basic'],
       },
       producto: {
-        keywords: ['producto', 'servicio', 'anuncio', 'publicidad', 'vip', 'destacado', 'premium', 'top'],
+        keywords: [
+          'producto',
+          'servicio',
+          'anuncio',
+          'publicidad',
+          'vip',
+          'destacado',
+          'premium',
+          'top',
+        ],
         patterns: ['qué.*servicios', 'qué.*productos', '(anuncio|publicidad).*tipo'],
         confidence: 0.8,
         category: 'producto',
-        responseTemplates: ['products-basic']
+        responseTemplates: ['products-basic'],
       },
       registro: {
         keywords: ['registro', 'registrar', 'cuenta', 'sign up', 'crear cuenta', 'alta', 'unir'],
         patterns: ['(crear|hacer).*cuenta', 'quiero.*registr', 'cómo.*registro'],
         confidence: 0.85,
         category: 'registro',
-        responseTemplates: ['registration-basic']
+        responseTemplates: ['registration-basic'],
       },
       soporte_tecnico: {
         keywords: ['problema', 'error', 'ayuda', 'soporte', 'técnico', 'fallo', 'no funciona'],
         patterns: ['tengo.*problema', 'no.*funciona', 'error.*con', 'ayuda.*técnica'],
         confidence: 0.8,
         category: 'soporte_tecnico',
-        responseTemplates: ['technical-basic']
+        responseTemplates: ['technical-basic'],
       },
       queja: {
         keywords: ['queja', 'malo', 'horrible', 'terrible', 'descontento', 'enfadado', 'molesto'],
         patterns: ['estoy.*enfadado', 'muy.*malo', 'horrible.*servicio'],
         confidence: 0.7,
-        category: 'queja'
+        category: 'queja',
       },
       consulta_general: {
         keywords: ['información', 'info', 'detalles', 'explicar', 'entender', 'saber'],
         patterns: ['quiero.*saber', 'necesito.*información', 'puedes.*explicar'],
         confidence: 0.6,
         category: 'consulta_general',
-        responseTemplates: ['fallback-basic']
+        responseTemplates: ['fallback-basic'],
       },
       unknown: {
         keywords: [],
         patterns: [],
         confidence: 0.3,
-        category: 'unknown'
-      }
+        category: 'unknown',
+      },
     };
   }
 
@@ -126,7 +164,7 @@ export class IntentAnalysisService implements IIntentAnalysisService {
   public async analyzeIntent(message: string, context?: MessageContext): Promise<IntentAnalysis> {
     try {
       const cacheKey = this.createCacheKey(message, context);
-      
+
       // Check cache first
       if (this.config.enableCaching) {
         const cached = this.getCachedAnalysis(cacheKey);
@@ -138,36 +176,35 @@ export class IntentAnalysisService implements IIntentAnalysisService {
 
       // 1. Quick rule-based analysis first
       const ruleBasedAnalysis = this.analyzeWithRules(message);
-      
+
       // 2. For high-confidence rule-based results, return immediately
       if (ruleBasedAnalysis.confidence >= 0.8) {
         logger.debug('Using rule-based intent analysis', {
           intent: ruleBasedAnalysis.intent,
-          confidence: ruleBasedAnalysis.confidence
+          confidence: ruleBasedAnalysis.confidence,
         });
-        
+
         this.cacheAnalysis(cacheKey, ruleBasedAnalysis);
         return ruleBasedAnalysis;
       }
 
       // 3. For lower confidence, use AI analysis
       const aiAnalysis = await this.analyzeWithAI(message, context);
-      
+
       // 4. Combine results (prefer AI if available, fallback to rules)
       const finalAnalysis = aiAnalysis.success ? aiAnalysis : ruleBasedAnalysis;
-      
+
       this.cacheAnalysis(cacheKey, finalAnalysis);
       return finalAnalysis;
-
     } catch (error) {
       logger.error('Error in intent analysis:', error);
-      
+
       // Return safe fallback
       return {
         intent: this.config.fallbackIntent,
         confidence: 0.3,
         entities: {},
-        sentiment: 'neutral'
+        sentiment: 'neutral',
       };
     }
   }
@@ -184,7 +221,7 @@ export class IntentAnalysisService implements IIntentAnalysisService {
       let confidence = 0;
 
       // Check keywords
-      const keywordMatches = mapping.keywords.filter(keyword => 
+      const keywordMatches = mapping.keywords.filter(keyword =>
         normalizedMessage.includes(keyword.toLowerCase())
       ).length;
 
@@ -223,37 +260,39 @@ export class IntentAnalysisService implements IIntentAnalysisService {
       confidence: bestMatch?.confidence ?? 0.3,
       entities: this.extractEntities(message),
       sentiment,
-      keywords: this.extractKeywords(message)
+      keywords: this.extractKeywords(message),
     };
   }
 
   /**
    * AI-powered intent analysis
    */
-  private async analyzeWithAI(message: string, context?: MessageContext): Promise<IntentAnalysis & { success: boolean }> {
+  private async analyzeWithAI(
+    message: string,
+    context?: MessageContext
+  ): Promise<IntentAnalysis & { success: boolean }> {
     try {
       const provider = await aiProviderFactory.getRecommendedProvider();
-      
+
       if (!provider || !provider.isReady()) {
         return { success: false } as any;
       }
 
       const prompt = this.createIntentAnalysisPrompt(message);
-      
+
       const response = await provider.generateResponse(message, prompt, context);
-      
+
       if (!response.success || !response.content) {
         return { success: false } as any;
       }
 
       // Parse AI response
       const analysis = this.parseAIResponse(response.content);
-      
+
       return {
         success: true,
-        ...analysis
+        ...analysis,
       };
-
     } catch (error) {
       logger.warn('AI intent analysis failed:', error);
       return { success: false } as any;
@@ -265,7 +304,7 @@ export class IntentAnalysisService implements IIntentAnalysisService {
    */
   private createIntentAnalysisPrompt(message: string): string {
     const availableIntents = Array.from(this.intentMappings.keys()).join(', ');
-    
+
     return `
 Analiza el siguiente mensaje de WhatsApp y clasifica la intención del usuario.
 
@@ -294,32 +333,31 @@ Formato de respuesta JSON:
     try {
       // Extract JSON from response
       let jsonContent = content.trim();
-      
+
       const firstBrace = jsonContent.indexOf('{');
       const lastBrace = jsonContent.lastIndexOf('}');
-      
+
       if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
         jsonContent = jsonContent.substring(firstBrace, lastBrace + 1);
       }
-      
+
       const parsed = JSON.parse(jsonContent);
-      
+
       // Validate and sanitize
       return {
         intent: this.validateIntent(parsed.intent),
         confidence: Math.max(0, Math.min(1, parsed.confidence || 0.5)),
         entities: parsed.entities || {},
         sentiment: this.validateSentiment(parsed.sentiment),
-        keywords: parsed.keywords || []
+        keywords: parsed.keywords || [],
       };
-
     } catch (error) {
       logger.warn('Failed to parse AI intent response:', error);
       return {
         intent: this.config.fallbackIntent,
         confidence: 0.5,
         entities: {},
-        sentiment: 'neutral'
+        sentiment: 'neutral',
       };
     }
   }
@@ -328,19 +366,28 @@ Formato de respuesta JSON:
    * Check if message is a simple greeting
    */
   public isSimpleGreeting(message: string): boolean {
-    const greetingKeywords = ['hola', 'hi', 'buenas', 'buenos días', 'buenas tardes', 'buenas noches', 'hey', 'hello'];
+    const greetingKeywords = [
+      'hola',
+      'hi',
+      'buenas',
+      'buenos días',
+      'buenas tardes',
+      'buenas noches',
+      'hey',
+      'hello',
+    ];
     const normalizedMessage = message.toLowerCase().trim();
-    
+
     // Exact greeting match
     if (greetingKeywords.some(keyword => normalizedMessage === keyword)) {
       return true;
     }
-    
+
     // Short message that starts with greeting
     if (normalizedMessage.length <= 20) {
       return greetingKeywords.some(keyword => normalizedMessage.startsWith(keyword));
     }
-    
+
     return false;
   }
 
@@ -354,14 +401,16 @@ Formato de respuesta JSON:
   /**
    * Analyze conversation flow (optional implementation)
    */
-  public async analyzeConversation?(messages: Array<{ content: string; timestamp: Date }>): Promise<IntentAnalysis[]> {
+  public async analyzeConversation?(
+    messages: Array<{ content: string; timestamp: Date }>
+  ): Promise<IntentAnalysis[]> {
     const analyses: IntentAnalysis[] = [];
-    
+
     for (const message of messages) {
       const analysis = await this.analyzeIntent(message.content);
       analyses.push(analysis);
     }
-    
+
     return analyses;
   }
 
@@ -370,10 +419,10 @@ Formato de respuesta JSON:
   private analyzeSentiment(message: string): 'positive' | 'negative' | 'neutral' {
     const positiveWords = ['gracias', 'bien', 'bueno', 'genial', 'perfecto', 'excelente'];
     const negativeWords = ['mal', 'malo', 'terrible', 'horrible', 'enfadado', 'problema'];
-    
+
     const positiveScore = positiveWords.filter(word => message.includes(word)).length;
     const negativeScore = negativeWords.filter(word => message.includes(word)).length;
-    
+
     if (positiveScore > negativeScore) return 'positive';
     if (negativeScore > positiveScore) return 'negative';
     return 'neutral';
@@ -381,26 +430,51 @@ Formato de respuesta JSON:
 
   private extractEntities(message: string): Record<string, any> {
     const entities: Record<string, any> = {};
-    
+
     // Extract numbers (potential prices, quantities)
     const numbers = message.match(/\d+/g);
     if (numbers) {
       entities.numbers = numbers.map(n => parseInt(n));
     }
-    
+
     // Extract emails
     const emails = message.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
     if (emails) {
       entities.emails = emails;
     }
-    
+
     return entities;
   }
 
   private extractKeywords(message: string): string[] {
     // Simple keyword extraction - split by space and filter common words
-    const commonWords = ['el', 'la', 'de', 'que', 'y', 'en', 'un', 'es', 'se', 'no', 'te', 'lo', 'le', 'da', 'su', 'por', 'son', 'con', 'para', 'al', 'me', 'del', 'los', 'las'];
-    
+    const commonWords = [
+      'el',
+      'la',
+      'de',
+      'que',
+      'y',
+      'en',
+      'un',
+      'es',
+      'se',
+      'no',
+      'te',
+      'lo',
+      'le',
+      'da',
+      'su',
+      'por',
+      'son',
+      'con',
+      'para',
+      'al',
+      'me',
+      'del',
+      'los',
+      'las',
+    ];
+
     return message
       .toLowerCase()
       .split(/\s+/)
@@ -410,15 +484,13 @@ Formato de respuesta JSON:
 
   private validateIntent(intent: string): IntentCategory {
     const validIntents = Array.from(this.intentMappings.keys());
-    return validIntents.includes(intent as IntentCategory) 
-      ? intent as IntentCategory 
+    return validIntents.includes(intent as IntentCategory)
+      ? (intent as IntentCategory)
       : this.config.fallbackIntent;
   }
 
   private validateSentiment(sentiment: string): 'positive' | 'negative' | 'neutral' {
-    return ['positive', 'negative', 'neutral'].includes(sentiment) 
-      ? sentiment as any
-      : 'neutral';
+    return ['positive', 'negative', 'neutral'].includes(sentiment) ? (sentiment as any) : 'neutral';
   }
 
   private createCacheKey(message: string, context?: MessageContext): string {
@@ -429,26 +501,26 @@ Formato de respuesta JSON:
   private getCachedAnalysis(cacheKey: string): IntentAnalysis | null {
     const cached = this.cache.get(cacheKey);
     if (!cached) return null;
-    
+
     const now = Date.now();
-    const isExpired = (now - cached.timestamp) > (this.config.cacheTimeout * 60 * 1000);
-    
+    const isExpired = now - cached.timestamp > this.config.cacheTimeout * 60 * 1000;
+
     if (isExpired) {
       this.cache.delete(cacheKey);
       return null;
     }
-    
+
     return cached.analysis;
   }
 
   private cacheAnalysis(cacheKey: string, analysis: IntentAnalysis): void {
     if (!this.config.enableCaching) return;
-    
+
     this.cache.set(cacheKey, {
       analysis,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     });
-    
+
     // Cleanup old cache entries periodically
     if (this.cache.size > 1000) {
       this.cleanupCache();
@@ -458,13 +530,13 @@ Formato de respuesta JSON:
   private cleanupCache(): void {
     const now = Date.now();
     const timeout = this.config.cacheTimeout * 60 * 1000;
-    
+
     for (const [key, value] of this.cache.entries()) {
-      if ((now - value.timestamp) > timeout) {
+      if (now - value.timestamp > timeout) {
         this.cache.delete(key);
       }
     }
-    
+
     logger.debug(`Intent cache cleanup: ${this.cache.size} entries remaining`);
   }
 
@@ -479,7 +551,7 @@ Formato de respuesta JSON:
     return {
       cacheSize: this.cache.size,
       totalIntentCategories: this.intentMappings.size,
-      confidenceThreshold: this.config.confidenceThreshold
+      confidenceThreshold: this.config.confidenceThreshold,
     };
   }
 }

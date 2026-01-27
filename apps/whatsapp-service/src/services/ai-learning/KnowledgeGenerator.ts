@@ -186,14 +186,12 @@ export class KnowledgeGenerator {
         return undefined;
       }
 
-      const suggestion = {
+      return {
         title: this.generateTitle(pattern.pattern, category),
         content: await this.generateContent(pattern.pattern, interactions, category),
         keywords: commonKeywords,
         category,
       };
-
-      return suggestion;
     } catch (error) {
       logger.error('Error generating knowledge entry suggestion:', error);
       return undefined;

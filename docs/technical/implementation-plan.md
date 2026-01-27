@@ -1,12 +1,15 @@
 # Implementation Plan
 
 ## Overview
+
 This implementation plan outlines the steps to clean up and improve the LeadsCRM codebase with best practices. The goal is to enhance code quality, maintainability, and performance while preserving existing functionality. The project is a lead management system with WhatsApp integration and AI automation capabilities.
 
 ## Types
+
 Standardize type definitions across the entire codebase to improve type safety and developer experience.
 
 ### Backend API Types
+
 ```typescript
 // apps/api/src/leads/dto/create-lead.dto.ts
 export class CreateLeadDto {
@@ -74,6 +77,7 @@ export class LeadsQueryDto {
 ```
 
 ### Frontend Types
+
 ```typescript
 // apps/dashboard/types/index.ts
 export interface Lead {
@@ -89,7 +93,12 @@ export interface Lead {
   updatedAt: string;
 }
 
-export type LeadStatus = 'NUEVO' | 'CONTACTADO' | 'QUALIFIED' | 'GANADO' | 'PERDIDO';
+export type LeadStatus =
+  | "NUEVO"
+  | "CONTACTADO"
+  | "QUALIFIED"
+  | "GANADO"
+  | "PERDIDO";
 
 export interface Message {
   id: string;
@@ -107,30 +116,32 @@ export interface Message {
 }
 
 export enum MessageType {
-  TEXT = 'TEXT',
-  IMAGE = 'IMAGE',
-  AUDIO = 'AUDIO',
-  VIDEO = 'VIDEO',
-  DOCUMENT = 'DOCUMENT'
+  TEXT = "TEXT",
+  IMAGE = "IMAGE",
+  AUDIO = "AUDIO",
+  VIDEO = "VIDEO",
+  DOCUMENT = "DOCUMENT",
 }
 
 export enum MessageDirection {
-  INBOUND = 'INBOUND',
-  OUTBOUND = 'OUTBOUND'
+  INBOUND = "INBOUND",
+  OUTBOUND = "OUTBOUND",
 }
 
 export enum MessageStatus {
-  SENT = 'SENT',
-  DELIVERED = 'DELIVERED',
-  READ = 'READ',
-  FAILED = 'FAILED'
+  SENT = "SENT",
+  DELIVERED = "DELIVERED",
+  READ = "READ",
+  FAILED = "FAILED",
 }
 ```
 
 ## Files
+
 Organize and standardize file structure across all applications.
 
 ### New Files to Create
+
 1. `apps/api/src/common/dto/pagination.dto.ts` - Standard pagination DTO
 2. `apps/api/src/common/exceptions/validation.exception.ts` - Custom validation exception
 3. `apps/api/src/common/guards/auth.guard.ts` - Enhanced authentication guard
@@ -140,6 +151,7 @@ Organize and standardize file structure across all applications.
 7. `packages/config-eslint/dashboard.js` - ESLint config for dashboard
 
 ### Files to Modify
+
 1. `apps/api/src/leads/leads.service.ts` - Improve query optimization and error handling
 2. `apps/api/src/whatsapp/whatsapp.service.ts` - Enhance error handling and logging
 3. `apps/api/src/whatsapp/automation.service.ts` - Refactor automation rules to be database-driven
@@ -148,16 +160,24 @@ Organize and standardize file structure across all applications.
 6. All controller files - Add proper Swagger documentation and validation
 
 ### Files to Delete
+
 1. Remove any unused or duplicate type definitions
 2. Clean up temporary files in `apps/whatsapp-service/temp/`
 
 ## Functions
+
 Standardize function signatures and improve code organization.
 
 ### New Functions
+
 1. `apps/api/src/common/utils/pagination.util.ts`:
+
    ```typescript
-   export function buildPaginationMeta(total: number, page: number, limit: number) {
+   export function buildPaginationMeta(
+     total: number,
+     page: number,
+     limit: number,
+   ) {
      return {
        page,
        limit,
@@ -174,66 +194,78 @@ Standardize function signatures and improve code organization.
    export function handlePrismaError(error: unknown): HttpException {
      if (error instanceof Prisma.PrismaClientKnownRequestError) {
        switch (error.code) {
-         case 'P2002':
-           return new ConflictException('Resource already exists');
-         case 'P2025':
-           return new NotFoundException('Resource not found');
+         case "P2002":
+           return new ConflictException("Resource already exists");
+         case "P2025":
+           return new NotFoundException("Resource not found");
          default:
-           return new InternalServerErrorException('Database error');
+           return new InternalServerErrorException("Database error");
        }
      }
-     return new InternalServerErrorException('Unknown error');
+     return new InternalServerErrorException("Unknown error");
    }
    ```
 
 ### Modified Functions
+
 1. `LeadsService.findAll` - Optimize database queries and add proper pagination
 2. `WhatsAppService.handleIncomingMessage` - Improve error handling and add more robust validation
 3. `AutomationService.processAutoResponses` - Refactor to fetch rules from database instead of hardcoded values
 4. All API service functions in dashboard - Standardize error handling and loading states
 
 ### Removed Functions
+
 1. Deprecated public endpoints that should be replaced with authenticated versions
 2. Any duplicate utility functions
 
 ## Classes
+
 Refactor and organize classes for better maintainability.
 
 ### New Classes
+
 1. `apps/api/src/common/interceptors/logging.interceptor.ts` - Standard logging interceptor
 2. `apps/api/src/common/filters/http-exception.filter.ts` - Global exception filter
 3. `apps/api/src/leads/leads.repository.ts` - Data access layer for leads
 
 ### Modified Classes
+
 1. `LeadsService` - Extract data access to repository pattern
 2. `WhatsAppService` - Improve session management and error handling
 3. `AutomationService` - Refactor to use database-driven rules
 4. All controller classes - Add proper validation and documentation
 
 ### Removed Classes
+
 1. Any unused or deprecated service classes
 
 ## Dependencies
+
 Update and standardize dependencies across all packages.
 
 ### New Dependencies
+
 1. Add `class-validator` and `class-transformer` to dashboard for form validation
 2. Add `zod` for schema validation in shared packages
 3. Add `winston` for structured logging in all services
 
 ### Updated Dependencies
+
 1. Update all packages to latest stable versions
 2. Standardize ESLint and Prettier configurations
 3. Update Prisma to latest version
 
 ### Removed Dependencies
+
 1. Remove any unused or deprecated packages
 2. Consolidate duplicate dependencies
 
 ## Testing
+
 Implement comprehensive testing strategy.
 
 ### Test Files to Create
+
 1. `apps/api/src/leads/leads.service.spec.ts` - Unit tests for leads service
 2. `apps/api/src/whatsapp/whatsapp.service.spec.ts` - Unit tests for WhatsApp service
 3. `apps/api/src/automation/automation.service.spec.ts` - Unit tests for automation service
@@ -241,11 +273,13 @@ Implement comprehensive testing strategy.
 5. `apps/dashboard/__tests__/hooks/use-whatsapp-api.test.ts` - Tests for WhatsApp API hook
 
 ### Existing Test Modifications
+
 1. Update existing tests to use new type definitions
 2. Add integration tests for critical workflows
 3. Improve test coverage for error handling
 
 ## Implementation Order
+
 Follow this sequence to minimize conflicts and ensure successful integration.
 
 1. **Setup and Configuration**

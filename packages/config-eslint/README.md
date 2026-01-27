@@ -7,32 +7,38 @@ Paquete de configuración ESLint compartida para el monorepo LeadsAgent. Proporc
 Este paquete centraliza la configuración de ESLint para mantener estándares de código consistentes en:
 
 - ✅ **Dashboard** (Next.js + TypeScript)
-- ✅ **API Backend** (NestJS + TypeScript) 
+- ✅ **API Backend** (NestJS + TypeScript)
 - ✅ **WhatsApp Service** (Node.js + TypeScript)
 - ✅ **Docs App** (Next.js + TypeScript)
 
 ## 📦 Configuraciones Incluidas
 
 ### Base Configuration
+
 ```json
 "@leadsagent/eslint-config/library"
 ```
+
 - Reglas básicas para librerías TypeScript
 - Configuración para Node.js
 - Reglas de importación y exportación
 
-### Next.js Configuration  
+### Next.js Configuration
+
 ```json
 "@leadsagent/eslint-config/next"
 ```
+
 - Reglas específicas para Next.js
 - Optimizaciones para React 18
 - Configuración para TypeScript estricto
 
 ### NestJS Configuration
+
 ```json
 "@leadsagent/eslint-config/nestjs"
 ```
+
 - Reglas para decoradores de NestJS
 - Configuración para inyección de dependencias
 - Validación de DTOs y controladores
@@ -49,6 +55,7 @@ Este paquete centraliza la configuración de ESLint para mantener estándares de
 ### Configuración en .eslintrc.json
 
 #### Para Apps Next.js (Dashboard, Docs)
+
 ```json
 {
   "extends": ["@leadsagent/eslint-config/next"]
@@ -56,6 +63,7 @@ Este paquete centraliza la configuración de ESLint para mantener estándares de
 ```
 
 #### Para Backend NestJS
+
 ```json
 {
   "extends": ["@leadsagent/eslint-config/nestjs"]
@@ -63,6 +71,7 @@ Este paquete centraliza la configuración de ESLint para mantener estándares de
 ```
 
 #### Para Servicios Node.js
+
 ```json
 {
   "extends": ["@leadsagent/eslint-config/library"]
@@ -72,24 +81,28 @@ Este paquete centraliza la configuración de ESLint para mantener estándares de
 ## 📋 Reglas Principales
 
 ### TypeScript
+
 - ✅ Tipado estricto obligatorio
 - ✅ No uso de `any` sin justificación
 - ✅ Imports organizados alfabéticamente
 - ✅ Interfaces con prefijo `I` opcional
 
 ### Code Style
+
 - ✅ Indentación: 2 espacios
 - ✅ Comillas simples para strings
 - ✅ Punto y coma obligatorio
 - ✅ Trailing commas permitidos
 
 ### React/Next.js Específico
+
 - ✅ Hooks rules enforcement
 - ✅ JSX props naming (camelCase)
 - ✅ Component naming (PascalCase)
 - ✅ Optimización de imágenes Next.js
 
 ### NestJS Específico
+
 - ✅ Decoradores obligatorios en controladores
 - ✅ Inyección de dependencias validada
 - ✅ DTOs con validation decorators
@@ -146,6 +159,7 @@ coverage/
 Extensión recomendada: **ESLint** by Microsoft
 
 Configuración en `.vscode/settings.json`:
+
 ```json
 {
   "eslint.workingDirectories": [
@@ -166,6 +180,7 @@ Configuración en `.vscode/settings.json`:
 ### Pre-commit Hooks
 
 Configuración con Husky:
+
 ```bash
 # .husky/pre-commit
 npx lint-staged
@@ -183,16 +198,17 @@ npx lint-staged
 
 ## 📊 Estados de Linting
 
-| Aplicación | Estado | Errores | Warnings |
-|------------|--------|---------|----------|
-| Dashboard | ✅ | 0 | 0 |
-| API Backend | ✅ | 0 | 0 |
-| WhatsApp Service | ✅ | 0 | 0 |
-| Docs App | ✅ | 0 | 0 |
+| Aplicación       | Estado | Errores | Warnings |
+| ---------------- | ------ | ------- | -------- |
+| Dashboard        | ✅     | 0       | 0        |
+| API Backend      | ✅     | 0       | 0        |
+| WhatsApp Service | ✅     | 0       | 0        |
+| Docs App         | ✅     | 0       | 0        |
 
 ## 🔄 Actualizaciones
 
 ### Diciembre 2024
+
 - ✅ Actualizada configuración para Next.js 14.2.15
 - ✅ Agregadas reglas específicas para NestJS
 - ✅ Soporte completo para TypeScript 5.x

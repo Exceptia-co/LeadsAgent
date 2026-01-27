@@ -19,8 +19,17 @@ const knowledgeBaseEntries = [
 5. HISTORIAS: Función para compartir contenido temporal que permite mostrar actualizaciones y contenido dinámico para mantener el perfil actualizado.
 
 6. REACTIVACIÓN: Servicio para reactivar anuncios pausados, permite volver a activar anuncios anteriores, ideal para escorts que retoman su actividad.`,
-    keywords: ['productos', 'anuncio', 'doble', 'top', 'disponible ahora', 'historias', 'reactivación', 'servicios'],
-    priority: 10
+    keywords: [
+      'productos',
+      'anuncio',
+      'doble',
+      'top',
+      'disponible ahora',
+      'historias',
+      'reactivación',
+      'servicios',
+    ],
+    priority: 10,
   },
   {
     category: 'precios',
@@ -59,7 +68,7 @@ REACTIVACIÓN (base 10 monedas HUB):
 - 5 unidades: 115 monedas HUB
 - 10 unidades: 215 monedas HUB`,
     keywords: ['precios', 'costo', 'cuánto', 'monedas hub', 'pagar', 'precio', 'tarifa'],
-    priority: 10
+    priority: 10,
   },
   {
     category: 'monedas',
@@ -82,8 +91,17 @@ BENEFICIOS POR PAQUETE:
 
 WALLET (MONEDERO):
 Disponible en tu dashboard para consultar saldo, historial de transacciones, recarga de monedas HUB y gestión de gastos.`,
-    keywords: ['monedas hub', 'paquetes', 'comprar', 'wallet', 'monedero', 'euros', 'precio moneda', 'compra'],
-    priority: 10
+    keywords: [
+      'monedas hub',
+      'paquetes',
+      'comprar',
+      'wallet',
+      'monedero',
+      'euros',
+      'precio moneda',
+      'compra',
+    ],
+    priority: 10,
   },
   {
     category: 'registro',
@@ -108,8 +126,16 @@ REQUISITOS:
 - Aceptar términos y condiciones
 
 El registro es GRATUITO. Solo pagas por los productos que actives con monedas HUB.`,
-    keywords: ['registro', 'registrarse', 'cuenta', 'crear perfil', 'gratuito', 'escortshub.net', 'sign-up'],
-    priority: 9
+    keywords: [
+      'registro',
+      'registrarse',
+      'cuenta',
+      'crear perfil',
+      'gratuito',
+      'escortshub.net',
+      'sign-up',
+    ],
+    priority: 9,
   },
   {
     category: 'pagos',
@@ -132,8 +158,16 @@ SEGURIDAD:
 - Todos los pagos son procesados de forma segura
 - Encriptación SSL en todas las transacciones
 - Datos bancarios protegidos según estándares PCI-DSS`,
-    keywords: ['pago', 'métodos pago', 'tarjeta', 'transferencia', 'paypal', 'criptomonedas', 'seguro'],
-    priority: 8
+    keywords: [
+      'pago',
+      'métodos pago',
+      'tarjeta',
+      'transferencia',
+      'paypal',
+      'criptomonedas',
+      'seguro',
+    ],
+    priority: 8,
   },
   {
     category: 'consejos',
@@ -155,8 +189,8 @@ RECOMENDACIONES:
 - Usa "Disponible Ahora" durante tus horas de trabajo
 - Publica Historias regularmente para mantener engagement`,
     keywords: ['consejos', 'recomendaciones', 'estrategia', 'optimizar', 'mejor precio', 'tips'],
-    priority: 7
-  }
+    priority: 7,
+  },
 ];
 
 async function updateKnowledgeBase(): Promise<void> {
@@ -172,7 +206,7 @@ async function updateKnowledgeBase(): Promise<void> {
 
     // Agregar nuevas entradas
     logger.info('📚 Agregando nuevas entradas de knowledge base...');
-    
+
     for (const entry of knowledgeBaseEntries) {
       await DatabaseService.addKnowledgeBase(entry);
       logger.info(`✅ Agregada entrada: ${entry.title}`);
@@ -180,11 +214,10 @@ async function updateKnowledgeBase(): Promise<void> {
 
     logger.info('🎉 Knowledge base actualizada exitosamente!');
     logger.info(`📊 Total de entradas agregadas: ${knowledgeBaseEntries.length}`);
-    
+
     // Mostrar estadísticas
     const stats = await DatabaseService.getKnowledgeBaseStats();
     logger.info('📈 Estadísticas de Knowledge Base:', stats);
-
   } catch (error) {
     logger.error('❌ Error actualizando knowledge base:', error);
     throw error;

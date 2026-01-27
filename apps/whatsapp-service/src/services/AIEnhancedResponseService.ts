@@ -1,5 +1,6 @@
 import { logger } from '../utils/logger';
-import DatabaseService, { Lead, ConversationHistory } from './DatabaseService';
+import type { Lead, ConversationHistory } from './DatabaseService';
+import DatabaseService from './DatabaseService';
 import type { TrainingInteraction } from '../types';
 
 // Import modular components

@@ -1,42 +1,42 @@
-import { IsOptional, IsString, IsIn, IsNumber } from 'class-validator'
-import { ApiPropertyOptional } from '@nestjs/swagger'
-import { Transform, Type } from 'class-transformer'
-import { LeadStatus } from '@prisma/client'
+import { IsOptional, IsString, IsIn, IsNumber } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform, Type } from 'class-transformer';
+import { LeadStatus } from '@prisma/client';
 
 export class LeadsQueryDto {
   @ApiPropertyOptional({
     description: 'Filter by lead status',
-    enum: ['NUEVO', 'CONTACTADO', 'QUALIFIED', 'GANADO', 'PERDIDO']
+    enum: ['NUEVO', 'CONTACTADO', 'QUALIFIED', 'GANADO', 'PERDIDO'],
   })
   @IsOptional()
   @IsIn(['NUEVO', 'CONTACTADO', 'QUALIFIED', 'GANADO', 'PERDIDO'])
-  status?: LeadStatus
+  status?: LeadStatus;
 
   @ApiPropertyOptional({
     description: 'Search query for name or phone',
-    example: 'Juan'
+    example: 'Juan',
   })
   @IsOptional()
   @IsString()
-  q?: string
+  q?: string;
 
   @ApiPropertyOptional({
     description: 'Page number for pagination',
     example: 1,
-    type: Number
+    type: Number,
   })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  page?: number
+  page?: number;
 
   @ApiPropertyOptional({
     description: 'Number of items per page',
     example: 20,
-    type: Number
+    type: Number,
   })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  limit?: number
+  limit?: number;
 }

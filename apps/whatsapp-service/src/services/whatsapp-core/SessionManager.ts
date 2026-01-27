@@ -1,6 +1,6 @@
-import { Client } from 'whatsapp-web.js';
+import type { Client } from 'whatsapp-web.js';
 import { logger } from '../../utils/logger';
-import { WhatsAppSession } from '../../types';
+import type { WhatsAppSession } from '../../types';
 import SessionPersistenceService from '../SessionPersistenceService';
 
 /**

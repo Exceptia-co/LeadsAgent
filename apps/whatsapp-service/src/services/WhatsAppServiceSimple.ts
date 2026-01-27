@@ -1,6 +1,6 @@
-import { Client } from 'whatsapp-web.js';
+import type { Client } from 'whatsapp-web.js';
 import { logger } from '../utils/logger';
-import { WhatsAppSession, SendMessageResponse } from '../types';
+import type { WhatsAppSession, SendMessageResponse } from '../types';
 import SessionRecoveryService from './SessionRecoveryService';
 import SessionHealthCheckService from './SessionHealthCheckService';
 
@@ -57,7 +57,6 @@ class WhatsAppServiceSimple {
   async initialize(): Promise<void> {
     if (!this.useModularArchitecture) {
       // Import and delegate to legacy service
-      
       // return LegacyService.initialize();
     }
 
@@ -112,7 +111,6 @@ class WhatsAppServiceSimple {
 
   async createSession(sessionId: string): Promise<WhatsAppSession> {
     if (!this.useModularArchitecture) {
-      
       // return LegacyService.createSession(sessionId);
     }
 
@@ -188,7 +186,6 @@ class WhatsAppServiceSimple {
 
   async sendMessage(sessionId: string, to: string, message: string): Promise<SendMessageResponse> {
     if (!this.useModularArchitecture) {
-      
       // return LegacyService.sendMessage(sessionId, to, message);
     }
 
@@ -228,7 +225,6 @@ class WhatsAppServiceSimple {
 
   async getSessionStatus(sessionId: string): Promise<WhatsAppSession | null> {
     if (!this.useModularArchitecture) {
-      
       // return LegacyService.getSessionStatus(sessionId);
     }
 
@@ -237,7 +233,6 @@ class WhatsAppServiceSimple {
 
   async getAllSessions(): Promise<WhatsAppSession[]> {
     if (!this.useModularArchitecture) {
-      
       // return LegacyService.getAllSessions();
     }
 
@@ -246,7 +241,6 @@ class WhatsAppServiceSimple {
 
   async destroySession(sessionId: string): Promise<void> {
     if (!this.useModularArchitecture) {
-      
       // return LegacyService.destroySession(sessionId);
     }
 
@@ -279,7 +273,6 @@ class WhatsAppServiceSimple {
 
   async shutdown(): Promise<void> {
     if (!this.useModularArchitecture) {
-      
       // return LegacyService.shutdown();
     }
 
@@ -307,7 +300,6 @@ class WhatsAppServiceSimple {
 
   async forceDisconnectSession(sessionId: string): Promise<void> {
     if (!this.useModularArchitecture) {
-      
       // return LegacyService.forceDisconnectSession(sessionId);
     }
 
@@ -367,9 +359,8 @@ class WhatsAppServiceSimple {
   ): Promise<{ allowed: boolean; reason: string; leadInfo?: any }> {
     try {
       // Import the enhanced WhatsApp Authorization Service
-      const { default: WhatsAppAuthorizationService } = await import(
-        './WhatsAppAuthorizationService'
-      );
+      const { default: WhatsAppAuthorizationService } =
+        await import('./WhatsAppAuthorizationService');
 
       // Remove WhatsApp suffix to get clean phone number
       const phoneNumber = phoneNumberWithSuffix.replace('@c.us', '').replace('@g.us', '');
@@ -414,7 +405,6 @@ class WhatsAppServiceSimple {
   // Session recovery method used by SessionRecoveryService
   async recoverSessionWithAuthValidation(sessionId: string, persistedData: any): Promise<boolean> {
     if (!this.useModularArchitecture) {
-      
       // return LegacyService.recoverSessionWithAuthValidation(sessionId, persistedData);
     }
 

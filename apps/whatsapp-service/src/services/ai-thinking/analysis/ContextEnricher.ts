@@ -1,7 +1,7 @@
 import { logger } from '../../../utils/logger';
-import { IContextEnricher } from '../interfaces/IAnalyzer';
-import { EnrichedContext, TimeContext } from '../interfaces/types';
-import { MessageContext } from '../../AIService';
+import type { IContextEnricher } from '../interfaces/IAnalyzer';
+import type { EnrichedContext, TimeContext } from '../interfaces/types';
+import type { MessageContext } from '../../AIService';
 import { ContextEnrichmentError } from '../errors/ThinkingServiceErrors';
 import DatabaseService from '../../DatabaseService';
 

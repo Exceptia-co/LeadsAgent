@@ -10,8 +10,8 @@
 
 import { logger } from '../../utils/logger';
 import DatabaseService from '../DatabaseService';
-import { IntentAnalysisExtended, EnrichedContext } from './ContextEnricher';
-import { KnowledgeItem } from './KnowledgeRetrieval';
+import type { IntentAnalysisExtended, EnrichedContext } from './ContextEnricher';
+import type { KnowledgeItem } from './KnowledgeRetrieval';
 
 // ============================================
 // INTERFACES Y TIPOS

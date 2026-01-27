@@ -19,16 +19,18 @@ export interface IDataPersistence {
     limit?: number;
     offset?: number;
   }): Promise<TrainingInteraction[]>;
-  
+
   // Session methods
   getAllSessions(): Promise<WhatsAppSession[]>;
   getSessionById(sessionId: string): Promise<WhatsAppSession | null>;
-  
+
   // Analysis methods
-  getFrequentPatterns(limit?: number): Promise<Array<{
-    pattern: string;
-    frequency: number;
-    averageSuccessScore: number;
-    lastSeen: Date;
-  }>>;
+  getFrequentPatterns(limit?: number): Promise<
+    Array<{
+      pattern: string;
+      frequency: number;
+      averageSuccessScore: number;
+      lastSeen: Date;
+    }>
+  >;
 }

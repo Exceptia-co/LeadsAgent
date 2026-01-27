@@ -1,6 +1,6 @@
 import { logger } from '../../../utils/logger';
-import { IIntentAnalyzer } from '../interfaces/IAnalyzer';
-import { IntentAnalysis, EnrichedContext, ComplexityAnalysis } from '../interfaces/types';
+import type { IIntentAnalyzer } from '../interfaces/IAnalyzer';
+import type { IntentAnalysis, EnrichedContext, ComplexityAnalysis } from '../interfaces/types';
 import { IntentAnalysisError } from '../errors/ThinkingServiceErrors';
 import AIService from '../../AIService';
 

@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger';
 import advancedLogger from '../utils/advancedLogger';
-import AIService, { AIResponse, MessageContext } from './AIService';
+import type { AIResponse, MessageContext } from './AIService';
+import AIService from './AIService';
 import DatabaseService from './DatabaseService';
 import { CacheManager, CacheKeyGenerator } from './ai-thinking/cache';
 import {
@@ -9,7 +10,8 @@ import {
   ComplexityAnalyzer,
   KnowledgeRetriever,
 } from './ai-thinking/analysis';
-import { StrategySelector, ResponseStrategy } from './ai-thinking/StrategySelector';
+import type { ResponseStrategy } from './ai-thinking/StrategySelector';
+import { StrategySelector } from './ai-thinking/StrategySelector';
 import { ResponseGenerator } from './ai-thinking/ResponseGenerator';
 
 // ============================================
@@ -420,7 +422,7 @@ class AIThinkingService {
     const stepStart = Date.now();
 
     try {
-      let analysisPoints: string[] = [];
+      const analysisPoints: string[] = [];
       let contextConfidence = 0.7; // Base confidence
 
       // Análisis del historial de conversación
@@ -494,7 +496,7 @@ class AIThinkingService {
       const strategyAnalysis = await this.strategySelector.determineResponseStrategy(
         intentAnalysis as any, // Compatible with IntentAnalysisExtended
         context,
-        knowledgeData as any[] // Will be adapted within StrategySelector
+        knowledgeData // Will be adapted within StrategySelector
       );
 
       return {
@@ -537,7 +539,7 @@ class AIThinkingService {
 
     try {
       let shouldRespond = true;
-      let decisionReasons: string[] = [];
+      const decisionReasons: string[] = [];
       let confidence = 0.8;
 
       // *** VERIFICACIÓN PRIORITARIA PARA SALUDOS ***

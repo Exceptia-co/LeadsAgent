@@ -14,7 +14,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
         },
       },
       // Configuración optimizada para evitar prepared statement issues
-      log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['warn', 'error'],
+      log:
+        process.env.NODE_ENV === 'development'
+          ? ['query', 'info', 'warn', 'error']
+          : ['warn', 'error'],
       errorFormat: 'pretty',
       // Desactivar query caching para evitar prepared statement issues
       // especialmente útil con transaction poolers
@@ -28,7 +31,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
       await this.$connect();
       this.connected = true;
       this.logger.log('✅ Database connection established successfully');
-      
+
       // Removida la query de prueba que causaba conflictos con prepared statements
       this.logger.log('✅ Prisma client ready for use');
     } catch (error) {

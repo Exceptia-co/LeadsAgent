@@ -1,5 +1,5 @@
-import { IntentAnalysis, ComplexityAnalysis, EnrichedContext, TimeContext } from './types';
-import { MessageContext } from '../../AIService';
+import type { IntentAnalysis, ComplexityAnalysis, EnrichedContext, TimeContext } from './types';
+import type { MessageContext } from '../../AIService';
 
 export interface IIntentAnalyzer {
   analyze(message: string, context: EnrichedContext): Promise<IntentAnalysis>;

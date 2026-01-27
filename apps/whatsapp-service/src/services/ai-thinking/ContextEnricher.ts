@@ -10,7 +10,8 @@
 
 import { logger } from '../../utils/logger';
 import DatabaseService from '../DatabaseService';
-import AIService, { MessageContext, IntentAnalysis } from '../AIService';
+import type { MessageContext, IntentAnalysis } from '../AIService';
+import AIService from '../AIService';
 
 // ============================================
 // INTERFACES Y TIPOS
@@ -140,8 +141,7 @@ export class ContextEnricher {
       // Check cache first
       const cacheKey = `${message.toLowerCase().trim()}_${context.phoneNumber}`;
       if (this.intentCache.has(cacheKey)) {
-        const cachedIntent = this.intentCache.get(cacheKey)!;
-        return cachedIntent;
+        return this.intentCache.get(cacheKey);
       }
 
       // 1. MESSAGE COMPLEXITY ANALYSIS

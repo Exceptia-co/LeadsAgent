@@ -19,7 +19,7 @@ Para completar la migración a PostgreSQL, necesitas la contraseña de tu base d
 
 4. **Obtener Connection String:**
    - En la sección "Connection string"
-   - Selecciona "URI" 
+   - Selecciona "URI"
    - Verás algo como: `postgresql://postgres.yxjzsargboxnuwnbuzax:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:6543/postgres`
    - Copia la parte que dice `[YOUR-PASSWORD]`
 
@@ -38,12 +38,15 @@ Para completar la migración a PostgreSQL, necesitas la contraseña de tu base d
    ```
 
 ### ⚠️ Importante:
+
 - **NUNCA** compartas esta contraseña en público
 - **NO** la incluyas en commits de git (el archivo .env ya está en .gitignore)
 - Si no recuerdas la contraseña, puedes resetearla desde el dashboard de Supabase
 
 ### ✅ Verificar configuración:
+
 Una vez configurada la contraseña, ejecuta:
+
 ```bash
 pnpm db:generate
 ```
@@ -55,6 +58,7 @@ Si no hay errores de conexión, la configuración está correcta.
 ## 🚀 Próximos Pasos
 
 Después de configurar la contraseña, podemos:
+
 1. Generar el cliente Prisma para PostgreSQL
 2. Crear/aplicar migraciones
 3. Migrar los datos existentes de SQLite

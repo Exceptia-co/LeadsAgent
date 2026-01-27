@@ -1,18 +1,22 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react'
-import { Card } from '../ui/card'
-import { X, Send } from 'lucide-react'
-import { Template } from '../templates/TemplateCard'
-import { Lead } from './ProactiveMessageSender'
+import { useState, useEffect } from "react";
+import { Card } from "../ui/card";
+import { X, Send } from "lucide-react";
+import { Template } from "../templates/TemplateCard";
+import { Lead } from "./ProactiveMessageSender";
 
 interface SendMessageModalProps {
-  isOpen: boolean
-  onClose: () => void
-  onSend: (templateId?: string, content?: string, variables?: { [key: string]: string }) => Promise<void>
-  lead: Lead
-  templates: Template[]
-  selectedTemplate?: Template | null
+  isOpen: boolean;
+  onClose: () => void;
+  onSend: (
+    templateId?: string,
+    content?: string,
+    variables?: { [key: string]: string },
+  ) => Promise<void>;
+  lead: Lead;
+  templates: Template[];
+  selectedTemplate?: Template | null;
 }
 
 export default function SendMessageModal({
@@ -21,67 +25,69 @@ export default function SendMessageModal({
   onSend,
   lead,
   templates,
-  selectedTemplate
+  selectedTemplate,
 }: SendMessageModalProps) {
-  const [currentTemplate, setCurrentTemplate] = useState<Template | null>(selectedTemplate || null)
-  const [customMessage, setCustomMessage] = useState('')
-  const [variables, setVariables] = useState<{ [key: string]: string }>({})
-  const [previewContent, setPreviewContent] = useState('')
-  const [sending, setSending] = useState(false)
+  const [currentTemplate, setCurrentTemplate] = useState<Template | null>(
+    selectedTemplate || null,
+  );
+  const [customMessage, setCustomMessage] = useState("");
+  const [variables, setVariables] = useState<{ [key: string]: string }>({});
+  const [previewContent, setPreviewContent] = useState("");
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (selectedTemplate) {
-      setCurrentTemplate(selectedTemplate)
+      setCurrentTemplate(selectedTemplate);
     }
-  }, [selectedTemplate])
+  }, [selectedTemplate]);
 
   useEffect(() => {
     if (currentTemplate && lead) {
-      generatePreview()
+      generatePreview();
     }
-  }, [currentTemplate, lead, variables])
+  }, [currentTemplate, lead, variables]);
 
   const generatePreview = () => {
-    if (!currentTemplate || !lead) return
-    
-    let content = currentTemplate.content
+    if (!currentTemplate || !lead) return;
+
+    let content = currentTemplate.content;
     const leadVariables = {
-      nombre: lead.name || 'Usuario',
+      nombre: lead.name || "Usuario",
       telefono: lead.phone,
-      email: lead.email || '',
-      ...variables
-    }
-    
+      email: lead.email || "",
+      ...variables,
+    };
+
     Object.entries(leadVariables).forEach(([key, value]) => {
-      const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g')
-      content = content.replace(regex, value)
-    })
-    
-    setPreviewContent(content)
-  }
+      const regex = new RegExp(`\\{\\{${key}\\}\\}`, "g");
+      content = content.replace(regex, value);
+    });
+
+    setPreviewContent(content);
+  };
 
   const handleSend = async () => {
-    setSending(true)
+    setSending(true);
     try {
-      const content = currentTemplate ? previewContent : customMessage
-      const templateId = currentTemplate?.id
-      
-      await onSend(templateId, content, variables)
-      
-      // Reset form
-      setCurrentTemplate(null)
-      setCustomMessage('')
-      setVariables({})
-      setPreviewContent('')
-    } catch (error) {
-      console.error('Error sending message:', error)
-      throw error
-    } finally {
-      setSending(false)
-    }
-  }
+      const content = currentTemplate ? previewContent : customMessage;
+      const templateId = currentTemplate?.id;
 
-  if (!isOpen) return null
+      await onSend(templateId, content, variables);
+
+      // Reset form
+      setCurrentTemplate(null);
+      setCustomMessage("");
+      setVariables({});
+      setPreviewContent("");
+    } catch (error) {
+      console.error("Error sending message:", error);
+      throw error;
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
@@ -105,15 +111,17 @@ export default function SendMessageModal({
                 Seleccionar Template (opcional)
               </label>
               <select
-                value={currentTemplate?.id || ''}
+                value={currentTemplate?.id || ""}
                 onChange={(e) => {
-                  const template = templates.find(t => t.id === e.target.value)
-                  setCurrentTemplate(template || null)
+                  const template = templates.find(
+                    (t) => t.id === e.target.value,
+                  );
+                  setCurrentTemplate(template || null);
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
               >
                 <option value="">Sin template - Mensaje personalizado</option>
-                {templates.map(template => (
+                {templates.map((template) => (
                   <option key={template.id} value={template.id}>
                     {template.name}
                   </option>
@@ -123,21 +131,25 @@ export default function SendMessageModal({
 
             {currentTemplate && currentTemplate.variables.length > 0 && (
               <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-3">Variables del Template</h3>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">
+                  Variables del Template
+                </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {currentTemplate.variables.map(variable => (
+                  {currentTemplate.variables.map((variable) => (
                     <div key={variable}>
                       <label className="block text-xs text-gray-600 mb-1 capitalize">
                         {variable}
                       </label>
                       <input
                         type="text"
-                        value={variables[variable] || ''}
-                        onChange={(e) => setVariables(prev => ({
-                          ...prev,
-                          [variable]: e.target.value
-                        }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                        value={variables[variable] || ""}
+                        onChange={(e) =>
+                          setVariables((prev) => ({
+                            ...prev,
+                            [variable]: e.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
                         placeholder={`Valor para {{${variable}}}`}
                       />
                     </div>
@@ -155,7 +167,7 @@ export default function SendMessageModal({
                   value={customMessage}
                   onChange={(e) => setCustomMessage(e.target.value)}
                   rows={6}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 resize-none"
                   placeholder="Escribe tu mensaje personalizado..."
                 />
               </div>
@@ -163,7 +175,9 @@ export default function SendMessageModal({
 
             {(currentTemplate || customMessage) && (
               <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-2">Vista Previa</h3>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">
+                  Vista Previa
+                </h3>
                 <div className="bg-gray-50 p-4 rounded-lg border">
                   <pre className="whitespace-pre-wrap text-sm text-gray-700">
                     {currentTemplate ? previewContent : customMessage}
@@ -180,18 +194,18 @@ export default function SendMessageModal({
             >
               Cancelar
             </button>
-            
+
             <button
               onClick={handleSend}
               disabled={sending || (!currentTemplate && !customMessage)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+              className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
               <Send className="h-4 w-4 mr-2" />
-              {sending ? 'Enviando...' : 'Enviar Mensaje'}
+              {sending ? "Enviando..." : "Enviar Mensaje"}
             </button>
           </div>
         </div>
       </div>
     </div>
-  )
+  );
 }

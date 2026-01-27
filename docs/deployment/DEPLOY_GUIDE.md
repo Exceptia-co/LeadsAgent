@@ -36,12 +36,12 @@ Esta guía te llevará desde cero hasta tener LeadsCRM funcionando en producció
 
 ### 1.3 Configurar registros DNS en Cloudflare
 
-| Tipo | Nombre | Contenido | Proxy |
-|------|--------|-----------|-------|
-| CNAME | @ | cname.vercel-dns.com | ❌ OFF |
-| CNAME | www | cname.vercel-dns.com | ❌ OFF |
-| A | api | [IP Railway] | ✅ ON |
-| A | whatsapp | [IP VPS Hetzner] | ✅ ON |
+| Tipo  | Nombre   | Contenido            | Proxy  |
+| ----- | -------- | -------------------- | ------ |
+| CNAME | @        | cname.vercel-dns.com | ❌ OFF |
+| CNAME | www      | cname.vercel-dns.com | ❌ OFF |
+| A     | api      | [IP Railway]         | ✅ ON  |
+| A     | whatsapp | [IP VPS Hetzner]     | ✅ ON  |
 
 > ⚠️ Los registros de Vercel deben tener proxy OFF para que funcione el SSL de Vercel
 
@@ -211,6 +211,7 @@ curl http://localhost:3002/health
 ### 5.2 WhatsApp Webhook (interno)
 
 Ya está configurado en las variables de entorno:
+
 - API escucha en: `https://api.tudominio.com/whatsapp/webhook`
 - WhatsApp Service envía a esta URL
 
@@ -325,4 +326,4 @@ pm2 status
 
 ---
 
-*Última actualización: 2026-01-20*
+_Última actualización: 2026-01-20_

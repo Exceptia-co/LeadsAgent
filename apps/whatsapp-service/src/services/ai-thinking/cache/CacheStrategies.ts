@@ -1,5 +1,5 @@
 import { logger } from '../../../utils/logger';
-import { MessageContext } from '../../AIService';
+import type { MessageContext } from '../../AIService';
 
 export class CacheKeyGenerator {
   public static generateIntentKey(message: string, context: MessageContext): string {

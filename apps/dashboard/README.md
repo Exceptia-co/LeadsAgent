@@ -5,6 +5,7 @@ Dashboard web moderno construido con Next.js 14.2.15, React 18 y TypeScript para
 ## 📋 Descripción
 
 Aplicación frontend del sistema LeadsCRM que proporciona interfaz gráfica para:
+
 - Gestión completa de leads (CRUD, filtros, bulk actions)
 - Dashboard principal con analytics en tiempo real
 - Gestión de sesiones WhatsApp multi-número
@@ -53,11 +54,13 @@ apps/dashboard/
 ## 🚀 Rutas Implementadas
 
 ### Públicas
+
 - `/` - Landing page
 - `/sign-in` - Página de inicio de sesión (Clerk)
 - `/sign-up` - Página de registro (Clerk)
 
 ### Protegidas (requieren autenticación)
+
 - `/dashboard` - Dashboard principal con métricas
 - `/dashboard/leads` - Gestión completa de leads
 - `/dashboard/whatsapp` - Gestión completa de WhatsApp (sesiones, conversaciones, templates)
@@ -66,12 +69,14 @@ apps/dashboard/
 ## 🧩 Componentes Principales
 
 ### Dashboard Principal
+
 - **MetricCards**: Tarjetas de métricas en tiempo real
 - **LeadsByStatus**: Distribución de leads por estado
 - **RecentLeads**: Lista de leads más recientes
 - **QuickActions**: Acciones rápidas de navegación
 
 ### Gestión de Leads
+
 - **LeadsList**: Tabla completa con filtros y paginación
 - **LeadFilters**: Sistema de filtros avanzados
 - **AddLeadModal**: Modal para crear nuevos leads
@@ -79,6 +84,7 @@ apps/dashboard/
 - **WhatsAppAuthToggle**: Toggle de autorización WhatsApp
 
 ### WhatsApp Dashboard
+
 - **SessionManager**: Gestión de sesiones múltiples
 - **MessageSender**: Componente para envío de mensajes
 - **ConversationsList**: Lista de conversaciones activas
@@ -86,6 +92,7 @@ apps/dashboard/
 - **MessageHistory**: Historial con analytics
 
 ### UI Components (shadcn/ui)
+
 - **Card**: Contenedores con shadow
 - **Badge**: Estados y etiquetas
 - **Button**: Botones con variantes
@@ -96,6 +103,7 @@ apps/dashboard/
 ## 🔗 Integración con APIs
 
 ### Backend API (Puerto 3003)
+
 ```typescript
 // Endpoints consumidos
 GET /api/leads              // Lista de leads
@@ -106,6 +114,7 @@ PATCH /api/public/leads/:id/whatsapp // Toggle WhatsApp auth
 ```
 
 ### WhatsApp Service (Puerto 3002)
+
 ```typescript
 // Endpoints WhatsApp
 GET /api/v1/sessions        // Sesiones WhatsApp
@@ -118,6 +127,7 @@ GET /api/v1/conversations   // Lista conversaciones
 ## 🔐 Autenticación y Autorización
 
 ### Clerk Integration
+
 - **SSO completo**: Google, GitHub, email/password
 - **Middleware protection**: Rutas protegidas automáticamente
 - **JWT tokens**: Validación en backend NestJS
@@ -125,48 +135,59 @@ GET /api/v1/conversations   // Lista conversaciones
 - **Role-based access**: Roles de usuario (pendiente implementar)
 
 ### Protected Routes
+
 ```typescript
 // middleware.ts
 export const config = {
-  matcher: ['/dashboard/:path*']
-}
+  matcher: ["/dashboard/:path*"],
+};
 ```
 
 ## 🎨 Styling y UI
 
 ### TailwindCSS Configuration
+
 - **Design System**: Colores, espaciado, tipografía consistente
 - **Dark Mode**: Soporte para modo oscuro (configurado)
 - **Responsive Design**: Mobile-first approach
 - **CSS Variables**: Para theming dinámico
 
 ### Component Variants
+
 ```typescript
 // Status badges
 export const STATUS_VARIANTS = {
-  NUEVO: 'default',
-  CONTACTADO: 'secondary',
-  QUALIFIED: 'warning',
-  GANADO: 'success',
-  PERDIDO: 'destructive'
-}
+  NUEVO: "default",
+  CONTACTADO: "secondary",
+  QUALIFIED: "warning",
+  GANADO: "success",
+  PERDIDO: "destructive",
+};
 ```
 
 ## 📊 State Management
 
 ### SWR Data Fetching
+
 ```typescript
 // Custom hooks para data fetching
 export function useLeads(page = 1, limit = 20) {
   const { data, error, isLoading, mutate } = useSWR(
     `/api/leads?page=${page}&limit=${limit}`,
-    fetcher
-  )
-  return { leads: data?.leads || [], pagination: data?.pagination, error, isLoading, refetch: mutate }
+    fetcher,
+  );
+  return {
+    leads: data?.leads || [],
+    pagination: data?.pagination,
+    error,
+    isLoading,
+    refetch: mutate,
+  };
 }
 ```
 
 ### Local State Management
+
 - **React Context**: Para estado global compartido
 - **useState**: Para estado local de componentes
 - **useReducer**: Para estado complejo (formularios)
@@ -174,6 +195,7 @@ export function useLeads(page = 1, limit = 20) {
 ## 🔧 Development Setup
 
 ### Desarrollo Local
+
 ```bash
 # Desde la raíz del monorepo
 pnpm dev:dashboard
@@ -184,6 +206,7 @@ pnpm dev
 ```
 
 ### Variables de Entorno
+
 ```bash
 # .env.local
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
@@ -193,6 +216,7 @@ NEXT_PUBLIC_WHATSAPP_API_URL=http://localhost:3002
 ```
 
 ### Scripts Disponibles
+
 ```json
 {
   "dev": "next dev -p 3000",
@@ -206,11 +230,13 @@ NEXT_PUBLIC_WHATSAPP_API_URL=http://localhost:3002
 ## 🧪 Testing Strategy
 
 ### Testing Tools
+
 - **Jest**: Unit testing framework
 - **React Testing Library**: Component testing
 - **MSW**: API mocking para tests
 
 ### Test Categories
+
 - **Components**: Renderizado y interacciones
 - **Hooks**: Lógica de data fetching
 - **API Integration**: Mocking de endpoints
@@ -219,12 +245,14 @@ NEXT_PUBLIC_WHATSAPP_API_URL=http://localhost:3002
 ## 🚀 Build y Deploy
 
 ### Production Build
+
 ```bash
 pnpm build        # Next.js production build
 pnpm build:fast   # Con Turborepo caching
 ```
 
 ### Deployment
+
 - **Vercel**: Deployment automático desde main branch
 - **Environment Variables**: Configuradas en Vercel dashboard
 - **Domain**: Configurado con SSL automático
@@ -232,12 +260,14 @@ pnpm build:fast   # Con Turborepo caching
 ## 🔍 Performance Optimizations
 
 ### Next.js Features
+
 - **App Router**: Latest Next.js architecture
 - **Server Components**: Para mejor performance
 - **Image Optimization**: next/image para imágenes
 - **Font Optimization**: next/font con Inter
 
 ### Code Splitting
+
 - **Dynamic Imports**: Para componentes grandes
 - **Route-based splitting**: Automático con App Router
 - **Bundle Analysis**: Para optimizar tamaño
@@ -245,11 +275,13 @@ pnpm build:fast   # Con Turborepo caching
 ## 🐛 Debugging
 
 ### Development Tools
+
 - **React DevTools**: Para debugging de componentes
 - **Network Tab**: Para debugging de API calls
 - **Console Logging**: Para debugging de hooks
 
 ### Common Issues
+
 - **Auth Issues**: Verificar Clerk configuration
 - **API Errors**: Verificar backend en puerto 3003
 - **Build Errors**: Verificar TypeScript errors
@@ -257,6 +289,7 @@ pnpm build:fast   # Con Turborepo caching
 ## 📱 Mobile Responsiveness
 
 Todas las páginas están optimizadas para móviles:
+
 - **Breakpoints**: sm, md, lg, xl, 2xl
 - **Navigation**: Menú hamburguesa en móviles
 - **Tables**: Scroll horizontal en pantallas pequeñas
@@ -265,11 +298,13 @@ Todas las páginas están optimizadas para móviles:
 ## 🔄 Real-time Features
 
 ### Current Implementation
+
 - **SWR Revalidation**: Auto-refresh de datos
 - **Optimistic Updates**: UI updates antes de confirmación
 - **Error Boundaries**: Manejo de errores graceful
 
 ### Future Enhancements
+
 - **WebSocket Integration**: Para updates en tiempo real
 - **Push Notifications**: Para nuevos mensajes
 - **Offline Support**: Service Workers para offline

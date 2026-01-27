@@ -21,11 +21,10 @@ import type {
   WhatsAppMessage,
   SendMessageRequest,
   SendMessageResponse,
-  SendMediaMessageRequest,
   IWhatsAppService,
   WebhookPayload,
 } from '../types';
-import { isFailure } from '../types';
+import { isFailure, SendMediaMessageRequest } from '../types';
 
 // Import legacy services for AI processing (will be refactored in Phase 3)
 import SessionRecoveryService from './SessionRecoveryService';
@@ -829,7 +828,7 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
   public getSession(sessionId: string): WhatsAppSession | null {
     logger.warn('⚠️ Using legacy getSession method - prefer getSessionStatus for async operations');
     // Access session storage directly for synchronous operation
-    const sessions = this.sessionManager['sessions'] as Map<string, WhatsAppSession>;
+    const sessions = this.sessionManager['sessions'];
     return sessions.get(sessionId) || null;
   }
 

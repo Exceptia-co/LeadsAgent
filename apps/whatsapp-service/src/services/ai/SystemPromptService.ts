@@ -1,13 +1,13 @@
 /**
  * System Prompt Service
- * 
+ *
  * Handles generation of contextual system prompts for AI providers.
  * Provides specialized prompts for different scenarios and use cases.
  */
 
 import { logger } from '../../utils/logger';
 import { aiConfig } from '../../config/enhanced-ai.config';
-import { MessageContext } from './interfaces/IIntentAnalysis';
+import type { MessageContext } from './interfaces/IIntentAnalysis';
 
 /**
  * Prompt types for different scenarios
@@ -30,18 +30,18 @@ export class SystemPromptService {
    */
   public generateSystemPrompt(context?: MessageContext): string {
     const basePrompt = this.getBasePrompt();
-    
+
     // Add contextual information
     let contextualPrompt = basePrompt;
-    
+
     if (this.promptConfig.includeContext && context) {
       contextualPrompt += this.buildContextSection(context);
     }
-    
+
     if (this.promptConfig.includeProductInfo) {
       contextualPrompt += this.getProductInfoSection();
     }
-    
+
     // Ensure prompt doesn't exceed maximum length
     return this.truncatePrompt(contextualPrompt);
   }
@@ -53,13 +53,13 @@ export class SystemPromptService {
     switch (type) {
       case 'intent_analysis':
         return this.getIntentAnalysisPrompt();
-      
+
       case 'customer_service':
         return this.getCustomerServicePrompt(context);
-      
+
       case 'technical_support':
         return this.getTechnicalSupportPrompt(context);
-      
+
       default:
         return this.generateSystemPrompt(context);
     }
@@ -72,7 +72,7 @@ export class SystemPromptService {
     if (language === 'en') {
       return this.getEnglishPrompt(context);
     }
-    
+
     return this.generateSystemPrompt(context);
   }
 
@@ -139,26 +139,26 @@ Menciona solo:
    */
   private buildContextSection(context: MessageContext): string {
     let contextSection = '\n\n🔍 **CONTEXTO ACTUAL:**\n';
-    
+
     if (context.phoneNumber) {
       contextSection += `- Usuario contacta desde: ${context.phoneNumber}\n`;
     }
-    
+
     if (context.sessionId) {
       contextSection += `- Sesión ID: ${context.sessionId}\n`;
     }
-    
+
     if (context.conversationHistory && context.conversationHistory.length > 0) {
       contextSection += `- Historial disponible: ${context.conversationHistory.length} mensajes anteriores\n`;
     }
-    
+
     if (context.userLanguage) {
       contextSection += `- Idioma preferido: ${context.userLanguage}\n`;
     }
-    
+
     contextSection += '- Plataforma: EscortsHub WhatsApp\n';
     contextSection += '- Objetivo: Convertir en cliente registrado';
-    
+
     return contextSection;
   }
 
@@ -227,7 +227,7 @@ Formato de respuesta JSON:
    */
   private getCustomerServicePrompt(context?: MessageContext): string {
     let prompt = this.getBasePrompt();
-    
+
     prompt += `
 
 🎯 **ENFOQUE COMERCIAL MEJORADO:**
@@ -241,7 +241,7 @@ Formato de respuesta JSON:
 - Respuestas personalizadas
 - Seguimiento de interés
 - Cierre suave hacia acción`;
-    
+
     if (context?.conversationHistory) {
       prompt += `\n\n📋 **HISTORIAL DE CONVERSACIÓN:**\n`;
       context.conversationHistory.slice(-3).forEach((msg, index) => {
@@ -249,7 +249,7 @@ Formato de respuesta JSON:
         prompt += `${role}: ${msg.content}\n`;
       });
     }
-    
+
     return prompt;
   }
 
@@ -331,20 +331,20 @@ Mention only:
    */
   private truncatePrompt(prompt: string): string {
     const maxLength = this.promptConfig.maxPromptLength;
-    
+
     if (prompt.length <= maxLength) {
       return prompt;
     }
-    
+
     // Truncate and add ellipsis
     const truncated = prompt.substring(0, maxLength - 3) + '...';
-    
+
     logger.warn('System prompt truncated', {
       originalLength: prompt.length,
       maxLength,
-      truncatedLength: truncated.length
+      truncatedLength: truncated.length,
     });
-    
+
     return truncated;
   }
 
@@ -356,20 +356,20 @@ Mention only:
     context?: MessageContext
   ): string {
     const basePrompt = this.getBasePrompt();
-    
+
     switch (useCase) {
       case 'onboarding':
         return basePrompt + this.getOnboardingAddendum();
-      
+
       case 'sales':
         return basePrompt + this.getSalesAddendum();
-      
+
       case 'support':
         return this.getTechnicalSupportPrompt(context);
-      
+
       case 'retention':
         return basePrompt + this.getRetentionAddendum();
-      
+
       default:
         return basePrompt;
     }
@@ -435,7 +435,7 @@ Mention only:
       maxLength: this.promptConfig.maxPromptLength,
       includeContext: this.promptConfig.includeContext,
       includeProductInfo: this.promptConfig.includeProductInfo,
-      language: this.promptConfig.language
+      language: this.promptConfig.language,
     };
   }
 }

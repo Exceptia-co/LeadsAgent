@@ -14,12 +14,14 @@ Esta pull request documenta las acciones realizadas en las Fases 1 y 2 de limpie
 ### Archivos eliminados
 
 #### Sesiones y backups
+
 - `apps/whatsapp-service/whatsapp-sessions/session-test/`
 - `.env.example.backup`
 - `packages/db/data-backup/`
 - `apps/whatsapp-service/src/services/WhatsAppService.ts.backup`
 
 #### Duplicados .js (servicio WhatsApp)
+
 - `apps/whatsapp-service/src/index.js`
 - `apps/whatsapp-service/src/controllers/SessionController.js`
 - `apps/whatsapp-service/src/middleware/validation.js`
@@ -30,12 +32,14 @@ Esta pull request documenta las acciones realizadas en las Fases 1 y 2 de limpie
 - `apps/whatsapp-service/src/utils/redis.js`
 
 #### Scripts DB obsoletos
+
 - `add_whatsapp_column.sql`
 - `add_column_supabase.js`
 
 ### Archivos movidos
 
 #### Scripts heredados
+
 - Todos los scripts en `scripts/` han sido movidos a `scripts/legacy-scripts/`
 
 ## Checklist para el revisor

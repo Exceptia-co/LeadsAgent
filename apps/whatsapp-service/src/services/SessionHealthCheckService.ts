@@ -1,5 +1,5 @@
 import { logger } from '../utils/logger';
-import { WhatsAppSession } from '../types';
+import type { WhatsAppSession } from '../types';
 
 // Import modular components
 import {
@@ -78,7 +78,7 @@ export class SessionHealthCheckService {
     }
 
     logger.info(
-      `🏥 Iniciando monitoreo avanzado de salud cada ${this.options.checkIntervalMs! / 1000}s`
+      `🏥 Iniciando monitoreo avanzado de salud cada ${this.options.checkIntervalMs / 1000}s`
     );
 
     this.healthCheckTimer = setInterval(async () => {
@@ -196,7 +196,7 @@ export class SessionHealthCheckService {
         status: 'critical',
         lastCheckTime: new Date(),
         metrics: {
-          responseTimeMs: this.options.responseTimeoutMs!,
+          responseTimeMs: this.options.responseTimeoutMs,
           isConnected: false,
           isAuthenticated: false,
           authFileHealth: 'missing',

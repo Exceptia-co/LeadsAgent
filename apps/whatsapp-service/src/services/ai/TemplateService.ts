@@ -1,19 +1,19 @@
 /**
  * Template Service
- * 
+ *
  * Manages predefined response templates for common intents.
  * Provides fast, consistent responses for simple queries without AI processing.
  */
 
 import { logger } from '../../utils/logger';
 import { aiConfig } from '../../config/enhanced-ai.config';
-import { 
-  ITemplateService, 
-  TemplateConfig, 
-  ResponseTemplate, 
-  TemplateResult 
+import type {
+  ITemplateService,
+  TemplateConfig,
+  ResponseTemplate,
 } from './interfaces/ITemplateService';
-import { IntentCategory, MessageContext } from './interfaces/IIntentAnalysis';
+import { TemplateResult } from './interfaces/ITemplateService';
+import type { IntentCategory, MessageContext } from './interfaces/IIntentAnalysis';
 
 /**
  * Template service implementation
@@ -24,12 +24,12 @@ export class TemplateService implements ITemplateService {
 
   constructor(config?: Partial<TemplateConfig>) {
     const responseConfig = aiConfig.getResponseConfig();
-    
+
     this.config = {
       maxWords: config?.maxWords ?? responseConfig.maxWords,
       enableFallback: config?.enableFallback ?? responseConfig.enableFallbacks,
       priority: config?.priority ?? responseConfig.templatePriority,
-      useRandomSelection: config?.useRandomSelection ?? true
+      useRandomSelection: config?.useRandomSelection ?? true,
     };
 
     this.initializeTemplates();
@@ -48,8 +48,8 @@ export class TemplateService implements ITemplateService {
       templates: [
         '¡Hola! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte?',
         'Hola 😊 Bienvenido/a a EscortsHub.net. ¿Cómo te puedo ayudar?',
-        '¡Hola! Soy el asistente virtual de EscortsHub.net. ¿Qué necesitas?'
-      ]
+        '¡Hola! Soy el asistente virtual de EscortsHub.net. ¿Qué necesitas?',
+      ],
     });
 
     // Pricing templates
@@ -60,8 +60,8 @@ export class TemplateService implements ITemplateService {
       templates: [
         'El paquete Plus (500 HUB por 300€) es el más popular y rentable. ¿Te interesa?',
         'Paquete Basic (100 HUB/80€) o Plus (500 HUB/300€). ¿Cuál prefieres?',
-        'Tenemos paquetes desde 80€. Plus (500 HUB/300€) es el mejor valor. ¿Te conviene?'
-      ]
+        'Tenemos paquetes desde 80€. Plus (500 HUB/300€) es el mejor valor. ¿Te conviene?',
+      ],
     });
 
     // Product inquiry templates
@@ -72,8 +72,8 @@ export class TemplateService implements ITemplateService {
       templates: [
         'Ofrecemos publicidad premium y destacados para escorts. ¿Qué necesitas?',
         'Tenemos anuncios VIP, destacados y premium. ¿Te interesa alguno específico?',
-        'Servicios de publicidad para escorts: VIP, destacados y más. ¿Cuál te conviene?'
-      ]
+        'Servicios de publicidad para escorts: VIP, destacados y más. ¿Cuál te conviene?',
+      ],
     });
 
     // Registration templates
@@ -84,8 +84,8 @@ export class TemplateService implements ITemplateService {
       templates: [
         'Registro gratis en https://www.escortshub.net/es/sign-up. Solo pagas lo que uses. ¿Te ayudo?',
         'Gratis registrarse en https://www.escortshub.net/es/sign-up. ¿Necesitas ayuda con algo específico?',
-        'Crear cuenta es gratis: https://www.escortshub.net/es/sign-up. ¿Tienes dudas sobre el proceso?'
-      ]
+        'Crear cuenta es gratis: https://www.escortshub.net/es/sign-up. ¿Tienes dudas sobre el proceso?',
+      ],
     });
 
     // Technical support templates
@@ -96,8 +96,8 @@ export class TemplateService implements ITemplateService {
       templates: [
         'Para soporte técnico detallado, mejor contacta a nuestro equipo. ¿Es urgente?',
         'Problemas técnicos los resolvemos rápido. ¿Puedes describirme qué pasa?',
-        'Te ayudo con lo técnico. ¿Qué error o problema tienes exactamente?'
-      ]
+        'Te ayudo con lo técnico. ¿Qué error o problema tienes exactamente?',
+      ],
     });
 
     // Goodbye templates
@@ -108,8 +108,8 @@ export class TemplateService implements ITemplateService {
       templates: [
         'Gracias por contactar con EscortsHub.net. ¡Que tengas un buen día! 👋',
         'Perfecto, aquí estaré si necesitas algo más. ¡Hasta pronto! 😊',
-        'De nada, un placer ayudarte. ¡Vuelve cuando quieras!'
-      ]
+        'De nada, un placer ayudarte. ¡Vuelve cuando quieras!',
+      ],
     });
 
     // Fallback templates for unknown intents
@@ -120,8 +120,8 @@ export class TemplateService implements ITemplateService {
       templates: [
         'Disculpa, no entendí bien tu consulta. ¿Puedes ser más específico?',
         'No estoy seguro de entender. ¿Podrías reformular tu pregunta?',
-        'Perdón, ¿puedes explicarme mejor qué necesitas? Te ayudo enseguida.'
-      ]
+        'Perdón, ¿puedes explicarme mejor qué necesitas? Te ayudo enseguida.',
+      ],
     });
 
     logger.debug(`Templates initialized for ${this.templates.size} categories`);
@@ -138,7 +138,7 @@ export class TemplateService implements ITemplateService {
       }
 
       // Find best template based on conditions
-      const suitableTemplates = templates.filter(template => 
+      const suitableTemplates = templates.filter(template =>
         this.checkTemplateConditions(template, context)
       );
 
@@ -162,7 +162,6 @@ export class TemplateService implements ITemplateService {
 
       // Process variables if any
       return this.processVariables(templateString, context);
-
     } catch (error) {
       logger.error('Error getting template:', error);
       return null;
@@ -179,7 +178,7 @@ export class TemplateService implements ITemplateService {
   ): boolean {
     try {
       const intentConfig = aiConfig.getIntentConfig();
-      
+
       // Check if templates are enabled
       if (!this.config.enableFallback) {
         return false;
@@ -187,7 +186,7 @@ export class TemplateService implements ITemplateService {
 
       // Use template for high-confidence, simple intents
       const highConfidenceThreshold = intentConfig.confidenceThreshold + 0.1;
-      
+
       // Simple greetings should always use templates
       if (intent === 'saludo' && messageLength <= 20) {
         return true;
@@ -204,7 +203,6 @@ export class TemplateService implements ITemplateService {
       }
 
       return false;
-
     } catch (error) {
       logger.error('Error in shouldUseTemplate:', error);
       return false;
@@ -231,7 +229,7 @@ export class TemplateService implements ITemplateService {
       logger.info('Applying template fallback for long response:', {
         originalWords: words.length,
         maxWords: wordLimit,
-        intent
+        intent,
       });
 
       // Try to get template for this intent
@@ -242,7 +240,6 @@ export class TemplateService implements ITemplateService {
 
       // Fallback to intelligent truncation
       return this.intelligentTruncate(originalResponse, wordLimit, intent);
-
     } catch (error) {
       logger.error('Error applying template fallback:', error);
       return this.intelligentTruncate(originalResponse, maxWords ?? this.config.maxWords, intent);
@@ -258,8 +255,8 @@ export class TemplateService implements ITemplateService {
         this.templates.set(template.category, []);
       }
 
-      const categoryTemplates = this.templates.get(template.category)!;
-      
+      const categoryTemplates = this.templates.get(template.category);
+
       // Remove existing template with same ID
       const existingIndex = categoryTemplates.findIndex(t => t.id === template.id);
       if (existingIndex !== -1) {
@@ -268,12 +265,11 @@ export class TemplateService implements ITemplateService {
 
       // Add new template
       categoryTemplates.push(template);
-      
+
       // Sort by priority (higher priority first)
       categoryTemplates.sort((a, b) => b.priority - a.priority);
 
       logger.debug(`Template added: ${template.id} for category ${template.category}`);
-
     } catch (error) {
       logger.error('Error adding template:', error);
     }
@@ -297,7 +293,10 @@ export class TemplateService implements ITemplateService {
       if (context) {
         // Replace {{phoneNumber}} if available
         if (context.phoneNumber) {
-          processedTemplate = processedTemplate.replace(/\{\{phoneNumber\}\}/g, context.phoneNumber);
+          processedTemplate = processedTemplate.replace(
+            /\{\{phoneNumber\}\}/g,
+            context.phoneNumber
+          );
         }
 
         // Replace {{sessionId}} if available
@@ -311,12 +310,17 @@ export class TemplateService implements ITemplateService {
         processedTemplate = processedTemplate.replace(/\{\{timeOfDay\}\}/g, timeOfDay);
 
         // Replace date variables
-        processedTemplate = processedTemplate.replace(/\{\{date\}\}/g, now.toLocaleDateString('es-ES'));
-        processedTemplate = processedTemplate.replace(/\{\{time\}\}/g, now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }));
+        processedTemplate = processedTemplate.replace(
+          /\{\{date\}\}/g,
+          now.toLocaleDateString('es-ES')
+        );
+        processedTemplate = processedTemplate.replace(
+          /\{\{time\}\}/g,
+          now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+        );
       }
 
       return processedTemplate;
-
     } catch (error) {
       logger.error('Error processing template variables:', error);
       return template; // Return original template if processing fails
@@ -356,7 +360,7 @@ export class TemplateService implements ITemplateService {
    */
   private getTimeOfDay(date: Date): 'morning' | 'afternoon' | 'evening' | 'night' {
     const hour = date.getHours();
-    
+
     if (hour >= 6 && hour < 12) return 'morning';
     if (hour >= 12 && hour < 18) return 'afternoon';
     if (hour >= 18 && hour < 22) return 'evening';
@@ -368,7 +372,7 @@ export class TemplateService implements ITemplateService {
    */
   private intelligentTruncate(text: string, maxWords: number, intent: IntentCategory): string {
     const words = text.split(/\s+/);
-    
+
     if (words.length <= maxWords) {
       return text;
     }
@@ -376,38 +380,38 @@ export class TemplateService implements ITemplateService {
     // Reserve space for closing question
     const questionWords = 5;
     const availableWords = maxWords - questionWords;
-    
+
     let truncated = words.slice(0, availableWords).join(' ');
-    
+
     // Add appropriate closing question based on intent
     const questions = {
-      'saludo': ' ¿En qué puedo ayudarte?',
-      'precio': ' ¿Te interesa algún paquete?',
-      'producto': ' ¿Necesitas más información?',
-      'registro': ' ¿Te ayudo con el registro?',
-      'soporte_tecnico': ' ¿Es urgente el problema?',
-      'consulta_general': ' ¿Puedo ayudarte en algo más?'
+      saludo: ' ¿En qué puedo ayudarte?',
+      precio: ' ¿Te interesa algún paquete?',
+      producto: ' ¿Necesitas más información?',
+      registro: ' ¿Te ayudo con el registro?',
+      soporte_tecnico: ' ¿Es urgente el problema?',
+      consulta_general: ' ¿Puedo ayudarte en algo más?',
     };
-    
+
     const question = questions[intent] || ' ¿Te ayudo en algo más?';
-    
+
     // Clean punctuation before adding question
     truncated = truncated.replace(/[.,!]*$/, '');
-    
+
     return truncated + question;
   }
 
   /**
    * Get template statistics
    */
-  public getTemplateStats(): { 
-    totalCategories: number; 
-    totalTemplates: number; 
-    categoriesWithTemplates: IntentCategory[] 
+  public getTemplateStats(): {
+    totalCategories: number;
+    totalTemplates: number;
+    categoriesWithTemplates: IntentCategory[];
   } {
     const totalCategories = this.templates.size;
     let totalTemplates = 0;
-    
+
     for (const templates of this.templates.values()) {
       totalTemplates += templates.length;
     }
@@ -415,7 +419,7 @@ export class TemplateService implements ITemplateService {
     return {
       totalCategories,
       totalTemplates,
-      categoriesWithTemplates: Array.from(this.templates.keys())
+      categoriesWithTemplates: Array.from(this.templates.keys()),
     };
   }
 

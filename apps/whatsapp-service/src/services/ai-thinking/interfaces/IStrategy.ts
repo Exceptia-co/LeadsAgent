@@ -1,4 +1,4 @@
-import { IntentAnalysis, ResponseStrategy, EnrichedContext, ThinkingStep } from './types';
+import type { IntentAnalysis, ResponseStrategy, EnrichedContext, ThinkingStep } from './types';
 
 export interface IResponseStrategyEngine {
   determine(

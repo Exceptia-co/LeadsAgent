@@ -136,7 +136,11 @@ export class ValidationError extends BaseError {
  * Configuration and environment errors
  */
 export class ConfigurationError extends BaseError {
-  constructor(message: string, public readonly configKey: string, context?: Record<string, any>) {
+  constructor(
+    message: string,
+    public readonly configKey: string,
+    context?: Record<string, any>
+  ) {
     super(message, 'CONFIG_ERROR', { ...context, configKey });
   }
 }
@@ -195,7 +199,12 @@ export const isValidationError = (error: any): error is ValidationError => {
  * Error factory for creating typed errors
  */
 export class ErrorFactory {
-  static whatsapp(message: string, code: string, sessionId?: string, context?: Record<string, any>) {
+  static whatsapp(
+    message: string,
+    code: string,
+    sessionId?: string,
+    context?: Record<string, any>
+  ) {
     return new WhatsAppError(message, code, sessionId, context);
   }
 
@@ -211,15 +220,30 @@ export class ErrorFactory {
     return new ConnectionError(message, sessionId, context);
   }
 
-  static message(message: string, sessionId: string, messageId?: string, context?: Record<string, any>) {
+  static message(
+    message: string,
+    sessionId: string,
+    messageId?: string,
+    context?: Record<string, any>
+  ) {
     return new MessageError(message, sessionId, messageId, context);
   }
 
-  static aiProvider(message: string, provider: string, statusCode?: number, context?: Record<string, any>) {
+  static aiProvider(
+    message: string,
+    provider: string,
+    statusCode?: number,
+    context?: Record<string, any>
+  ) {
     return new AIProviderError(message, provider, statusCode, context);
   }
 
-  static database(message: string, operation: string, table?: string, context?: Record<string, any>) {
+  static database(
+    message: string,
+    operation: string,
+    table?: string,
+    context?: Record<string, any>
+  ) {
     return new DatabaseError(message, operation, table, context);
   }
 
@@ -231,11 +255,20 @@ export class ErrorFactory {
     return new ConfigurationError(message, configKey, context);
   }
 
-  static network(message: string, url?: string, statusCode?: number, context?: Record<string, any>) {
+  static network(
+    message: string,
+    url?: string,
+    statusCode?: number,
+    context?: Record<string, any>
+  ) {
     return new NetworkError(message, url, statusCode, context);
   }
 
-  static circuitBreaker(serviceName: string, state: 'OPEN' | 'HALF_OPEN', context?: Record<string, any>) {
+  static circuitBreaker(
+    serviceName: string,
+    state: 'OPEN' | 'HALF_OPEN',
+    context?: Record<string, any>
+  ) {
     return new CircuitBreakerError(serviceName, state, context);
   }
 }

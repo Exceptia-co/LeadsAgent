@@ -1,112 +1,117 @@
-'use client'
+"use client";
 
-import React, { useState, useEffect } from 'react'
-import * as Dialog from '@radix-ui/react-dialog'
-import * as Select from '@radix-ui/react-select'
-import * as Label from '@radix-ui/react-label'
-import { X, ChevronDown, Loader2 } from 'lucide-react'
-import { Lead, LeadStatus, STATUS_LABELS } from '../types'
+import React, { useState, useEffect } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+import * as Select from "@radix-ui/react-select";
+import * as Label from "@radix-ui/react-label";
+import { X, ChevronDown, Loader2 } from "lucide-react";
+import { Lead, LeadStatus, STATUS_LABELS } from "../types";
 
 interface EditLeadModalProps {
-  isOpen: boolean
-  onClose: () => void
-  onSuccess: () => void
-  lead: Lead | null
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+  lead: Lead | null;
 }
 
 interface FormData {
-  name: string
-  email: string
-  phone: string
-  status: LeadStatus
-  source: string
+  name: string;
+  email: string;
+  phone: string;
+  status: LeadStatus;
+  source: string;
 }
 
 interface FormErrors {
-  name?: string
-  email?: string
-  phone?: string
-  status?: string
-  source?: string
-  general?: string
+  name?: string;
+  email?: string;
+  phone?: string;
+  status?: string;
+  source?: string;
+  general?: string;
 }
 
-export function EditLeadModal({ isOpen, onClose, onSuccess, lead }: EditLeadModalProps) {
+export function EditLeadModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  lead,
+}: EditLeadModalProps) {
   const [formData, setFormData] = useState<FormData>({
-    name: '',
-    email: '',
-    phone: '',
-    status: 'NUEVO',
-    source: ''
-  })
-  
-  const [errors, setErrors] = useState<FormErrors>({})
-  const [isLoading, setIsLoading] = useState(false)
+    name: "",
+    email: "",
+    phone: "",
+    status: "NUEVO",
+    source: "",
+  });
+
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [isLoading, setIsLoading] = useState(false);
 
   // Load lead data when modal opens or lead changes
   useEffect(() => {
     if (lead && isOpen) {
       setFormData({
-        name: lead.name || '',
-        email: lead.email || '',
-        phone: lead.phone || '',
+        name: lead.name || "",
+        email: lead.email || "",
+        phone: lead.phone || "",
         status: lead.status,
-        source: lead.source || ''
-      })
-      setErrors({})
+        source: lead.source || "",
+      });
+      setErrors({});
     }
-  }, [lead, isOpen])
+  }, [lead, isOpen]);
 
   const validateForm = (): boolean => {
-    const newErrors: FormErrors = {}
+    const newErrors: FormErrors = {};
 
     // Phone is required
     if (!formData.phone.trim()) {
-      newErrors.phone = 'El número de teléfono es obligatorio'
+      newErrors.phone = "El número de teléfono es obligatorio";
     } else {
       // Basic phone validation
-      const phoneRegex = /^[+]?[1-9]\d{1,14}$/
-      const cleanPhone = formData.phone.replace(/[\s\-\()]/g, '')
+      const phoneRegex = /^[+]?[1-9]\d{1,14}$/;
+      const cleanPhone = formData.phone.replace(/[\s\-\()]/g, "");
       if (!phoneRegex.test(cleanPhone)) {
-        newErrors.phone = 'Formato de teléfono inválido'
+        newErrors.phone = "Formato de teléfono inválido";
       }
     }
 
     // Email validation (optional but if provided, should be valid)
     if (formData.email.trim()) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(formData.email.trim())) {
-        newErrors.email = 'Formato de email inválido'
+        newErrors.email = "Formato de email inválido";
       }
     }
 
     // Name validation (optional but if provided, should not be empty)
     if (formData.name.trim() && formData.name.trim().length < 2) {
-      newErrors.name = 'El nombre debe tener al menos 2 caracteres'
+      newErrors.name = "El nombre debe tener al menos 2 caracteres";
     }
 
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
+    e.preventDefault();
+
     if (!validateForm() || !lead) {
-      return
+      return;
     }
 
-    setIsLoading(true)
-    setErrors({})
+    setIsLoading(true);
+    setErrors({});
 
     try {
       // Limpiar el número de teléfono: remover espacios, guiones, paréntesis
       // y el símbolo + para la base de datos
-      let cleanPhone = formData.phone.replace(/[\s\-\()]/g, '')
-      
+      let cleanPhone = formData.phone.replace(/[\s\-\()]/g, "");
+
       // Si el número empieza con +, lo guardamos sin el +
-      if (cleanPhone.startsWith('+')) {
-        cleanPhone = cleanPhone.substring(1)
+      if (cleanPhone.startsWith("+")) {
+        cleanPhone = cleanPhone.substring(1);
       }
 
       const updateData = {
@@ -114,60 +119,71 @@ export function EditLeadModal({ isOpen, onClose, onSuccess, lead }: EditLeadModa
         phone: cleanPhone,
         status: formData.status,
         email: formData.email.trim() || undefined,
-        source: formData.source.trim() || undefined
-      }
+        source: formData.source.trim() || undefined,
+      };
 
       const response = await fetch(`/api/leads/${lead.id}`, {
-        method: 'PATCH',
+        method: "PATCH",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(updateData),
-      })
+      });
 
       if (!response.ok) {
-        const errorData = await response.json()
-        
+        const errorData = await response.json();
+
         // Manejar específicamente el error de duplicado
-        if (response.status === 400 && errorData.message?.includes('Ya existe un lead')) {
+        if (
+          response.status === 400 &&
+          errorData.message?.includes("Ya existe un lead")
+        ) {
           setErrors({
-            phone: 'Ya existe un lead con este número de teléfono'
-          })
-          return
+            phone: "Ya existe un lead con este número de teléfono",
+          });
+          return;
         }
-        
-        throw new Error(errorData.message || errorData.error || 'Error al actualizar el lead')
+
+        throw new Error(
+          errorData.message || errorData.error || "Error al actualizar el lead",
+        );
       }
 
-      onSuccess()
-      onClose()
+      onSuccess();
+      onClose();
     } catch (error) {
-      console.error('Error updating lead:', error)
-      
+      console.error("Error updating lead:", error);
+
       // Si es un error de duplicado específico
-      if (error instanceof Error && error.message.includes('Ya existe un lead')) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Ya existe un lead")
+      ) {
         setErrors({
-          phone: error.message
-        })
+          phone: error.message,
+        });
       } else {
         setErrors({
-          general: error instanceof Error ? error.message : 'Error al actualizar el lead'
-        })
+          general:
+            error instanceof Error
+              ? error.message
+              : "Error al actualizar el lead",
+        });
       }
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const handleInputChange = (field: keyof FormData, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+    setFormData((prev) => ({ ...prev, [field]: value }));
     // Clear field error when user starts typing
     if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: undefined }))
+      setErrors((prev) => ({ ...prev, [field]: undefined }));
     }
-  }
+  };
 
-  if (!lead) return null
+  if (!lead) return null;
 
   return (
     <Dialog.Root open={isOpen} onOpenChange={onClose}>
@@ -187,7 +203,7 @@ export function EditLeadModal({ isOpen, onClose, onSuccess, lead }: EditLeadModa
               </button>
             </Dialog.Close>
           </div>
-          
+
           <Dialog.Description className="text-sm text-gray-600 mb-4">
             Actualiza la información del lead.
           </Dialog.Description>
@@ -202,60 +218,75 @@ export function EditLeadModal({ isOpen, onClose, onSuccess, lead }: EditLeadModa
 
             {/* Name Field */}
             <div>
-              <Label.Root htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+              <Label.Root
+                htmlFor="name"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
                 Nombre
               </Label.Root>
               <input
                 id="name"
                 type="text"
                 value={formData.name}
-                onChange={(e) => handleInputChange('name', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  errors.name ? 'border-red-300' : 'border-gray-300'
+                onChange={(e) => handleInputChange("name", e.target.value)}
+                className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 ${
+                  errors.name ? "border-red-300" : "border-gray-300"
                 }`}
                 placeholder="Nombre del lead"
                 disabled={isLoading}
               />
-              {errors.name && <p className="text-red-600 text-xs mt-1">{errors.name}</p>}
+              {errors.name && (
+                <p className="text-red-600 text-xs mt-1">{errors.name}</p>
+              )}
             </div>
 
             {/* Phone Field */}
             <div>
-              <Label.Root htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
+              <Label.Root
+                htmlFor="phone"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
                 Teléfono *
               </Label.Root>
               <input
                 id="phone"
                 type="tel"
                 value={formData.phone}
-                onChange={(e) => handleInputChange('phone', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  errors.phone ? 'border-red-300' : 'border-gray-300'
+                onChange={(e) => handleInputChange("phone", e.target.value)}
+                className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 ${
+                  errors.phone ? "border-red-300" : "border-gray-300"
                 }`}
                 placeholder="+34 666 123 456"
                 disabled={isLoading}
                 required
               />
-              {errors.phone && <p className="text-red-600 text-xs mt-1">{errors.phone}</p>}
+              {errors.phone && (
+                <p className="text-red-600 text-xs mt-1">{errors.phone}</p>
+              )}
             </div>
 
             {/* Email Field */}
             <div>
-              <Label.Root htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+              <Label.Root
+                htmlFor="email"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
                 Email
               </Label.Root>
               <input
                 id="email"
                 type="email"
                 value={formData.email}
-                onChange={(e) => handleInputChange('email', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                  errors.email ? 'border-red-300' : 'border-gray-300'
+                onChange={(e) => handleInputChange("email", e.target.value)}
+                className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 ${
+                  errors.email ? "border-red-300" : "border-gray-300"
                 }`}
                 placeholder="email@ejemplo.com"
                 disabled={isLoading}
               />
-              {errors.email && <p className="text-red-600 text-xs mt-1">{errors.email}</p>}
+              {errors.email && (
+                <p className="text-red-600 text-xs mt-1">{errors.email}</p>
+              )}
             </div>
 
             {/* Status Field */}
@@ -265,12 +296,12 @@ export function EditLeadModal({ isOpen, onClose, onSuccess, lead }: EditLeadModa
               </Label.Root>
               <Select.Root
                 value={formData.status}
-                onValueChange={(value) => handleInputChange('status', value as LeadStatus)}
+                onValueChange={(value) =>
+                  handleInputChange("status", value as LeadStatus)
+                }
               >
-                <Select.Trigger className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white text-left flex items-center justify-between">
-                  <Select.Value>
-                    {STATUS_LABELS[formData.status]}
-                  </Select.Value>
+                <Select.Trigger className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white text-left flex items-center justify-between">
+                  <Select.Value>{STATUS_LABELS[formData.status]}</Select.Value>
                   <ChevronDown className="h-4 w-4 text-gray-400" />
                 </Select.Trigger>
                 <Select.Portal>
@@ -280,7 +311,7 @@ export function EditLeadModal({ isOpen, onClose, onSuccess, lead }: EditLeadModa
                         <Select.Item
                           key={value}
                           value={value}
-                          className="px-3 py-2 text-sm hover:bg-blue-50 cursor-pointer rounded-sm outline-none"
+                          className="px-3 py-2 text-sm hover:bg-green-50 cursor-pointer rounded-sm outline-none"
                         >
                           <Select.ItemText>{label}</Select.ItemText>
                         </Select.Item>
@@ -293,15 +324,18 @@ export function EditLeadModal({ isOpen, onClose, onSuccess, lead }: EditLeadModa
 
             {/* Source Field */}
             <div>
-              <Label.Root htmlFor="source" className="block text-sm font-medium text-gray-700 mb-1">
+              <Label.Root
+                htmlFor="source"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
                 Fuente
               </Label.Root>
               <input
                 id="source"
                 type="text"
                 value={formData.source}
-                onChange={(e) => handleInputChange('source', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                onChange={(e) => handleInputChange("source", e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 placeholder="manual, website, referido..."
                 disabled={isLoading}
               />
@@ -320,15 +354,15 @@ export function EditLeadModal({ isOpen, onClose, onSuccess, lead }: EditLeadModa
               <button
                 type="submit"
                 disabled={isLoading}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
                 {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-                {isLoading ? 'Actualizando...' : 'Actualizar'}
+                {isLoading ? "Actualizando..." : "Actualizar"}
               </button>
             </div>
           </form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
-  )
+  );
 }

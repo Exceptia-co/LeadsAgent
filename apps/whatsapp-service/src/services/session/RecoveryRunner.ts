@@ -1,5 +1,6 @@
 import { logger } from '../../utils/logger';
-import SessionPersistenceService, { SessionPersistenceData } from '../SessionPersistenceService';
+import type { SessionPersistenceData } from '../SessionPersistenceService';
+import SessionPersistenceService from '../SessionPersistenceService';
 import { AuthValidator } from './AuthValidator';
 import path from 'path';
 
@@ -260,7 +261,7 @@ export class RecoveryRunner {
     options: RecoveryOptions
   ): { shouldRecover: boolean; reason: string } {
     const { lastError, lastSeen, reconnectCount, metadata } = sessionData;
-    const sessionMetadata = (metadata as any) || {};
+    const sessionMetadata = metadata || {};
 
     if (lastError && this.authValidator.isSessionClosedByUser(lastError)) {
       return {

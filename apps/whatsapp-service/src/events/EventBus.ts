@@ -237,7 +237,7 @@ export interface EventTypeMap {
   'whatsapp:session-destroyed': WhatsAppEvents.SessionDestroyed;
   'whatsapp:status-changed': WhatsAppEvents.StatusChanged;
   'whatsapp:session-reconnected': WhatsAppEvents.SessionReconnected;
-  
+
   // New WhatsApp events
   'whatsapp:session-auth-failed': WhatsAppEvents.SessionAuthFailed;
   'whatsapp:qr-received': WhatsAppEvents.QrReceived;
@@ -252,12 +252,12 @@ export interface EventTypeMap {
   'whatsapp:media-downloaded': WhatsAppEvents.MediaDownloaded;
   'whatsapp:contact-blocked': WhatsAppEvents.ContactBlocked;
   'whatsapp:contact-unblocked': WhatsAppEvents.ContactUnblocked;
-  
+
   // AI events
   'ai:response-generated': AIEvents.ResponseGenerated;
   'ai:provider-failed': AIEvents.ProviderFailed;
   'ai:message-classified': AIEvents.MessageClassified;
-  
+
   // System events
   'system:service-started': SystemEvents.ServiceStarted;
   'system:service-stopped': SystemEvents.ServiceStopped;
@@ -294,10 +294,10 @@ export class EventBus implements IEventBus {
     if (!this.handlers.has(eventName)) {
       this.handlers.set(eventName, new Set());
     }
-    this.handlers.get(eventName)!.add(handler);
-    
+    this.handlers.get(eventName).add(handler);
+
     logger.debug(`📡 Subscribed to event: ${eventName}`, {
-      totalHandlers: this.handlers.get(eventName)!.size
+      totalHandlers: this.handlers.get(eventName).size,
     });
   }
 
@@ -311,8 +311,8 @@ export class EventBus implements IEventBus {
     if (!this.onceHandlers.has(eventName)) {
       this.onceHandlers.set(eventName, new Set());
     }
-    this.onceHandlers.get(eventName)!.add(handler);
-    
+    this.onceHandlers.get(eventName).add(handler);
+
     logger.debug(`📡 Subscribed once to event: ${eventName}`);
   }
 
@@ -338,7 +338,7 @@ export class EventBus implements IEventBus {
         this.onceHandlers.delete(eventName);
       }
     }
-    
+
     logger.debug(`📡 Unsubscribed from event: ${eventName}`);
   }
 
@@ -351,10 +351,10 @@ export class EventBus implements IEventBus {
   ): Promise<void> {
     const startTime = Date.now();
     const correlationId = Math.random().toString(36).substring(7);
-    
+
     logger.debug(`📤 Publishing event: ${eventName}`, {
       correlationId,
-      data: this.sanitizeEventData(data)
+      data: this.sanitizeEventData(data),
     });
 
     try {
@@ -382,7 +382,7 @@ export class EventBus implements IEventBus {
             await handler(processedData);
             return true;
           },
-          required: false
+          required: false,
         })),
         { correlationId }
       );
@@ -397,21 +397,20 @@ export class EventBus implements IEventBus {
         correlationId,
         executionTime,
         handlersExecuted: results.successful.length,
-        handlersFailed: results.failed.length
+        handlersFailed: results.failed.length,
       });
 
       // Log handler failures
       if (results.failed.length > 0) {
         logger.warn(`⚠️ Some event handlers failed for: ${eventName}`, {
           correlationId,
-          failures: results.failed.map(f => ({ name: f.name, error: f.error.message }))
+          failures: results.failed.map(f => ({ name: f.name, error: f.error.message })),
         });
       }
-
     } catch (error) {
       logger.error(`❌ Failed to publish event: ${eventName}`, {
         correlationId,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
       throw error;
     }
@@ -440,11 +439,15 @@ export class EventBus implements IEventBus {
    * Get event statistics
    */
   public getStats(): EventBusStats {
-    const totalSubscriptions = Array.from(this.handlers.values())
-      .reduce((sum, handlers) => sum + handlers.size, 0);
-    
-    const totalOnceSubscriptions = Array.from(this.onceHandlers.values())
-      .reduce((sum, handlers) => sum + handlers.size, 0);
+    const totalSubscriptions = Array.from(this.handlers.values()).reduce(
+      (sum, handlers) => sum + handlers.size,
+      0
+    );
+
+    const totalOnceSubscriptions = Array.from(this.onceHandlers.values()).reduce(
+      (sum, handlers) => sum + handlers.size,
+      0
+    );
 
     return {
       totalEvents: this.handlers.size + this.onceHandlers.size,
@@ -452,11 +455,8 @@ export class EventBus implements IEventBus {
       totalOnceSubscriptions,
       middleware: this.middleware.length,
       eventsByType: Object.fromEntries(
-        Array.from(this.handlers.entries()).map(([event, handlers]) => [
-          event,
-          handlers.size
-        ])
-      )
+        Array.from(this.handlers.entries()).map(([event, handlers]) => [event, handlers.size])
+      ),
     };
   }
 
@@ -524,7 +524,7 @@ export class LoggingMiddleware implements EventMiddleware {
   ): Promise<EventTypeMap[K]> {
     logger.info(`🎯 Event middleware: ${eventName}`, {
       correlationId,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
     return data;
   }

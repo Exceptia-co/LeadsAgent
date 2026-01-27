@@ -1,6 +1,6 @@
 import { logger } from '../../../utils/logger';
-import { IComplexityAnalyzer } from '../interfaces/IAnalyzer';
-import { ComplexityAnalysis, IntentAnalysis } from '../interfaces/types';
+import type { IComplexityAnalyzer } from '../interfaces/IAnalyzer';
+import type { ComplexityAnalysis, IntentAnalysis } from '../interfaces/types';
 import DatabaseService from '../../DatabaseService';
 
 export class ComplexityAnalyzer implements IComplexityAnalyzer {

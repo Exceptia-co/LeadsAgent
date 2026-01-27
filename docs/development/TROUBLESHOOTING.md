@@ -9,6 +9,7 @@ Esta guía consolida las soluciones para problemas comunes del proyecto LeadsCRM
 ### Problemas de Conexión a Supabase
 
 #### **Síntomas Comunes**
+
 - Error: `connect ECONNREFUSED 127.0.0.1:54322`
 - Timeout en conexiones a la base de datos
 - Prisma Client initialization failed
@@ -16,28 +17,31 @@ Esta guía consolida las soluciones para problemas comunes del proyecto LeadsCRM
 #### **Causas Posibles**
 
 1. **Supabase CLI no está corriendo**
+
    ```bash
    # Verificar si Supabase está corriendo
    supabase status
-   
+
    # Si no está activo, iniciar
    supabase start
    ```
 
 2. **Puerto 54322 ocupado**
+
    ```bash
    # Verificar qué proceso usa el puerto
    netstat -ano | findstr :54322
-   
+
    # Terminar proceso si es necesario
    taskkill /PID <PID_NUMBER> /F
    ```
 
 3. **Docker no está corriendo**
+
    ```bash
    # Verificar estado de Docker
    docker ps
-   
+
    # Si no está corriendo, iniciar Docker Desktop
    ```
 
@@ -46,6 +50,7 @@ Esta guía consolida las soluciones para problemas comunes del proyecto LeadsCRM
 **⭐ Para problemas específicos de PostgreSQL y prepared statements, ver [DEBUG_SOLUTIONS.md](./DEBUG_SOLUTIONS.md)**
 
 **1. Reinicio Completo del Stack**
+
 ```bash
 # Detener todos los servicios
 supabase stop
@@ -57,6 +62,7 @@ pnpm dev
 ```
 
 **2. Reset de Base de Datos Local**
+
 ```bash
 # Reset completo de Supabase local
 supabase db reset
@@ -65,6 +71,7 @@ pnpm db:seed
 ```
 
 **3. Verificación de Configuración**
+
 ```bash
 # Verificar variables de entorno
 cat .env | grep DATABASE_URL
@@ -76,11 +83,13 @@ psql $DATABASE_URL -c "SELECT 1"
 #### **Problemas Específicos de Red**
 
 **Error: `getaddrinfo ENOTFOUND`**
+
 - Verificar conectividad a internet
 - Comprobar DNS (usar 8.8.8.8 o 1.1.1.1)
 - Verificar firewall/antivirus
 
 **Error: `SSL connection required`**
+
 - Agregar `?sslmode=require` al DATABASE_URL
 - Verificar certificados SSL
 
@@ -91,6 +100,7 @@ psql $DATABASE_URL -c "SELECT 1"
 ### Builds Lentos (>10 minutos)
 
 #### **Diagnóstico Rápido**
+
 ```bash
 # Verificar tamaño del cache
 du -sh .turbo
@@ -102,27 +112,31 @@ pnpm clean:cache
 #### **Soluciones Inmediatas**
 
 **1. Limpiar Cache Completo**
+
 ```bash
 pnpm clean:cache && pnpm rebuild
 ```
 
 **2. Verificar Versiones de React**
+
 ```bash
 pnpm list react react-dom
 # Debe ser 18.x.x en todos los workspaces
 ```
 
 **3. Validar TypeScript Config**
+
 ```bash
 # Verificar que skipLibCheck esté en true
 grep -r "skipLibCheck" apps/*/tsconfig.json packages/*/tsconfig.json
 ```
 
 #### **Reset Completo del Workspace**
+
 ```bash
 # Si los problemas persisten
 rm -rf node_modules pnpm-lock.yaml
-rm -rf apps/*/node_modules packages/*/node_modules  
+rm -rf apps/*/node_modules packages/*/node_modules
 rm -rf .turbo apps/*/.next apps/*/dist packages/*/dist
 pnpm install
 pnpm db:generate
@@ -136,6 +150,7 @@ pnpm build:fast
 ### Errores de TypeScript
 
 #### **Error: Cannot find module '@repo/ui'**
+
 ```bash
 # Regenerar dependencias del workspace
 pnpm install --workspace-root
@@ -143,12 +158,14 @@ pnpm build:packages
 ```
 
 #### **Error: Prisma Client not generated**
+
 ```bash
 pnpm db:generate
 # Si falla, verificar DATABASE_URL en .env
 ```
 
 #### **Error: Type 'unknown' is not assignable**
+
 - Verificar imports de tipos Prisma
 - Regenerar cliente: `pnpm db:generate`
 - Verificar que los enums estén alineados
@@ -156,6 +173,7 @@ pnpm db:generate
 ### Problemas de API
 
 #### **Error: Port already in use**
+
 ```bash
 # Verificar puertos usados
 netstat -ano | findstr :3003
@@ -167,6 +185,7 @@ taskkill /PID <PID> /F
 ```
 
 #### **Error: CORS issues**
+
 - Verificar configuración CORS en cada servicio
 - Asegurar que los puertos están correctamente configurados
 - Dashboard: 3000, Docs: 3001, WhatsApp: 3002, API: 3003
@@ -174,6 +193,7 @@ taskkill /PID <PID> /F
 ### Problemas de WhatsApp
 
 #### **QR Code no se genera**
+
 ```bash
 # Verificar logs del servicio WhatsApp
 curl http://localhost:3002/api/whatsapp/sessions
@@ -183,6 +203,7 @@ curl -X DELETE http://localhost:3002/api/whatsapp/sessions/default
 ```
 
 #### **Mensajes no se envían**
+
 - Verificar que la sesión esté conectada
 - Comprobar formato del número de teléfono
 - Revisar logs de la API para errores específicos
@@ -194,19 +215,22 @@ curl -X DELETE http://localhost:3002/api/whatsapp/sessions/default
 ### Clerk Authentication Issues
 
 #### **Error: ClerkProvider not found**
+
 - Verificar que `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` esté configurado
 - Comprobar que ClerkProvider esté en el layout raíz
 
 #### **Error: User not authenticated**
+
 ```javascript
 // Verificar en el componente
-const { isSignedIn, user } = useUser()
-console.log({ isSignedIn, user })
+const { isSignedIn, user } = useUser();
+console.log({ isSignedIn, user });
 ```
 
 ### Problemas de Base de Datos
 
 #### **Error: RLS policy violation**
+
 - Verificar que el usuario tenga los permisos correctos
 - Comprobar las políticas RLS en Supabase
 - Usar el service role para operaciones de backend
@@ -218,6 +242,7 @@ console.log({ isSignedIn, user })
 ### Componentes no se renderizan
 
 #### **ShadCN/ui components not found**
+
 ```bash
 # Reinstalar componentes
 pnpm dlx shadcn-ui@latest add button
@@ -225,6 +250,7 @@ pnpm dlx shadcn-ui@latest add card
 ```
 
 #### **Estilos no se aplican**
+
 - Verificar que Tailwind CSS esté configurado
 - Comprobar imports de CSS en `globals.css`
 - Limpiar cache del navegador
@@ -236,6 +262,7 @@ pnpm dlx shadcn-ui@latest add card
 ### Scripts de Diagnóstico
 
 **Verificar Estado del Sistema**
+
 ```bash
 # Crear script de diagnóstico
 cat > diagnose.sh << 'EOF'
@@ -263,11 +290,12 @@ chmod +x diagnose.sh
 ### Logs y Monitoring
 
 **Verificar Logs de Aplicaciones**
+
 ```bash
 # Dashboard logs
 pnpm --filter dashboard dev
 
-# API logs  
+# API logs
 pnpm --filter api dev
 
 # WhatsApp service logs
@@ -315,5 +343,5 @@ pnpm --filter whatsapp-service dev
 
 ---
 
-*Última actualización: Agosto 2024*  
-*Próxima revisión: Mensual o cuando surjan nuevos problemas comunes*
+_Última actualización: Agosto 2024_  
+_Próxima revisión: Mensual o cuando surjan nuevos problemas comunes_

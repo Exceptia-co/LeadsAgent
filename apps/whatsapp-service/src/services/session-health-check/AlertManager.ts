@@ -1,6 +1,6 @@
 import { logger } from '../../utils/logger';
 import SessionPersistenceService from '../SessionPersistenceService';
-import { SessionHealthStatus } from './DiagnosticsEngine';
+import type { SessionHealthStatus } from './DiagnosticsEngine';
 
 export interface HealthAlert {
   id: string;

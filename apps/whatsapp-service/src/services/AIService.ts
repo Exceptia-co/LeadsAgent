@@ -1,10 +1,10 @@
 /**
  * AI Service - Refactored Architecture with Backward Compatibility
- * 
+ *
  * This is the main AI service that provides a unified interface for AI operations.
  * It has been completely refactored with a modular architecture while maintaining
  * full backward compatibility with existing code.
- * 
+ *
  * Features:
  * - Modular design with Strategy, Factory, and Orchestrator patterns
  * - Template-based responses for performance optimization
@@ -51,11 +51,11 @@ class AIService {
     // Initialize orchestrator with default configuration
     this.orchestrator = new AIOrchestratorService({
       enableFallbacks: true,
-      enableMetrics: true
+      enableMetrics: true,
     });
 
     this.currentProvider = aiConfig.getDefaultProvider() as 'openrouter' | 'gemini';
-    
+
     logger.info('🚀 AIService initialized with refactored architecture');
     logger.info(`Current provider: ${this.currentProvider}`);
   }
@@ -63,15 +63,9 @@ class AIService {
   /**
    * Generate response using the orchestrator (backward compatible)
    */
-  public async generateResponse(
-    message: string, 
-    context?: MessageContext
-  ): Promise<AIResponse> {
+  public async generateResponse(message: string, context?: MessageContext): Promise<AIResponse> {
     try {
-      const enhancedResponse = await this.orchestrator.generateOptimizedResponse(
-        message, 
-        context
-      );
+      const enhancedResponse = await this.orchestrator.generateOptimizedResponse(message, context);
 
       // Convert enhanced response to backward compatible format
       return {
@@ -79,15 +73,14 @@ class AIService {
         content: enhancedResponse.content,
         error: enhancedResponse.error,
         provider: this.mapProviderName(enhancedResponse.provider),
-        tokensUsed: enhancedResponse.tokensUsed
+        tokensUsed: enhancedResponse.tokensUsed,
       };
-
     } catch (error) {
       logger.error('Error in generateResponse (backward compatible):', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-        provider: this.currentProvider
+        provider: this.currentProvider,
       };
     }
   }
@@ -98,22 +91,21 @@ class AIService {
   public async analyzeIntent(message: string): Promise<IntentAnalysis> {
     try {
       const analysis = await this.orchestrator.analyzeIntent(message);
-      
+
       // Convert to backward compatible format
       return {
         intent: analysis.intent,
         confidence: analysis.confidence,
         entities: analysis.entities,
-        sentiment: analysis.sentiment
+        sentiment: analysis.sentiment,
       };
-
     } catch (error) {
       logger.error('Error in analyzeIntent (backward compatible):', error);
       return {
         intent: 'general',
         confidence: 0.0,
         entities: {},
-        sentiment: 'neutral'
+        sentiment: 'neutral',
       };
     }
   }
@@ -124,14 +116,13 @@ class AIService {
   public async switchProvider(provider: 'openrouter' | 'gemini'): Promise<boolean> {
     try {
       const success = await this.orchestrator.switchProvider(provider);
-      
+
       if (success) {
         this.currentProvider = provider;
         logger.info(`Provider switched to: ${provider}`);
       }
-      
+
       return success;
-      
     } catch (error) {
       logger.error(`Error switching provider to ${provider}:`, error);
       return false;
@@ -151,16 +142,15 @@ class AIService {
   public async generateOptimizedResponse(
     message: string,
     context?: MessageContext
-  ): Promise<AIResponse & { 
-    usedTemplate?: boolean; 
-    processingTime?: number; 
-    intentAnalysis?: IntentAnalysis 
-  }> {
+  ): Promise<
+    AIResponse & {
+      usedTemplate?: boolean;
+      processingTime?: number;
+      intentAnalysis?: IntentAnalysis;
+    }
+  > {
     try {
-      const enhancedResponse = await this.orchestrator.generateOptimizedResponse(
-        message, 
-        context
-      );
+      const enhancedResponse = await this.orchestrator.generateOptimizedResponse(message, context);
 
       return {
         success: enhancedResponse.success,
@@ -170,20 +160,21 @@ class AIService {
         tokensUsed: enhancedResponse.tokensUsed,
         usedTemplate: enhancedResponse.usedTemplate,
         processingTime: enhancedResponse.processingTime,
-        intentAnalysis: enhancedResponse.intentAnalysis ? {
-          intent: enhancedResponse.intentAnalysis.intent,
-          confidence: enhancedResponse.intentAnalysis.confidence,
-          entities: enhancedResponse.intentAnalysis.entities,
-          sentiment: enhancedResponse.intentAnalysis.sentiment
-        } : undefined
+        intentAnalysis: enhancedResponse.intentAnalysis
+          ? {
+              intent: enhancedResponse.intentAnalysis.intent,
+              confidence: enhancedResponse.intentAnalysis.confidence,
+              entities: enhancedResponse.intentAnalysis.entities,
+              sentiment: enhancedResponse.intentAnalysis.sentiment,
+            }
+          : undefined,
       };
-
     } catch (error) {
       logger.error('Error in generateOptimizedResponse:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
-        provider: this.currentProvider
+        provider: this.currentProvider,
       };
     }
   }
@@ -192,23 +183,23 @@ class AIService {
    * Get template response (backward compatible)
    */
   public getTemplateResponse(
-    intent: string, 
-    context?: MessageContext, 
+    intent: string,
+    context?: MessageContext,
     useRandom: boolean = true
   ): string | null {
     try {
       // Use orchestrator's template service indirectly
       // For backward compatibility, use hardcoded templates
       const templates: Record<string, string[]> = {
-        'saludo': [
+        saludo: [
           '¡Hola! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte?',
           'Hola 😊 Bienvenido/a a EscortsHub.net. ¿Cómo te puedo ayudar?',
-          '¡Hola! Soy el asistente virtual de EscortsHub.net. ¿Qué necesitas?'
+          '¡Hola! Soy el asistente virtual de EscortsHub.net. ¿Qué necesitas?',
         ],
-        'precio': [
+        precio: [
           'El paquete Plus (500 HUB por 300€) es el más popular y rentable. ¿Te interesa?',
-          'Paquete Basic (100 HUB/80€) o Plus (500 HUB/300€). ¿Cuál prefieres?'
-        ]
+          'Paquete Basic (100 HUB/80€) o Plus (500 HUB/300€). ¿Cuál prefieres?',
+        ],
       };
 
       const templateArray = templates[intent.toLowerCase()];
@@ -218,7 +209,6 @@ class AIService {
 
       const index = useRandom ? Math.floor(Math.random() * templateArray.length) : 0;
       return templateArray[index];
-
     } catch (error) {
       logger.error('Error getting template response:', error);
       return null;
@@ -237,7 +227,7 @@ class AIService {
     try {
       // Simple fallback logic for backward compatibility
       const words = originalResponse.split(/\s+/);
-      
+
       if (words.length <= maxWords) {
         return originalResponse;
       }
@@ -252,19 +242,18 @@ class AIService {
       const questionWords = 5;
       const availableWords = maxWords - questionWords;
       let truncated = words.slice(0, availableWords).join(' ');
-      
+
       const questions: Record<string, string> = {
-        'saludo': ' ¿En qué puedo ayudarte?',
-        'precio': ' ¿Te interesa algún paquete?',
-        'producto': ' ¿Necesitas más información?',
-        'registro': ' ¿Te ayudo con el registro?'
+        saludo: ' ¿En qué puedo ayudarte?',
+        precio: ' ¿Te interesa algún paquete?',
+        producto: ' ¿Necesitas más información?',
+        registro: ' ¿Te ayudo con el registro?',
       };
-      
+
       const question = questions[intent] || ' ¿Puedo ayudarte en algo más?';
       truncated = truncated.replace(/[.,!]*$/, '');
-      
-      return truncated + question;
 
+      return truncated + question;
     } catch (error) {
       logger.error('Error applying template fallback:', error);
       return originalResponse;
@@ -275,27 +264,37 @@ class AIService {
    * Check if message is simple greeting (backward compatible)
    */
   public isSimpleGreeting(message: string): boolean {
-    const greetingKeywords = ['hola', 'hi', 'buenas', 'buenos días', 'buenas tardes', 'buenas noches', 'hey', 'hello', 'saludos'];
+    const greetingKeywords = [
+      'hola',
+      'hi',
+      'buenas',
+      'buenos días',
+      'buenas tardes',
+      'buenas noches',
+      'hey',
+      'hello',
+      'saludos',
+    ];
     const normalizedMessage = message.toLowerCase().trim();
-    
+
     if (greetingKeywords.some(keyword => normalizedMessage === keyword)) {
       return true;
     }
-    
+
     if (normalizedMessage.length <= 20) {
       return greetingKeywords.some(keyword => normalizedMessage.startsWith(keyword));
     }
-    
+
     return false;
   }
 
   /**
    * Get service status (backward compatible)
    */
-  public getStatus(): { 
-    openrouter: boolean; 
-    gemini: boolean; 
-    current: string 
+  public getStatus(): {
+    openrouter: boolean;
+    gemini: boolean;
+    current: string;
   } {
     try {
       // This is a simplified status for backward compatibility
@@ -303,14 +302,14 @@ class AIService {
       return {
         openrouter: true, // Assume available for backward compatibility
         gemini: true,
-        current: this.currentProvider
+        current: this.currentProvider,
       };
     } catch (error) {
       logger.error('Error getting status:', error);
       return {
         openrouter: false,
         gemini: false,
-        current: this.currentProvider
+        current: this.currentProvider,
       };
     }
   }

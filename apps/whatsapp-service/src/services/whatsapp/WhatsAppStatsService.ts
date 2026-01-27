@@ -1,5 +1,5 @@
-import { logger } from "../../utils/logger";
-import { RedisUtils } from "../../utils/whatsappUtils";
+import { logger } from '../../utils/logger';
+import { RedisUtils } from '../../utils/whatsappUtils';
 
 // Tipo para el cliente Redis personalizado del proyecto
 type RedisClientType = {
@@ -104,7 +104,7 @@ export class WhatsAppStatsService {
       redisOperations: 0,
       lastActivity: new Date().toISOString(),
     };
-    
+
     if (this.redisClient) {
       this.syncAllStatsToRedis();
     }
@@ -161,10 +161,10 @@ export class WhatsAppStatsService {
       }
 
       const statKeys = Object.keys(this.stats);
-      const promises = statKeys.map(async (statName) => {
+      const promises = statKeys.map(async statName => {
         try {
           const key = RedisUtils.generateCacheKey('whatsapp:stats', statName);
-          const value = await this.redisClient!.get(key);
+          const value = await this.redisClient.get(key);
           if (value !== null) {
             if (statName === 'lastActivity') {
               (this.stats as any)[statName] = value;

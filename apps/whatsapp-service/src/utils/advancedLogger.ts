@@ -84,11 +84,11 @@ class AdvancedLogger {
   private sessionLogger: winston.Logger;
   private aiLogger: winston.Logger;
   private securityLogger: winston.Logger;
-  
+
   // Performance tracking
   private performanceTimers: Map<string, number> = new Map();
   private requestsCounter: Map<string, number> = new Map();
-  
+
   constructor() {
     this.initializeLoggers();
   }
@@ -102,7 +102,7 @@ class AdvancedLogger {
     const consoleFormat = format.combine(
       format.colorize({ all: true }),
       format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-      format.printf((info) => {
+      format.printf(info => {
         const { timestamp, level, message, ...meta } = info;
         const metaStr = Object.keys(meta).length ? `\n${JSON.stringify(meta, null, 2)}` : '';
         return `[${timestamp}] ${level}: ${message}${metaStr}`;
@@ -124,16 +124,16 @@ class AdvancedLogger {
         // Console output
         new winston.transports.Console({
           format: consoleFormat,
-          level: 'info'
+          level: 'info',
         }),
-        
+
         // General logs con rotación
         new DailyRotateFile({
           filename: path.join(logDir, 'whatsapp-service-%DATE%.log'),
           datePattern: 'YYYY-MM-DD',
           maxSize: '20m',
           maxFiles: '14d',
-          level: 'info'
+          level: 'info',
         }),
 
         // Error logs
@@ -141,90 +141,78 @@ class AdvancedLogger {
           filename: path.join(logDir, 'error.log'),
           level: 'error',
           maxsize: 5242880, // 5MB
-          maxFiles: 5
-        })
+          maxFiles: 5,
+        }),
       ],
       exceptionHandlers: [
-        new winston.transports.File({ 
-          filename: path.join(logDir, 'exceptions.log') 
-        })
+        new winston.transports.File({
+          filename: path.join(logDir, 'exceptions.log'),
+        }),
       ],
       rejectionHandlers: [
-        new winston.transports.File({ 
-          filename: path.join(logDir, 'rejections.log') 
-        })
-      ]
+        new winston.transports.File({
+          filename: path.join(logDir, 'rejections.log'),
+        }),
+      ],
     });
 
     // Logger específico para métricas
     this.metricsLogger = winston.createLogger({
       level: 'info',
-      format: format.combine(
-        format.timestamp(),
-        format.json()
-      ),
+      format: format.combine(format.timestamp(), format.json()),
       defaultMeta: { type: 'metrics' },
       transports: [
         new DailyRotateFile({
           filename: path.join(logDir, 'metrics-%DATE%.log'),
           datePattern: 'YYYY-MM-DD',
           maxSize: '50m',
-          maxFiles: '30d'
-        })
-      ]
+          maxFiles: '30d',
+        }),
+      ],
     });
 
     // Logger específico para sesiones
     this.sessionLogger = winston.createLogger({
       level: 'info',
-      format: format.combine(
-        format.timestamp(),
-        format.json()
-      ),
+      format: format.combine(format.timestamp(), format.json()),
       defaultMeta: { type: 'session' },
       transports: [
         new DailyRotateFile({
           filename: path.join(logDir, 'sessions-%DATE%.log'),
           datePattern: 'YYYY-MM-DD',
           maxSize: '20m',
-          maxFiles: '7d'
-        })
-      ]
+          maxFiles: '7d',
+        }),
+      ],
     });
 
     // Logger específico para decisiones AI
     this.aiLogger = winston.createLogger({
       level: 'info',
-      format: format.combine(
-        format.timestamp(),
-        format.json()
-      ),
+      format: format.combine(format.timestamp(), format.json()),
       defaultMeta: { type: 'ai-decisions' },
       transports: [
         new DailyRotateFile({
           filename: path.join(logDir, 'ai-decisions-%DATE%.log'),
           datePattern: 'YYYY-MM-DD',
           maxSize: '100m',
-          maxFiles: '30d'
-        })
-      ]
+          maxFiles: '30d',
+        }),
+      ],
     });
 
     // Logger específico para seguridad
     this.securityLogger = winston.createLogger({
       level: 'info',
-      format: format.combine(
-        format.timestamp(),
-        format.json()
-      ),
+      format: format.combine(format.timestamp(), format.json()),
       defaultMeta: { type: 'security' },
       transports: [
         new winston.transports.File({
           filename: path.join(logDir, 'security.log'),
           maxsize: 10485760, // 10MB
-          maxFiles: 10
-        })
-      ]
+          maxFiles: 10,
+        }),
+      ],
     });
   }
 
@@ -245,16 +233,19 @@ class AdvancedLogger {
   }
 
   error(message: string, error?: any, context?: LogContext): void {
-    const errorData = error instanceof Error ? {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
-    } : error;
+    const errorData =
+      error instanceof Error
+        ? {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+          }
+        : error;
 
     this.logger.error(message, {
       ...context,
       error: errorData,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -265,14 +256,14 @@ class AdvancedLogger {
   logSessionEvent(event: SessionEvent): void {
     this.sessionLogger.info('Session event', {
       ...event,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
 
     // También log principal para eventos críticos
     if (['ERROR', 'DESTROYED'].includes(event.eventType)) {
       this.error(`Session ${event.eventType}: ${event.sessionId}`, event.error, {
         sessionId: event.sessionId,
-        phoneNumber: event.phoneNumber
+        phoneNumber: event.phoneNumber,
       });
     }
   }
@@ -284,14 +275,14 @@ class AdvancedLogger {
   logAuthenticationEvent(event: AuthenticationEvent): void {
     this.sessionLogger.info('Authentication event', {
       ...event,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
 
     // Log de seguridad para fallos de autenticación
     if (event.status === 'FAILED') {
       this.securityLogger.warn('Authentication failed', {
         ...event,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
     }
   }
@@ -304,17 +295,20 @@ class AdvancedLogger {
     this.aiLogger.info('AI decision made', {
       ...decision,
       ...context,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
 
     // También en log principal para decisiones importantes
     const emoji = decision.decision === 'RESPOND' ? '🤖' : '❌';
-    this.info(`${emoji} AI Decision: ${decision.decision} (${decision.confidence.toFixed(2)} confidence)`, {
-      ...context,
-      decision: decision.decision,
-      confidence: decision.confidence,
-      processingTime: decision.processingTimeMs
-    });
+    this.info(
+      `${emoji} AI Decision: ${decision.decision} (${decision.confidence.toFixed(2)} confidence)`,
+      {
+        ...context,
+        decision: decision.decision,
+        confidence: decision.confidence,
+        processingTime: decision.processingTimeMs,
+      }
+    );
   }
 
   // ============================================
@@ -324,7 +318,7 @@ class AdvancedLogger {
   logMessageEvent(event: MessageEvent, context?: LogContext): void {
     this.info(`📱 Message ${event.direction}: ${event.phoneNumber}`, {
       ...event,
-      ...context
+      ...context,
     });
 
     // Log de seguridad para mensajes bloqueados
@@ -332,7 +326,7 @@ class AdvancedLogger {
       this.securityLogger.info('Message blocked by whitelist', {
         ...event,
         ...context,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
     }
   }
@@ -344,20 +338,24 @@ class AdvancedLogger {
   startPerformanceTimer(operation: string, context?: LogContext): string {
     const timerId = `${operation}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     this.performanceTimers.set(timerId, Date.now());
-    
+
     this.debug(`⏱️ Starting operation: ${operation}`, {
       ...context,
       timerId,
-      operation
+      operation,
     });
 
     return timerId;
   }
 
-  endPerformanceTimer(timerId: string, operation: string, context?: LogContext): PerformanceMetrics {
+  endPerformanceTimer(
+    timerId: string,
+    operation: string,
+    context?: LogContext
+  ): PerformanceMetrics {
     const startTime = this.performanceTimers.get(timerId);
     const endTime = Date.now();
-    
+
     if (!startTime) {
       this.warn(`Performance timer not found: ${timerId}`, context);
       return {
@@ -369,12 +367,12 @@ class AdvancedLogger {
 
     const duration = endTime - startTime;
     const memoryUsage = process.memoryUsage();
-    
+
     const metrics: PerformanceMetrics = {
       duration,
       memoryUsage,
       startTime,
-      endTime
+      endTime,
     };
 
     // Log performance
@@ -382,15 +380,16 @@ class AdvancedLogger {
       operation,
       ...metrics,
       ...context,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
 
     // Log lento en main logger
-    if (duration > 5000) { // > 5 segundos
+    if (duration > 5000) {
+      // > 5 segundos
       this.warn(`🐌 Slow operation: ${operation} took ${duration}ms`, {
         ...context,
         duration,
-        operation
+        operation,
       });
     }
 
@@ -411,7 +410,7 @@ class AdvancedLogger {
       value,
       newTotal: currentCount + value,
       tags,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -420,7 +419,7 @@ class AdvancedLogger {
       metric,
       value,
       tags,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -429,7 +428,7 @@ class AdvancedLogger {
       metric,
       value,
       tags,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -437,26 +436,32 @@ class AdvancedLogger {
   // LOGGING DE WHITELIST
   // ============================================
 
-  logWhitelistDecision(decision: {
-    phoneNumber: string;
-    sessionId?: string;
-    decision: 'ALLOWED' | 'BLOCKED';
-    reason: string;
-    leadId?: string;
-    leadName?: string;
-    messagePreview?: string;
-  }, context?: LogContext): void {
+  logWhitelistDecision(
+    decision: {
+      phoneNumber: string;
+      sessionId?: string;
+      decision: 'ALLOWED' | 'BLOCKED';
+      reason: string;
+      leadId?: string;
+      leadName?: string;
+      messagePreview?: string;
+    },
+    context?: LogContext
+  ): void {
     const emoji = decision.decision === 'ALLOWED' ? '✅' : '🚫';
-    
-    this.info(`${emoji} Whitelist ${decision.decision}: ${decision.phoneNumber} - ${decision.reason}`, {
-      ...context,
-      ...decision
-    });
+
+    this.info(
+      `${emoji} Whitelist ${decision.decision}: ${decision.phoneNumber} - ${decision.reason}`,
+      {
+        ...context,
+        ...decision,
+      }
+    );
 
     this.securityLogger.info('Whitelist decision', {
       ...decision,
       ...context,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -464,20 +469,24 @@ class AdvancedLogger {
   // HEALTH CHECK LOGGING
   // ============================================
 
-  logHealthCheck(sessionId: string, status: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY', details: any): void {
+  logHealthCheck(
+    sessionId: string,
+    status: 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY',
+    details: any
+  ): void {
     const emoji = status === 'HEALTHY' ? '💚' : status === 'DEGRADED' ? '💛' : '❤️';
-    
+
     this.info(`${emoji} Health Check: ${sessionId} is ${status}`, {
       sessionId,
       status,
-      details
+      details,
     });
 
     this.metricsLogger.info('Health check result', {
       sessionId,
       status,
       details,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   }
 
@@ -486,7 +495,7 @@ class AdvancedLogger {
   // ============================================
 
   flush(): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       let pendingFlushes = 4;
       const checkDone = () => {
         pendingFlushes--;
@@ -511,7 +520,7 @@ class AdvancedLogger {
       activeTimers: this.performanceTimers.size,
       memoryUsage: process.memoryUsage(),
       uptime: process.uptime(),
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
   }
 }

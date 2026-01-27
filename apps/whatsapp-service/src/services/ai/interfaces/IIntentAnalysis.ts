@@ -1,6 +1,6 @@
 /**
  * Intent Analysis Interfaces
- * 
+ *
  * Defines types and interfaces for message intent detection and analysis.
  */
 
@@ -20,8 +20,8 @@ export interface IntentAnalysis {
 /**
  * Intent categories supported by the system
  */
-export type IntentCategory = 
-  | 'saludo' 
+export type IntentCategory =
+  | 'saludo'
   | 'despedida'
   | 'precio'
   | 'producto'
@@ -52,7 +52,9 @@ export interface IIntentAnalysisService {
    * Analyze conversation flow from multiple messages
    * @param messages - Array of conversation messages
    */
-  analyzeConversation?(messages: Array<{ content: string; timestamp: Date }>): Promise<IntentAnalysis[]>;
+  analyzeConversation?(
+    messages: Array<{ content: string; timestamp: Date }>
+  ): Promise<IntentAnalysis[]>;
 
   /**
    * Get intent confidence threshold

@@ -70,6 +70,7 @@ Thumbs.db
 ## Cambios en entrypoint de [apps/whatsapp-service/package.json](../apps/whatsapp-service/package.json)
 
 ### Antes
+
 ```json
 {
   "main": "src/index.js"
@@ -77,6 +78,7 @@ Thumbs.db
 ```
 
 ### Después
+
 ```json
 {
   "main": "dist/index.js"
@@ -86,14 +88,17 @@ Thumbs.db
 ## Riesgos, mitigaciones y rollback
 
 ### Riesgos identificados
+
 - Posible pérdida de configuraciones personalizadas en archivos eliminados
 - Problemas de compatibilidad con scripts heredados movidos
 
 ### Mitigaciones
+
 - Todos los scripts heredados se han movido a [scripts/legacy-scripts/](../scripts/legacy-scripts/) para fácil acceso
 - Se ha actualizado la documentación para reflejar los cambios
 
 ### Procedimiento de rollback
+
 1. Crear una nueva rama para el rollback:
    ```bash
    git checkout -b revert/repo-cleanup
@@ -110,6 +115,7 @@ Thumbs.db
 ## Validaciones ejecutadas
 
 ### Comandos ejecutados
+
 ```bash
 pnpm clean:cache
 pnpm lint
@@ -122,6 +128,7 @@ pnpm test
 ```
 
 ### Resultados
+
 - `pnpm clean:cache`: Falló en Windows debido a uso de comando `rm` (no crítico)
 - `pnpm lint`: OK
 - `pnpm typecheck`: OK

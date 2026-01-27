@@ -1,4 +1,4 @@
-import { IntentAnalysis, ComplexityAnalysis } from './types';
+import type { IntentAnalysis, ComplexityAnalysis } from './types';
 
 export interface ICacheManager {
   // Intent caching

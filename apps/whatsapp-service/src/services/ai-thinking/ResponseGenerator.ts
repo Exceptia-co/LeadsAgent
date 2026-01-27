@@ -10,10 +10,11 @@
 
 import { logger } from '../../utils/logger';
 import DatabaseService from '../DatabaseService';
-import AIService, { AIResponse } from '../AIService';
-import { IntentAnalysisExtended, EnrichedContext } from './ContextEnricher';
-import { KnowledgeItem } from './KnowledgeRetrieval';
-import { ResponseStrategy } from './StrategySelector';
+import type { AIResponse } from '../AIService';
+import AIService from '../AIService';
+import type { IntentAnalysisExtended, EnrichedContext } from './ContextEnricher';
+import type { KnowledgeItem } from './KnowledgeRetrieval';
+import type { ResponseStrategy } from './StrategySelector';
 
 // ============================================
 // INTERFACES Y TIPOS
@@ -394,7 +395,7 @@ export class ResponseGenerator {
     }
 
     // Intelligent truncation
-    let truncated = this.intelligentTruncate(content, maxWords, intentAnalysis.intent);
+    const truncated = this.intelligentTruncate(content, maxWords, intentAnalysis.intent);
 
     return { content: truncated, applied: true };
   }
@@ -415,7 +416,7 @@ export class ResponseGenerator {
     }
 
     // For other cases, truncate intelligently
-    let truncated = words.slice(0, maxWords - 5).join(' '); // Reserve 5 words for question
+    const truncated = words.slice(0, maxWords - 5).join(' '); // Reserve 5 words for question
 
     // Add appropriate question based on intent
     const questions: Record<string, string> = {

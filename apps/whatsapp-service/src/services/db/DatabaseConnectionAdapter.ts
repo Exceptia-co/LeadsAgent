@@ -3,7 +3,7 @@
  * Adapts PostgreSQL pool to the repository interface
  */
 
-import { IDatabaseConnection } from './types';
+import type { IDatabaseConnection } from './types';
 import { logger } from '../../utils/logger';
 
 export class DatabaseConnectionAdapter implements IDatabaseConnection {
@@ -22,8 +22,7 @@ export class DatabaseConnectionAdapter implements IDatabaseConnection {
     }
 
     try {
-      const result = await this.pool.query(sql, params);
-      return result;
+      return await this.pool.query(sql, params);
     } catch (error) {
       logger.error('Database query error:', { error, sql, params });
       throw error;

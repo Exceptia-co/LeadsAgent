@@ -1,6 +1,6 @@
 import { logger } from '../../utils/logger';
 import SessionPersistenceService from '../SessionPersistenceService';
-import { WhatsAppSession } from '../../types';
+import type { WhatsAppSession } from '../../types';
 
 export interface RecoveryMetrics {
   averageRecoveryTime: number;

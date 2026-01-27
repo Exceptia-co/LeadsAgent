@@ -1,8 +1,8 @@
-import { Module } from '@nestjs/common'
-import { LeadsService } from './leads.service'
-import { LeadsController } from './leads.controller'
-import { PublicLeadsController } from './public-leads.controller'
-import { AuthModule } from '../auth/auth.module'
+import { Module } from '@nestjs/common';
+import { LeadsService } from './leads.service';
+import { LeadsController } from './leads.controller';
+import { PublicLeadsController } from './public-leads.controller';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [AuthModule],

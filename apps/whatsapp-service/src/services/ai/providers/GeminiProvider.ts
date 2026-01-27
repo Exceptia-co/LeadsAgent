@@ -1,17 +1,17 @@
 /**
  * Google Gemini AI Provider
- * 
+ *
  * Implements the IAIProvider interface for Google Gemini API integration.
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logger } from '../../../utils/logger';
-import { 
-  IAIProvider, 
-  ProviderConfig, 
-  AIResponse, 
-  MessageContext, 
-  ProviderStatus 
+import type {
+  IAIProvider,
+  ProviderConfig,
+  AIResponse,
+  MessageContext,
+  ProviderStatus,
 } from '../interfaces/IAIProvider';
 
 /**
@@ -19,12 +19,12 @@ import {
  */
 export class GeminiProvider implements IAIProvider {
   public readonly name = 'gemini';
-  
+
   private client: GoogleGenerativeAI | null = null;
   private config: ProviderConfig | null = null;
   private status: ProviderStatus = {
     ready: false,
-    lastHealthCheck: new Date()
+    lastHealthCheck: new Date(),
   };
 
   /**
@@ -43,19 +43,19 @@ export class GeminiProvider implements IAIProvider {
 
       // Test connection
       await this.healthCheck();
-      
+
       this.status.ready = true;
       this.status.model = config.model;
       this.status.lastHealthCheck = new Date();
-      
+
       logger.info(`✅ Gemini provider initialized successfully`);
       logger.info(`   - Model: ${config.model}`);
       logger.info(`   - Max Tokens: ${config.maxTokens}`);
       logger.info(`   - Temperature: ${config.temperature}`);
-      
     } catch (error) {
       this.status.ready = false;
-      this.status.lastError = error instanceof Error ? error.message : 'Unknown initialization error';
+      this.status.lastError =
+        error instanceof Error ? error.message : 'Unknown initialization error';
       logger.error(`❌ Failed to initialize Gemini provider:`, error);
       throw error;
     }
@@ -77,24 +77,24 @@ export class GeminiProvider implements IAIProvider {
     context?: MessageContext
   ): Promise<AIResponse> {
     const startTime = Date.now();
-    
+
     if (!this.isReady() || !this.client || !this.config) {
       throw new Error('Gemini provider not initialized or not ready');
     }
 
     try {
       // Get the generative model
-      const model = this.client.getGenerativeModel({ 
+      const model = this.client.getGenerativeModel({
         model: this.config.model,
         generationConfig: {
           maxOutputTokens: this.config.maxTokens,
-          temperature: this.config.temperature
-        }
+          temperature: this.config.temperature,
+        },
       });
 
       // Build full prompt including system context and conversation history
       let fullPrompt = systemPrompt;
-      
+
       // Add conversation history if available
       if (context?.conversationHistory && context.conversationHistory.length > 0) {
         fullPrompt += '\n\nHistorial de conversación:\n';
@@ -103,10 +103,10 @@ export class GeminiProvider implements IAIProvider {
           fullPrompt += `${roleLabel}: ${msg.content}\n`;
         });
       }
-      
+
       // Add current user message
       fullPrompt += `\n\nMensaje actual del usuario: ${message}`;
-      
+
       // Add context information if available
       if (context?.phoneNumber) {
         fullPrompt += `\nNúmero de teléfono: ${context.phoneNumber}`;
@@ -116,7 +116,7 @@ export class GeminiProvider implements IAIProvider {
         model: this.config.model,
         promptLength: fullPrompt.length,
         maxTokens: this.config.maxTokens,
-        temperature: this.config.temperature
+        temperature: this.config.temperature,
       });
 
       // Generate content
@@ -129,7 +129,7 @@ export class GeminiProvider implements IAIProvider {
       }
 
       const processingTime = Date.now() - startTime;
-      
+
       // Update status
       this.status.responseTime = processingTime;
       this.status.lastHealthCheck = new Date();
@@ -140,12 +140,11 @@ export class GeminiProvider implements IAIProvider {
         success: true,
         content: responseContent.trim(),
         provider: this.name,
-        processingTime
+        processingTime,
       };
-
     } catch (error: any) {
       const processingTime = Date.now() - startTime;
-      
+
       // Update error status
       this.status.lastError = error.message;
       this.status.responseTime = processingTime;
@@ -156,7 +155,7 @@ export class GeminiProvider implements IAIProvider {
         model: this.config?.model,
         processingTime: `${processingTime}ms`,
         errorCode: error.code,
-        status: error.status
+        status: error.status,
       });
 
       // Handle specific error cases
@@ -176,7 +175,7 @@ export class GeminiProvider implements IAIProvider {
         success: false,
         error: errorMessage,
         provider: this.name,
-        processingTime
+        processingTime,
       };
     }
   }
@@ -187,7 +186,7 @@ export class GeminiProvider implements IAIProvider {
   public getStatus(): ProviderStatus {
     return {
       ...this.status,
-      model: this.config?.model
+      model: this.config?.model,
     };
   }
 
@@ -201,28 +200,27 @@ export class GeminiProvider implements IAIProvider {
 
     try {
       // Simple health check with minimal token usage
-      const model = this.client.getGenerativeModel({ 
+      const model = this.client.getGenerativeModel({
         model: this.config.model,
         generationConfig: {
           maxOutputTokens: 10,
-          temperature: 0
-        }
+          temperature: 0,
+        },
       });
 
       const result = await model.generateContent('Respond with "OK"');
       const response = await result.response;
       const text = response.text();
-      
+
       const isHealthy = !!text && text.trim().length > 0;
-      
+
       this.status.lastHealthCheck = new Date();
       if (isHealthy) {
         this.status.ready = true;
         this.status.lastError = undefined;
       }
-      
+
       return isHealthy;
-      
     } catch (error) {
       this.status.lastError = error instanceof Error ? error.message : 'Health check failed';
       this.status.lastHealthCheck = new Date();

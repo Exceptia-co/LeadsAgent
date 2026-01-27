@@ -3,6 +3,7 @@
 ## 🔧 Problem Solved
 
 ### **Original Error:**
+
 ```
 ERROR: null value in column "action" violates not-null constraint
 ```
@@ -12,6 +13,7 @@ This error occurred in `apps/whatsapp-service/src/services/whatsapp.service.simp
 ## 🔍 Root Cause Analysis
 
 ### **Schema Inconsistency:**
+
 The problem was a mismatch between different parts of the system:
 
 1. **Prisma Schema (`schema.prisma`)**: Defined both fields:
@@ -23,6 +25,7 @@ The problem was a mismatch between different parts of the system:
 4. **API Whitelist Service**: Also used `decision` field
 
 ### **Migration Conflict:**
+
 - `001_fix_whitelist_table_structure.js` attempted to rename `action` to `decision`
 - But Prisma schema still had both fields
 - Code tried to insert into `decision` but database constraint required `action`
@@ -32,6 +35,7 @@ The problem was a mismatch between different parts of the system:
 ### **1. Database Migration (`002_fix_whitelist_logs_schema_final.js`)**
 
 **What it does:**
+
 - ✅ Standardizes on `decision` field as the single source of truth
 - ✅ Removes the conflicting `action` field completely
 - ✅ Makes `decision` field NOT NULL with proper constraint
@@ -40,6 +44,7 @@ The problem was a mismatch between different parts of the system:
 - ✅ Tests the schema with sample data
 
 **Schema Changes:**
+
 ```sql
 -- BEFORE (problematic)
 CREATE TABLE whatsapp_whitelist_logs (
@@ -69,6 +74,7 @@ CREATE TABLE whatsapp_whitelist_logs (
 ### **2. Prisma Schema Update (`schema.prisma`)**
 
 **Changes made:**
+
 ```prisma
 // BEFORE ❌
 model WhatsAppWhitelistLog {
@@ -93,6 +99,7 @@ model WhatsAppWhitelistLog {
 ### **3. Code Fixes**
 
 **DatabaseService.ts:**
+
 ```typescript
 // ✅ FIXED: Use 'decision' field and ensure NOT NULL
 const query = `
@@ -113,12 +120,13 @@ const values = [
 ```
 
 **API WhitelistService.ts:**
+
 ```typescript
 // ✅ FIXED: Use 'decision' field consistently
 await this.prisma.$executeRaw`
   INSERT INTO whatsapp_whitelist_logs (phone_number, session_id, decision, reason, message_preview, created_by)
-  VALUES (${phoneNumber}, ${sessionId || null}, ${decision}, ${reason || null}, ${messagePreview?.substring(0, 200) || null}, ${'api-webhook'})
-`
+  VALUES (${phoneNumber}, ${sessionId || null}, ${decision}, ${reason || null}, ${messagePreview?.substring(0, 200) || null}, ${"api-webhook"})
+`;
 ```
 
 ## 🧪 Testing & Verification
@@ -126,6 +134,7 @@ await this.prisma.$executeRaw`
 ### **Migration Script (`scripts/fix-database-schema.js`)**
 
 **Features:**
+
 - ✅ Tests database connection
 - ✅ Checks current table structure
 - ✅ Identifies problematic records
@@ -135,6 +144,7 @@ await this.prisma.$executeRaw`
 - ✅ Handles errors gracefully
 
 **Usage:**
+
 ```bash
 cd /path/to/LeadsAgent
 node scripts/fix-database-schema.js
@@ -143,12 +153,14 @@ node scripts/fix-database-schema.js
 ## 📊 Expected Results
 
 ### **Before Fix:**
+
 - ❌ `null value in column "action" violates not-null constraint`
 - ❌ WhatsApp messages fail to log whitelist decisions
 - ❌ Inconsistent schema across codebase
 - ❌ Debugging difficulty due to schema conflicts
 
 ### **After Fix:**
+
 - ✅ All whitelist decisions log successfully
 - ✅ Consistent schema across all services
 - ✅ Proper NOT NULL constraint on `decision` field
@@ -159,23 +171,27 @@ node scripts/fix-database-schema.js
 ## 🚀 Deployment Steps
 
 ### **1. Backup Database (Recommended):**
+
 ```bash
 # Create a backup before running migration
 pg_dump $DATABASE_URL > backup_before_schema_fix.sql
 ```
 
 ### **2. Run the Schema Fix:**
+
 ```bash
 cd /path/to/LeadsAgent
 node scripts/fix-database-schema.js
 ```
 
 ### **3. Verify Fix:**
+
 - ✅ Check script output for success messages
 - ✅ Verify final schema matches expected structure
 - ✅ Test insert should pass without errors
 
 ### **4. Restart Services:**
+
 ```bash
 # Restart API server
 cd apps/api && npm restart
@@ -185,6 +201,7 @@ cd apps/whatsapp-service && npm restart
 ```
 
 ### **5. Monitor Logs:**
+
 - ✅ Check for absence of "null value in column" errors
 - ✅ Verify whitelist decisions are being logged
 - ✅ Monitor `/whatsapp/whitelist/stats` endpoint
@@ -206,6 +223,7 @@ A: This indicates a constraint issue. Check the migration output for any warning
 A: The migration handles existing records by setting default values or copying from other fields.
 
 ### **Verification Queries:**
+
 ```sql
 -- Check schema is correct
 \d whatsapp_whitelist_logs
@@ -214,13 +232,14 @@ A: The migration handles existing records by setting default values or copying f
 SELECT COUNT(*) FROM whatsapp_whitelist_logs WHERE decision IS NULL;
 
 -- Test manual insert
-INSERT INTO whatsapp_whitelist_logs (phone_number, decision, reason) 
+INSERT INTO whatsapp_whitelist_logs (phone_number, decision, reason)
 VALUES ('test', 'BLOCKED', 'Manual test');
 ```
 
 ## 📈 Performance Impact
 
 ### **Indexes Created:**
+
 - ✅ `idx_whitelist_logs_phone` on `phone_number`
 - ✅ `idx_whitelist_logs_decision` on `decision`
 - ✅ `idx_whitelist_logs_created` on `created_at`
@@ -228,6 +247,7 @@ VALUES ('test', 'BLOCKED', 'Manual test');
 - ✅ `idx_whitelist_logs_lead_id` on `lead_id`
 
 ### **Query Performance:**
+
 - ✅ Whitelist stats queries will be faster
 - ✅ Phone number lookups optimized
 - ✅ Decision filtering improved
@@ -236,12 +256,14 @@ VALUES ('test', 'BLOCKED', 'Manual test');
 ## 🔒 Data Integrity
 
 ### **Constraints Added:**
+
 - ✅ `decision` field NOT NULL
 - ✅ `decision` CHECK constraint: `IN ('ALLOWED', 'BLOCKED')`
 - ✅ Proper data types for all fields
 - ✅ UUID primary key for unique identification
 
 ### **Data Migration:**
+
 - ✅ Existing `action` data copied to `decision` field
 - ✅ Null values handled with appropriate defaults
 - ✅ No data loss during migration
@@ -254,8 +276,9 @@ VALUES ('test', 'BLOCKED', 'Manual test');
 This fix resolves the critical database schema inconsistency that was causing WhatsApp whitelist logging to fail. The solution standardizes on the `decision` field across all services, ensures proper constraints, and provides comprehensive testing and verification tools.
 
 **The fix is production-ready and includes:**
+
 - ✅ Safe migration with rollback capability
-- ✅ Data preservation and integrity checks  
+- ✅ Data preservation and integrity checks
 - ✅ Performance optimizations with proper indexes
 - ✅ Comprehensive testing and verification
 - ✅ Clear documentation and troubleshooting guides

@@ -22,10 +22,10 @@ class RedisClient {
   constructor() {
     // Cliente principal
     this.client = new Redis(redisConfig);
-    
+
     // Cliente para suscripciones
     this.subscriber = new Redis(redisConfig);
-    
+
     // Cliente para publicaciones
     this.publisher = new Redis(redisConfig);
 
@@ -38,7 +38,7 @@ class RedisClient {
       logger.info('Redis client connected');
     });
 
-    this.client.on('error', (error) => {
+    this.client.on('error', error => {
       logger.error('Redis client error:', error);
     });
 
@@ -51,7 +51,7 @@ class RedisClient {
       logger.info('Redis subscriber connected');
     });
 
-    this.subscriber.on('error', (error) => {
+    this.subscriber.on('error', error => {
       logger.error('Redis subscriber error:', error);
     });
 
@@ -60,7 +60,7 @@ class RedisClient {
       logger.info('Redis publisher connected');
     });
 
-    this.publisher.on('error', (error) => {
+    this.publisher.on('error', error => {
       logger.error('Redis publisher error:', error);
     });
   }
@@ -70,7 +70,7 @@ class RedisClient {
       await Promise.all([
         this.client.connect(),
         this.subscriber.connect(),
-        this.publisher.connect()
+        this.publisher.connect(),
       ]);
       logger.info('All Redis clients connected successfully');
     } catch (error) {
@@ -84,7 +84,7 @@ class RedisClient {
       await Promise.all([
         this.client.disconnect(),
         this.subscriber.disconnect(),
-        this.publisher.disconnect()
+        this.publisher.disconnect(),
       ]);
       logger.info('All Redis clients disconnected');
     } catch (error) {

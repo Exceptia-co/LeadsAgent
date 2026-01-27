@@ -14,17 +14,17 @@ export interface IWhatsAppSessionManager {
    * Get all active sessions
    */
   getAllSessions(): Promise<WhatsAppSession[]>;
-  
+
   /**
    * Get a specific session by ID
    */
   getSession(sessionId: string): Promise<WhatsAppSession | null>;
-  
+
   /**
    * Check if a session is connected and ready
    */
   isSessionReady(sessionId: string): boolean;
-  
+
   /**
    * Get basic session status without full session data
    */
@@ -34,12 +34,12 @@ export interface IWhatsAppSessionManager {
     connectedNumber?: string;
     lastSeen?: Date;
   } | null>;
-  
+
   /**
    * Get WhatsApp client for session
    */
   getClient(sessionId: string): any;
-  
+
   /**
    * Update session status and data
    */

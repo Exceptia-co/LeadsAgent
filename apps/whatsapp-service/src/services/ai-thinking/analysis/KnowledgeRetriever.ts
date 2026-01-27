@@ -1,6 +1,6 @@
 import { logger } from '../../../utils/logger';
-import { IKnowledgeRetriever } from '../interfaces/IAnalyzer';
-import { IntentAnalysis } from '../interfaces/types';
+import type { IKnowledgeRetriever } from '../interfaces/IAnalyzer';
+import type { IntentAnalysis } from '../interfaces/types';
 import { KnowledgeRetrievalError } from '../errors/ThinkingServiceErrors';
 import DatabaseService from '../../DatabaseService';
 

@@ -46,18 +46,25 @@ export interface WhatsAppSession {
   clientInfo?: any;
 }
 
-export type SessionStatus = 
-  | 'disconnected' 
-  | 'connecting' 
-  | 'connected' 
-  | 'authenticated' 
-  | 'auth_failure' 
+export type SessionStatus =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'authenticated'
+  | 'auth_failure'
   | 'auth_failed'
   | 'ready'
   | 'waiting_qr';
 
 export interface WebhookPayload {
-  event: 'message' | 'status_change' | 'qr_updated' | 'authenticated' | 'disconnected' | 'browser_closed' | 'force_disconnected';
+  event:
+    | 'message'
+    | 'status_change'
+    | 'qr_updated'
+    | 'authenticated'
+    | 'disconnected'
+    | 'browser_closed'
+    | 'force_disconnected';
   sessionId: string;
   data: any;
   timestamp: string;
@@ -102,7 +109,11 @@ export interface ISessionManager {
   destroySession(sessionId: string): Promise<void>;
   getSession(sessionId: string): Promise<WhatsAppSession | null>;
   getAllSessions(): Promise<WhatsAppSession[]>;
-  updateSessionStatus(sessionId: string, status: SessionStatus, data?: Partial<WhatsAppSession>): Promise<void>;
+  updateSessionStatus(
+    sessionId: string,
+    status: SessionStatus,
+    data?: Partial<WhatsAppSession>
+  ): Promise<void>;
   getClient(sessionId: string): any; // WhatsApp Web Client
   isSessionReady(sessionId: string): boolean;
   getSessionMetrics(sessionId: string): any;
@@ -115,7 +126,10 @@ export interface ISessionManager {
 export interface IMessageProcessor {
   sendMessage(sessionId: string, request: SendMessageRequest): Promise<SendMessageResponse>;
   processIncomingMessage(sessionId: string, message: WhatsAppMessage): Promise<void>;
-  sendMediaMessage(sessionId: string, request: SendMediaMessageRequest): Promise<SendMessageResponse>;
+  sendMediaMessage(
+    sessionId: string,
+    request: SendMediaMessageRequest
+  ): Promise<SendMessageResponse>;
   convertWhatsAppMessage(sessionId: string, message: any): WhatsAppMessage;
   getMessageStats(sessionId: string): any;
 }
@@ -159,7 +173,10 @@ export interface ConnectionHealth {
  */
 export interface IMediaHandler {
   downloadMedia(sessionId: string, messageId: string): Promise<MediaDownloadResult>;
-  sendMediaMessage(sessionId: string, request: SendMediaMessageRequest): Promise<SendMessageResponse>;
+  sendMediaMessage(
+    sessionId: string,
+    request: SendMediaMessageRequest
+  ): Promise<SendMessageResponse>;
   getMediaInfo(sessionId: string, messageId: string): Promise<MediaInfo | null>;
   deleteMedia(sessionId: string, mediaPath: string): Promise<void>;
 }
@@ -303,7 +320,7 @@ export interface IContactRepository {
 export interface IAIProvider {
   readonly name: string;
   readonly isAvailable: boolean;
-  
+
   generateResponse(prompt: string, context?: AIContext): Promise<AIResponse>;
   classifyMessage(message: string, categories: string[]): Promise<Classification>;
   extractEntities(text: string): Promise<EntityExtraction>;
@@ -427,9 +444,7 @@ export interface SendMediaMessageRequest {
 // Common Utility Types
 // ================================
 
-export type Result<T, E = Error> = 
-  | { success: true; data: T }
-  | { success: false; error: E };
+export type Result<T, E = Error> = { success: true; data: T } | { success: false; error: E };
 
 // Type guard for Result type
 export function isSuccess<T, E>(result: Result<T, E>): result is { success: true; data: T } {
@@ -569,7 +584,10 @@ export interface IWhatsAppService {
   initialize(): Promise<void>;
   createSession(sessionId: string): Promise<WhatsAppSession>;
   sendMessage(sessionId: string, to: string, message: string): Promise<SendMessageResponse>;
-  sendMediaMessage(sessionId: string, request: SendMediaMessageRequest): Promise<SendMessageResponse>;
+  sendMediaMessage(
+    sessionId: string,
+    request: SendMediaMessageRequest
+  ): Promise<SendMessageResponse>;
   getSessionStatus(sessionId: string): Promise<WhatsAppSession | null>;
   getAllSessions(): Promise<WhatsAppSession[]>;
   destroySession(sessionId: string): Promise<void>;

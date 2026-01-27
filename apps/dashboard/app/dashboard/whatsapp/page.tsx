@@ -99,48 +99,50 @@ export default function WhatsAppPage() {
   useEffect(() => {
     if (socketSessions.length > 0) {
       // Convert socket sessions to WhatsApp sessions format
-      const convertedSessions: WhatsAppSession[] = socketSessions.map(socketSession => ({
-        id: socketSession.id,
-        name: socketSession.name,
-        status: socketSession.status as WhatsAppSession['status'],
-        phoneNumber: socketSession.phoneNumber,
-        qr: socketSession.qrCode,
-        createdAt: socketSession.timestamp,
-        updatedAt: socketSession.timestamp,
-        lastSeen: socketSession.lastActivity,
-      }));
+      const convertedSessions: WhatsAppSession[] = socketSessions.map(
+        (socketSession) => ({
+          id: socketSession.id,
+          name: socketSession.name,
+          status: socketSession.status as WhatsAppSession["status"],
+          phoneNumber: socketSession.phoneNumber,
+          qr: socketSession.qrCode,
+          createdAt: socketSession.timestamp,
+          updatedAt: socketSession.timestamp,
+          lastSeen: socketSession.lastActivity,
+        }),
+      );
 
       setSessions(convertedSessions);
-      
+
       // Auto-select first session if none selected
       if (convertedSessions.length > 0 && !selectedSession) {
         setSelectedSession(convertedSessions[0].id);
       }
-      
+
       // Update data loading state
-      setDataLoading(prev => ({ ...prev, sessions: false }));
+      setDataLoading((prev) => ({ ...prev, sessions: false }));
     }
   }, [socketSessions, selectedSession]);
 
   // Show real-time connection status in console for debugging
   useEffect(() => {
     if (socketConnected) {
-      console.log('🔌 WebSocket connected - receiving real-time updates');
-      
+      console.log("🔌 WebSocket connected - receiving real-time updates");
+
       // Show successful connection toast (only once)
       showToast({
         type: "success",
         title: "🚀 Conectado en tiempo real",
-        description: "Recibirás actualizaciones automáticas de WhatsApp"
+        description: "Recibirás actualizaciones automáticas de WhatsApp",
       });
     } else if (socketError) {
-      console.warn('⚠️ WebSocket error:', socketError);
-      
+      console.warn("⚠️ WebSocket error:", socketError);
+
       // Show error toast for connection issues
       showToast({
         type: "error",
         title: "⚠️ Error de conexión",
-        description: "No se pudo conectar a actualizaciones en tiempo real"
+        description: "No se pudo conectar a actualizaciones en tiempo real",
       });
     }
   }, [socketConnected, socketError]);
@@ -151,13 +153,13 @@ export default function WhatsAppPage() {
       // Compare with previous session count for new session detection
       const previousCount = sessions.length;
       const currentCount = socketSessions.length;
-      
+
       if (currentCount > previousCount && previousCount > 0) {
         // New session detected
         showToast({
           type: "info",
           title: "📱 Nueva sesión detectada",
-          description: "Se ha agregado una nueva sesión de WhatsApp"
+          description: "Se ha agregado una nueva sesión de WhatsApp",
         });
       }
     }
@@ -211,7 +213,8 @@ export default function WhatsAppPage() {
         showToast({
           type: "error",
           title: "Error de carga",
-          description: "Hubo un problema al cargar algunos datos. Refresca la página."
+          description:
+            "Hubo un problema al cargar algunos datos. Refresca la página.",
         });
       } finally {
         // Mark initial load as complete
@@ -238,7 +241,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Error cargando plantillas",
-        description: "No se pudieron cargar las plantillas de mensaje"
+        description: "No se pudieron cargar las plantillas de mensaje",
       });
     } finally {
       setDataLoading((prev) => ({ ...prev, templates: false }));
@@ -259,7 +262,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Error cargando mensajes",
-        description: "No se pudieron cargar los mensajes proactivos"
+        description: "No se pudieron cargar los mensajes proactivos",
       });
     } finally {
       setDataLoading((prev) => ({ ...prev, proactiveMessages: false }));
@@ -280,7 +283,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Error cargando leads",
-        description: "No se pudieron cargar la lista de leads"
+        description: "No se pudieron cargar la lista de leads",
       });
     } finally {
       setDataLoading((prev) => ({ ...prev, leads: false }));
@@ -300,7 +303,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Error cargando sesiones",
-        description: "No se pudieron cargar las sesiones de WhatsApp"
+        description: "No se pudieron cargar las sesiones de WhatsApp",
       });
     } finally {
       setDataLoading((prev) => ({ ...prev, sessions: false }));
@@ -325,7 +328,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Sin sesión seleccionada",
-        description: "Por favor selecciona una sesión de WhatsApp activa"
+        description: "Por favor selecciona una sesión de WhatsApp activa",
       });
       throw new Error("No hay sesión seleccionada");
     }
@@ -362,7 +365,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "success",
         title: "¡Mensaje enviado!",
-        description: "El mensaje proactivo se envió correctamente"
+        description: "El mensaje proactivo se envió correctamente",
       });
 
       // Refresh proactive messages count
@@ -372,7 +375,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Error enviando mensaje",
-        description: (error as Error).message || "Ocurrió un error inesperado"
+        description: (error as Error).message || "Ocurrió un error inesperado",
       });
       throw error;
     }
@@ -389,7 +392,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Sin sesión seleccionada",
-        description: "Por favor selecciona una sesión de WhatsApp activa"
+        description: "Por favor selecciona una sesión de WhatsApp activa",
       });
       throw new Error("No hay sesión seleccionada");
     }
@@ -434,19 +437,19 @@ export default function WhatsAppPage() {
         showToast({
           type: "success",
           title: "¡Mensajes enviados!",
-          description: `Se enviaron ${successful} mensajes correctamente`
+          description: `Se enviaron ${successful} mensajes correctamente`,
         });
       } else if (successful > 0 && failed > 0) {
         showToast({
           type: "warning",
           title: "Envío parcial",
-          description: `${successful} enviados, ${failed} fallaron`
+          description: `${successful} enviados, ${failed} fallaron`,
         });
       } else {
         showToast({
           type: "error",
           title: "Error en envío masivo",
-          description: `Fallaron todos los envíos (${failed})`
+          description: `Fallaron todos los envíos (${failed})`,
         });
       }
 
@@ -457,7 +460,7 @@ export default function WhatsAppPage() {
       showToast({
         type: "error",
         title: "Error enviando mensajes",
-        description: (error as Error).message || "Ocurrió un error inesperado"
+        description: (error as Error).message || "Ocurrió un error inesperado",
       });
       throw error;
     }
@@ -495,7 +498,9 @@ export default function WhatsAppPage() {
               <Tooltip content="Conectando a WebSocket...">
                 <div className="flex items-center">
                   <Loader2 className="h-4 w-4 text-yellow-500 animate-spin" />
-                  <span className="text-xs text-yellow-600 ml-1">Conectando</span>
+                  <span className="text-xs text-yellow-600 ml-1">
+                    Conectando
+                  </span>
                 </div>
               </Tooltip>
             ) : socketError ? (
@@ -509,7 +514,9 @@ export default function WhatsAppPage() {
               <Tooltip content="WebSocket desconectado">
                 <div className="flex items-center">
                   <Circle className="h-4 w-4 text-gray-400" />
-                  <span className="text-xs text-gray-500 ml-1">Desconectado</span>
+                  <span className="text-xs text-gray-500 ml-1">
+                    Desconectado
+                  </span>
                 </div>
               </Tooltip>
             )}
@@ -613,7 +620,7 @@ export default function WhatsAppPage() {
                 onClick={() => setActiveTab(id as any)}
                 className={`flex items-center py-2 px-1 border-b-2 font-medium text-sm transition-all duration-200 hover:scale-105 ${
                   activeTab === id
-                    ? "border-blue-500 text-blue-600 shadow-sm"
+                    ? "border-green-500 text-green-600 shadow-sm"
                     : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                 }`}
               >
@@ -628,7 +635,7 @@ export default function WhatsAppPage() {
                     <Badge
                       variant={getBadgeVariant() as any}
                       className={`ml-1 text-xs px-1.5 py-0.5 min-w-[1.5rem] h-5 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 ${
-                        activeTab === id ? "ring-2 ring-blue-200" : ""
+                        activeTab === id ? "ring-2 ring-green-200" : ""
                       }`}
                     >
                       {getBadgeCount()}
@@ -667,8 +674,8 @@ export default function WhatsAppPage() {
       {activeTab === "conversations" && <WhatsAppConversations />}
 
       {activeTab === "templates" && (
-        <TemplateManager 
-          onUseTemplate={handleUseTemplate} 
+        <TemplateManager
+          onUseTemplate={handleUseTemplate}
           onTemplatesChange={loadTemplates}
         />
       )}
@@ -682,7 +689,7 @@ export default function WhatsAppPage() {
                 onClick={() => setProactiveSubTab("send")}
                 className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                   proactiveSubTab === "send"
-                    ? "border-blue-500 text-blue-600"
+                    ? "border-green-500 text-green-600"
                     : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                 }`}
               >
@@ -694,7 +701,7 @@ export default function WhatsAppPage() {
                 onClick={() => setProactiveSubTab("history")}
                 className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                   proactiveSubTab === "history"
-                    ? "border-blue-500 text-blue-600"
+                    ? "border-green-500 text-green-600"
                     : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                 }`}
               >
@@ -803,7 +810,7 @@ function SessionManager({
                 value={newSessionId}
                 onChange={(e) => setNewSessionId(e.target.value)}
                 placeholder="ej: leadcrm-main"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
                 required
               />
             </div>
@@ -816,21 +823,21 @@ function SessionManager({
                 value={newSessionName}
                 onChange={(e) => setNewSessionName(e.target.value)}
                 placeholder="ej: Sesión Principal"
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
               />
             </div>
           </div>
           <button
             type="submit"
             disabled={creating || !newSessionId.trim()}
-            className="bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+            className="bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
           >
             <Plus className="h-4 w-4 mr-2" />
             {creating ? "Creando..." : "Crear Sesión"}
           </button>
         </form>
-        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-          <p className="text-sm text-blue-800">
+        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
+          <p className="text-sm text-green-800">
             <QrCode className="inline h-4 w-4 mr-1" />
             Al crear una sesión, se abrirá Chrome para escanear el código QR de
             WhatsApp.
@@ -933,7 +940,7 @@ function SendMessage({
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [useManualInput, setUseManualInput] = useState(false);
-  
+
   const { showToast } = useToast();
 
   const connectedSessions = sessions.filter(
@@ -963,14 +970,14 @@ function SendMessage({
       showToast({
         type: "success",
         title: "Mensaje enviado correctamente",
-        description: "El mensaje se envió exitosamente por WhatsApp"
+        description: "El mensaje se envió exitosamente por WhatsApp",
       });
     } catch (err) {
       console.error("Error sending message:", err);
       showToast({
         type: "error",
         title: "Error al enviar el mensaje",
-        description: err instanceof Error ? err.message : "Error desconocido"
+        description: err instanceof Error ? err.message : "Error desconocido",
       });
     } finally {
       setSending(false);
@@ -1004,7 +1011,7 @@ function SendMessage({
               <select
                 value={selectedSession}
                 onChange={(e) => setSelectedSession(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
               >
                 <option value="">Seleccionar sesión...</option>
                 {connectedSessions.map((session) => (
@@ -1032,7 +1039,7 @@ function SendMessage({
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   placeholder="+34658333517"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
                   required
                 />
                 <p className="text-xs text-gray-500 mt-1">
@@ -1050,7 +1057,7 @@ function SendMessage({
                 onChange={(e) => setMessage(e.target.value)}
                 rows={4}
                 placeholder="Escribe tu mensaje aquí..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
                 required
               />
             </div>
@@ -1145,7 +1152,7 @@ function MessageHistory({
             <select
               value={selectedSession}
               onChange={(e) => setSelectedSession(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
             >
               <option value="">Todas las sesiones</option>
               {sessions.map((session) => (
@@ -1166,7 +1173,7 @@ function MessageHistory({
               onChange={(e) =>
                 setDateRange((prev) => ({ ...prev, startDate: e.target.value }))
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
             />
           </div>
 
@@ -1180,7 +1187,7 @@ function MessageHistory({
               onChange={(e) =>
                 setDateRange((prev) => ({ ...prev, endDate: e.target.value }))
               }
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
             />
           </div>
         </div>
@@ -1191,8 +1198,8 @@ function MessageHistory({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Card className="p-6">
             <div className="flex items-center">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Send className="h-6 w-6 text-blue-600" />
+              <div className="p-2 bg-green-100 rounded-lg">
+                <Send className="h-6 w-6 text-green-600" />
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-500">Enviados</p>

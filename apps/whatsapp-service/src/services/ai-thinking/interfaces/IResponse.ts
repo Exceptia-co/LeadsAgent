@@ -1,5 +1,5 @@
-import { IntentAnalysis, ResponseStrategy, EnrichedContext } from './types';
-import { AIResponse } from '../../AIService';
+import type { IntentAnalysis, ResponseStrategy, EnrichedContext } from './types';
+import type { AIResponse } from '../../AIService';
 
 export interface IResponseBuilder {
   build(

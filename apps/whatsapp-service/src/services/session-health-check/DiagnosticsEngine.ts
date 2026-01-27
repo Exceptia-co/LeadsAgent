@@ -1,5 +1,5 @@
 import { logger } from '../../utils/logger';
-import { MetricsCollectionResult, SessionMetrics, HealthCheckOptions } from './HealthMetrics';
+import type { MetricsCollectionResult, SessionMetrics, HealthCheckOptions } from './HealthMetrics';
 
 export interface SessionHealthStatus {
   sessionId: string;

@@ -2,12 +2,12 @@
 
 ## Resumen de Servicios
 
-| Servicio | Plataforma | Puerto | Variables Requeridas |
-|----------|------------|--------|---------------------|
-| Dashboard | Vercel | 3000 | 12 |
-| API | Railway/Fly.io | 3001 | 14 |
-| WhatsApp Service | VPS | 3002 | 22 |
-| Database | Supabase | 5432/6543 | 2 |
+| Servicio         | Plataforma     | Puerto    | Variables Requeridas |
+| ---------------- | -------------- | --------- | -------------------- |
+| Dashboard        | Vercel         | 3000      | 12                   |
+| API              | Railway/Fly.io | 3001      | 14                   |
+| WhatsApp Service | VPS            | 3002      | 22                   |
+| Database         | Supabase       | 5432/6543 | 2                    |
 
 ---
 
@@ -15,15 +15,15 @@
 
 ### Costo para Empezar (Free Tiers)
 
-| Servicio | Free Tier | Límites | Costo Producción |
-|----------|-----------|---------|------------------|
-| **Vercel** | Hobby (Gratis) | 100GB bandwidth, dominio `.vercel.app` | $20/mes Pro |
-| **Supabase** | Free | 500MB DB, 1GB storage, pausa si inactivo 7 días | $25/mes Pro |
-| **Railway** | $5 crédito inicial | Se agota, luego $5/mes mínimo | $5/mes |
-| **Upstash Redis** | Free | 10K commands/día, 256MB | $0.2/100K cmds |
-| **Clerk** | Free | 10,000 MAU (usuarios activos mensuales) | $0.02/MAU extra |
-| **OpenRouter** | Pay-as-you-go | Sin mínimo, ~$0.001/request | Variable |
-| **VPS (WhatsApp)** | No hay free tier | Mínimo ~$4/mes | $10/mes (2GB RAM) |
+| Servicio           | Free Tier          | Límites                                         | Costo Producción  |
+| ------------------ | ------------------ | ----------------------------------------------- | ----------------- |
+| **Vercel**         | Hobby (Gratis)     | 100GB bandwidth, dominio `.vercel.app`          | $20/mes Pro       |
+| **Supabase**       | Free               | 500MB DB, 1GB storage, pausa si inactivo 7 días | $25/mes Pro       |
+| **Railway**        | $5 crédito inicial | Se agota, luego $5/mes mínimo                   | $5/mes            |
+| **Upstash Redis**  | Free               | 10K commands/día, 256MB                         | $0.2/100K cmds    |
+| **Clerk**          | Free               | 10,000 MAU (usuarios activos mensuales)         | $0.02/MAU extra   |
+| **OpenRouter**     | Pay-as-you-go      | Sin mínimo, ~$0.001/request                     | Variable          |
+| **VPS (WhatsApp)** | No hay free tier   | Mínimo ~$4/mes                                  | $10/mes (2GB RAM) |
 
 ### Escenarios de Costo
 
@@ -36,16 +36,16 @@ PRODUCCIÓN COMPLETA:                   ~$60-65/mes
 
 ### Limitaciones Importantes de Free Tiers
 
-| Servicio | Limitación | Impacto |
-|----------|------------|---------|
-| **Vercel Hobby** | Sin password protection, sin analytics | Bajo |
-| **Vercel Hobby** | Dominio `.vercel.app` solamente | Medio - sin dominio custom |
-| **Supabase Free** | **Pausa después de 7 días inactivo** | Alto - BD se desconecta |
-| **Supabase Free** | Solo 2 proyectos simultáneos | Bajo |
-| **Railway Free** | Sin custom domains | Medio |
-| **Railway Free** | $5 crédito se agota en ~1 mes | Alto - requiere upgrade |
-| **Clerk Free** | Branding "Secured by Clerk" en login | Bajo |
-| **Upstash Free** | 10K commands/día máximo | Medio - suficiente para dev |
+| Servicio          | Limitación                             | Impacto                     |
+| ----------------- | -------------------------------------- | --------------------------- |
+| **Vercel Hobby**  | Sin password protection, sin analytics | Bajo                        |
+| **Vercel Hobby**  | Dominio `.vercel.app` solamente        | Medio - sin dominio custom  |
+| **Supabase Free** | **Pausa después de 7 días inactivo**   | Alto - BD se desconecta     |
+| **Supabase Free** | Solo 2 proyectos simultáneos           | Bajo                        |
+| **Railway Free**  | Sin custom domains                     | Medio                       |
+| **Railway Free**  | $5 crédito se agota en ~1 mes          | Alto - requiere upgrade     |
+| **Clerk Free**    | Branding "Secured by Clerk" en login   | Bajo                        |
+| **Upstash Free**  | 10K commands/día máximo                | Medio - suficiente para dev |
 
 ### Recomendación por Etapa
 
@@ -84,17 +84,18 @@ ETAPA 3 - Producción:
 
 ### Free Tier vs Pro
 
-| Característica | Free | Pro ($25/mes) |
-|----------------|------|---------------|
-| Almacenamiento DB | 500MB | 8GB |
-| Bandwidth | 2GB | 250GB |
-| Proyectos | 2 | Ilimitados |
-| **Pausa por inactividad** | **Sí (7 días)** | No |
-| Backups | No | Diarios |
+| Característica            | Free            | Pro ($25/mes) |
+| ------------------------- | --------------- | ------------- |
+| Almacenamiento DB         | 500MB           | 8GB           |
+| Bandwidth                 | 2GB             | 250GB         |
+| Proyectos                 | 2               | Ilimitados    |
+| **Pausa por inactividad** | **Sí (7 días)** | No            |
+| Backups                   | No              | Diarios       |
 
 > **Tip Free Tier**: Para evitar que la BD se pause, puedes hacer un cron job que haga un SELECT simple cada 5 días.
 
 ### Variables Globales de BD
+
 ```bash
 # URL con connection pooler (para aplicación)
 # Usar puerto 6543 con pgbouncer=true
@@ -106,6 +107,7 @@ DIRECT_URL="postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-[REGION].pooler
 ```
 
 ### Checklist BD
+
 - [ ] Crear proyecto en Supabase (elegir región cercana)
 - [ ] Copiar DATABASE_URL desde Settings > Database > Connection string (Session mode)
 - [ ] Copiar DIRECT_URL desde Settings > Database > Connection string (Transaction mode)
@@ -121,19 +123,20 @@ DIRECT_URL="postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-[REGION].pooler
 
 ### Free Tier (Hobby) vs Pro
 
-| Característica | Hobby (Gratis) | Pro ($20/mes) |
-|----------------|----------------|---------------|
-| Bandwidth | 100GB | 1TB |
-| Builds | 6000 min/mes | 24000 min/mes |
-| Serverless Functions | 100GB-hrs | 1000GB-hrs |
-| Custom Domains | ❌ Solo `.vercel.app` | ✅ Ilimitados |
-| Password Protection | ❌ | ✅ |
-| Analytics | ❌ | ✅ |
-| Team Members | 1 | Ilimitados |
+| Característica       | Hobby (Gratis)        | Pro ($20/mes) |
+| -------------------- | --------------------- | ------------- |
+| Bandwidth            | 100GB                 | 1TB           |
+| Builds               | 6000 min/mes          | 24000 min/mes |
+| Serverless Functions | 100GB-hrs             | 1000GB-hrs    |
+| Custom Domains       | ❌ Solo `.vercel.app` | ✅ Ilimitados |
+| Password Protection  | ❌                    | ✅            |
+| Analytics            | ❌                    | ✅            |
+| Team Members         | 1                     | Ilimitados    |
 
 > **Tip Free Tier**: Para pruebas, el dominio `tuapp.vercel.app` funciona perfectamente. Configura custom domain cuando vayas a producción.
 
 ### Variables Requeridas
+
 ```bash
 # ===== CLERK AUTHENTICATION =====
 CLERK_SECRET_KEY="sk_live_xxxxxxxxxxxx"
@@ -159,6 +162,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY="eyJxxxxxxxxxxxx"
 ```
 
 ### Checklist Dashboard
+
 - [ ] Conectar repo GitHub a Vercel
 - [ ] Configurar dominio personalizado
 - [ ] Agregar todas las variables en Vercel Dashboard > Settings > Environment Variables
@@ -191,6 +195,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY="eyJxxxxxxxxxxxx"
 > **Tip Free Tier**: Railway da $5 de crédito que dura ~1 mes con uso ligero. Después necesitas agregar tarjeta. Fly.io tiene free tier más generoso pero setup más complejo.
 
 ### Variables Requeridas
+
 ```bash
 # ===== DATABASE =====
 DATABASE_URL="postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres?pgbouncer=true"
@@ -226,6 +231,7 @@ LOG_FORMAT="combined"
 ```
 
 ### Checklist API
+
 - [ ] Crear proyecto en Railway o Fly.io
 - [ ] Conectar repo GitHub
 - [ ] Agregar todas las variables de entorno
@@ -240,19 +246,20 @@ LOG_FORMAT="combined"
 
 ### Opciones de VPS Económicas
 
-| Proveedor | Plan Mínimo | RAM | Precio |
-|-----------|-------------|-----|--------|
-| **Hetzner** | CX11 | 2GB | €3.29/mes (~$4) |
-| **DigitalOcean** | Basic Droplet | 1GB | $6/mes |
-| **Vultr** | Cloud Compute | 1GB | $5/mes |
-| **Contabo** | VPS S | 4GB | €4.99/mes (~$5.50) |
-| **Oracle Cloud** | Free tier | 1GB | **$0** (limitado) |
+| Proveedor        | Plan Mínimo   | RAM | Precio             |
+| ---------------- | ------------- | --- | ------------------ |
+| **Hetzner**      | CX11          | 2GB | €3.29/mes (~$4)    |
+| **DigitalOcean** | Basic Droplet | 1GB | $6/mes             |
+| **Vultr**        | Cloud Compute | 1GB | $5/mes             |
+| **Contabo**      | VPS S         | 4GB | €4.99/mes (~$5.50) |
+| **Oracle Cloud** | Free tier     | 1GB | **$0** (limitado)  |
 
 > **Recomendación**: Hetzner o Contabo ofrecen mejor relación precio/rendimiento. WhatsApp Web.js necesita mínimo 1GB RAM, recomendado 2GB.
 
 > **Oracle Cloud Free Tier**: Ofrece 2 VMs Always Free con 1GB RAM cada una. Perfecto para pruebas pero el registro puede ser difícil.
 
 ### Variables Requeridas
+
 ```bash
 # ===== SERVER =====
 PORT=3002
@@ -320,6 +327,7 @@ MAX_FILE_SIZE=10485760
 ```
 
 ### Checklist WhatsApp Service
+
 - [ ] Provisionar VPS con mínimo 2GB RAM
 - [ ] Instalar Node.js 18+, PM2, Redis
 - [ ] Crear directorio para sesiones con permisos correctos
@@ -338,18 +346,20 @@ MAX_FILE_SIZE=10485760
 
 ### Opciones de Hosting y Free Tiers
 
-| Opción | Free Tier | Límites Free | Costo Paid |
-|--------|-----------|--------------|------------|
-| **Upstash** | ✅ Sí | 10K commands/día, 256MB | $0.2/100K cmds |
-| **Railway** | ⚠️ Usa créditos | Parte del $5 inicial | Variable |
-| **Redis Cloud** | ✅ Sí | 30MB, 30 conexiones | $5/mes+ |
-| **VPS local** | ✅ Incluido | Sin límite (tu VPS) | $0 extra |
+| Opción          | Free Tier       | Límites Free            | Costo Paid     |
+| --------------- | --------------- | ----------------------- | -------------- |
+| **Upstash**     | ✅ Sí           | 10K commands/día, 256MB | $0.2/100K cmds |
+| **Railway**     | ⚠️ Usa créditos | Parte del $5 inicial    | Variable       |
+| **Redis Cloud** | ✅ Sí           | 30MB, 30 conexiones     | $5/mes+        |
+| **VPS local**   | ✅ Incluido     | Sin límite (tu VPS)     | $0 extra       |
 
 > **Recomendación Free Tier**:
+>
 > - Si tienes VPS para WhatsApp → instala Redis ahí (gratis)
 > - Si no tienes VPS → usa Upstash Free (10K commands/día es suficiente para desarrollo)
 
 ### Variable
+
 ```bash
 # Upstash (recomendado para empezar)
 REDIS_URL="rediss://default:[PASSWORD]@[REGION].upstash.io:6379"
@@ -365,6 +375,7 @@ REDIS_URL="redis://default:[PASSWORD]@[HOST].redis.cloud:6379"
 ```
 
 ### Checklist Redis
+
 - [ ] Elegir proveedor (Upstash recomendado para free tier)
 - [ ] Crear cuenta y base de datos
 - [ ] Copiar URL de conexión (incluye password)
@@ -377,6 +388,7 @@ REDIS_URL="redis://default:[PASSWORD]@[HOST].redis.cloud:6379"
 ## 6. Generadores de Secrets
 
 ### Comandos para generar secrets seguros
+
 ```bash
 # JWT_SECRET (64 caracteres)
 openssl rand -base64 64
@@ -396,6 +408,7 @@ openssl rand -hex 32
 ## 7. Checklist Final Pre-Deploy
 
 ### Seguridad
+
 - [ ] Todos los secrets generados con comandos seguros
 - [ ] No hay secrets hardcodeados en código
 - [ ] `.env` está en `.gitignore`
@@ -404,6 +417,7 @@ openssl rand -hex 32
 - [ ] WEBHOOK_SECRET es el mismo en API y WhatsApp Service
 
 ### Conectividad
+
 - [ ] Dashboard puede conectar a API (NEXT_PUBLIC_API_URL)
 - [ ] API puede conectar a Database (DATABASE_URL)
 - [ ] API puede conectar a WhatsApp Service (WHATSAPP_SERVICE_URL)
@@ -411,12 +425,14 @@ openssl rand -hex 32
 - [ ] WhatsApp Service puede conectar a API (API_BASE_URL)
 
 ### Dominios
+
 - [ ] tudominio.com → Dashboard (Vercel)
 - [ ] api.tudominio.com → API (Railway/Fly.io)
 - [ ] whatsapp.tudominio.com → WhatsApp Service (VPS) [opcional, puede ser IP]
 
 ### Clerk
-- [ ] Usando claves de PRODUCCION (pk_live_, sk_live_)
+
+- [ ] Usando claves de PRODUCCION (pk*live*, sk*live*)
 - [ ] URLs de redirect apuntan a dominio producción
 - [ ] Webhook configurado en Clerk Dashboard
 
@@ -426,25 +442,26 @@ openssl rand -hex 32
 
 ### Free Tier vs Paid
 
-| Característica | Free | Pro ($25/mes) |
-|----------------|------|---------------|
-| MAU (usuarios activos) | 10,000 | 10,000 incluidos |
-| Usuarios extra | ❌ | $0.02/MAU |
-| Custom Domains | ✅ | ✅ |
-| Branding removido | ❌ "Secured by Clerk" | ✅ |
-| MFA | ✅ | ✅ |
-| Social OAuth | ✅ | ✅ |
+| Característica         | Free                  | Pro ($25/mes)    |
+| ---------------------- | --------------------- | ---------------- |
+| MAU (usuarios activos) | 10,000                | 10,000 incluidos |
+| Usuarios extra         | ❌                    | $0.02/MAU        |
+| Custom Domains         | ✅                    | ✅               |
+| Branding removido      | ❌ "Secured by Clerk" | ✅               |
+| MFA                    | ✅                    | ✅               |
+| Social OAuth           | ✅                    | ✅               |
 
 > **Tip Free Tier**: 10,000 MAU es suficiente para la mayoría de proyectos pequeños/medianos. El branding de Clerk en el login es mínimo y no afecta funcionalidad.
 
 ### Checklist Clerk
+
 - [ ] Crear cuenta en clerk.com
 - [ ] Crear nueva aplicación
 - [ ] Elegir métodos de autenticación (Email, Google, etc.)
-- [ ] Copiar `CLERK_SECRET_KEY` (sk_live_...)
-- [ ] Copiar `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (pk_live_...)
+- [ ] Copiar `CLERK_SECRET_KEY` (sk*live*...)
+- [ ] Copiar `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (pk*live*...)
 - [ ] Configurar webhook para sincronización con tu API
-- [ ] Copiar `CLERK_WEBHOOK_SECRET` (whsec_...)
+- [ ] Copiar `CLERK_WEBHOOK_SECRET` (whsec\_...)
 - [ ] Configurar URLs de redirect para producción
 
 ---
@@ -453,16 +470,17 @@ openssl rand -hex 32
 
 ### Opciones de Pricing
 
-| Provider | Modelo | Costo aproximado |
-|----------|--------|------------------|
-| **OpenRouter** | gpt-oss-120b | ~$0.001/request |
-| **OpenRouter** | claude-3-haiku | ~$0.00025/1K tokens |
-| **OpenAI** | gpt-3.5-turbo | $0.002/1K tokens |
-| **Google** | gemini-1.5-flash | $0.000125/1K tokens |
+| Provider       | Modelo           | Costo aproximado    |
+| -------------- | ---------------- | ------------------- |
+| **OpenRouter** | gpt-oss-120b     | ~$0.001/request     |
+| **OpenRouter** | claude-3-haiku   | ~$0.00025/1K tokens |
+| **OpenAI**     | gpt-3.5-turbo    | $0.002/1K tokens    |
+| **Google**     | gemini-1.5-flash | $0.000125/1K tokens |
 
 > **Recomendación**: OpenRouter es pay-as-you-go sin mínimo. Para desarrollo, el costo es prácticamente $0 (centavos por cientos de requests).
 
 ### Checklist AI Provider
+
 - [ ] Crear cuenta en OpenRouter (openrouter.ai)
 - [ ] Agregar créditos ($5-10 para empezar)
 - [ ] Generar API key

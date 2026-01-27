@@ -24,11 +24,13 @@ graph TD
 ### ⚡ Proceso de Respuesta Automática
 
 **1. Recepción del Mensaje:**
+
 - Sistema recibe mensaje vía WhatsApp Web.js
 - Validación de número en whitelist/autorización
 - Extracción de contexto (historial, perfil del lead)
 
 **2. Procesamiento Inteligente (6 pasos):**
+
 - **Paso 1:** Análisis de intención (saludo, consulta precio, queja, etc.)
 - **Paso 2:** Búsqueda de conocimiento relevante en knowledge base
 - **Paso 3:** Análisis de contexto conversacional e historial
@@ -37,6 +39,7 @@ graph TD
 - **Paso 6:** Generación de respuesta contextual (si aplica)
 
 **3. Envío de Respuesta:**
+
 - Delay humanizado basado en complejidad (2-8 segundos)
 - Respuesta personalizada según contexto
 - Logging completo para aprendizaje
@@ -52,10 +55,16 @@ graph TD
 ```typescript
 // Sistema de estados conversacionales
 interface ConversationState {
-  currentState: 'GREETING' | 'QUALIFICATION' | 'PRESENTATION' | 'OBJECTION_HANDLING' | 'CLOSING' | 'FOLLOW_UP';
+  currentState:
+    | "GREETING"
+    | "QUALIFICATION"
+    | "PRESENTATION"
+    | "OBJECTION_HANDLING"
+    | "CLOSING"
+    | "FOLLOW_UP";
   progress: number; // 0-100%
   context: {
-    leadQuality: 'HOT' | 'WARM' | 'COLD';
+    leadQuality: "HOT" | "WARM" | "COLD";
     interests: string[];
     objections: string[];
     budget?: number;
@@ -65,27 +74,33 @@ interface ConversationState {
 }
 
 class ConversationStateManager {
-  async updateState(leadId: string, message: string): Promise<ConversationState> {
+  async updateState(
+    leadId: string,
+    message: string,
+  ): Promise<ConversationState> {
     const current = await this.getCurrentState(leadId);
     const intent = await this.analyzeIntent(message);
-    
+
     // Lógica de transición de estados
     const newState = this.determineNextState(current, intent);
-    
+
     return this.saveState(leadId, newState);
   }
-  
-  async getResponseStrategy(state: ConversationState): Promise<ResponseStrategy> {
+
+  async getResponseStrategy(
+    state: ConversationState,
+  ): Promise<ResponseStrategy> {
     return {
       tone: this.getToneForState(state.currentState),
       template: this.getTemplateForState(state.currentState),
-      nextAction: this.getNextActionForState(state.currentState)
+      nextAction: this.getNextActionForState(state.currentState),
     };
   }
 }
 ```
 
 **Beneficios:**
+
 - ✅ Respuestas más coherentes y progresivas
 - ✅ Mejor seguimiento del journey del lead
 - ✅ Personalización basada en etapa de la conversación
@@ -113,32 +128,33 @@ interface FlowStep {
   prompt_template: string;
   expected_responses: string[];
   next_steps: NextStepCondition[];
-  fallback_action: 'REPEAT' | 'ESCALATE' | 'ALTERNATIVE_PATH';
+  fallback_action: "REPEAT" | "ESCALATE" | "ALTERNATIVE_PATH";
 }
 
 class FlowManager {
   // Flujo predefinido para sector inmobiliario
   private REAL_ESTATE_FLOW: ConversationalFlow = {
-    id: 'real_estate_qualification',
-    name: 'Calificación Inmobiliaria',
+    id: "real_estate_qualification",
+    name: "Calificación Inmobiliaria",
     steps: [
       {
-        state: 'GREETING',
-        prompt: 'Saludo cálido + identificación de necesidad inmobiliaria',
-        next_steps: ['budget_qualification', 'location_preference']
+        state: "GREETING",
+        prompt: "Saludo cálido + identificación de necesidad inmobiliaria",
+        next_steps: ["budget_qualification", "location_preference"],
       },
       {
-        state: 'QUALIFICATION',
-        prompt: 'Preguntas sobre presupuesto, ubicación, tipo de propiedad',
-        next_steps: ['property_presentation', 'objection_handling']
+        state: "QUALIFICATION",
+        prompt: "Preguntas sobre presupuesto, ubicación, tipo de propiedad",
+        next_steps: ["property_presentation", "objection_handling"],
       },
       // ... más pasos
-    ]
+    ],
   };
 }
 ```
 
 **Beneficios:**
+
 - ✅ Mayor tasa de conversión
 - ✅ Experiencia consistente para el lead
 - ✅ Fácil optimización A/B de pasos individuales
@@ -162,7 +178,7 @@ interface ConversationMemory {
 }
 
 interface ExtractedFact {
-  category: 'PERSONAL' | 'BUSINESS' | 'PREFERENCE' | 'OBJECTION';
+  category: "PERSONAL" | "BUSINESS" | "PREFERENCE" | "OBJECTION";
   fact: string;
   confidence: number;
   extracted_at: Date;
@@ -173,24 +189,24 @@ class ConversationMemoryManager {
   async updateMemory(leadId: string, message: string, response: string) {
     // Extracción de hechos del mensaje
     const facts = await this.extractFacts(message);
-    
+
     // Análisis de sentimiento
     const sentiment = await this.analyzeSentiment(message);
-    
+
     // Actualización de patrones
     const patterns = await this.updateInteractionPatterns(leadId, message);
-    
+
     // Persistencia en base de datos
     await this.saveMemoryUpdate(leadId, { facts, sentiment, patterns });
   }
-  
+
   async getContextualPrompt(leadId: string): Promise<string> {
     const memory = await this.getMemory(leadId);
-    
+
     return `
 Contexto del Lead:
 - Perfil: ${memory.profile}
-- Hechos importantes: ${memory.extracted_facts.filter(f => f.confidence > 0.8)}
+- Hechos importantes: ${memory.extracted_facts.filter((f) => f.confidence > 0.8)}
 - Preferencias: ${memory.preferences}
 - Último sentimiento: ${memory.sentiment_history.slice(-1)[0]}
 - Patrón de interacción: ${memory.interaction_patterns}
@@ -200,6 +216,7 @@ Contexto del Lead:
 ```
 
 **Beneficios:**
+
 - ✅ Personalización extrema basada en historial
 - ✅ No repetir preguntas ya respondidas
 - ✅ Mejor calificación automática de leads
@@ -227,30 +244,36 @@ class IntelligentDecisionEngine {
     const complexity = this.calculateComplexity(context);
     const confidence = this.calculateConfidence(context);
     const business_impact = this.calculateBusinessImpact(context);
-    
+
     // Matriz de decisión
     if (urgency > 0.8 && confidence < 0.6) {
-      return { action: 'ESCALATE', reason: 'High urgency, low confidence' };
+      return { action: "ESCALATE", reason: "High urgency, low confidence" };
     }
-    
+
     if (complexity > 0.7) {
-      return { action: 'HUMAN_ASSISTANCE', reason: 'Complex query requiring human input' };
+      return {
+        action: "HUMAN_ASSISTANCE",
+        reason: "Complex query requiring human input",
+      };
     }
-    
+
     if (confidence > 0.8 && business_impact > 0.6) {
-      return { action: 'RESPOND_IMMEDIATELY', strategy: 'AGGRESSIVE_CLOSE' };
+      return { action: "RESPOND_IMMEDIATELY", strategy: "AGGRESSIVE_CLOSE" };
     }
-    
-    return { action: 'RESPOND_STANDARD', strategy: 'NURTURE' };
+
+    return { action: "RESPOND_STANDARD", strategy: "NURTURE" };
   }
-  
+
   private calculateConfidence(context: DecisionContext): number {
     // Algoritmo de confianza basado en múltiples factores
     const intent_confidence = context.message_analysis.intent_confidence;
     const knowledge_match = context.message_analysis.knowledge_match_score;
-    const historical_success = context.historical_performance.similar_context_success_rate;
-    
-    return (intent_confidence * 0.4 + knowledge_match * 0.3 + historical_success * 0.3);
+    const historical_success =
+      context.historical_performance.similar_context_success_rate;
+
+    return (
+      intent_confidence * 0.4 + knowledge_match * 0.3 + historical_success * 0.3
+    );
   }
 }
 ```
@@ -286,32 +309,33 @@ class SupervisionSystem {
       active_conversations: await this.getActiveConversations(),
       ai_confidence_alerts: await this.getConfidenceAlerts(),
       performance_metrics: await this.getRealTimeMetrics(),
-      intervention_queue: await this.getInterventionQueue()
+      intervention_queue: await this.getInterventionQueue(),
     };
   }
-  
+
   // Sistema de alertas inteligentes
   async checkForInterventionNeeds(): Promise<InterventionAlert[]> {
     const alerts = [];
     const conversations = await this.getActiveConversations();
-    
+
     for (const conv of conversations) {
       if (conv.ai_confidence < 0.5 && conv.escalation_probability > 0.7) {
         alerts.push({
-          type: 'LOW_CONFIDENCE_HIGH_RISK',
+          type: "LOW_CONFIDENCE_HIGH_RISK",
           conversation_id: conv.lead_id,
-          priority: 'HIGH',
-          recommended_action: 'IMMEDIATE_HUMAN_TAKEOVER'
+          priority: "HIGH",
+          recommended_action: "IMMEDIATE_HUMAN_TAKEOVER",
         });
       }
     }
-    
+
     return alerts;
   }
 }
 ```
 
 **Características del Panel:**
+
 - 📊 Dashboard en tiempo real de conversaciones activas
 - 🚦 Semáforo de confianza de IA por respuesta
 - 🔔 Alertas automáticas para intervención manual
@@ -337,105 +361,105 @@ class ContinuousLearningEngine {
     // Análisis de conversaciones exitosas vs fallidas
     const successful_patterns = await this.identifySuccessfulPatterns();
     const failure_patterns = await this.identifyFailurePatterns();
-    
+
     return this.generateInsights(successful_patterns, failure_patterns);
   }
-  
+
   async optimizePrompts(): Promise<PromptOptimization[]> {
     const performance_data = await this.getPromptPerformanceData();
     const optimizations = [];
-    
+
     for (const prompt of performance_data) {
       if (prompt.success_rate < 0.7) {
         const optimization = await this.generatePromptOptimization(prompt);
         optimizations.push(optimization);
       }
     }
-    
+
     return optimizations;
   }
-  
+
   // A/B Testing automático
-  async runAutomaticABTest(prompt_variations: PromptVariation[]): Promise<ABTestResult> {
+  async runAutomaticABTest(
+    prompt_variations: PromptVariation[],
+  ): Promise<ABTestResult> {
     const test_results = await this.deployVariations(prompt_variations);
-    
+
     // Análisis estadístico automático
     const winner = this.analyzeResults(test_results);
-    
+
     // Auto-deployment del ganador si es estadísticamente significativo
     if (winner.statistical_significance > 0.95) {
       await this.deployWinningVariation(winner);
     }
-    
+
     return winner;
   }
 }
 ```
 
 **Beneficios:**
+
 - ✅ Optimización automática de prompts
 - ✅ Identificación de gaps en knowledge base
 - ✅ Mejora continua sin intervención manual
 
 ## 📊 Métricas de Impacto Esperado
 
-| Métrica | Actual | Con Mejoras | Mejora |
-|---------|---------|-------------|--------|
-| **Precisión de Respuesta** | 80% | 92%+ | +15% |
-| **Tasa de Conversión** | 3-5% | 8-12% | +150% |
-| **Tiempo de Respuesta** | Variable | Consistente | Mejor UX |
-| **Intervención Manual** | 40% | 20% | -50% |
-| **Satisfacción del Lead** | N/A | Medible | Nueva métrica |
-| **Cost per Lead** | Alto | Reducido | -30% |
-| **Lead Quality Score** | Manual | Automático | +200% eficiencia |
+| Métrica                    | Actual   | Con Mejoras | Mejora           |
+| -------------------------- | -------- | ----------- | ---------------- |
+| **Precisión de Respuesta** | 80%      | 92%+        | +15%             |
+| **Tasa de Conversión**     | 3-5%     | 8-12%       | +150%            |
+| **Tiempo de Respuesta**    | Variable | Consistente | Mejor UX         |
+| **Intervención Manual**    | 40%      | 20%         | -50%             |
+| **Satisfacción del Lead**  | N/A      | Medible     | Nueva métrica    |
+| **Cost per Lead**          | Alto     | Reducido    | -30%             |
+| **Lead Quality Score**     | Manual   | Automático  | +200% eficiencia |
 
 ## 🎯 Próximos Pasos Recomendados
 
 ### Implementación por Fases
 
 #### 📅 Fase 1: Fundación Inteligente (2-3 semanas)
+
 1. **Sistema de estados conversacionales**
    - Implementar state machine básica
    - Definir transiciones entre estados
    - Testing con 20% de leads
-   
 2. **Memoria conversacional mejorada**
    - Migrar sistema de contexto actual
    - Implementar extracción de hechos
    - Persistencia de preferencias
-   
 3. **Panel de supervisión básico**
    - Dashboard de conversaciones activas
    - Alertas de baja confianza
    - Métricas en tiempo real
 
 #### 📅 Fase 2: Automatización Avanzada (3-4 semanas)
+
 4. **Flujos conversacionales predefinidos**
    - Crear flujos para top 3 industrias
    - Sistema de templates dinámicos
    - A/B testing de flujos
-   
 5. **Sistema de aprendizaje continuo**
    - Implementar análisis de performance
    - Optimización automática de prompts
    - Feedback loop automatizado
-   
 6. **Optimización de rendimiento**
    - Cache inteligente de respuestas
    - Paralelización de procesamiento
    - Optimización de queries DB
 
 #### 📅 Fase 3: Sofisticación Total (2-3 semanas)
+
 7. **A/B testing automatizado**
    - Framework de experimentación
    - Despliegue automático de ganadores
    - Análisis estadístico robusto
-   
 8. **Funcionalidades avanzadas de engagement**
    - Sentiment-driven responses
    - Predictive lead scoring
    - Dynamic pricing recommendations
-   
 9. **Integración completa con CRM**
    - Sincronización bidireccional
    - Triggers automáticos
@@ -444,17 +468,20 @@ class ContinuousLearningEngine {
 ## 💰 ROI Estimado
 
 ### Inversión Requerida
+
 - **Tiempo de desarrollo:** 6-8 semanas
 - **Recursos:** 2 desarrolladores senior + 1 data scientist
 - **Costo estimado:** $25,000 - $35,000
 
 ### Retorno Esperado
+
 - **Mejora en conversión:** 150-300%
 - **Reducción costos operativos:** 40-50%
 - **Aumento satisfacción cliente:** 60-80%
 - **Payback period:** 2-3 meses
 
 ### ROI a 12 meses
+
 - **Inversión inicial:** $30,000
 - **Ahorro operativo anual:** $120,000
 - **Incremento ingresos:** $200,000
@@ -468,24 +495,24 @@ class ContinuousLearningEngine {
 // Arquitectura propuesta
 const techStack = {
   backend: {
-    framework: 'NestJS', // Ya en uso
-    database: 'PostgreSQL + Redis', // Cache layer
-    ai_integration: 'OpenRouter/Gemini/OpenAI', // Ya en uso
-    realtime: 'Socket.io', // Para dashboard
-    queue: 'Bull/Redis' // Para procesamiento asíncrono
+    framework: "NestJS", // Ya en uso
+    database: "PostgreSQL + Redis", // Cache layer
+    ai_integration: "OpenRouter/Gemini/OpenAI", // Ya en uso
+    realtime: "Socket.io", // Para dashboard
+    queue: "Bull/Redis", // Para procesamiento asíncrono
   },
   frontend: {
-    framework: 'Next.js', // Ya en uso
-    ui: 'Tailwind + shadcn/ui', // Ya en uso
-    state: 'Zustand', // State management
-    realtime: 'Socket.io-client'
+    framework: "Next.js", // Ya en uso
+    ui: "Tailwind + shadcn/ui", // Ya en uso
+    state: "Zustand", // State management
+    realtime: "Socket.io-client",
   },
   infrastructure: {
-    containerization: 'Docker',
-    orchestration: 'Docker Compose',
-    monitoring: 'Sentry + Custom metrics',
-    deployment: 'Railway/Vercel' // Ya en uso
-  }
+    containerization: "Docker",
+    orchestration: "Docker Compose",
+    monitoring: "Sentry + Custom metrics",
+    deployment: "Railway/Vercel", // Ya en uso
+  },
 };
 ```
 
@@ -537,12 +564,14 @@ CREATE TABLE performance_metrics (
 ## 📋 Checklist de Implementación
 
 ### Pre-requisitos
+
 - [ ] Backup completo de base de datos actual
 - [ ] Ambiente de testing configurado
 - [ ] Métricas baseline documentadas
 - [ ] Stakeholders alineados en objetivos
 
 ### Fase 1
+
 - [ ] State machine implementada y testada
 - [ ] Sistema de memoria conversacional desplegado
 - [ ] Dashboard básico funcional
@@ -550,12 +579,14 @@ CREATE TABLE performance_metrics (
 - [ ] Métricas de performance monitoreadas
 
 ### Fase 2
+
 - [ ] Flujos conversacionales para top 3 industrias
 - [ ] Sistema de aprendizaje continuo activo
 - [ ] Optimizaciones de rendimiento implementadas
 - [ ] Rollout gradual a 50% de leads
 
 ### Fase 3
+
 - [ ] A/B testing completamente automatizado
 - [ ] Todas las funcionalidades avanzadas activas
 - [ ] Integración CRM completa
@@ -570,7 +601,7 @@ El sistema actual de LeadsAgent es **sólido y funcional**, pero tiene un **enor
 ✅ **Aprende continuamente** de cada interacción  
 ✅ **Optimiza automáticamente** su performance  
 ✅ **Escala inteligentemente** sin perder personalización  
-✅ **Maximiza las conversiones** con flujos estructurados  
+✅ **Maximiza las conversiones** con flujos estructurados
 
 La implementación de estas mejoras posicionará a LeadsAgent como la solución más avanzada del mercado, con un ROI excepcional y capacidades que superan a la competencia.
 

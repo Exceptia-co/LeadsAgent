@@ -1,5 +1,6 @@
 import { logger } from '../../utils/logger';
-import DatabaseService, { Lead, ConversationHistory } from '../DatabaseService';
+import type { Lead, ConversationHistory } from '../DatabaseService';
+import DatabaseService from '../DatabaseService';
 import type { AIResponseContext } from '../AIEnhancedResponseService';
 
 export interface EnrichedContext extends AIResponseContext {
@@ -399,7 +400,7 @@ export class ContextBuilder {
     }
 
     const topics: string[] = [];
-    const messageTexts = history.filter(h => h.messageText).map(h => h.messageText!.toLowerCase());
+    const messageTexts = history.filter(h => h.messageText).map(h => h.messageText.toLowerCase());
 
     const topicKeywords = {
       pricing: ['precio', 'coste', 'cuesta', 'tarifa', 'pago', 'moneda', 'hub'],
@@ -446,7 +447,7 @@ export class ContextBuilder {
 
     // Variedad en longitud de mensajes (indica interés)
     if (history.length > 1) {
-      const messageLengths = history.filter(h => h.messageText).map(h => h.messageText!.length);
+      const messageLengths = history.filter(h => h.messageText).map(h => h.messageText.length);
 
       const avgLength = messageLengths.reduce((a, b) => a + b, 0) / messageLengths.length;
       if (avgLength > 50) engagementScore += 1;
@@ -506,7 +507,7 @@ export class ContextBuilder {
     }
 
     // Calcular longitud promedio de mensajes
-    const messageLengths = history.filter(h => h.messageText).map(h => h.messageText!.length);
+    const messageLengths = history.filter(h => h.messageText).map(h => h.messageText.length);
 
     const averageMessageLength =
       messageLengths.length > 0
@@ -575,7 +576,7 @@ export class ContextBuilder {
       if (!message.messageText) continue;
 
       const currentTopic =
-        keywords.find(keyword => message.messageText!.toLowerCase().includes(keyword)) || 'general';
+        keywords.find(keyword => message.messageText.toLowerCase().includes(keyword)) || 'general';
 
       if (lastTopic && lastTopic !== currentTopic) {
         switches++;

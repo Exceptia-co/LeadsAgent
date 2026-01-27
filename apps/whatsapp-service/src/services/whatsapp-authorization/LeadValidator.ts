@@ -1,5 +1,6 @@
 import { logger } from '../../utils/logger';
-import DatabaseService, { Lead } from '../DatabaseService';
+import type { Lead } from '../DatabaseService';
+import DatabaseService from '../DatabaseService';
 import PhoneNumberService from '../PhoneNumberService';
 import type { AuthorizationContext } from './RuleEngine';
 

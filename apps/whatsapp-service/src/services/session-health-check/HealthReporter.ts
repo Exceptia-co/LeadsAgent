@@ -1,6 +1,6 @@
 import { logger } from '../../utils/logger';
-import { SessionHealthStatus } from './DiagnosticsEngine';
-import { HealthAlert, AlertStatistics } from './AlertManager';
+import type { SessionHealthStatus } from './DiagnosticsEngine';
+import type { HealthAlert, AlertStatistics } from './AlertManager';
 
 export interface OverallHealthReport {
   totalSessions: number;

@@ -38,7 +38,7 @@ export class CacheService {
   constructor() {}
 
   // ============ CACHE DE LEADS ============
-  
+
   /**
    * Obtiene un lead desde cache
    */
@@ -46,12 +46,12 @@ export class CacheService {
     try {
       const key = `${REDIS_KEYS.LEAD_CACHE}${telefono}`;
       const cached = await redisClient.getObject<Lead>(key);
-      
+
       if (cached) {
         logger.debug(`Lead cache hit for ${telefono}`);
         return cached;
       }
-      
+
       logger.debug(`Lead cache miss for ${telefono}`);
       return null;
     } catch (error) {
@@ -91,16 +91,19 @@ export class CacheService {
   /**
    * Obtiene conversaciones recientes desde cache
    */
-  async getRecentConversations(telefono: string, limit: number = 10): Promise<Conversation[] | null> {
+  async getRecentConversations(
+    telefono: string,
+    limit: number = 10
+  ): Promise<Conversation[] | null> {
     try {
       const key = `${REDIS_KEYS.CONVERSATION_CACHE}${telefono}:recent:${limit}`;
       const cached = await redisClient.getObject<Conversation[]>(key);
-      
+
       if (cached) {
         logger.debug(`Conversation cache hit for ${telefono}`);
         return cached;
       }
-      
+
       logger.debug(`Conversation cache miss for ${telefono}`);
       return null;
     } catch (error) {
@@ -112,7 +115,11 @@ export class CacheService {
   /**
    * Guarda conversaciones recientes en cache
    */
-  async setRecentConversations(telefono: string, conversations: Conversation[], limit: number = 10): Promise<void> {
+  async setRecentConversations(
+    telefono: string,
+    conversations: Conversation[],
+    limit: number = 10
+  ): Promise<void> {
     try {
       const key = `${REDIS_KEYS.CONVERSATION_CACHE}${telefono}:recent:${limit}`;
       await redisClient.setObject(key, conversations, this.CONVERSATION_TTL);
@@ -130,7 +137,7 @@ export class CacheService {
       // Buscar todas las keys relacionadas con conversaciones de este teléfono
       const pattern = `${REDIS_KEYS.CONVERSATION_CACHE}${telefono}:*`;
       const client = redisClient.getClient();
-      
+
       const keys = await client.keys(pattern);
       if (keys.length > 0) {
         await Promise.all(keys.map(key => redisClient.del(key)));
@@ -159,12 +166,12 @@ export class CacheService {
     try {
       const key = this.generateAIKey(telefono, mensaje);
       const cached = await redisClient.getObject<AIResponse>(key);
-      
+
       if (cached) {
         logger.debug(`AI response cache hit for ${telefono}`);
         return cached.respuesta;
       }
-      
+
       logger.debug(`AI response cache miss for ${telefono}`);
       return null;
     } catch (error) {
@@ -183,9 +190,9 @@ export class CacheService {
         telefono,
         mensaje,
         respuesta,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       };
-      
+
       await redisClient.setObject(key, aiResponse, this.AI_RESPONSE_TTL);
       logger.debug(`AI response cached for ${telefono}`);
     } catch (error) {
@@ -198,16 +205,20 @@ export class CacheService {
   /**
    * Verifica y aplica rate limiting por teléfono
    */
-  async checkRateLimit(telefono: string, maxRequests: number = 10, windowSeconds: number = 60): Promise<boolean> {
+  async checkRateLimit(
+    telefono: string,
+    maxRequests: number = 10,
+    windowSeconds: number = 60
+  ): Promise<boolean> {
     try {
       const key = `${REDIS_KEYS.RATE_LIMIT}${telefono}`;
       const current = await redisClient.incr(key, windowSeconds);
-      
+
       if (current > maxRequests) {
         logger.warn(`Rate limit exceeded for ${telefono}: ${current}/${maxRequests}`);
         return false;
       }
-      
+
       logger.debug(`Rate limit check for ${telefono}: ${current}/${maxRequests}`);
       return true;
     } catch (error) {
@@ -219,16 +230,18 @@ export class CacheService {
   /**
    * Obtiene el estado actual del rate limit
    */
-  async getRateLimitStatus(telefono: string): Promise<{ current: number; remaining: number; maxRequests: number }> {
+  async getRateLimitStatus(
+    telefono: string
+  ): Promise<{ current: number; remaining: number; maxRequests: number }> {
     try {
       const key = `${REDIS_KEYS.RATE_LIMIT}${telefono}`;
-      const current = parseInt(await redisClient.get(key) || '0');
+      const current = parseInt((await redisClient.get(key)) || '0');
       const maxRequests = 10; // Valor por defecto
-      
+
       return {
         current,
         remaining: Math.max(0, maxRequests - current),
-        maxRequests
+        maxRequests,
       };
     } catch (error) {
       logger.error('Error getting rate limit status:', error);
@@ -271,14 +284,14 @@ export class CacheService {
   async getMultipleStats(metrics: string[]): Promise<Record<string, number>> {
     try {
       const results: Record<string, number> = {};
-      
+
       await Promise.all(
-        metrics.map(async (metric) => {
+        metrics.map(async metric => {
           const value = await this.getStats(metric);
           results[metric] = value;
         })
       );
-      
+
       return results;
     } catch (error) {
       logger.error('Error getting multiple stats:', error);
@@ -297,9 +310,9 @@ export class CacheService {
       const sessionData = {
         status,
         timestamp: new Date().toISOString(),
-        ...(data || {})
+        ...(data || {}),
       };
-      
+
       await redisClient.setObject(key, sessionData, 3600); // 1 hora de TTL
       logger.debug(`Session status set for ${sessionId}: ${status}`);
     } catch (error) {
@@ -314,7 +327,10 @@ export class CacheService {
     try {
       const key = `${REDIS_KEYS.SESSION_STATUS}${sessionId}`;
       const status = await redisClient.getObject(key);
-      logger.debug(`Session status retrieved for ${sessionId}:`, (status as any)?.status || 'not found');
+      logger.debug(
+        `Session status retrieved for ${sessionId}:`,
+        (status as any)?.status || 'not found'
+      );
       return status;
     } catch (error) {
       logger.error('Error getting session status:', error);
@@ -329,11 +345,8 @@ export class CacheService {
    */
   async clearPhoneCache(telefono: string): Promise<void> {
     try {
-      await Promise.all([
-        this.invalidateLead(telefono),
-        this.invalidateConversations(telefono)
-      ]);
-      
+      await Promise.all([this.invalidateLead(telefono), this.invalidateConversations(telefono)]);
+
       logger.info(`All cache cleared for phone ${telefono}`);
     } catch (error) {
       logger.error('Error clearing phone cache:', error);
@@ -347,10 +360,10 @@ export class CacheService {
     try {
       const info = await redisClient.info();
       const ping = await redisClient.ping();
-      
+
       return {
         connected: ping,
-        info: info
+        info: info,
       };
     } catch (error) {
       logger.error('Error getting cache info:', error);

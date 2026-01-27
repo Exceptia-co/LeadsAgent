@@ -1,14 +1,14 @@
 /**
  * Enhanced AI Configuration Service
- * 
+ *
  * Centralized configuration management for the refactored AI service.
  * Maintains backward compatibility with existing ai.config.ts while adding
  * enhanced features for the new modular architecture.
  */
 
 import { logger } from '../utils/logger';
-import { AIProviderType } from '../services/ai/interfaces/IAIProvider';
-import { IntentCategory } from '../services/ai/interfaces/IIntentAnalysis';
+import type { AIProviderType } from '../services/ai/interfaces/IAIProvider';
+import type { IntentCategory } from '../services/ai/interfaces/IIntentAnalysis';
 
 /**
  * Provider-specific configuration
@@ -62,16 +62,16 @@ export interface EnhancedAIConfig {
   // Provider settings
   providers: Record<AIProviderType, ProviderConfig>;
   defaultProvider: AIProviderType;
-  
+
   // Response settings
   response: ResponseConfig;
-  
+
   // Intent analysis settings
   intent: IntentConfig;
-  
+
   // System prompt settings
   prompt: PromptConfig;
-  
+
   // Feature flags
   features: {
     enableProviderFallback: boolean;
@@ -117,8 +117,8 @@ class EnhancedAIConfigService {
           timeout: parseInt(process.env['AI_TIMEOUT'] || '30000'),
           headers: {
             'HTTP-Referer': process.env['AI_HTTP_REFERER'] || 'http://localhost:3002',
-            'X-Title': process.env['AI_X_TITLE'] || 'LeadsCRM WhatsApp Service'
-          }
+            'X-Title': process.env['AI_X_TITLE'] || 'LeadsCRM WhatsApp Service',
+          },
         },
         gemini: {
           apiKey: process.env['GEMINI_API_KEY'] || '',
@@ -126,7 +126,7 @@ class EnhancedAIConfigService {
           model: process.env['GEMINI_MODEL'] || 'gemini-1.5-pro',
           maxTokens: parseInt(process.env['GEMINI_MAX_TOKENS'] || '2048'),
           temperature: parseFloat(process.env['GEMINI_TEMPERATURE'] || '0.7'),
-          timeout: parseInt(process.env['GEMINI_TIMEOUT'] || '30000')
+          timeout: parseInt(process.env['GEMINI_TIMEOUT'] || '30000'),
         },
         openai: {
           apiKey: process.env['OPENAI_API_KEY'] || '',
@@ -134,7 +134,7 @@ class EnhancedAIConfigService {
           model: process.env['OPENAI_MODEL'] || 'gpt-3.5-turbo',
           maxTokens: parseInt(process.env['OPENAI_MAX_TOKENS'] || '2048'),
           temperature: parseFloat(process.env['OPENAI_TEMPERATURE'] || '0.7'),
-          timeout: parseInt(process.env['OPENAI_TIMEOUT'] || '30000')
+          timeout: parseInt(process.env['OPENAI_TIMEOUT'] || '30000'),
         },
         claude: {
           apiKey: process.env['CLAUDE_API_KEY'] || '',
@@ -142,41 +142,41 @@ class EnhancedAIConfigService {
           model: process.env['CLAUDE_MODEL'] || 'claude-3-haiku-20240307',
           maxTokens: parseInt(process.env['CLAUDE_MAX_TOKENS'] || '2048'),
           temperature: parseFloat(process.env['CLAUDE_TEMPERATURE'] || '0.7'),
-          timeout: parseInt(process.env['CLAUDE_TIMEOUT'] || '30000')
-        }
+          timeout: parseInt(process.env['CLAUDE_TIMEOUT'] || '30000'),
+        },
       },
-      
+
       defaultProvider: (process.env['AI_PROVIDER'] as AIProviderType) || 'openrouter',
-      
+
       response: {
         maxWords: parseInt(process.env['AI_MAX_WORDS'] || '80'),
         enableTemplates: process.env['AI_USE_TEMPLATES'] !== 'false',
         templatePriority: (process.env['AI_TEMPLATE_PRIORITY'] as any) || 'high',
         enableFallbacks: process.env['AI_ENABLE_FALLBACKS'] !== 'false',
-        maxRetries: parseInt(process.env['AI_MAX_RETRIES'] || '2')
+        maxRetries: parseInt(process.env['AI_MAX_RETRIES'] || '2'),
       },
-      
+
       intent: {
         confidenceThreshold: parseFloat(process.env['AI_CONFIDENCE_THRESHOLD'] || '0.7'),
         enableCache: process.env['AI_ENABLE_INTENT_CACHE'] !== 'false',
         cacheTimeout: parseInt(process.env['AI_INTENT_CACHE_TIMEOUT'] || '60'),
-        fallbackIntent: 'consulta_general'
+        fallbackIntent: 'consulta_general',
       },
-      
+
       prompt: {
         platform: process.env['AI_PLATFORM'] || 'EscortsHub.net',
         language: (process.env['AI_LANGUAGE'] as 'es' | 'en') || 'es',
         includeContext: process.env['AI_INCLUDE_CONTEXT'] !== 'false',
         includeProductInfo: process.env['AI_INCLUDE_PRODUCT_INFO'] !== 'false',
-        maxPromptLength: parseInt(process.env['AI_MAX_PROMPT_LENGTH'] || '4000')
+        maxPromptLength: parseInt(process.env['AI_MAX_PROMPT_LENGTH'] || '4000'),
       },
-      
+
       features: {
         enableProviderFallback: process.env['AI_ENABLE_PROVIDER_FALLBACK'] !== 'false',
         enableResponseOptimization: process.env['AI_ENABLE_RESPONSE_OPTIMIZATION'] !== 'false',
         enableMetrics: process.env['AI_ENABLE_METRICS'] !== 'false',
-        enableDebugMode: process.env['AI_DEBUG_MODE'] === 'true'
-      }
+        enableDebugMode: process.env['AI_DEBUG_MODE'] === 'true',
+      },
     };
   }
 
@@ -188,18 +188,18 @@ class EnhancedAIConfigService {
 
     // Validate configuration
     const validation = this.validateConfig();
-    
+
     if (!validation.isValid) {
       logger.error('❌ AI Configuration validation failed:', validation.errors);
     }
-    
+
     if (validation.warnings.length > 0) {
       logger.warn('⚠️  AI Configuration warnings:', validation.warnings);
     }
 
     // Log configuration summary
     this.logConfigurationSummary();
-    
+
     this.initialized = true;
   }
 
@@ -254,17 +254,17 @@ class EnhancedAIConfigService {
    */
   public updateConfig(updates: Partial<EnhancedAIConfig>): ConfigValidationResult {
     const newConfig = { ...this.config, ...updates };
-    
+
     // Validate new configuration
     const validation = this.validateConfigObject(newConfig);
-    
+
     if (validation.isValid) {
       this.config = newConfig;
       logger.info('✅ AI Configuration updated successfully');
     } else {
       logger.error('❌ Failed to update AI configuration:', validation.errors);
     }
-    
+
     return validation;
   }
 
@@ -287,28 +287,38 @@ class EnhancedAIConfigService {
       if (!providerConfig.apiKey && provider !== 'claude') {
         warnings.push(`${provider.toUpperCase()}_API_KEY is not configured`);
       }
-      
+
       if (provider === 'openrouter' && providerConfig.model !== 'openai/gpt-oss-120b') {
-        errors.push(`OpenRouter model must be 'openai/gpt-oss-120b', got '${providerConfig.model}'`);
+        errors.push(
+          `OpenRouter model must be 'openai/gpt-oss-120b', got '${providerConfig.model}'`
+        );
       }
-      
+
       if (providerConfig.maxTokens < 100 || providerConfig.maxTokens > 8000) {
-        warnings.push(`${provider} maxTokens (${providerConfig.maxTokens}) outside recommended range (100-8000)`);
+        warnings.push(
+          `${provider} maxTokens (${providerConfig.maxTokens}) outside recommended range (100-8000)`
+        );
       }
-      
+
       if (providerConfig.temperature < 0 || providerConfig.temperature > 2) {
-        warnings.push(`${provider} temperature (${providerConfig.temperature}) outside valid range (0-2)`);
+        warnings.push(
+          `${provider} temperature (${providerConfig.temperature}) outside valid range (0-2)`
+        );
       }
     });
 
     // Validate response config
     if (config.response.maxWords < 10 || config.response.maxWords > 500) {
-      warnings.push(`Response maxWords (${config.response.maxWords}) outside recommended range (10-500)`);
+      warnings.push(
+        `Response maxWords (${config.response.maxWords}) outside recommended range (10-500)`
+      );
     }
 
     // Validate intent config
     if (config.intent.confidenceThreshold < 0 || config.intent.confidenceThreshold > 1) {
-      errors.push(`Intent confidence threshold (${config.intent.confidenceThreshold}) must be between 0 and 1`);
+      errors.push(
+        `Intent confidence threshold (${config.intent.confidenceThreshold}) must be between 0 and 1`
+      );
     }
 
     // Validate default provider exists and is configured
@@ -322,7 +332,7 @@ class EnhancedAIConfigService {
     return {
       isValid: errors.length === 0,
       errors,
-      warnings
+      warnings,
     };
   }
 
@@ -339,7 +349,7 @@ class EnhancedAIConfigService {
     logger.info(`  - Intent Threshold: ${this.config.intent.confidenceThreshold}`);
     logger.info(`  - Platform: ${this.config.prompt.platform}`);
     logger.info(`  - Language: ${this.config.prompt.language}`);
-    
+
     // Log provider status
     Object.entries(this.config.providers).forEach(([provider, config]) => {
       const hasKey = !!config.apiKey;
@@ -359,9 +369,9 @@ class EnhancedAIConfigService {
       MODEL_SETTINGS: {
         maxTokens: this.config.providers.openrouter.maxTokens,
         temperature: this.config.providers.openrouter.temperature,
-        stream: false
+        stream: false,
       },
-      DEFAULT_HEADERS: this.config.providers.openrouter.headers
+      DEFAULT_HEADERS: this.config.providers.openrouter.headers,
     };
   }
 

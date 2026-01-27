@@ -1,6 +1,6 @@
 /**
  * AI Orchestrator Service
- * 
+ *
  * Main coordinator that integrates all AI services following the Facade pattern.
  * Provides unified interface for AI operations with intelligent fallbacks,
  * template optimization, and enhanced response generation.
@@ -13,12 +13,8 @@ import { TemplateService } from './TemplateService';
 import { IntentAnalysisService } from './IntentAnalysisService';
 import { SystemPromptService } from './SystemPromptService';
 
-import { 
-  AIProviderType,
-  EnhancedAIResponse,
-  MessageContext 
-} from './interfaces/IAIProvider';
-import { IntentAnalysis } from './interfaces/IIntentAnalysis';
+import type { AIProviderType, EnhancedAIResponse, MessageContext } from './interfaces/IAIProvider';
+import type { IntentAnalysis } from './interfaces/IIntentAnalysis';
 
 /**
  * Orchestrator configuration options
@@ -68,19 +64,19 @@ export class AIOrchestratorService {
     templatesUsed: 0,
     aiGenerations: 0,
     fallbacksUsed: 0,
-    errors: 0
+    errors: 0,
   };
 
   constructor(config?: OrchestratorConfig) {
     const aiConfigData = aiConfig.getConfig();
-    
+
     // Merge configurations
     this.config = {
       templateConfig: config?.templateConfig || {},
       intentConfig: config?.intentConfig || {},
       enableFallbacks: config?.enableFallbacks ?? aiConfigData.features.enableProviderFallback,
       enableMetrics: config?.enableMetrics ?? aiConfigData.features.enableMetrics,
-      maxRetries: config?.maxRetries ?? aiConfigData.response.maxRetries
+      maxRetries: config?.maxRetries ?? aiConfigData.response.maxRetries,
     };
 
     // Initialize services
@@ -107,27 +103,26 @@ export class AIOrchestratorService {
       // 1. Analyze intent first
       logger.debug('🔍 Starting intent analysis...');
       const intentAnalysis = await this.intentService.analyzeIntent(message, context);
-      
+
       logger.debug('Intent analysis result:', {
         intent: intentAnalysis.intent,
         confidence: intentAnalysis.confidence,
-        sentiment: intentAnalysis.sentiment
+        sentiment: intentAnalysis.sentiment,
       });
 
       // 2. Check if we should use templates for this intent
       const shouldUseTemplate = this.shouldUseTemplate(message, intentAnalysis, options);
-      
+
       if (shouldUseTemplate) {
         return await this.generateTemplateResponse(message, intentAnalysis, context, options);
       }
 
       // 3. Generate AI response
       return await this.generateAIResponse(message, intentAnalysis, context, options);
-
     } catch (error) {
       this.metrics.errors++;
       logger.error('Error in generateOptimizedResponse:', error);
-      
+
       // Return fallback response
       return this.createFallbackResponse(message, error, startTime);
     }
@@ -143,10 +138,10 @@ export class AIOrchestratorService {
     options?: ResponseOptions
   ): Promise<EnhancedAIResponse> {
     const startTime = Date.now();
-    
+
     try {
       const template = this.templateService.getTemplate(intentAnalysis.intent as any, context);
-      
+
       if (!template) {
         // Fallback to AI generation if no template available
         logger.debug('No template available, falling back to AI generation');
@@ -167,9 +162,8 @@ export class AIOrchestratorService {
         intentAnalysis,
         usedTemplate: true,
         templateCategory: intentAnalysis.intent,
-        fallbackUsed: false
+        fallbackUsed: false,
       };
-
     } catch (error) {
       logger.error('Error generating template response:', error);
       // Fallback to AI generation
@@ -187,35 +181,35 @@ export class AIOrchestratorService {
     options?: ResponseOptions
   ): Promise<EnhancedAIResponse> {
     const startTime = Date.now();
-    
+
     try {
       // Get AI provider
       const provider = await aiProviderFactory.getRecommendedProvider();
-      
+
       if (!provider || !provider.isReady()) {
         throw new Error('No AI provider available');
       }
 
       // Generate appropriate system prompt
       const systemPrompt = this.generateSystemPrompt(intentAnalysis, context, options);
-      
+
       // Generate response
       logger.debug(`🤖 Generating AI response with ${provider.name}`);
       const aiResponse = await provider.generateResponse(message, systemPrompt, context);
-      
+
       if (!aiResponse.success || !aiResponse.content) {
         throw new Error(aiResponse.error || 'AI generation failed');
       }
 
       this.metrics.aiGenerations++;
-      
+
       // Apply template fallback if response is too long
       let finalContent = aiResponse.content;
       let fallbackUsed = false;
 
       const maxWords = options?.maxWords || this.config.templateConfig.maxWords || 80;
       const wordCount = finalContent.split(/\s+/).length;
-      
+
       if (wordCount > maxWords && options?.enableFallback !== false) {
         logger.debug(`Response too long (${wordCount} words), applying template fallback`);
         finalContent = this.templateService.applyFallback(
@@ -228,7 +222,7 @@ export class AIOrchestratorService {
       }
 
       const processingTime = Date.now() - startTime;
-      
+
       logger.debug(`✅ AI response generated in ${processingTime}ms (${wordCount} words)`);
 
       return {
@@ -241,21 +235,20 @@ export class AIOrchestratorService {
         usedTemplate: false,
         templateCategory: fallbackUsed ? intentAnalysis.intent : undefined,
         fallbackUsed,
-        modelUsed: provider.getStatus().model
+        modelUsed: provider.getStatus().model,
       };
-
     } catch (error) {
       logger.error('Error generating AI response:', error);
-      
+
       // Try template fallback
       if (this.config.enableFallbacks) {
         logger.debug('🔄 Attempting template fallback after AI failure');
         const template = this.templateService.getTemplate(intentAnalysis.intent as any, context);
-        
+
         if (template) {
           this.metrics.fallbacksUsed++;
           const processingTime = Date.now() - startTime;
-          
+
           return {
             success: true,
             content: template,
@@ -266,7 +259,7 @@ export class AIOrchestratorService {
             usedTemplate: true,
             templateCategory: intentAnalysis.intent,
             fallbackUsed: true,
-            error: `AI generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+            error: `AI generation failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
           };
         }
       }
@@ -286,16 +279,16 @@ export class AIOrchestratorService {
     if (options?.useCase) {
       return this.promptService.getPromptForUseCase(options.useCase, context);
     }
-    
+
     if (options?.language && options.language !== 'es') {
       return this.promptService.generateLocalizedPrompt(options.language, context);
     }
-    
+
     // Use specialized prompts for certain intents
     if (intentAnalysis.intent === 'soporte_tecnico') {
       return this.promptService.generateSpecializedPrompt('technical_support', context);
     }
-    
+
     return this.promptService.generateSystemPrompt(context);
   }
 
@@ -330,10 +323,10 @@ export class AIOrchestratorService {
   ): EnhancedAIResponse {
     const processingTime = Date.now() - startTime;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
+
     // Try to get a generic fallback template
     const fallbackTemplate = this.templateService.getTemplate('consulta_general' as any);
-    
+
     return {
       success: false,
       content: fallbackTemplate || 'Disculpa, ha ocurrido un error. ¿Puedes intentarlo de nuevo?',
@@ -343,17 +336,14 @@ export class AIOrchestratorService {
       error: errorMessage,
       fallbackUsed: true,
       usedTemplate: !!fallbackTemplate,
-      templateCategory: fallbackTemplate ? 'consulta_general' : undefined
+      templateCategory: fallbackTemplate ? 'consulta_general' : undefined,
     };
   }
 
   /**
    * Analyze intent (exposed method)
    */
-  public async analyzeIntent(
-    message: string,
-    context?: MessageContext
-  ): Promise<IntentAnalysis> {
+  public async analyzeIntent(message: string, context?: MessageContext): Promise<IntentAnalysis> {
     return await this.intentService.analyzeIntent(message, context);
   }
 
@@ -363,15 +353,14 @@ export class AIOrchestratorService {
   public async switchProvider(providerType: AIProviderType): Promise<boolean> {
     try {
       const provider = await aiProviderFactory.createProvider(providerType);
-      
+
       if (provider && provider.isReady()) {
         logger.info(`✅ Switched to AI provider: ${providerType}`);
         return true;
       }
-      
+
       logger.error(`❌ Failed to switch to provider ${providerType}: Not ready`);
       return false;
-      
     } catch (error) {
       logger.error(`❌ Failed to switch to provider ${providerType}:`, error);
       return false;
@@ -402,18 +391,21 @@ export class AIOrchestratorService {
     averageProcessingTime?: number;
   } {
     const totalSuccessful = this.metrics.totalRequests - this.metrics.errors;
-    
+
     return {
       ...this.metrics,
-      templateUsageRate: this.metrics.totalRequests > 0 
-        ? (this.metrics.templatesUsed / this.metrics.totalRequests) * 100 
-        : 0,
-      fallbackRate: this.metrics.totalRequests > 0 
-        ? (this.metrics.fallbacksUsed / this.metrics.totalRequests) * 100 
-        : 0,
-      errorRate: this.metrics.totalRequests > 0 
-        ? (this.metrics.errors / this.metrics.totalRequests) * 100 
-        : 0
+      templateUsageRate:
+        this.metrics.totalRequests > 0
+          ? (this.metrics.templatesUsed / this.metrics.totalRequests) * 100
+          : 0,
+      fallbackRate:
+        this.metrics.totalRequests > 0
+          ? (this.metrics.fallbacksUsed / this.metrics.totalRequests) * 100
+          : 0,
+      errorRate:
+        this.metrics.totalRequests > 0
+          ? (this.metrics.errors / this.metrics.totalRequests) * 100
+          : 0,
     };
   }
 
@@ -426,9 +418,9 @@ export class AIOrchestratorService {
       templatesUsed: 0,
       aiGenerations: 0,
       fallbacksUsed: 0,
-      errors: 0
+      errors: 0,
     };
-    
+
     logger.info('📊 AI Orchestrator metrics reset');
   }
 
@@ -437,17 +429,17 @@ export class AIOrchestratorService {
    */
   public updateConfig(config: Partial<OrchestratorConfig>): void {
     this.config = { ...this.config, ...config };
-    
+
     // Update child services if needed
     if (config.templateConfig) {
       this.templateService.updateConfig(config.templateConfig);
     }
-    
+
     if (config.intentConfig) {
       // IntentAnalysisService doesn't have updateConfig method in current implementation
       // This could be added later if needed
     }
-    
+
     logger.info('🔧 AI Orchestrator configuration updated');
   }
 
@@ -467,15 +459,15 @@ export class AIOrchestratorService {
     return {
       orchestrator: {
         ready: true,
-        config: this.config
+        config: this.config,
       },
       providers: await this.getProviderStatus(),
       services: {
         template: this.templateService.getTemplateStats(),
         intent: this.intentService.getStats(),
-        prompt: this.promptService.getPromptStats()
+        prompt: this.promptService.getPromptStats(),
       },
-      metrics: this.getMetrics()
+      metrics: this.getMetrics(),
     };
   }
 
@@ -484,13 +476,13 @@ export class AIOrchestratorService {
    */
   public async cleanup(): Promise<void> {
     logger.info('🧹 Cleaning up AI Orchestrator...');
-    
+
     // Cleanup provider factory
     await aiProviderFactory.cleanup();
-    
+
     // Reset metrics
     this.resetMetrics();
-    
+
     logger.info('✅ AI Orchestrator cleanup completed');
   }
 }

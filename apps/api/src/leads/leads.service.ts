@@ -13,7 +13,7 @@ export class LeadsService {
     try {
       // Limpiar el número de teléfono - remover el símbolo + si existe
       const cleanedPhone = createLeadDto.phone.replace(/^\+/, '');
-      
+
       // Verificar si ya existe un lead con este número
       const existingLead = await this.prisma.lead.findUnique({
         where: { phone: cleanedPhone },
@@ -30,7 +30,7 @@ export class LeadsService {
           phone: cleanedPhone,
         },
       });
-      
+
       // Devolver el lead con el formato de teléfono con +
       return {
         ...lead,
@@ -82,7 +82,7 @@ export class LeadsService {
     ]);
 
     // Transform data to match frontend expectations
-    const transformedLeads = leads.map(lead => ({
+    const transformedLeads = leads.map((lead) => ({
       ...lead,
       phone: lead.phone ? '+' + lead.phone : lead.phone, // Add + to phone number for display
       score: lead.moodScore ? Number(lead.moodScore) : null, // Map moodScore to score for frontend and convert to number
@@ -105,7 +105,7 @@ export class LeadsService {
     const lead = await this.prisma.lead.findUniqueOrThrow({
       where: { id },
     });
-    
+
     // Transform data to match frontend expectations
     return {
       ...lead,
@@ -119,12 +119,12 @@ export class LeadsService {
     if (updateLeadDto.phone) {
       updateLeadDto.phone = updateLeadDto.phone.replace(/^\+/, '');
     }
-    
+
     const lead = await this.prisma.lead.update({
       where: { id },
       data: updateLeadDto,
     });
-    
+
     // Devolver con el formato de teléfono con +
     return {
       ...lead,
@@ -141,13 +141,29 @@ export class LeadsService {
   async getStats(assignedUserId?: string) {
     const where = assignedUserId ? { assignedTo: assignedUserId } : {};
 
-    const [total, nuevos, contactados, qualified, ganados, perdidos, averageScoreData] = await Promise.all([
+    const [
+      total,
+      nuevos,
+      contactados,
+      qualified,
+      ganados,
+      perdidos,
+      averageScoreData,
+    ] = await Promise.all([
       this.prisma.lead.count({ where }),
       this.prisma.lead.count({ where: { ...where, status: LeadStatus.NUEVO } }),
-      this.prisma.lead.count({ where: { ...where, status: LeadStatus.CONTACTADO } }),
-      this.prisma.lead.count({ where: { ...where, status: LeadStatus.QUALIFIED } }),
-      this.prisma.lead.count({ where: { ...where, status: LeadStatus.GANADO } }),
-      this.prisma.lead.count({ where: { ...where, status: LeadStatus.PERDIDO } }),
+      this.prisma.lead.count({
+        where: { ...where, status: LeadStatus.CONTACTADO },
+      }),
+      this.prisma.lead.count({
+        where: { ...where, status: LeadStatus.QUALIFIED },
+      }),
+      this.prisma.lead.count({
+        where: { ...where, status: LeadStatus.GANADO },
+      }),
+      this.prisma.lead.count({
+        where: { ...where, status: LeadStatus.PERDIDO },
+      }),
       this.prisma.lead.aggregate({
         where: { ...where, moodScore: { not: null } },
         _avg: { moodScore: true },
@@ -175,7 +191,7 @@ export class LeadsService {
       where: { id },
       data: { status },
     });
-    
+
     // Devolver con el formato de teléfono con +
     return {
       ...lead,
@@ -188,11 +204,11 @@ export class LeadsService {
       where: { id },
       data: { whatsappAuthorized },
     });
-    
+
     return {
       success: true,
       message: `WhatsApp authorization ${whatsappAuthorized ? 'enabled' : 'disabled'} for lead`,
-      data: { leadId: id, whatsappAuthorized }
+      data: { leadId: id, whatsappAuthorized },
     };
   }
 }

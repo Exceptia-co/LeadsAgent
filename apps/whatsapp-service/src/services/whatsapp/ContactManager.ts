@@ -9,13 +9,7 @@ import { LogExecutionTime, SafeExecutor, isSuccess, isFailure } from '../../util
 import { ErrorFactory } from '../../errors';
 import { eventBus } from '../../events/EventBus';
 import { serviceLocator } from '../../core/ServiceLocator';
-import type { 
-  IContactManager,
-  WhatsAppContact,
-  ContactInfo,
-  ChatInfo,
-  Result
-} from '../../types';
+import type { IContactManager, WhatsAppContact, ContactInfo, ChatInfo, Result } from '../../types';
 
 /**
  * ContactManager handles all contact and chat-related operations
@@ -35,7 +29,7 @@ export class ContactManager implements IContactManager {
         // Check cache first
         const sessionCache = this.contactCache.get(sessionId);
         if (sessionCache?.has(phoneNumber)) {
-          return sessionCache.get(phoneNumber)!;
+          return sessionCache.get(phoneNumber);
         }
 
         logger.info(`👤 Getting contact info for ${phoneNumber} in session ${sessionId}`);
@@ -43,7 +37,11 @@ export class ContactManager implements IContactManager {
         // Get session manager to access client
         const sessionManager = serviceLocator.get('sessionManager');
         if (!sessionManager) {
-          throw ErrorFactory.whatsapp('Session manager not available', 'SERVICE_UNAVAILABLE', sessionId);
+          throw ErrorFactory.whatsapp(
+            'Session manager not available',
+            'SERVICE_UNAVAILABLE',
+            sessionId
+          );
         }
 
         const client = sessionManager.getClient(sessionId);
@@ -67,7 +65,9 @@ export class ContactManager implements IContactManager {
         // Cache the result
         this.cacheContact(sessionId, phoneNumber, whatsAppContact);
 
-        logger.debug(`✅ Contact retrieved: ${whatsAppContact.name || whatsAppContact.phoneNumber}`);
+        logger.debug(
+          `✅ Contact retrieved: ${whatsAppContact.name || whatsAppContact.phoneNumber}`
+        );
         return whatsAppContact;
       },
       {
@@ -96,7 +96,11 @@ export class ContactManager implements IContactManager {
         // Get session manager to access client
         const sessionManager = serviceLocator.get('sessionManager');
         if (!sessionManager) {
-          throw ErrorFactory.whatsapp('Session manager not available', 'SERVICE_UNAVAILABLE', sessionId);
+          throw ErrorFactory.whatsapp(
+            'Session manager not available',
+            'SERVICE_UNAVAILABLE',
+            sessionId
+          );
         }
 
         const client = sessionManager.getClient(sessionId);
@@ -106,14 +110,14 @@ export class ContactManager implements IContactManager {
 
         // Get all contacts from WhatsApp
         const contacts = await client.getContacts();
-        
+
         // Convert to our format
         const whatsAppContacts: WhatsAppContact[] = [];
         for (const contact of contacts) {
           try {
             const whatsAppContact = await this.convertContact(contact);
             whatsAppContacts.push(whatsAppContact);
-            
+
             // Cache the contact
             this.cacheContact(sessionId, contact.id._serialized, whatsAppContact);
           } catch (error) {
@@ -148,7 +152,7 @@ export class ContactManager implements IContactManager {
         // Check cache first
         const sessionCache = this.chatCache.get(sessionId);
         if (sessionCache?.has(chatId)) {
-          return sessionCache.get(chatId)!;
+          return sessionCache.get(chatId);
         }
 
         logger.info(`💬 Getting chat info for ${chatId} in session ${sessionId}`);
@@ -156,7 +160,11 @@ export class ContactManager implements IContactManager {
         // Get session manager to access client
         const sessionManager = serviceLocator.get('sessionManager');
         if (!sessionManager) {
-          throw ErrorFactory.whatsapp('Session manager not available', 'SERVICE_UNAVAILABLE', sessionId);
+          throw ErrorFactory.whatsapp(
+            'Session manager not available',
+            'SERVICE_UNAVAILABLE',
+            sessionId
+          );
         }
 
         const client = sessionManager.getClient(sessionId);
@@ -206,7 +214,11 @@ export class ContactManager implements IContactManager {
         // Get session manager to access client
         const sessionManager = serviceLocator.get('sessionManager');
         if (!sessionManager) {
-          throw ErrorFactory.whatsapp('Session manager not available', 'SERVICE_UNAVAILABLE', sessionId);
+          throw ErrorFactory.whatsapp(
+            'Session manager not available',
+            'SERVICE_UNAVAILABLE',
+            sessionId
+          );
         }
 
         const client = sessionManager.getClient(sessionId);
@@ -216,14 +228,14 @@ export class ContactManager implements IContactManager {
 
         // Get all chats from WhatsApp
         const chats = await client.getChats();
-        
+
         // Convert to our format
         const chatInfos: ChatInfo[] = [];
         for (const chat of chats) {
           try {
             const chatInfo = await this.convertChat(chat);
             chatInfos.push(chatInfo);
-            
+
             // Cache the chat
             this.cacheChat(sessionId, chat.id._serialized, chatInfo);
           } catch (error) {
@@ -252,10 +264,7 @@ export class ContactManager implements IContactManager {
    * Search contacts by name or phone number
    */
   @LogExecutionTime({ operationId: 'search-contacts' })
-  public async searchContacts(
-    sessionId: string, 
-    query: string
-  ): Promise<WhatsAppContact[]> {
+  public async searchContacts(sessionId: string, query: string): Promise<WhatsAppContact[]> {
     return SafeExecutor.execute(
       async () => {
         logger.info(`🔍 Searching contacts for "${query}" in session ${sessionId}`);
@@ -266,7 +275,7 @@ export class ContactManager implements IContactManager {
         // Filter contacts based on query
         const filteredContacts = allContacts.filter(contact => {
           const searchText = query.toLowerCase();
-          
+
           return (
             contact.name?.toLowerCase().includes(searchText) ||
             contact.phoneNumber.includes(searchText) ||
@@ -303,7 +312,11 @@ export class ContactManager implements IContactManager {
         // Get session manager to access client
         const sessionManager = serviceLocator.get('sessionManager');
         if (!sessionManager) {
-          throw ErrorFactory.whatsapp('Session manager not available', 'SERVICE_UNAVAILABLE', sessionId);
+          throw ErrorFactory.whatsapp(
+            'Session manager not available',
+            'SERVICE_UNAVAILABLE',
+            sessionId
+          );
         }
 
         const client = sessionManager.getClient(sessionId);
@@ -317,7 +330,9 @@ export class ContactManager implements IContactManager {
         // Check if number is registered
         const isRegistered = await client.isRegisteredUser(normalizedNumber);
 
-        logger.debug(`✅ Registration check for ${phoneNumber}: ${isRegistered ? 'registered' : 'not registered'}`);
+        logger.debug(
+          `✅ Registration check for ${phoneNumber}: ${isRegistered ? 'registered' : 'not registered'}`
+        );
         return isRegistered;
       },
       {
@@ -346,7 +361,11 @@ export class ContactManager implements IContactManager {
         // Get session manager to access client
         const sessionManager = serviceLocator.get('sessionManager');
         if (!sessionManager) {
-          throw ErrorFactory.whatsapp('Session manager not available', 'SERVICE_UNAVAILABLE', sessionId);
+          throw ErrorFactory.whatsapp(
+            'Session manager not available',
+            'SERVICE_UNAVAILABLE',
+            sessionId
+          );
         }
 
         const client = sessionManager.getClient(sessionId);
@@ -415,7 +434,7 @@ export class ContactManager implements IContactManager {
   private async convertChat(chat: Chat): Promise<ChatInfo> {
     const contact = await chat.getContact();
     let profilePicUrl: string | null = null;
-    
+
     try {
       // Try to get profile pic URL if available
       if (typeof (chat as any).getProfilePicUrl === 'function') {
@@ -445,7 +464,7 @@ export class ContactManager implements IContactManager {
         // Cast to unknown first, then to the type we expect
         const groupChat = chat as unknown as GroupChat;
         const groupMetadata = (groupChat as any).groupMetadata;
-        
+
         if (groupMetadata) {
           return {
             ...basicInfo,
@@ -453,11 +472,12 @@ export class ContactManager implements IContactManager {
               description: groupMetadata.desc || null,
               owner: groupMetadata.owner?._serialized || null,
               creation: groupMetadata.creation || 0,
-              participants: groupMetadata.participants?.map((p: any) => ({
-                id: p.id._serialized,
-                isAdmin: p.isAdmin,
-                isSuperAdmin: p.isSuperAdmin,
-              })) || [],
+              participants:
+                groupMetadata.participants?.map((p: any) => ({
+                  id: p.id._serialized,
+                  isAdmin: p.isAdmin,
+                  isSuperAdmin: p.isSuperAdmin,
+                })) || [],
               inviteCode: null, // This would require additional API call
             },
           };
@@ -511,12 +531,12 @@ export class ContactManager implements IContactManager {
   private normalizePhoneNumber(phoneNumber: string): string {
     // Remove all non-digit characters
     const cleaned = phoneNumber.replace(/\D/g, '');
-    
+
     // If number doesn't end with @c.us, add it
     if (!phoneNumber.includes('@c.us')) {
       return `${cleaned}@c.us`;
     }
-    
+
     return phoneNumber;
   }
 
@@ -740,7 +760,7 @@ export class ContactManager implements IContactManager {
   }
 
   /**
-   * Get detailed chat information (required by IContactManager interface) 
+   * Get detailed chat information (required by IContactManager interface)
    */
   @LogExecutionTime({ operationId: 'get-chat-info-detailed' })
   public async getChatInfo(sessionId: string, chatId: string): Promise<ChatInfo | null> {
@@ -753,16 +773,13 @@ export class ContactManager implements IContactManager {
   @LogExecutionTime({ operationId: 'sync-contacts' })
   public async syncContacts(sessionId: string): Promise<void> {
     logger.info(`🔄 Syncing contacts for session ${sessionId}`);
-    
+
     // Clear existing cache
     this.clearContactCache(sessionId);
-    
+
     // Reload all contacts and chats to rebuild cache
-    await Promise.all([
-      this.getAllContacts(sessionId),
-      this.getAllChats(sessionId)
-    ]);
-    
+    await Promise.all([this.getAllContacts(sessionId), this.getAllChats(sessionId)]);
+
     logger.info(`✅ Contacts synced for session ${sessionId}`);
   }
 

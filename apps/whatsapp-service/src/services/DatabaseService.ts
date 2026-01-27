@@ -3,11 +3,12 @@ import { logger } from '../utils/logger';
 import PhoneNumberService from './PhoneNumberService';
 import type { TrainingInteraction } from '../types';
 import MigrationService from './MigrationService';
-import { RepositoryFactory, ILeadRepository, IConversationRepository } from './db';
-import { KnowledgeBaseRepository } from './db/KnowledgeBaseRepository';
-import { AIConfigRepository } from './db/AIConfigRepository';
-import { TrainingRepository } from './db/TrainingRepository';
-import { WhitelistLogRepository } from './db/WhitelistLogRepository';
+import type { ILeadRepository, IConversationRepository } from './db';
+import { RepositoryFactory } from './db';
+import type { KnowledgeBaseRepository } from './db/KnowledgeBaseRepository';
+import type { AIConfigRepository } from './db/AIConfigRepository';
+import type { TrainingRepository } from './db/TrainingRepository';
+import type { WhitelistLogRepository } from './db/WhitelistLogRepository';
 
 // Re-export types for backward compatibility (will be removed after full migration)
 export interface ConversationData {
@@ -1470,7 +1471,7 @@ class DatabaseService {
       const leads = await this.getAllLeads();
       const lead = leads.find(l => l.id === leadId);
 
-      if (!lead || !lead.phone) {
+      if (!lead?.phone) {
         logger.warn(`Lead ${leadId} no encontrado o sin teléfono`);
         return null;
       }

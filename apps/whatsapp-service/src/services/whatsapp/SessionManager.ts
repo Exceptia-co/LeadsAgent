@@ -3,19 +3,18 @@
  * Part of WhatsAppServiceSimple refactoring following SRP
  */
 
-import { Client } from 'whatsapp-web.js';
+import type { Client } from 'whatsapp-web.js';
 import { logger } from '../../utils/logger';
 import { LogExecutionTime, SafeExecutor } from '../../utils/decorators';
 import { ErrorFactory } from '../../errors';
 import { eventBus } from '../../events/EventBus';
-import type { 
-  WhatsAppSession, 
-  SessionStatus, 
+import type {
+  WhatsAppSession,
   ISessionManager,
   IWhatsAppSessionManager,
-  Result
+  Result,
 } from '../../types';
-import { isSuccess, isFailure } from '../../types';
+import { isSuccess, isFailure, SessionStatus } from '../../types';
 
 /**
  * SessionManager handles the lifecycle of WhatsApp sessions
@@ -153,7 +152,7 @@ export class SessionManager implements ISessionManager, IWhatsAppSessionManager 
    */
   public async getAllSessions(): Promise<WhatsAppSession[]> {
     const sessions = Array.from(this.sessions.values());
-    
+
     // Update last seen for all sessions
     const now = new Date();
     sessions.forEach(session => {
@@ -169,8 +168,8 @@ export class SessionManager implements ISessionManager, IWhatsAppSessionManager 
    */
   @LogExecutionTime({ operationId: 'update-session-status' })
   public async updateSessionStatus(
-    sessionId: string, 
-    status: SessionStatus, 
+    sessionId: string,
+    status: SessionStatus,
     data?: Partial<WhatsAppSession>
   ): Promise<void> {
     return SafeExecutor.execute(
@@ -282,9 +281,10 @@ export class SessionManager implements ISessionManager, IWhatsAppSessionManager 
    * Get sessions by status
    */
   public async getSessionsByStatus(status: SessionStatus): Promise<WhatsAppSession[]> {
-    const sessions = Array.from(this.sessions.values())
-      .filter(session => session.status === status);
-    
+    const sessions = Array.from(this.sessions.values()).filter(
+      session => session.status === status
+    );
+
     // Return copies to prevent external mutation
     return sessions.map(session => ({ ...session }));
   }
@@ -295,7 +295,7 @@ export class SessionManager implements ISessionManager, IWhatsAppSessionManager 
   public async restoreSession(sessionId: string): Promise<boolean> {
     try {
       logger.info(`🔄 Attempting to restore session: ${sessionId}`);
-      
+
       // This would typically involve loading session data from storage
       // For now, return false as restoration isn't implemented
       logger.warn(`⚠️ Session restoration not implemented for: ${sessionId}`);
@@ -323,7 +323,7 @@ export class SessionManager implements ISessionManager, IWhatsAppSessionManager 
         connectedNumber: session.connectedNumber,
         lastSeen: session.lastSeen,
         qrCode: session.qrCode,
-        metadata: session.metadata || {}
+        metadata: session.metadata || {},
       };
     } catch (error) {
       logger.error(`❌ Failed to get session data for ${sessionId}:`, error);
@@ -337,11 +337,11 @@ export class SessionManager implements ISessionManager, IWhatsAppSessionManager 
   public async clearSessionData(sessionId: string): Promise<void> {
     try {
       logger.info(`🧹 Clearing session data for: ${sessionId}`);
-      
+
       // Remove from memory
       this.sessions.delete(sessionId);
       this.clients.delete(sessionId);
-      
+
       logger.info(`✅ Session data cleared for: ${sessionId}`);
     } catch (error) {
       logger.error(`❌ Failed to clear session data for ${sessionId}:`, error);
@@ -383,7 +383,7 @@ export class SessionManager implements ISessionManager, IWhatsAppSessionManager 
         status: session.status,
         qrCode: session.qrCode,
         clientInfo: session.clientInfo || null,
-        lastSeen: session.lastSeen
+        lastSeen: session.lastSeen,
       };
     } catch (error) {
       logger.error(`❌ Failed to get session status for ${sessionId}:`, error);
@@ -426,7 +426,7 @@ export class SessionManager implements ISessionManager, IWhatsAppSessionManager 
         for (const [sessionId, session] of this.sessions.entries()) {
           const timeSinceLastSeen = now - session.lastSeen.getTime();
           const hasNoClient = !this.clients.has(sessionId);
-          
+
           if (hasNoClient && timeSinceLastSeen > maxInactiveTime) {
             sessionsToCleanup.push(sessionId);
           }
@@ -461,7 +461,7 @@ export class SessionManager implements ISessionManager, IWhatsAppSessionManager 
   public getSessionMetrics(sessionId: string): any {
     const session = this.sessions.get(sessionId);
     const hasClient = this.clients.has(sessionId);
-    
+
     if (!session) {
       return null;
     }
@@ -489,13 +489,17 @@ export class SessionManager implements ISessionManager, IWhatsAppSessionManager 
    */
   public getActiveSessions(): WhatsAppSession[] {
     const sessions = Array.from(this.sessions.values());
-    
+
     // Filter only active sessions (those with clients and ready status)
     const activeSessions = sessions.filter(session => {
-      return this.clients.has(session.id) && 
-             (session.status === 'ready' || session.status === 'authenticated' || session.status === 'connected');
+      return (
+        this.clients.has(session.id) &&
+        (session.status === 'ready' ||
+          session.status === 'authenticated' ||
+          session.status === 'connected')
+      );
     });
-    
+
     // Return copies to prevent external mutation
     return activeSessions.map(session => ({ ...session }));
   }
@@ -509,10 +513,13 @@ export class SessionManager implements ISessionManager, IWhatsAppSessionManager 
     statusBreakdown: Record<SessionStatus, number>;
   } {
     const sessions = Array.from(this.sessions.values());
-    const statusBreakdown = sessions.reduce((acc, session) => {
-      acc[session.status] = (acc[session.status] || 0) + 1;
-      return acc;
-    }, {} as Record<SessionStatus, number>);
+    const statusBreakdown = sessions.reduce(
+      (acc, session) => {
+        acc[session.status] = (acc[session.status] || 0) + 1;
+        return acc;
+      },
+      {} as Record<SessionStatus, number>
+    );
 
     return {
       totalSessions: sessions.length,

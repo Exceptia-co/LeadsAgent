@@ -10,17 +10,16 @@ import { logger } from '../../utils/logger';
 import { LogExecutionTime, SafeExecutor } from '../../utils/decorators';
 import { ErrorFactory } from '../../errors';
 import { eventBus } from '../../events/EventBus';
-import type { 
+import type {
   IMediaHandler,
   MediaMetadata,
-  MediaProcessingOptions,
   MediaDownloadResult,
   MediaInfo,
   SendMediaMessageRequest,
   SendMessageResponse,
-  Result
+  Result,
 } from '../../types';
-import { isSuccess, isFailure } from '../../types';
+import { isSuccess, isFailure, MediaProcessingOptions } from '../../types';
 
 /**
  * MediaHandler manages all media-related operations
@@ -36,15 +35,31 @@ export class MediaHandler implements IMediaHandler {
     this.maxFileSize = 100 * 1024 * 1024; // 100MB
     this.allowedMimeTypes = new Set([
       // Images
-      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'image/webp',
       // Audio
-      'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/ogg', 'audio/aac',
+      'audio/mpeg',
+      'audio/mp3',
+      'audio/wav',
+      'audio/ogg',
+      'audio/aac',
       // Video
-      'video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/webm',
+      'video/mp4',
+      'video/avi',
+      'video/mov',
+      'video/wmv',
+      'video/webm',
       // Documents
-      'application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'text/plain', 'text/csv'
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain',
+      'text/csv',
     ]);
 
     // Ensure media directory exists
@@ -58,17 +73,19 @@ export class MediaHandler implements IMediaHandler {
     try {
       // This would require access to the WhatsApp client to get the message
       // For now, return a placeholder result
-      logger.warn(`⚠️ downloadMedia called with messageId ${messageId} - requires WhatsApp client access`);
-      
+      logger.warn(
+        `⚠️ downloadMedia called with messageId ${messageId} - requires WhatsApp client access`
+      );
+
       return {
         success: false,
-        error: 'Method requires WhatsApp client integration'
+        error: 'Method requires WhatsApp client integration',
       };
     } catch (error) {
       logger.error(`❌ Failed to download media for message ${messageId}:`, error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -78,8 +95,8 @@ export class MediaHandler implements IMediaHandler {
    */
   @LogExecutionTime({ operationId: 'download-media-internal' })
   public async downloadMediaFromMessage(
-    sessionId: string, 
-    message: Message, 
+    sessionId: string,
+    message: Message,
     options?: MediaProcessingOptions
   ): Promise<MediaMetadata> {
     return SafeExecutor.execute(
@@ -88,11 +105,13 @@ export class MediaHandler implements IMediaHandler {
           throw ErrorFactory.validation('Message does not contain media', 'message');
         }
 
-        logger.info(`📥 Downloading media from message ${message.id._serialized} in session ${sessionId}`);
+        logger.info(
+          `📥 Downloading media from message ${message.id._serialized} in session ${sessionId}`
+        );
 
         // Download the media
         const media = await message.downloadMedia();
-        
+
         // Validate media
         await this.validateMedia(media);
 
@@ -132,23 +151,26 @@ export class MediaHandler implements IMediaHandler {
   /**
    * Send media message (interface method)
    */
-  public async sendMediaMessage(sessionId: string, request: SendMediaMessageRequest): Promise<SendMessageResponse> {
+  public async sendMediaMessage(
+    sessionId: string,
+    request: SendMediaMessageRequest
+  ): Promise<SendMessageResponse> {
     try {
       logger.info(`📤 Preparing to send media message in session ${sessionId}`);
-      
+
       // This would require access to the WhatsApp client
       // For now, return a placeholder result
       return {
         success: false,
         messageId: '',
-        error: 'Method requires WhatsApp client integration'
+        error: 'Method requires WhatsApp client integration',
       };
     } catch (error) {
       logger.error(`❌ Failed to send media message:`, error);
       return {
         success: false,
         messageId: '',
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
@@ -160,7 +182,9 @@ export class MediaHandler implements IMediaHandler {
     try {
       // This would require access to the WhatsApp client to get the message
       // For now, return null
-      logger.warn(`⚠️ getMediaInfo called for message ${messageId} - requires WhatsApp client access`);
+      logger.warn(
+        `⚠️ getMediaInfo called for message ${messageId} - requires WhatsApp client access`
+      );
       return null;
     } catch (error) {
       logger.error(`❌ Failed to get media info for message ${messageId}:`, error);
@@ -188,7 +212,7 @@ export class MediaHandler implements IMediaHandler {
    */
   @LogExecutionTime({ operationId: 'prepare-media-upload' })
   public async prepareMediaForUpload(
-    filePath: string, 
+    filePath: string,
     options?: MediaProcessingOptions
   ): Promise<MessageMedia> {
     return SafeExecutor.execute(
@@ -200,7 +224,7 @@ export class MediaHandler implements IMediaHandler {
 
         // Get file stats
         const stats = statSync(filePath);
-        
+
         // Validate file size
         if (stats.size > this.maxFileSize) {
           throw ErrorFactory.validation(
@@ -214,7 +238,7 @@ export class MediaHandler implements IMediaHandler {
 
         // Determine MIME type
         const mimeType = this.getMimeType(filePath);
-        
+
         // Validate MIME type
         if (!this.allowedMimeTypes.has(mimeType)) {
           throw ErrorFactory.validation('Unsupported media type', 'mimeType', mimeType);
@@ -222,7 +246,7 @@ export class MediaHandler implements IMediaHandler {
 
         // Create MessageMedia object
         const messageMedia = MessageMedia.fromFilePath(filePath);
-        
+
         // Apply options if provided
         if (options?.filename) {
           messageMedia.filename = options.filename;
@@ -248,14 +272,17 @@ export class MediaHandler implements IMediaHandler {
   /**
    * Get media metadata without downloading
    */
-  public async getMediaMetadata(sessionId: string, message: Message): Promise<MediaMetadata | null> {
+  public async getMediaMetadata(
+    sessionId: string,
+    message: Message
+  ): Promise<MediaMetadata | null> {
     try {
       if (!message.hasMedia) {
         return null;
       }
 
       const mediaInfo = (message as any)._data?.mediaData || {};
-      
+
       return {
         messageId: message.id._serialized,
         sessionId,
@@ -267,7 +294,6 @@ export class MediaHandler implements IMediaHandler {
         fileSize: mediaInfo.fileLength || 0,
         downloadedAt: null,
       };
-
     } catch (error) {
       logger.error(`❌ Error getting media metadata:`, error);
       return null;
@@ -286,10 +312,9 @@ export class MediaHandler implements IMediaHandler {
 
       const fs = await import('fs/promises');
       await fs.unlink(filePath);
-      
+
       logger.info(`🗑️ Media file deleted: ${filePath}`);
       return true;
-
     } catch (error) {
       logger.error(`❌ Failed to delete media file ${filePath}:`, error);
       return false;
@@ -332,12 +357,12 @@ export class MediaHandler implements IMediaHandler {
 
         try {
           const entries = await fs.readdir(this.mediaStoragePath, { withFileTypes: true });
-          
+
           for (const entry of entries) {
             if (entry.isFile()) {
               const filePath = join(this.mediaStoragePath, entry.name);
               const stats = await fs.stat(filePath);
-              
+
               if (stats.mtime < cutoffDate) {
                 await fs.unlink(filePath);
                 deletedCount++;
@@ -390,7 +415,9 @@ export class MediaHandler implements IMediaHandler {
       throw ErrorFactory.validation('Media content is empty', 'mediaData');
     }
 
-    logger.debug(`✅ Media validation passed: ${media.mimetype}, ~${Math.round(estimatedSize / 1024)}KB`);
+    logger.debug(
+      `✅ Media validation passed: ${media.mimetype}, ~${Math.round(estimatedSize / 1024)}KB`
+    );
   }
 
   /**
@@ -507,7 +534,7 @@ export class MediaHandler implements IMediaHandler {
    */
   private getMimeType(filePath: string): string {
     const ext = extname(filePath).toLowerCase();
-    
+
     const extensionToMime: Record<string, string> = {
       // Images
       '.jpg': 'image/jpeg',
@@ -570,7 +597,6 @@ export class MediaHandler implements IMediaHandler {
         mimeType,
         extension,
       };
-
     } catch (error) {
       logger.error(`❌ Error getting media file info for ${filePath}:`, error);
       return { exists: false };
@@ -581,10 +607,7 @@ export class MediaHandler implements IMediaHandler {
    * Process media with optional transformations
    */
   @LogExecutionTime({ operationId: 'process-media' })
-  public async processMedia(
-    filePath: string, 
-    options: MediaProcessingOptions
-  ): Promise<string> {
+  public async processMedia(filePath: string, options: MediaProcessingOptions): Promise<string> {
     return SafeExecutor.execute(
       async () => {
         logger.info(`🔄 Processing media file: ${filePath}`);
@@ -634,11 +657,14 @@ export class MediaHandler implements IMediaHandler {
   /**
    * Resize image (placeholder implementation)
    */
-  private async resizeImage(filePath: string, dimensions: { width: number; height: number }): Promise<string> {
+  private async resizeImage(
+    filePath: string,
+    dimensions: { width: number; height: number }
+  ): Promise<string> {
     // Placeholder for image resizing
     // In a real implementation, you would use a library like Sharp
     logger.debug(`🖼️ Resizing image ${filePath} to ${dimensions.width}x${dimensions.height}`);
-    
+
     // For now, return original path
     return filePath;
   }
@@ -650,7 +676,7 @@ export class MediaHandler implements IMediaHandler {
     // Placeholder for media compression
     // In a real implementation, you would use appropriate compression libraries
     logger.debug(`🗜️ Compressing media ${filePath} with quality ${quality}`);
-    
+
     // For now, return original path
     return filePath;
   }

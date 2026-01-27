@@ -4,7 +4,7 @@
  */
 
 import { BaseRepository } from './BaseRepository';
-import {
+import type {
   ConversationData,
   ConversationHistory,
   IConversationRepository,

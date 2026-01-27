@@ -1,6 +1,6 @@
 /**
  * Core AI Provider Interface
- * 
+ *
  * Defines the contract that all AI providers must implement.
  * This enables the Strategy pattern for interchangeable AI providers.
  */
@@ -77,7 +77,7 @@ export type AIProviderType = 'openrouter' | 'gemini' | 'openai' | 'claude';
 
 /**
  * Core AI Provider Interface
- * 
+ *
  * All AI providers must implement this interface to ensure consistent behavior
  * and enable the Strategy pattern for provider switching.
  */

@@ -1,5 +1,5 @@
-import { logger } from "../../utils/logger";
-import { RedisUtils } from "../../utils/whatsappUtils";
+import { logger } from '../../utils/logger';
+import { RedisUtils } from '../../utils/whatsappUtils';
 
 // Tipo para el cliente Redis personalizado del proyecto
 type RedisClientType = {
@@ -78,7 +78,7 @@ export class RedisMonitoringService {
 
     try {
       const isConnected = await RedisUtils.checkConnection(this.redisClient);
-      
+
       if (isConnected) {
         logger.debug('✅ Redis connection healthy');
         await this.recordHealthCheck(true);
@@ -127,7 +127,7 @@ export class RedisMonitoringService {
     try {
       const key = RedisUtils.generateCacheKey('whatsapp:health', 'redis_status');
       const data = await this.redisClient.get(key);
-      
+
       if (data) {
         return JSON.parse(data);
       }
@@ -181,7 +181,7 @@ export class RedisMonitoringService {
 
     const usedMemory = info.used_memory_human || 'unknown';
     const maxMemory = info.maxmemory_human || 'unlimited';
-    
+
     let memoryUsagePercentage: number | undefined;
     if (info.used_memory && info.maxmemory && info.maxmemory !== '0') {
       const used = parseInt(info.used_memory);

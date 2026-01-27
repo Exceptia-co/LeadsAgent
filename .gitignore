@@ -18,6 +18,7 @@ build/
 .env.local
 .env.production
 .env.staging
+!.env.example
 
 # Database
 *.db

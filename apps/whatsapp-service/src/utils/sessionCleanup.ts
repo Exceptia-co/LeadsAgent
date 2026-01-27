@@ -9,9 +9,12 @@ export class SessionCleanupUtil {
   /**
    * Limpia una sesión de WhatsApp de forma segura, manejando archivos bloqueados
    */
-  static async cleanupSession(sessionId: string, sessionsPath: string = './sessions'): Promise<void> {
+  static async cleanupSession(
+    sessionId: string,
+    sessionsPath: string = './sessions'
+  ): Promise<void> {
     const sessionPath = path.join(sessionsPath, `session-${sessionId}`);
-    
+
     if (!fs.existsSync(sessionPath)) {
       logger.info(`Session ${sessionId} folder doesn't exist, nothing to cleanup`);
       return;
@@ -21,10 +24,10 @@ export class SessionCleanupUtil {
 
     // Primero, intentar eliminar archivos específicos que suelen causar problemas
     await this.cleanupSpecificFiles(sessionPath);
-    
+
     // Luego, intentar eliminar toda la carpeta con reintentos
     await this.retryDelete(sessionPath, this.MAX_RETRIES);
-    
+
     logger.info(`Session ${sessionId} cleanup completed`);
   }
 
@@ -36,7 +39,7 @@ export class SessionCleanupUtil {
       'lockfile',
       'LOCK',
       'first_party_sets.db',
-      'first_party_sets.db-journal'
+      'first_party_sets.db-journal',
     ];
 
     for (const fileName of problematicFiles) {
@@ -55,11 +58,11 @@ export class SessionCleanupUtil {
       if (!fs.existsSync(dirPath)) return;
 
       const items = fs.readdirSync(dirPath);
-      
+
       for (const item of items) {
         const itemPath = path.join(dirPath, item);
         const stat = fs.statSync(itemPath);
-        
+
         if (stat.isDirectory()) {
           // Recursivamente limpiar subdirectorios
           await this.cleanupLockFiles(itemPath);
@@ -85,8 +88,10 @@ export class SessionCleanupUtil {
         return;
       } catch (error: any) {
         if (error.code === 'EBUSY' || error.code === 'ENOENT') {
-          logger.warn(`File ${filePath} is busy or not found (attempt ${attempt}/${this.MAX_RETRIES})`);
-          
+          logger.warn(
+            `File ${filePath} is busy or not found (attempt ${attempt}/${this.MAX_RETRIES})`
+          );
+
           if (attempt < this.MAX_RETRIES) {
             await this.delay(this.RETRY_DELAY * attempt);
           } else {
@@ -117,11 +122,13 @@ export class SessionCleanupUtil {
       } catch (error: any) {
         if (error.code === 'EBUSY') {
           logger.warn(`Directory is busy (attempt ${attempt}/${retries}), waiting before retry...`);
-          
+
           if (attempt < retries) {
             await this.delay(this.RETRY_DELAY * attempt);
           } else {
-            logger.error(`Failed to delete directory after ${retries} attempts. Manual cleanup may be required.`);
+            logger.error(
+              `Failed to delete directory after ${retries} attempts. Manual cleanup may be required.`
+            );
             throw new Error(`Session cleanup failed after ${retries} attempts: ${error.message}`);
           }
         } else {
@@ -149,7 +156,8 @@ export class SessionCleanupUtil {
         return;
       }
 
-      const sessionDirs = fs.readdirSync(sessionsPath)
+      const sessionDirs = fs
+        .readdirSync(sessionsPath)
         .filter(dir => dir.startsWith('session-'))
         .map(dir => path.join(sessionsPath, dir));
 
@@ -157,10 +165,10 @@ export class SessionCleanupUtil {
 
       for (const sessionDir of sessionDirs) {
         const sessionId = path.basename(sessionDir).replace('session-', '');
-        
+
         // Verificar si hay archivos LOCK antiguos (más de 1 hora)
         const hasOldLocks = await this.hasOldLockFiles(sessionDir);
-        
+
         if (hasOldLocks) {
           logger.info(`Cleaning up orphaned session: ${sessionId}`);
           await this.cleanupSession(sessionId, sessionsPath);
@@ -177,7 +185,7 @@ export class SessionCleanupUtil {
   private static async hasOldLockFiles(sessionDir: string): Promise<boolean> {
     try {
       const lockFiles = await this.findLockFiles(sessionDir);
-      const oneHourAgo = Date.now() - (60 * 60 * 1000);
+      const oneHourAgo = Date.now() - 60 * 60 * 1000;
 
       for (const lockFile of lockFiles) {
         const stats = fs.statSync(lockFile);
@@ -185,7 +193,7 @@ export class SessionCleanupUtil {
           return true;
         }
       }
-      
+
       return false;
     } catch (error) {
       logger.warn(`Error checking lock files in ${sessionDir}:`, error);
@@ -201,11 +209,11 @@ export class SessionCleanupUtil {
       if (!fs.existsSync(dirPath)) return lockFiles;
 
       const items = fs.readdirSync(dirPath);
-      
+
       for (const item of items) {
         const itemPath = path.join(dirPath, item);
         const stat = fs.statSync(itemPath);
-        
+
         if (stat.isDirectory()) {
           await this.findLockFiles(itemPath, lockFiles);
         } else if (item === 'LOCK' || item === 'lockfile') {
@@ -215,7 +223,7 @@ export class SessionCleanupUtil {
     } catch (error) {
       logger.warn(`Error finding lock files in ${dirPath}:`, error);
     }
-    
+
     return lockFiles;
   }
 
@@ -228,28 +236,27 @@ export class SessionCleanupUtil {
         return [];
       }
 
-      const sessionDirs = fs.readdirSync(sessionsPath)
-        .filter(dir => dir.startsWith('session-'));
+      const sessionDirs = fs.readdirSync(sessionsPath).filter(dir => dir.startsWith('session-'));
 
       const sessionsStatus = [];
 
       for (const sessionDir of sessionDirs) {
         const sessionPath = path.join(sessionsPath, sessionDir);
         const sessionId = sessionDir.replace('session-', '');
-        
+
         const lockFiles = await this.findLockFiles(sessionPath);
         const hasLocks = lockFiles.length > 0;
-        
+
         // Obtener info del directorio
         const stat = fs.statSync(sessionPath);
-        
+
         sessionsStatus.push({
           sessionId,
           path: sessionPath,
           hasLockFiles: hasLocks,
           lockFilesCount: lockFiles.length,
           lastModified: stat.mtime,
-          sizeKB: await this.getDirectorySize(sessionPath)
+          sizeKB: await this.getDirectorySize(sessionPath),
         });
       }
 
@@ -266,20 +273,20 @@ export class SessionCleanupUtil {
   private static async getDirectorySize(dirPath: string): Promise<number> {
     try {
       let totalSize = 0;
-      
+
       const items = fs.readdirSync(dirPath);
-      
+
       for (const item of items) {
         const itemPath = path.join(dirPath, item);
         const stat = fs.statSync(itemPath);
-        
+
         if (stat.isDirectory()) {
           totalSize += await this.getDirectorySize(itemPath);
         } else {
           totalSize += stat.size;
         }
       }
-      
+
       return Math.round(totalSize / 1024); // Convert to KB
     } catch (error) {
       return 0;

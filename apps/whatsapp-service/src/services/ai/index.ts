@@ -1,16 +1,16 @@
 /**
  * AI Services Module Index
- * 
+ *
  * Centralized exports for the refactored AI service architecture.
  * Provides access to all AI services and utilities.
  */
 
 // Core Interfaces
 export * from './interfaces/IAIProvider';
-export type { 
-  IntentAnalysis, 
-  IntentCategory, 
-  MessageContext as IntentMessageContext 
+export type {
+  IntentAnalysis,
+  IntentCategory,
+  MessageContext as IntentMessageContext,
 } from './interfaces/IIntentAnalysis';
 export * from './interfaces/ITemplateService';
 
@@ -26,7 +26,7 @@ export { OpenRouterProvider } from './providers/OpenRouterProvider';
 export { GeminiProvider } from './providers/GeminiProvider';
 
 // Configuration
-export { 
+export {
   aiConfig,
   getModelName,
   validateAIConfig,
@@ -34,12 +34,9 @@ export {
   type ResponseConfig,
   type IntentConfig,
   type PromptConfig,
-  type ConfigValidationResult
+  type ConfigValidationResult,
 } from '../../config/enhanced-ai.config';
 
 // Utility Types
 export type { PromptType } from './SystemPromptService';
-export type { 
-  OrchestratorConfig,
-  ResponseOptions
-} from './AIOrchestratorService';
+export type { OrchestratorConfig, ResponseOptions } from './AIOrchestratorService';

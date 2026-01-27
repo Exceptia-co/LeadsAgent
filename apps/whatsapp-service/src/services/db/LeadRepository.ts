@@ -4,7 +4,7 @@
  */
 
 import { BaseRepository } from './BaseRepository';
-import { Lead, ILeadRepository, IDatabaseConnection } from './types';
+import type { Lead, ILeadRepository, IDatabaseConnection } from './types';
 import { logger } from '../../utils/logger';
 import PhoneNumberService from '../PhoneNumberService';
 

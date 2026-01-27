@@ -9,9 +9,9 @@
  */
 
 import { logger } from '../../utils/logger';
-import { IntentAnalysisExtended, EnrichedContext } from './ContextEnricher';
-import { KnowledgeSearchResult } from './KnowledgeRetrieval';
-import { StrategyAnalysis } from './StrategySelector';
+import type { IntentAnalysisExtended, EnrichedContext } from './ContextEnricher';
+import type { KnowledgeSearchResult } from './KnowledgeRetrieval';
+import type { StrategyAnalysis } from './StrategySelector';
 
 // ============================================
 // INTERFACES Y TIPOS

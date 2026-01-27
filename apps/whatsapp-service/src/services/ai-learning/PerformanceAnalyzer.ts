@@ -180,7 +180,7 @@ export class PerformanceAnalyzer {
         if (!groups.has(key)) {
           groups.set(key, []);
         }
-        groups.get(key)!.push(interaction);
+        groups.get(key).push(interaction);
       });
 
       // Calculate trends

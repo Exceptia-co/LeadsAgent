@@ -156,7 +156,7 @@ export class ResponsePersonalizer {
     if (context.contactName || context.lead?.name) {
       elements.push({
         type: 'name',
-        value: context.contactName || context.lead!.name!,
+        value: context.contactName || context.lead.name,
         confidence: 0.9,
       });
     }

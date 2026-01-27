@@ -1,18 +1,18 @@
 /**
  * OpenRouter AI Provider
- * 
+ *
  * Implements the IAIProvider interface for OpenRouter API integration.
  * Maintains the fixed model requirement (openai/gpt-oss-120b).
  */
 
 import OpenAI from 'openai';
 import { logger } from '../../../utils/logger';
-import { 
-  IAIProvider, 
-  ProviderConfig, 
-  AIResponse, 
-  MessageContext, 
-  ProviderStatus 
+import type {
+  IAIProvider,
+  ProviderConfig,
+  AIResponse,
+  MessageContext,
+  ProviderStatus,
 } from '../interfaces/IAIProvider';
 
 /**
@@ -20,12 +20,12 @@ import {
  */
 export class OpenRouterProvider implements IAIProvider {
   public readonly name = 'openrouter';
-  
+
   private client: OpenAI | null = null;
   private config: ProviderConfig | null = null;
   private status: ProviderStatus = {
     ready: false,
-    lastHealthCheck: new Date()
+    lastHealthCheck: new Date(),
   };
 
   /**
@@ -40,7 +40,9 @@ export class OpenRouterProvider implements IAIProvider {
 
       // Enforce fixed model requirement
       if (config.model !== 'openai/gpt-oss-120b') {
-        logger.warn(`⚠️  OpenRouter model should be 'openai/gpt-oss-120b', got '${config.model}'. Forcing correct model.`);
+        logger.warn(
+          `⚠️  OpenRouter model should be 'openai/gpt-oss-120b', got '${config.model}'. Forcing correct model.`
+        );
         config.model = 'openai/gpt-oss-120b';
       }
 
@@ -51,28 +53,28 @@ export class OpenRouterProvider implements IAIProvider {
         defaultHeaders: {
           'HTTP-Referer': config.headers?.['HTTP-Referer'] || 'http://localhost:3002',
           'X-Title': config.headers?.['X-Title'] || 'LeadsCRM WhatsApp Service',
-          ...config.headers
-        }
+          ...config.headers,
+        },
       });
 
       this.config = config;
-      
+
       // Test connection
       await this.healthCheck();
-      
+
       this.status.ready = true;
       this.status.model = config.model;
       this.status.lastHealthCheck = new Date();
-      
+
       logger.info(`✅ OpenRouter provider initialized successfully`);
       logger.info(`   - Model: ${config.model} (FIXED)`);
       logger.info(`   - Base URL: ${config.baseURL}`);
       logger.info(`   - Max Tokens: ${config.maxTokens}`);
       logger.info(`   - Temperature: ${config.temperature}`);
-      
     } catch (error) {
       this.status.ready = false;
-      this.status.lastError = error instanceof Error ? error.message : 'Unknown initialization error';
+      this.status.lastError =
+        error instanceof Error ? error.message : 'Unknown initialization error';
       logger.error(`❌ Failed to initialize OpenRouter provider:`, error);
       throw error;
     }
@@ -94,23 +96,21 @@ export class OpenRouterProvider implements IAIProvider {
     context?: MessageContext
   ): Promise<AIResponse> {
     const startTime = Date.now();
-    
+
     if (!this.isReady() || !this.client || !this.config) {
       throw new Error('OpenRouter provider not initialized or not ready');
     }
 
     try {
       // Build message array for conversation context
-      const messages: any[] = [
-        { role: 'system', content: systemPrompt }
-      ];
+      const messages: any[] = [{ role: 'system', content: systemPrompt }];
 
       // Add conversation history if available
       if (context?.conversationHistory) {
         context.conversationHistory.forEach(msg => {
           messages.push({
             role: msg.role,
-            content: msg.content
+            content: msg.content,
           });
         });
       }
@@ -118,14 +118,14 @@ export class OpenRouterProvider implements IAIProvider {
       // Add current user message
       messages.push({
         role: 'user',
-        content: message
+        content: message,
       });
 
       logger.debug(`🤖 OpenRouter API Request:`, {
         model: this.config.model,
         messagesCount: messages.length,
         maxTokens: this.config.maxTokens,
-        temperature: this.config.temperature
+        temperature: this.config.temperature,
       });
 
       // Make API call to OpenRouter
@@ -134,7 +134,7 @@ export class OpenRouterProvider implements IAIProvider {
         messages,
         max_tokens: this.config.maxTokens,
         temperature: this.config.temperature,
-        stream: false
+        stream: false,
       });
 
       const responseContent = completion.choices[0]?.message?.content;
@@ -143,7 +143,7 @@ export class OpenRouterProvider implements IAIProvider {
       }
 
       const processingTime = Date.now() - startTime;
-      
+
       // Update status
       this.status.responseTime = processingTime;
       this.status.lastHealthCheck = new Date();
@@ -155,12 +155,11 @@ export class OpenRouterProvider implements IAIProvider {
         content: responseContent,
         provider: this.name,
         tokensUsed: completion.usage?.total_tokens,
-        processingTime
+        processingTime,
       };
-
     } catch (error: any) {
       const processingTime = Date.now() - startTime;
-      
+
       // Update error status
       this.status.lastError = error.message;
       this.status.responseTime = processingTime;
@@ -171,7 +170,7 @@ export class OpenRouterProvider implements IAIProvider {
         status: error.status,
         model: this.config?.model,
         code: error.code,
-        processingTime: `${processingTime}ms`
+        processingTime: `${processingTime}ms`,
       });
 
       // Handle specific error cases
@@ -189,7 +188,7 @@ export class OpenRouterProvider implements IAIProvider {
         success: false,
         error: errorMessage,
         provider: this.name,
-        processingTime
+        processingTime,
       };
     }
   }
@@ -200,7 +199,7 @@ export class OpenRouterProvider implements IAIProvider {
   public getStatus(): ProviderStatus {
     return {
       ...this.status,
-      model: this.config?.model
+      model: this.config?.model,
     };
   }
 
@@ -218,22 +217,21 @@ export class OpenRouterProvider implements IAIProvider {
         model: this.config.model,
         messages: [
           { role: 'system', content: 'Respond with "OK"' },
-          { role: 'user', content: 'Health check' }
+          { role: 'user', content: 'Health check' },
         ],
         max_tokens: 10,
-        temperature: 0
+        temperature: 0,
       });
 
       const isHealthy = !!testCompletion.choices[0]?.message?.content;
-      
+
       this.status.lastHealthCheck = new Date();
       if (isHealthy) {
         this.status.ready = true;
         this.status.lastError = undefined;
       }
-      
+
       return isHealthy;
-      
     } catch (error) {
       this.status.lastError = error instanceof Error ? error.message : 'Health check failed';
       this.status.lastHealthCheck = new Date();
