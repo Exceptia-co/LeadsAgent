@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { WHATSAPP_API_URL } from '../../lib/api-config'
 import { Card } from '../ui/card'
 import { Badge } from '../ui/badge'
 import { 
@@ -128,7 +129,7 @@ export default function AIAssistant({
         }
       }
 
-      const response = await fetch(`http://localhost:3002${endpoint}`, {
+      const response = await fetch(`${WHATSAPP_API_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)

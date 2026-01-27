@@ -10,8 +10,9 @@ import {
   BackupSettings,
   GeneralSettings
 } from '../types/settings'
+import { WHATSAPP_API_URL } from '../lib/api-config'
 
-const WHATSAPP_SERVICE_BASE_URL = 'http://localhost:3002'
+const WHATSAPP_SERVICE_BASE_URL = WHATSAPP_API_URL
 
 export function useSettings() {
   // System status states

@@ -8,6 +8,7 @@ import { WhatsAppSession, WhatsAppMessage } from "../../../types";
 import { LeadSelector } from "../../../components/LeadSelector";
 import { Lead } from "../../../hooks/use-leads";
 import useSocket from "../../../src/hooks/useSocket";
+import { WHATSAPP_API_URL } from "../../../lib/api-config";
 import {
   Smartphone,
   Plus,
@@ -227,7 +228,7 @@ export default function WhatsAppPage() {
   const loadTemplates = async () => {
     setDataLoading((prev) => ({ ...prev, templates: true }));
     try {
-      const response = await fetch("http://localhost:3002/templates");
+      const response = await fetch(`${WHATSAPP_API_URL}/templates`);
       const result = await response.json();
       if (result.success) {
         setTemplates(result.data || []);
@@ -248,7 +249,7 @@ export default function WhatsAppPage() {
   const loadProactiveMessages = async () => {
     setDataLoading((prev) => ({ ...prev, proactiveMessages: true }));
     try {
-      const response = await fetch("http://localhost:3002/proactive-messages");
+      const response = await fetch(`${WHATSAPP_API_URL}/proactive-messages`);
       const result = await response.json();
       if (result.success) {
         setProactiveMessages(result.data || []);
@@ -269,7 +270,7 @@ export default function WhatsAppPage() {
   const loadLeads = async () => {
     setDataLoading((prev) => ({ ...prev, leads: true }));
     try {
-      const response = await fetch("http://localhost:3002/leads");
+      const response = await fetch(`${WHATSAPP_API_URL}/leads`);
       const result = await response.json();
       if (result.success) {
         setLeads(result.leads || result.data || []);
@@ -331,7 +332,7 @@ export default function WhatsAppPage() {
 
     try {
       // Get sessions to ensure we have a valid session
-      const sessionsResponse = await fetch("http://localhost:3002/sessions");
+      const sessionsResponse = await fetch(`${WHATSAPP_API_URL}/sessions`);
       const sessionsResult = await sessionsResponse.json();
 
       let sessionId = selectedSession;
@@ -340,7 +341,7 @@ export default function WhatsAppPage() {
         sessionId = sessionsResult.sessions[0].id;
       }
 
-      const response = await fetch("http://localhost:3002/proactive-messages", {
+      const response = await fetch(`${WHATSAPP_API_URL}/proactive-messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -395,7 +396,7 @@ export default function WhatsAppPage() {
 
     try {
       // Get sessions to ensure we have a valid session
-      const sessionsResponse = await fetch("http://localhost:3002/sessions");
+      const sessionsResponse = await fetch(`${WHATSAPP_API_URL}/sessions`);
       const sessionsResult = await sessionsResponse.json();
 
       let sessionId = selectedSession;
@@ -406,7 +407,7 @@ export default function WhatsAppPage() {
 
       // Use the bulk endpoint
       const response = await fetch(
-        "http://localhost:3002/proactive-messages/bulk",
+        `${WHATSAPP_API_URL}/proactive-messages/bulk`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

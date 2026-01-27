@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { WHATSAPP_API_URL } from '../../../lib/api-config'
 import { Card } from '../../../components/ui/card'
 import { Badge } from '../../../components/ui/badge'
 import { 
@@ -67,7 +68,7 @@ export default function TemplatesPage() {
   const fetchTemplates = async () => {
     setLoading(true)
     try {
-      const response = await fetch('http://localhost:3002/templates')
+      const response = await fetch(`${WHATSAPP_API_URL}/templates`)
       const result = await response.json()
       
       if (result.success) {
@@ -109,7 +110,7 @@ export default function TemplatesPage() {
     try {
       const variables = formData.variables.split(',').map(v => v.trim()).filter(v => v)
       
-      const response = await fetch('http://localhost:3002/templates', {
+      const response = await fetch(`${WHATSAPP_API_URL}/templates`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -139,7 +140,7 @@ export default function TemplatesPage() {
     try {
       const variables = formData.variables.split(',').map(v => v.trim()).filter(v => v)
       
-      const response = await fetch(`http://localhost:3002/templates/${editingTemplate.id}`, {
+      const response = await fetch(`${WHATSAPP_API_URL}/templates/${editingTemplate.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -166,7 +167,7 @@ export default function TemplatesPage() {
     if (!confirm('¿Estás seguro de que quieres eliminar este template?')) return
     
     try {
-      const response = await fetch(`http://localhost:3002/templates/${id}`, {
+      const response = await fetch(`${WHATSAPP_API_URL}/templates/${id}`, {
         method: 'DELETE'
       })
       

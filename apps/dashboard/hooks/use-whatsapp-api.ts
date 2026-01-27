@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
+import { WHATSAPP_API_URL } from '../lib/api-config'
 
-const WHATSAPP_API_BASE_URL = process.env.NEXT_PUBLIC_WHATSAPP_API_URL || 'http://localhost:3002'
+const WHATSAPP_API_BASE_URL = WHATSAPP_API_URL
 const MAX_RETRIES = 3
 const BASE_RETRY_DELAY = 1000 // 1 second
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { WHATSAPP_API_URL } from '../../lib/api-config'
 import { Card } from '../ui/card'
 import { Badge } from '../ui/badge'
 import { 
@@ -64,7 +65,7 @@ export default function AdvancedPreview({
   const fetchLeads = async () => {
     setLoading(true)
     try {
-      const response = await fetch('http://localhost:3002/leads')
+      const response = await fetch(`${WHATSAPP_API_URL}/leads`)
       const result = await response.json()
       
       if (result.success) {
@@ -134,7 +135,7 @@ export default function AdvancedPreview({
     try {
       // Si tenemos templateId, usar el endpoint de preview del backend
       if (templateId) {
-        const response = await fetch(`http://localhost:3002/templates/${templateId}/preview`, {
+        const response = await fetch(`${WHATSAPP_API_URL}/templates/${templateId}/preview`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

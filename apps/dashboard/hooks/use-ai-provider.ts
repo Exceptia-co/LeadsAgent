@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AIStatus, AIProvider, AITestRequest, AITestResponse, AITestHistory } from '../types/ai'
+import { WHATSAPP_API_URL } from '../lib/api-config'
 
-const WHATSAPP_SERVICE_BASE_URL = 'http://localhost:3002'
+const WHATSAPP_SERVICE_BASE_URL = WHATSAPP_API_URL
 
 export function useAIProvider() {
   const [status, setStatus] = useState<AIStatus | null>(null)

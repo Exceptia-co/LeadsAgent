@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Card } from '../components/ui/card'
 import { Badge } from '../components/ui/badge'
+import { WHATSAPP_API_URL } from '../lib/api-config'
 import { 
   MessageSquare, 
   Search, 
@@ -64,7 +65,7 @@ export default function WhatsAppConversations() {
     try {
       setIsLoading(true)
       setError(null)
-      const response = await fetch('http://localhost:3002/api/conversations')
+      const response = await fetch(`${WHATSAPP_API_URL}/api/conversations`)
       
       if (!response.ok) {
         throw new Error(`Error: ${response.status} ${response.statusText}`)
@@ -82,7 +83,7 @@ export default function WhatsAppConversations() {
 
   const fetchStats = async () => {
     try {
-      const response = await fetch('http://localhost:3002/api/stats')
+      const response = await fetch(`${WHATSAPP_API_URL}/api/stats`)
       if (response.ok) {
         const data = await response.json()
         setStats(data)
