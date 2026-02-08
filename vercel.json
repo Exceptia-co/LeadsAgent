@@ -39,15 +39,15 @@
   "rewrites": [
     {
       "source": "/api/leads/:path*",
-      "destination": "https://leadcrmapi-production.up.railway.app/leads/:path*"
+      "destination": "https://api.cromgod.space/leads/:path*"
     },
     {
       "source": "/api/public/:path*",
-      "destination": "https://leadcrmapi-production.up.railway.app/public/:path*"
+      "destination": "https://api.cromgod.space/public/:path*"
     },
     {
       "source": "/api/backend-whatsapp/:path*",
-      "destination": "https://leadcrmapi-production.up.railway.app/whatsapp/:path*"
+      "destination": "https://api.cromgod.space/whatsapp/:path*"
     }
   ]
 }

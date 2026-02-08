@@ -31,7 +31,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://leadcrmapi-production.up.railway.app/:path*"
+      "destination": "https://api.cromgod.space/:path*"
     }
   ]
 }

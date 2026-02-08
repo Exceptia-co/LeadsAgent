@@ -9,7 +9,7 @@ Este documento describe la configuración de los servicios de IA disponibles en 
 OpenRouter proporciona acceso a múltiples modelos de IA a través de una sola API:
 
 ```env
-OPENROUTER_API_KEY="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"
+OPENROUTER_API_KEY="sk-or-v1-your_openrouter_api_key"
 OPENROUTER_BASE_URL="https://openrouter.ai/api/v1"
 OPENROUTER_MODEL="openai/gpt-oss-120b"
 ```
@@ -32,7 +32,7 @@ OPENROUTER_MODEL="openai/gpt-oss-120b"
 Servicio de IA nativo de Google:
 
 ```env
-GEMINI_API_KEY="AIzaSyA6tU2zY67ZZ3uEK0tBhzZZQbMpTI0-7pA"
+GEMINI_API_KEY="your_gemini_api_key"
 GEMINI_MODEL="gemini-2.5-flash"
 ```
 

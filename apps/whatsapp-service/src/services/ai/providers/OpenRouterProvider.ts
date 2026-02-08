@@ -38,6 +38,17 @@ export class OpenRouterProvider implements IAIProvider {
         throw new Error('OPENROUTER_API_KEY is required');
       }
 
+      // Check for placeholder API keys — skip initialization gracefully
+      if (this.isPlaceholderApiKey(config.apiKey)) {
+        logger.warn(
+          `⚠️  OpenRouter API key appears to be a placeholder. Provider will not be available.`
+        );
+        this.status.ready = false;
+        this.status.lastError = 'API key is a placeholder — set a real key to enable this provider';
+        this.status.lastHealthCheck = new Date();
+        return;
+      }
+
       // Enforce fixed model requirement
       if (config.model !== 'openai/gpt-oss-120b') {
         logger.warn(
@@ -204,7 +215,7 @@ export class OpenRouterProvider implements IAIProvider {
   }
 
   /**
-   * Test provider connectivity
+   * Test provider connectivity using models.list() (no token cost)
    */
   public async healthCheck(): Promise<boolean> {
     if (!this.client || !this.config) {
@@ -212,32 +223,41 @@ export class OpenRouterProvider implements IAIProvider {
     }
 
     try {
-      // Simple health check with minimal token usage
-      const testCompletion = await this.client.chat.completions.create({
-        model: this.config.model,
-        messages: [
-          { role: 'system', content: 'Respond with "OK"' },
-          { role: 'user', content: 'Health check' },
-        ],
-        max_tokens: 10,
-        temperature: 0,
-      });
-
-      const isHealthy = !!testCompletion.choices[0]?.message?.content;
+      // Use models.list() — validates API key without consuming tokens
+      await this.client.models.list();
 
       this.status.lastHealthCheck = new Date();
-      if (isHealthy) {
-        this.status.ready = true;
-        this.status.lastError = undefined;
-      }
+      this.status.ready = true;
+      this.status.lastError = undefined;
 
-      return isHealthy;
+      return true;
     } catch (error) {
       this.status.lastError = error instanceof Error ? error.message : 'Health check failed';
       this.status.lastHealthCheck = new Date();
       logger.warn(`OpenRouter health check failed:`, error);
       return false;
     }
+  }
+
+  /**
+   * Detect placeholder API keys that aren't real credentials
+   */
+  private isPlaceholderApiKey(apiKey: string): boolean {
+    const lower = apiKey.toLowerCase();
+    const placeholderPatterns = [
+      'replace',
+      'your_',
+      'your-',
+      'example',
+      'placeholder',
+      'xxx',
+      'changeme',
+      'insert',
+      'put_your',
+      'put-your',
+      'sk-or-placeholder',
+    ];
+    return placeholderPatterns.some(pattern => lower.includes(pattern));
   }
 
   /**

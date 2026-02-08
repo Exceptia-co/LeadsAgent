@@ -18,11 +18,6 @@ _Guía completa para configurar LeadsCRM desde cero_
   - API keys
   - Webhooks
 
-- [ ] 3. **[Configurar Herramientas IA](./ai-tools-setup.md)** (5 min)
-  - MCP tools
-  - Claude integration
-  - WARP configuration
-
 ---
 
 ## 🎯 **Path de Setup por Rol**
@@ -35,13 +30,12 @@ _Guía completa para configurar LeadsCRM desde cero_
 3. npm install && npm run dev  # ¡Listo!
 ```
 
-### **👨‍💻 Desarrollador**
+### **Desarrollador**
 
 ```bash
 1. database-setup.md    # Full DB setup
 2. authentication-setup.md  # Clerk + webhooks
-3. ai-tools-setup.md    # MCP + Claude tools
-4. ../development/     # Coding guidelines
+3. ../development/     # Coding guidelines
 ```
 
 ### **🚀 DevOps/Deploy**
@@ -67,14 +61,14 @@ pnpm db:studio
 pnpm dev
 
 # 3. Verificar puertos
-curl http://localhost:3000  # Dashboard
+curl http://localhost:3001  # Dashboard
 curl http://localhost:3003/health  # API
 curl http://localhost:3002/health  # WhatsApp Service
 ```
 
 ### ✅ **Indicadores de Éxito**
 
-- ✅ Dashboard carga en http://localhost:3000
+- ✅ Dashboard carga en http://localhost:3001
 - ✅ Login con Clerk funciona
 - ✅ Base de datos conecta sin errores
 - ✅ API responde health checks
@@ -104,7 +98,7 @@ pnpm db:migrate:dev
 cat .env | grep CLERK
 
 # Verificar configuración Clerk dashboard
-# → Web: http://localhost:3000
+# → Web: http://localhost:3001
 # → API: http://localhost:3003
 ```
 
@@ -127,7 +121,7 @@ pnpm build:fast
 
 - [`../README.md`](../README.md) - Índice maestro
 - [`../reference/environment-vars.md`](../reference/environment-vars.md) - Variables completas
-- [`../reference/ports-and-services.md`](../reference/ports-and-services.md) - Mapeo de puertos
+
 
 ### **Desarrollo**
 
@@ -139,7 +133,7 @@ pnpm build:fast
 
 - [`../TROUBLESHOOTING.md`](../TROUBLESHOOTING.md) - FAQ y soluciones
 - [`../DEBUG_SOLUTIONS.md`](../DEBUG_SOLUTIONS.md) - Debug específico
-- [`../technical/`](../technical/) - Documentación técnica avanzada
+
 
 ---
 

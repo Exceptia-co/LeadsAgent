@@ -311,6 +311,32 @@ export default function WhatsAppPage() {
     }
   };
 
+  // Polling fallback: poll REST API when Socket.IO is disconnected
+  useEffect(() => {
+    if (socketConnected) return;
+
+    const POLL_INTERVAL_MS = 10_000;
+
+    const pollSessions = async () => {
+      try {
+        const data = (await getSessions()) as {
+          sessions?: WhatsAppSession[];
+        };
+        if (data.sessions) {
+          setSessions(data.sessions);
+        }
+      } catch (err) {
+        console.warn("Polling fallback error:", err);
+      }
+    };
+
+    // Poll immediately on activation, then every 10s
+    pollSessions();
+    const intervalId = setInterval(pollSessions, POLL_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [socketConnected, getSessions]);
+
   // Handle template selection from TemplateManager
   const handleUseTemplate = (template: Template) => {
     setSelectedTemplate(template);

@@ -192,8 +192,8 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
     (data: { sessionId: string; qrCode: string; timestamp: string }) => {
       console.log("📱 QR code updated for session:", data.sessionId);
 
-      setSessions((current) =>
-        current.map((session) =>
+      setSessions((current) => {
+        const updated = current.map((session) =>
           session.id === data.sessionId
             ? {
                 ...session,
@@ -202,8 +202,21 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
                 timestamp: data.timestamp,
               }
             : session,
-        ),
-      );
+        );
+
+        // If session doesn't exist, add it (upsert)
+        if (!updated.find((s) => s.id === data.sessionId)) {
+          updated.push({
+            id: data.sessionId,
+            name: data.sessionId,
+            status: "QR_PENDING" as const,
+            qrCode: data.qrCode,
+            timestamp: data.timestamp,
+          });
+        }
+
+        return updated;
+      });
     },
     [],
   );
@@ -212,8 +225,8 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
     (data: { sessionId: string; phoneNumber: string; timestamp: string }) => {
       console.log("✅ Session connected:", data);
 
-      setSessions((current) =>
-        current.map((session) =>
+      setSessions((current) => {
+        const updated = current.map((session) =>
           session.id === data.sessionId
             ? {
                 ...session,
@@ -223,8 +236,21 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
                 timestamp: data.timestamp,
               }
             : session,
-        ),
-      );
+        );
+
+        // If session doesn't exist, add it (upsert)
+        if (!updated.find((s) => s.id === data.sessionId)) {
+          updated.push({
+            id: data.sessionId,
+            name: data.sessionId,
+            status: "CONNECTED" as const,
+            phoneNumber: data.phoneNumber,
+            timestamp: data.timestamp,
+          });
+        }
+
+        return updated;
+      });
     },
     [],
   );

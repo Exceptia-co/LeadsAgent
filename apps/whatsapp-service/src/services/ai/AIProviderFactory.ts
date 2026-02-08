@@ -69,9 +69,11 @@ export class AIProviderFactory implements IAIProviderFactory {
           const status = provider.getStatus();
           this.providersStatus.set(providerType, status);
 
-          logger.info(
-            `✅ ${providerType} provider initialized: ${status.ready ? 'Ready' : 'Failed'}`
-          );
+          if (status.ready) {
+            logger.info(`✅ ${providerType} provider initialized: Ready`);
+          } else {
+            logger.warn(`⚠️  ${providerType} provider initialized: Not Ready`);
+          }
         } else {
           logger.warn(`⚠️  ${providerType} provider skipped: No API key configured`);
           this.providersStatus.set(providerType, {

@@ -68,15 +68,47 @@ class RedisClient {
   async connect(): Promise<void> {
     try {
       await Promise.all([
-        this.client.connect(),
-        this.subscriber.connect(),
-        this.publisher.connect(),
+        this.connectClient(this.client, 'client'),
+        this.connectClient(this.subscriber, 'subscriber'),
+        this.connectClient(this.publisher, 'publisher'),
       ]);
       logger.info('All Redis clients connected successfully');
     } catch (error) {
       logger.error('Failed to connect to Redis:', error);
       throw error;
     }
+  }
+
+  /**
+   * Safely connect a single Redis client based on its current status.
+   * Handles the case where ioredis auto-connects before explicit .connect().
+   */
+  private connectClient(client: Redis, name: string): Promise<void> {
+    const status = client.status;
+
+    if (status === 'ready') {
+      logger.debug(`Redis ${name} already connected (status: ready)`);
+      return Promise.resolve();
+    }
+
+    if (status === 'wait') {
+      return client.connect();
+    }
+
+    // Status is 'connecting', 'connect', or 'reconnecting' — wait for ready
+    logger.debug(`Redis ${name} is in status '${status}', waiting for ready...`);
+    return new Promise<void>((resolve, reject) => {
+      const onReady = () => {
+        client.removeListener('error', onError);
+        resolve();
+      };
+      const onError = (err: Error) => {
+        client.removeListener('ready', onReady);
+        reject(err);
+      };
+      client.once('ready', onReady);
+      client.once('error', onError);
+    });
   }
 
   async disconnect(): Promise<void> {

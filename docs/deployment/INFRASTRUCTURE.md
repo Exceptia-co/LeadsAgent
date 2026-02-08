@@ -2,7 +2,7 @@
 
 Este documento describe la configuración completa de infraestructura para desplegar LeadsCRM en producción.
 
-## 📋 Resumen de Arquitectura
+## Resumen de Arquitectura
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -12,11 +12,11 @@ Este documento describe la configuración completa de infraestructura para despl
                     ┌───────────────┼───────────────┐
                     │               │               │
                     ▼               ▼               ▼
-            ┌───────────┐   ┌───────────┐   ┌───────────────┐
-            │  Vercel   │   │  Railway  │   │    Hetzner    │
-            │ Dashboard │   │    API    │   │   WhatsApp    │
-            │ (Next.js) │   │ (NestJS)  │   │   Service     │
-            └───────────┘   └───────────┘   └───────────────┘
+            ┌───────────┐   ┌───────────────┐   ┌───────────────┐
+            │  Vercel   │   │    Hetzner    │   │    Hetzner    │
+            │ Dashboard │   │     API      │   │   WhatsApp    │
+            │ (Next.js) │   │   (NestJS)   │   │   Service     │
+            └───────────┘   └───────────────┘   └───────────────┘
                     │               │               │
                     │               │               │
                     │               ▼               │
@@ -33,7 +33,7 @@ Este documento describe la configuración completa de infraestructura para despl
                     └───────────────┘
 ```
 
-## 🌐 Dominios y DNS
+## Dominios y DNS
 
 ### Proveedor: Namecheap
 
@@ -41,6 +41,7 @@ Este documento describe la configuración completa de infraestructura para despl
 | ------------------- | ----- | -------------------- | ------------------- |
 | `cromgod.space`     | A     | 76.76.21.21          | Dashboard (Vercel)  |
 | `www.cromgod.space` | CNAME | cname.vercel-dns.com | Dashboard alias     |
+| `api.cromgod.space` | A     | 46.225.26.89         | API (Hetzner)       |
 | `ws.cromgod.space`  | A     | 46.225.26.89         | WebSocket (Hetzner) |
 
 ### Configuración DNS en Namecheap
@@ -51,7 +52,7 @@ Este documento describe la configuración completa de infraestructura para despl
 
 ---
 
-## 🖥️ Vercel - Dashboard (Frontend)
+## Vercel - Dashboard (Frontend)
 
 ### Proyecto
 
@@ -67,13 +68,12 @@ Este documento describe la configuración completa de infraestructura para despl
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsuY3JvbWdvZC5zcGFjZSQ
 CLERK_SECRET_KEY=sk_live_xxxxxxxxxxxxx
 
-# Clerk URLs (usar fallbackRedirectUrl en código, no estas variables legacy)
-# DEPRECATED - remover cuando sea posible:
-# NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard
-# NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL=/dashboard
+# Clerk URLs
+NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard
+NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/dashboard
 
-# API Backend (Railway)
-NEXT_PUBLIC_API_URL=https://leadsagent-production.up.railway.app
+# API Backend (Hetzner)
+NEXT_PUBLIC_API_URL=https://api.cromgod.space
 
 # WebSocket (Hetzner con SSL)
 NEXT_PUBLIC_WEBSOCKET_URL=wss://ws.cromgod.space
@@ -86,15 +86,15 @@ NEXT_PUBLIC_WEBSOCKET_URL=wss://ws.cromgod.space
   "rewrites": [
     {
       "source": "/api/leads/:path*",
-      "destination": "https://leadsagent-production.up.railway.app/api/leads/:path*"
+      "destination": "https://api.cromgod.space/leads/:path*"
     },
     {
       "source": "/api/public/:path*",
-      "destination": "https://leadsagent-production.up.railway.app/api/public/:path*"
+      "destination": "https://api.cromgod.space/public/:path*"
     },
     {
       "source": "/api/backend-whatsapp/:path*",
-      "destination": "https://leadsagent-production.up.railway.app/api/whatsapp/:path*"
+      "destination": "https://api.cromgod.space/whatsapp/:path*"
     }
   ]
 }
@@ -108,79 +108,50 @@ NEXT_PUBLIC_WEBSOCKET_URL=wss://ws.cromgod.space
 
 ---
 
-## 🚂 Railway - API Backend
-
-### Proyecto
-
-- **URL Producción**: https://leadsagent-production.up.railway.app
-- **Framework**: NestJS 10
-- **Root Directory**: `apps/api`
-
-### Variables de Entorno
-
-```bash
-# Database (Supabase PostgreSQL)
-DATABASE_URL=postgresql://postgres.xxxx:password@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true
-DIRECT_URL=postgresql://postgres.xxxx:password@aws-0-eu-central-1.pooler.supabase.com:5432/postgres
-
-# Clerk Authentication
-CLERK_SECRET_KEY=sk_live_xxxxxxxxxxxxx
-CLERK_PUBLISHABLE_KEY=pk_live_xxxxxxxxxxxxx
-
-# CORS - Dominios permitidos
-CORS_ORIGINS=https://cromgod.space,https://www.cromgod.space,https://dashboard-ten-phi-38.vercel.app
-
-# WhatsApp Service
-WHATSAPP_SERVICE_URL=http://46.225.26.89:3002
-
-# OpenAI/AI Provider
-AI_PROVIDER=openrouter
-OPENROUTER_API_KEY=sk-or-xxxxxxxxxxxxx
-# O alternativamente:
-# AI_PROVIDER=openai
-# OPENAI_API_KEY=sk-xxxxxxxxxxxxx
-
-# Environment
-NODE_ENV=production
-PORT=3003
-```
-
-### Configuración de Build
-
-```bash
-# Build Command
-cd apps/api && pnpm install && pnpm build
-
-# Start Command
-cd apps/api && node dist/main.js
-
-# Watch Paths (para redeploys automáticos)
-apps/api/**
-packages/db/**
-```
-
----
-
-## 🟢 Hetzner - WhatsApp Service
+## Hetzner - API Backend + WhatsApp Service
 
 ### Servidor
 
 - **IP**: 46.225.26.89
 - **OS**: Ubuntu 24.04.3 LTS
 - **Nombre**: whatsapp-service
-- **Framework**: Express + whatsapp-web.js
+- **Servicios**: NestJS API (port 3003) + WhatsApp Service (port 3002)
 
 ### Acceso SSH
 
 ```bash
-# Conexión (si está habilitado)
+# Conexión
 ssh root@46.225.26.89
 
 # O usar Hetzner Cloud Console:
 # https://console.hetzner.com → Projects → whatsapp-service → Console
 ```
 
-### Variables de Entorno
+### Variables de Entorno (API)
+
+Crear archivo `/root/api/.env`:
+
+```bash
+# Server
+PORT=3003
+NODE_ENV=production
+
+# Database (Supabase)
+DATABASE_URL=postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true
+DIRECT_URL=postgresql://postgres.[project-ref]:[password]@db.[project-ref].supabase.co:5432/postgres
+
+# Clerk Authentication
+CLERK_SECRET_KEY=sk_live_xxxxxxxxxxxxx
+CLERK_PUBLISHABLE_KEY=pk_live_xxxxxxxxxxxxx
+
+# CORS
+CORS_ORIGINS=https://cromgod.space,https://www.cromgod.space,https://dashboard-ten-phi-38.vercel.app
+
+# WhatsApp Service
+WHATSAPP_SERVICE_URL=http://localhost:3002
+```
+
+### Variables de Entorno (WhatsApp Service)
 
 Crear archivo `/root/whatsapp-service/.env`:
 
@@ -190,11 +161,10 @@ PORT=3002
 NODE_ENV=production
 
 # Database (Supabase)
-DATABASE_URL=postgresql://postgres.xxxx:password@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true
-DIRECT_URL=postgresql://postgres.xxxx:password@aws-0-eu-central-1.pooler.supabase.com:5432/postgres
+DATABASE_URL=postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true
 
-# API Backend
-API_URL=https://leadsagent-production.up.railway.app
+# API Backend (local en el mismo servidor)
+API_URL=https://api.cromgod.space
 
 # AI Provider
 AI_PROVIDER=openrouter
@@ -215,7 +185,25 @@ LOG_LEVEL=info
 apt update && apt install -y nginx certbot python3-certbot-nginx
 ```
 
-#### Configuración `/etc/nginx/sites-available/whatsapp-ws`
+#### Configuración API `/etc/nginx/sites-available/api`
+
+```nginx
+server {
+    listen 80;
+    server_name api.cromgod.space;
+
+    location / {
+        proxy_pass http://127.0.0.1:3003;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+#### Configuración WebSocket `/etc/nginx/sites-available/whatsapp-ws`
 
 ```nginx
 server {
@@ -237,10 +225,11 @@ server {
 }
 ```
 
-#### Habilitar sitio y SSL
+#### Habilitar sitios y SSL
 
 ```bash
-# Crear symlink
+# Crear symlinks
+ln -sf /etc/nginx/sites-available/api /etc/nginx/sites-enabled/
 ln -sf /etc/nginx/sites-available/whatsapp-ws /etc/nginx/sites-enabled/
 
 # Verificar configuración
@@ -249,16 +238,10 @@ nginx -t
 # Recargar nginx
 systemctl reload nginx
 
-# Obtener certificado SSL (Let's Encrypt)
+# Obtener certificados SSL (Let's Encrypt)
+certbot --nginx -d api.cromgod.space
 certbot --nginx -d ws.cromgod.space
 ```
-
-El certificado SSL se renueva automáticamente. Certbot modifica el archivo para añadir:
-
-- `listen 443 ssl;`
-- `ssl_certificate /etc/letsencrypt/live/ws.cromgod.space/fullchain.pem;`
-- `ssl_certificate_key /etc/letsencrypt/live/ws.cromgod.space/privkey.pem;`
-- Redirect HTTP → HTTPS
 
 ### PM2 - Process Manager
 
@@ -266,7 +249,10 @@ El certificado SSL se renueva automáticamente. Certbot modifica el archivo para
 # Instalar PM2 globalmente
 npm install -g pm2
 
-# Iniciar servicio
+# Iniciar servicios
+cd /root/api
+pm2 start dist/main.js --name api-service
+
 cd /root/whatsapp-service
 pm2 start dist/main.js --name whatsapp-service
 
@@ -275,9 +261,10 @@ pm2 startup
 pm2 save
 
 # Comandos útiles
-pm2 status              # Ver estado
-pm2 logs whatsapp-service  # Ver logs
-pm2 restart whatsapp-service  # Reiniciar
+pm2 status                    # Ver estado
+pm2 logs api-service          # Ver logs API
+pm2 logs whatsapp-service     # Ver logs WhatsApp
+pm2 restart all               # Reiniciar todo
 ```
 
 ### Firewall (UFW)
@@ -287,7 +274,6 @@ pm2 restart whatsapp-service  # Reiniciar
 ufw allow 22/tcp    # SSH
 ufw allow 80/tcp    # HTTP (para certbot)
 ufw allow 443/tcp   # HTTPS/WSS
-ufw allow 3002/tcp  # WhatsApp service (interno, opcional)
 
 # Habilitar firewall
 ufw enable
@@ -296,7 +282,7 @@ ufw status
 
 ---
 
-## 🔐 Clerk - Autenticación
+## Clerk - Autenticación
 
 ### Configuración de Producción
 
@@ -330,26 +316,26 @@ clerk.cromgod.space → frontend-api.clerk.services
 Si necesitas sincronizar usuarios con tu base de datos:
 
 1. Clerk Dashboard → Webhooks → Add Endpoint
-2. URL: `https://leadsagent-production.up.railway.app/api/webhooks/clerk`
+2. URL: `https://api.cromgod.space/api/webhooks/clerk`
 3. Events: `user.created`, `user.updated`, `user.deleted`
 
 ---
 
-## 🗄️ Supabase - Base de Datos
+## Supabase - Base de Datos
 
 ### Proyecto
 
 - **Dashboard**: https://supabase.com/dashboard
-- **Región**: eu-central-1 (Frankfurt)
+- **Región**: eu-west-3 (Paris)
 
 ### Connection Strings
 
 ```bash
 # Pooler (para aplicaciones - puerto 6543)
-DATABASE_URL=postgresql://postgres.[project-ref]:[password]@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true
+DATABASE_URL=postgresql://postgres.[project-ref]:[password]@aws-1-eu-west-3.pooler.supabase.com:6543/postgres?pgbouncer=true
 
 # Direct (para migraciones - puerto 5432)
-DIRECT_URL=postgresql://postgres.[project-ref]:[password]@aws-0-eu-central-1.pooler.supabase.com:5432/postgres
+DIRECT_URL=postgresql://postgres.[project-ref]:[password]@db.[project-ref].supabase.co:5432/postgres
 ```
 
 ### Prisma Configuration
@@ -372,13 +358,13 @@ pnpm db:generate
 # Crear migración
 pnpm db:migrate:dev --name descripcion_cambio
 
-# Aplicar en producción (Railway lo hace automáticamente)
+# Aplicar en producción
 npx prisma migrate deploy
 ```
 
 ---
 
-## 🔄 CI/CD - Flujo de Despliegue
+## CI/CD - Flujo de Despliegue
 
 ### Vercel (Dashboard)
 
@@ -389,20 +375,21 @@ git push main → Vercel detecta cambios → Build automático → Deploy
 - Build Command: `cd ../.. && pnpm turbo build --filter=@leadcrm/dashboard`
 - Output Directory: `.next`
 
-### Railway (API)
-
-```
-git push main → Railway detecta cambios → Build automático → Deploy
-```
-
-- Configura Watch Paths para evitar rebuilds innecesarios
-
-### Hetzner (WhatsApp)
+### Hetzner (API + WhatsApp)
 
 Despliegue manual:
 
 ```bash
 ssh root@46.225.26.89
+
+# API
+cd /root/api
+git pull origin main
+pnpm install
+pnpm build
+pm2 restart api-service
+
+# WhatsApp Service
 cd /root/whatsapp-service
 git pull origin main
 pnpm install
@@ -412,7 +399,7 @@ pm2 restart whatsapp-service
 
 ---
 
-## 🔍 Verificación Post-Despliegue
+## Verificación Post-Despliegue
 
 ### 1. Dashboard (Vercel)
 
@@ -423,11 +410,11 @@ curl -I https://cromgod.space
 # Esperado: HTTP/2 200
 ```
 
-### 2. API (Railway)
+### 2. API (Hetzner)
 
 ```bash
 # Health check
-curl https://leadsagent-production.up.railway.app/api/health
+curl https://api.cromgod.space/api/health
 
 # Esperado: {"status":"ok"}
 ```
@@ -447,11 +434,11 @@ curl -I https://ws.cromgod.space
 Abrir https://cromgod.space/dashboard/whatsapp y verificar:
 
 - Estado: "En vivo" (no "Conectando")
-- Console del navegador: `🔌 Socket connected with ID: ...`
+- Console del navegador: `Socket connected with ID: ...`
 
 ---
 
-## 🚨 Troubleshooting
+## Troubleshooting
 
 ### WebSocket no conecta
 
@@ -464,7 +451,7 @@ Abrir https://cromgod.space/dashboard/whatsapp y verificar:
 
 ### API retorna CORS error
 
-1. Verificar `CORS_ORIGINS` en Railway incluye el dominio del frontend
+1. Verificar `CORS_ORIGINS` en Hetzner incluye el dominio del frontend
 2. Verificar rewrites en `vercel.json`
 
 ### Clerk "Invalid Request"
@@ -481,29 +468,29 @@ Abrir https://cromgod.space/dashboard/whatsapp y verificar:
 
 ---
 
-## 📊 Monitoreo
+## Monitoreo
 
 ### Logs
 
-| Servicio | Ubicación                      |
-| -------- | ------------------------------ |
-| Vercel   | Dashboard → Logs               |
-| Railway  | Dashboard → Deployments → Logs |
-| Hetzner  | `pm2 logs whatsapp-service`    |
+| Servicio | Ubicación                   |
+| -------- | --------------------------- |
+| Vercel   | Dashboard → Logs            |
+| API      | `pm2 logs api-service`      |
+| WhatsApp | `pm2 logs whatsapp-service` |
 
 ### Uptime Monitoring (Recomendado)
 
 Configurar en servicio como UptimeRobot o Better Uptime:
 
 - https://cromgod.space (Dashboard)
-- https://leadsagent-production.up.railway.app/api/health (API)
+- https://api.cromgod.space/api/health (API)
 - https://ws.cromgod.space (WebSocket)
 
 ---
 
-## 🔑 Credenciales y Accesos
+## Credenciales y Accesos
 
-> ⚠️ **NUNCA commitear credenciales a Git**
+> **NUNCA commitear credenciales a Git**
 
 Mantener en gestor de contraseñas seguro:
 
@@ -511,25 +498,23 @@ Mantener en gestor de contraseñas seguro:
 - [ ] Clerk secret keys
 - [ ] OpenRouter/OpenAI API keys
 - [ ] Hetzner Cloud credentials
-- [ ] Railway API token
 - [ ] Vercel API token
 
 ---
 
-## 📝 Checklist de Nuevo Despliegue
+## Checklist de Nuevo Despliegue
 
-- [ ] DNS configurado (cromgod.space, ws.cromgod.space)
+- [ ] DNS configurado (cromgod.space, api.cromgod.space, ws.cromgod.space)
 - [ ] Clerk instancia de producción creada
 - [ ] Clerk dominios autorizados
 - [ ] Supabase proyecto creado
 - [ ] Supabase migraciones aplicadas
-- [ ] Railway proyecto creado con variables
+- [ ] Hetzner servidor aprovisionado
+- [ ] Hetzner nginx + SSL configurado (api + ws)
+- [ ] Hetzner PM2 configurado (api + whatsapp)
 - [ ] Vercel proyecto conectado a GitHub
 - [ ] Vercel variables de entorno configuradas
 - [ ] Vercel dominios personalizados añadidos
-- [ ] Hetzner servidor aprovisionado
-- [ ] Hetzner nginx + SSL configurado
-- [ ] Hetzner PM2 configurado
 - [ ] WebSocket funcionando (verificar en browser)
 - [ ] Clerk login funciona
 - [ ] API endpoints responden
@@ -537,4 +522,4 @@ Mantener en gestor de contraseñas seguro:
 
 ---
 
-_Última actualización: Enero 2026_
+_Última actualización: Febrero 2026_

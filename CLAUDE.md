@@ -16,9 +16,9 @@ pnpm dev:dashboard         # Dashboard only (port 3001)
 pnpm dev:api               # API only (port 3003)
 pnpm dev:whatsapp          # WhatsApp service only (port 3002)
 
-# Docker (PostgreSQL + Redis)
-docker compose up -d       # Start database services
-docker compose down        # Stop database services
+# Docker (solo Redis — DB es Supabase cloud)
+docker compose up -d       # Start Redis
+docker compose down        # Stop Redis
 ```
 
 ### Build & Quality
@@ -66,7 +66,7 @@ pnpm whatsapp:cleanup-chrome  # Cleanup Chrome sessions
 
 ```
 apps/
-├── dashboard/             # Next.js 14 frontend (port 3000)
+├── dashboard/             # Next.js 14 frontend (port 3001)
 ├── api/                   # NestJS REST API (port 3003)
 ├── whatsapp-service/      # Express + whatsapp-web.js (port 3002)
 └── docs/                  # Documentation site
@@ -153,8 +153,8 @@ Branch `refactor/whatsapp-service` contains ongoing AIThinkingService modulariza
 
 Environment files:
 
-- `.env` → Development (Docker local)
-- `.env.production` → Production (Supabase)
+- `.env` → Development (Supabase + Docker Redis)
+- `.env.production` → Production (Supabase + Hetzner)
 - `.env.example` → Template (committed to repo)
 
 **Service Ports:**
@@ -163,14 +163,12 @@ Environment files:
 | Dashboard | 3001 | http://localhost:3001 |
 | API | 3003 | http://localhost:3003 |
 | WhatsApp | 3002 | http://localhost:3002 |
-| PostgreSQL | 5433 | localhost:5433 |
-| Redis | 6379 | localhost:6379 |
-| Adminer | 8080 | http://localhost:8080 |
+| Redis | 6381 | localhost:6381 |
 
 **Quick Start:**
 
 ```bash
-docker compose up -d       # Start PostgreSQL + Redis
+docker compose up -d       # Start Redis (DB is Supabase cloud)
 pnpm db:generate           # Generate Prisma client
 pnpm db:migrate:dev        # Run migrations
 pnpm dev                   # Start all services

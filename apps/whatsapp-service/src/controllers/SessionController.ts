@@ -95,9 +95,9 @@ export class SessionController {
   private mapStatusToDashboard(status: string): string {
     switch (status) {
       case 'ready':
+      case 'authenticated':
         return 'CONNECTED';
       case 'connecting':
-      case 'authenticated':
         return 'CONNECTING';
       case 'disconnected':
       case 'auth_failure':

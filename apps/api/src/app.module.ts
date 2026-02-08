@@ -15,12 +15,10 @@ import { resolve } from 'path';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: [
-        // When running from compiled dist (NODE runs from project root or dist)
-        resolve(__dirname, '../../.env'),
-        // When running via workspace scripts (cwd at repo root)
+        // Local override (apps/api/.env if it exists)
         resolve(process.cwd(), '.env'),
-        // Fallback to default .env resolution in current working directory
-        '.env',
+        // Root .env fallback (Turborepo sets CWD to apps/api/)
+        resolve(process.cwd(), '../../.env'),
       ],
     }),
     // Rate limiting: 100 requests per minute per IP

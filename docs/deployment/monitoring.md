@@ -92,17 +92,7 @@ Agrega estos monitores HTTP(s):
 - Ve a Deployments > Logs
 - Filtra por `error` o `warn`
 
-#### Railway (API)
-
-```bash
-# CLI
-railway logs --tail
-
-# Dashboard
-# railway.app > Tu proyecto > Logs
-```
-
-#### VPS (WhatsApp)
+#### Hetzner VPS (API + WhatsApp)
 
 ```bash
 # Logs de PM2

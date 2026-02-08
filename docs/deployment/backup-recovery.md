@@ -233,15 +233,13 @@ certbot --nginx -d whatsapp.tudominio.com
 # Frontend (Vercel)
 vercel rollback [deployment-url]
 
-# Backend (Railway)
-railway rollback [deployment-id]
-
-# VPS (Git)
+# Backend (Hetzner VPS)
 cd /opt/leadcrm
 git log --oneline -10  # Ver commits recientes
 git checkout [commit-hash]
-cd apps/whatsapp-service && pnpm build
-pm2 restart whatsapp-service
+cd apps/api && pnpm build
+cd ../whatsapp-service && pnpm build
+pm2 restart all
 ```
 
 ---
@@ -253,7 +251,7 @@ pm2 restart whatsapp-service
 | Servicio          | RPO (max data loss) | RTO (max downtime)   |
 | ----------------- | ------------------- | -------------------- |
 | Dashboard         | 0 (Git)             | 5 min (Vercel auto)  |
-| API               | 0 (Git)             | 5 min (Railway auto) |
+| API               | 0 (Git)             | 10 min (Hetzner VPS) |
 | Database          | 24h (backup diario) | 30 min               |
 | WhatsApp Sessions | 24h (backup diario) | 1h                   |
 
@@ -262,7 +260,7 @@ pm2 restart whatsapp-service
 | Escenario         | Impacto                | Respuesta                    |
 | ----------------- | ---------------------- | ---------------------------- |
 | Vercel caido      | Dashboard no accesible | Esperar (SLA 99.99%)         |
-| Railway caido     | API no responde        | Esperar o migrar a Fly.io    |
+| Hetzner VPS caido | API no responde        | Crear nuevo VPS + restore    |
 | VPS caido         | WhatsApp offline       | Crear nuevo VPS + restore    |
 | DB corrupta       | Perdida de datos       | Restore desde backup         |
 | Sesiones perdidas | Re-escanear QRs        | Restore o notificar usuarios |

@@ -306,10 +306,10 @@ Message Input → Classification → Context Building → AI Processing → Resp
 Local Development → pnpm dev → All services on localhost
 ```
 
-### Production Environment (Planned)
+### Production Environment
 
 ```
-Vercel (Dashboard) + Railway (API) + Supabase (Database) + Redis (Cache)
+Vercel (Dashboard) + Hetzner VPS (API + WhatsApp) + Supabase (Database) + Redis (Cache)
 ```
 
 ### CI/CD Pipeline

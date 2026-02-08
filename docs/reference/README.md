@@ -11,9 +11,8 @@ _Referencias rápidas y documentación de consulta_
 | Documento                                          | Descripción                              | Uso           |
 | -------------------------------------------------- | ---------------------------------------- | ------------- |
 | [`project-status.md`](./project-status.md)         | **Estado detallado del proyecto v2.2.0** | Status check  |
-| [`ports-and-services.md`](./ports-and-services.md) | **Mapeo de puertos y servicios**         | Setup/Debug   |
-| [`environment-vars.md`](./environment-vars.md)     | **Variables de entorno completas**       | Configuración |
-| [`commands-reference.md`](./commands-reference.md) | **Todos los comandos del proyecto**      | Desarrollo    |
+| [`environment-vars.md`](./environment-vars.md)     | **Variables de entorno completas**       | Configuracion |
+| [`all-commands.md`](./all-commands.md)             | **Todos los comandos del proyecto**      | Desarrollo    |
 
 ---
 
@@ -22,10 +21,10 @@ _Referencias rápidas y documentación de consulta_
 ### **🔸 Puertos del Sistema**
 
 ```
-3000 - Dashboard (Next.js)      - http://localhost:3000
-3001 - Documentation (Next.js)  - http://localhost:3001
+3001 - Dashboard (Next.js)      - http://localhost:3001
 3002 - WhatsApp Service         - http://localhost:3002
 3003 - API Backend (NestJS)     - http://localhost:3003
+6381 - Redis (Docker)           - localhost:6381
 ```
 
 ### **🔸 Comandos Esenciales**
@@ -93,14 +92,14 @@ OPENROUTER_API_KEY="sk-or-v1-..."
 
 ### **👨‍💻 Desarrollador**
 
-- [`commands-reference.md`](./commands-reference.md) - Comandos de desarrollo
+- [`all-commands.md`](./all-commands.md) - Comandos de desarrollo
 - [`environment-vars.md`](./environment-vars.md) - Variables de entorno
 - [`../development/coding-guidelines.md`](../development/coding-guidelines.md) - Standards
 
-### **🔧 DevOps/Admin**
+### **DevOps/Admin**
 
-- [`ports-and-services.md`](./ports-and-services.md) - Mapeo de servicios
-- [`../deployment/`](../deployment/) - Guías de deploy
+- [`../deployment/INFRASTRUCTURE.md`](../deployment/INFRASTRUCTURE.md) - Infraestructura
+- [`../deployment/`](../deployment/) - Guias de deploy
 - [`../deployment/security-guide.md`](../deployment/security-guide.md) - Seguridad
 
 ### **📊 Product/QA**
@@ -185,7 +184,7 @@ curl http://localhost:3002/health
 
 ```bash
 # Verificar todos los servicios
-curl http://localhost:3000     # Dashboard
+curl http://localhost:3001     # Dashboard
 curl http://localhost:3003/health  # API
 curl http://localhost:3002/health  # WhatsApp
 
@@ -210,7 +209,7 @@ pnpm build:fast
 
 - [`../development/`](../development/) - Guías de desarrollo
 - [`../PRACTICAL_EXAMPLES.md`](../PRACTICAL_EXAMPLES.md) - Ejemplos prácticos
-- [`../technical/`](../technical/) - Documentación técnica avanzada
+
 
 ### **Deploy y Operaciones**
 

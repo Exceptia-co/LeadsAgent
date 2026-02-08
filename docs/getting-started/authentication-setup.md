@@ -38,19 +38,19 @@ En la configuración del proyecto, establece:
 
 ```bash
 # Home URL
-http://localhost:3000
+http://localhost:3001
 
 # Sign-in URL
-http://localhost:3000/sign-in
+http://localhost:3001/sign-in
 
 # Sign-up URL
-http://localhost:3000/sign-up
+http://localhost:3001/sign-up
 
 # After sign-in URL
-http://localhost:3000/dashboard
+http://localhost:3001/dashboard
 
 # After sign-up URL
-http://localhost:3000/dashboard
+http://localhost:3001/dashboard
 ```
 
 ### **Paso 3: Obtener las Claves**
@@ -74,7 +74,7 @@ CLERK_SECRET_KEY="sk_test_TU_CLAVE_AQUI"
 ### **Paso 5: Configurar Webhooks (Opcional pero Recomendado)**
 
 1. En Clerk Dashboard → **Webhooks**
-2. **Add endpoint**: `http://localhost:3000/api/webhooks/clerk`
+2. **Add endpoint**: `http://localhost:3001/api/webhooks/clerk`
 3. **Events**: `user.created`, `user.updated`, `user.deleted`
 4. Copia el **Signing Secret** y úsalo en `CLERK_WEBHOOK_SECRET`
 
@@ -92,14 +92,14 @@ pnpm dev:dashboard
 
 ### **2. Probar en el Navegador**
 
-1. Ve a `http://localhost:3000/test-clerk`
+1. Ve a `http://localhost:3001/test-clerk`
 2. Deberías ver información de diagnóstico
 3. **IsLoaded** debe ser `✅ True`
 4. **Environment Variables** debe mostrar tu clave
 
 ### **3. Probar Login/Logout**
 
-1. Ve a `http://localhost:3000/sign-up`
+1. Ve a `http://localhost:3001/sign-up`
 2. Crea una cuenta nueva
 3. Verifica que te redirija a `/dashboard`
 4. **Logout** debería redirirte a la página principal
@@ -113,7 +113,7 @@ pnpm dev:dashboard
 echo $env:NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
 
 # O revisar en la página de test
-http://localhost:3000/test-clerk
+http://localhost:3001/test-clerk
 ```
 
 ### **Limpiar Cache del Navegador**
@@ -160,7 +160,7 @@ rm -rf .next
 pnpm dev:dashboard
 
 # 3. Verificar
-# Ir a http://localhost:3000/test-clerk
+# Ir a http://localhost:3001/test-clerk
 ```
 
 Una vez que tengas las claves correctas de Clerk, el problema del logout se resolverá completamente.

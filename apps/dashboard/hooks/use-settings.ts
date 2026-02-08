@@ -65,7 +65,7 @@ export function useSettings() {
     const mockApiKeys: ApiKeyConfig[] = [
       {
         name: "OpenRouter API",
-        key: "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",
+        key: "",
         configured: true,
         provider: "openrouter",
         description: "API para múltiples modelos de IA",
@@ -73,8 +73,8 @@ export function useSettings() {
       },
       {
         name: "Google Gemini API",
-        key: "AIzaSyA6tU2zY67ZZ3uEK0tBhzZZQbMpTI0-7pA",
-        configured: true,
+        key: "",
+        configured: false,
         provider: "gemini",
         description: "API de Google Gemini Pro",
         lastUsed: new Date().toISOString(),

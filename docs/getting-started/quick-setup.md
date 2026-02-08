@@ -101,7 +101,7 @@ pnpm dev
 
 **🎉 You're done!** Your services are running on:
 
-- **Dashboard**: http://localhost:3000
+- **Dashboard**: http://localhost:3001
 - **API**: http://localhost:3003
 - **WhatsApp Service**: http://localhost:3002
 
@@ -125,7 +125,7 @@ Should return: `{"status":"ok","timestamp":"..."}`
 
 ### 3. Access Dashboard
 
-1. Go to http://localhost:3000
+1. Go to http://localhost:3001
 2. Sign up/login with Clerk
 3. You should see the CRM dashboard
 
