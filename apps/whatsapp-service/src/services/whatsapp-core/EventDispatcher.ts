@@ -54,8 +54,12 @@ export class EventDispatcher {
       ) => Promise<{ allowed: boolean; reason: string; leadInfo?: any }>;
     }
   ): void {
+    // ─── Diagnostic logging for event flow debugging ───
+    logger.info(`[DIAG] Setting up event listeners for session ${sessionId}`);
+
     // QR Code event
     client.on('qr', async qr => {
+      logger.info(`[DIAG] QR event fired for session ${sessionId}`);
       logger.info(`QR Code generated for session ${sessionId}`);
 
       // Generate QR code for terminal display (development)
@@ -75,8 +79,9 @@ export class EventDispatcher {
       });
     });
 
-    // Ready event
-    client.on('ready', async () => {
+    // Ready event (once: whatsapp-web.js may emit this multiple times due to internal race conditions)
+    client.once('ready', async () => {
+      logger.info(`[DIAG] READY event fired for session ${sessionId}`);
       logger.info(`WhatsApp client ${sessionId} is ready`);
 
       const clientInfo = client.info;
@@ -110,10 +115,22 @@ export class EventDispatcher {
       });
     });
 
-    // Authenticated event
-    client.on('authenticated', async () => {
+    // Authenticated event (once: whatsapp-web.js may emit this multiple times due to hasSynced race condition)
+    client.once('authenticated', async () => {
+      logger.info(`[DIAG] AUTHENTICATED event fired for session ${sessionId}`);
       logger.info(`WhatsApp client ${sessionId} authenticated`);
       await sessionManager.updateSessionStatus(sessionId, 'authenticated');
+
+      // Safety timeout: if ready doesn't arrive within 90s after authenticated, log warning
+      const readyTimeout = setTimeout(() => {
+        logger.warn(`[DIAG] Session ${sessionId}: READY event NOT received 90s after AUTHENTICATED. Client info: ${client.info ? 'has info' : 'no info'}`);
+        logger.warn(`[DIAG] Session ${sessionId}: This likely means attachEventListeners() in whatsapp-web.js is stuck waiting for window.Store`);
+      }, 90000);
+
+      client.once('ready', () => {
+        clearTimeout(readyTimeout);
+        logger.info(`[DIAG] Session ${sessionId}: READY arrived after AUTHENTICATED (safety timeout cleared)`);
+      });
 
       // Get client info to send webhook
       const clientInfo = client.info;
@@ -192,7 +209,7 @@ export class EventDispatcher {
 
     // Loading screen event - Detect when WhatsApp Web shows loading screen
     client.on('loading_screen', async (percent: string, message: string) => {
-      logger.debug(`Session ${sessionId} loading: ${percent}% - ${message}`);
+      logger.info(`[DIAG] Loading screen ${sessionId}: ${percent}% - ${message}`);
       // Convert percent to number for comparison
       const percentNum = parseInt(percent) || 0;
       if (percentNum === 0) {
@@ -206,6 +223,7 @@ export class EventDispatcher {
 
     // Message event
     client.on('message', async (message: Message) => {
+      logger.info(`[DIAG] MESSAGE event fired for session ${sessionId} from=${message.from} body=${message.body?.substring(0, 50)}`);
       try {
         // Update last health check on successful message receipt
         await sessionManager.updateSessionStatus(sessionId, 'ready', {

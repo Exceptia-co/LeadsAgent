@@ -1,6 +1,6 @@
 import { Client, LocalAuth } from 'whatsapp-web.js';
 import { logger } from '../../utils/logger';
-import path from 'path';
+import { buildPuppeteerConfig } from '../../config/puppeteer.config';
 
 /**
  * ConnectionManager - Handles WhatsApp client creation, browser management, and connection monitoring
@@ -29,49 +29,7 @@ export class ConnectionManager {
           clientId: sessionId,
           dataPath: authDataPath,
         }),
-        puppeteer: {
-          headless:
-            process.env.PUPPETEER_HEADLESS === 'true' || process.env.NODE_ENV === 'production',
-          executablePath: process.env.CHROME_EXECUTABLE_PATH || undefined,
-          devtools: process.env.NODE_ENV === 'development',
-          // Enhanced configuration for stability
-          timeout: 120000, // 2 minutes timeout for initialization
-          args: [
-            // Basic security (required)
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-
-            // Memory optimization (common issues)
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-gpu-sandbox',
-            '--no-first-run',
-
-            // WhatsApp Web stability
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor',
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-
-            // Memory leak prevention
-            '--memory-pressure-off',
-            '--max_old_space_size=4096',
-
-            // Windows specific
-            '--disable-win32k-lockdown',
-            '--disable-component-cloud-policy',
-            '--disable-domain-reliability',
-
-            // User configuration
-            '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-
-            // Enhanced logging for debugging
-            ...(process.env.NODE_ENV === 'development'
-              ? ['--enable-logging=stderr', '--log-level=1']
-              : []),
-          ],
-        },
+        puppeteer: buildPuppeteerConfig({ timeout: 120000 }),
       });
 
       logger.info(`🚀 WhatsApp client created for session ${sessionId}`);
@@ -103,15 +61,22 @@ export class ConnectionManager {
       this.setupBrowserMonitoring(client, sessionId, onBrowserDisconnect);
 
       try {
+        logger.info(`[DIAG] client.initialize() called for ${sessionId}, waiting for events...`);
         client.initialize();
 
         // Clear timeout once initialization starts
         client.once('qr', () => {
+          logger.info(`[DIAG] once('qr') fired for ${sessionId}`);
           clearTimeout(initTimeout);
           logger.info(`✅ Session ${sessionId} initialization successful - QR generated`);
         });
 
+        client.once('authenticated', () => {
+          logger.info(`[DIAG] once('authenticated') fired for ${sessionId}`);
+        });
+
         client.once('ready', () => {
+          logger.info(`[DIAG] once('ready') fired for ${sessionId}`);
           clearTimeout(initTimeout);
           logger.info(`✅ Session ${sessionId} fully ready`);
         });

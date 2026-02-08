@@ -7,6 +7,7 @@ import { Client, LocalAuth } from 'whatsapp-web.js';
 import path from 'path';
 import fs from 'fs';
 import { logger } from '../../utils/logger';
+import { buildPuppeteerConfig } from '../../config/puppeteer.config';
 import {
   LogExecutionTime,
   Retry,
@@ -315,48 +316,7 @@ export class ConnectionManager implements IConnectionManager {
         clientId: sessionId,
         dataPath: authDataPath,
       }),
-      puppeteer: {
-        headless:
-          process.env.PUPPETEER_HEADLESS === 'true' || process.env.NODE_ENV === 'production',
-        executablePath: process.env.CHROME_EXECUTABLE_PATH || undefined,
-        devtools: process.env.NODE_ENV === 'development',
-        timeout: this.CONNECTION_TIMEOUT_MS,
-        args: [
-          // Security
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-
-          // Memory optimization
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--disable-gpu-sandbox',
-          '--no-first-run',
-
-          // WhatsApp Web stability
-          '--disable-web-security',
-          '--disable-features=VizDisplayCompositor',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding',
-
-          // Memory leak prevention
-          '--memory-pressure-off',
-          '--max_old_space_size=4096',
-
-          // Windows specific
-          '--disable-win32k-lockdown',
-          '--disable-component-cloud-policy',
-          '--disable-domain-reliability',
-
-          // User agent
-          '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-
-          // Development logging
-          ...(process.env.NODE_ENV === 'development'
-            ? ['--enable-logging=stderr', '--log-level=1']
-            : []),
-        ],
-      },
+      puppeteer: buildPuppeteerConfig({ timeout: this.CONNECTION_TIMEOUT_MS }),
     };
   }
 

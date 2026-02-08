@@ -15,7 +15,7 @@ export type {
 } from './whatsapp-authorization/RuleEngine';
 
 /**
- * WhatsApp Authorization Service - Phase 7 Refactored
+ * WhatsApp Authorization Service - Modular Architecture
  *
  * Facade pattern that orchestrates 4 specialized modules:
  * - RuleEngine: Authorization rules evaluation & decision logic
@@ -23,11 +23,7 @@ export type {
  * - LeadValidator: Lead lookup & validation logic
  * - AuthAuditLogger: Logging, statistics & configuration management
  *
- * Features:
- * - Feature toggle: USE_WHATSAPP_AUTHORIZATION_MODULAR environment variable
- * - 100% backward compatibility with automatic fallback
- * - Enhanced security features through specialized modules
- * - Maintains singleton pattern and existing API
+ * Maintains singleton pattern and existing API.
  */
 class WhatsAppAuthorizationService {
   private static instance: WhatsAppAuthorizationService;
@@ -45,23 +41,19 @@ class WhatsAppAuthorizationService {
   private readonly CONFIG_CACHE_DURATION = 300000; // 5 minutes
 
   private constructor() {
-    // Feature toggle: USE_WHATSAPP_AUTHORIZATION_MODULAR environment variable
-    this.useModular = process.env.USE_WHATSAPP_AUTHORIZATION_MODULAR === 'true';
+    // Modular architecture is now the only supported mode
+    this.useModular = true;
 
-    logger.info(
-      `🔐 WhatsApp Authorization Service Architecture: ${this.useModular ? 'MODULAR (v2.0)' : 'LEGACY (v1.0)'}`
-    );
+    logger.info('🔐 WhatsApp Authorization Service Architecture: MODULAR (v2.0)');
 
-    if (this.useModular) {
-      // Initialize modular components
-      this.ruleEngine = RuleEngine.getInstance();
-      this.riskAssessment = RiskAssessment.getInstance();
-      this.leadValidator = LeadValidator.getInstance();
-      this.authAuditLogger = AuthAuditLogger.getInstance();
+    // Always initialize modular components
+    this.ruleEngine = RuleEngine.getInstance();
+    this.riskAssessment = RiskAssessment.getInstance();
+    this.leadValidator = LeadValidator.getInstance();
+    this.authAuditLogger = AuthAuditLogger.getInstance();
 
-      // Initialize configuration
-      this.loadConfiguration();
-    }
+    // Initialize configuration
+    this.loadConfiguration();
   }
 
   public static getInstance(): WhatsAppAuthorizationService {
@@ -133,99 +125,44 @@ class WhatsAppAuthorizationService {
   // ============================================
 
   /**
-   * Perform comprehensive risk assessment (Enhanced modular feature)
+   * Perform comprehensive risk assessment
    */
   public async performRiskAssessment(phoneNumber: string, additionalContext?: any): Promise<any> {
-    if (this.useModular) {
-      logger.debug('🔄 Using enhanced modular RiskAssessment for performRiskAssessment');
-      const config = await this.getConfiguration();
-      return await this.riskAssessment.performComprehensiveRiskAssessment(
-        phoneNumber,
-        config,
-        additionalContext
-      );
-    } else {
-      logger.warn(
-        '⚠️ performRiskAssessment is only available in modular mode. Set USE_WHATSAPP_AUTHORIZATION_MODULAR=true'
-      );
-      return {
-        overallRiskScore: 0,
-        riskFactors: [],
-        riskLevel: 'low',
-        recommendation: 'allow',
-        confidence: 0,
-      };
-    }
+    logger.debug('🔄 Using modular RiskAssessment for performRiskAssessment');
+    const config = await this.getConfiguration();
+    return await this.riskAssessment.performComprehensiveRiskAssessment(
+      phoneNumber,
+      config,
+      additionalContext
+    );
   }
 
   /**
-   * Generate compliance report (Enhanced modular feature)
+   * Generate compliance report
    */
   public async generateComplianceReport(options: {
     startDate: Date;
     endDate: Date;
     includePersonalData?: boolean;
   }): Promise<any> {
-    if (this.useModular) {
-      logger.debug('🔄 Using enhanced modular AuthAuditLogger for generateComplianceReport');
-      return await this.authAuditLogger.generateComplianceReport(options);
-    } else {
-      logger.warn(
-        '⚠️ generateComplianceReport is only available in modular mode. Set USE_WHATSAPP_AUTHORIZATION_MODULAR=true'
-      );
-      return {
-        reportId: 'legacy-not-supported',
-        generatedAt: new Date(),
-        period: options,
-        summary: {
-          totalDecisions: 0,
-          complianceScore: 0,
-          securityIncidents: 0,
-          dataProtectionCompliance: false,
-        },
-        findings: [],
-        recommendations: ['Enable modular mode for compliance reporting'],
-      };
-    }
+    logger.debug('🔄 Using modular AuthAuditLogger for generateComplianceReport');
+    return await this.authAuditLogger.generateComplianceReport(options);
   }
 
   /**
-   * Validate lead data quality (Enhanced modular feature)
+   * Validate lead data quality
    */
   public validateLeadDataQuality(lead: Lead): any {
-    if (this.useModular) {
-      logger.debug('🔄 Using enhanced modular LeadValidator for validateLeadDataQuality');
-      return this.leadValidator.validateLeadDataQuality(lead);
-    } else {
-      logger.warn(
-        '⚠️ validateLeadDataQuality is only available in modular mode. Set USE_WHATSAPP_AUTHORIZATION_MODULAR=true'
-      );
-      return {
-        score: 0.5,
-        issues: ['modular-mode-required'],
-        recommendations: ['Enable modular mode for data quality validation'],
-      };
-    }
+    logger.debug('🔄 Using modular LeadValidator for validateLeadDataQuality');
+    return this.leadValidator.validateLeadDataQuality(lead);
   }
 
   /**
-   * Get lead interaction history (Enhanced modular feature)
+   * Get lead interaction history
    */
   public async getLeadInteractionHistory(leadId: string): Promise<any> {
-    if (this.useModular) {
-      logger.debug('🔄 Using enhanced modular LeadValidator for getLeadInteractionHistory');
-      return await this.leadValidator.getLeadInteractionHistory(leadId);
-    } else {
-      logger.warn(
-        '⚠️ getLeadInteractionHistory is only available in modular mode. Set USE_WHATSAPP_AUTHORIZATION_MODULAR=true'
-      );
-      return {
-        totalInteractions: 0,
-        interactionFrequency: 'low',
-        preferredChannels: [],
-        engagementScore: 0,
-      };
-    }
+    logger.debug('🔄 Using modular LeadValidator for getLeadInteractionHistory');
+    return await this.leadValidator.getLeadInteractionHistory(leadId);
   }
 
   // ============================================
@@ -301,7 +238,9 @@ class WhatsAppAuthorizationService {
           },
         };
 
-      await this.authAuditLogger.logAuthorizationDecision(context, fallbackDecision);
+      if (this.authAuditLogger) {
+        await this.authAuditLogger.logAuthorizationDecision(context, fallbackDecision);
+      }
       return fallbackDecision;
     }
   }
@@ -335,62 +274,33 @@ class WhatsAppAuthorizationService {
   /**
    * Get current architecture mode
    */
-  public getArchitectureMode(): 'modular' | 'legacy' {
-    return this.useModular ? 'modular' : 'legacy';
-  }
-
-  /**
-   * Switch architecture mode (for testing/debugging only)
-   */
-  public switchToModular(): void {
-    if (!this.useModular) {
-      this.useModular = true;
-      this.ruleEngine = RuleEngine.getInstance();
-      this.riskAssessment = RiskAssessment.getInstance();
-      this.leadValidator = LeadValidator.getInstance();
-      this.authAuditLogger = AuthAuditLogger.getInstance();
-      this.loadConfiguration();
-      logger.info('🔄 Switched to modular authorization architecture');
-    }
-  }
-
-  public switchToLegacy(): void {
-    if (this.useModular) {
-      this.useModular = false;
-      this.configCache = null;
-      logger.info('🔄 Switched to legacy authorization architecture');
-    }
+  public getArchitectureMode(): 'modular' {
+    return 'modular';
   }
 
   /**
    * Get module health status
    */
   public getModuleHealthStatus(): {
-    architecture: 'modular' | 'legacy';
-    modules?: {
+    architecture: 'modular';
+    modules: {
       ruleEngine: boolean;
       riskAssessment: boolean;
       leadValidator: boolean;
       authAuditLogger: boolean;
     };
-    configCached?: boolean;
+    configCached: boolean;
   } {
-    if (this.useModular) {
-      return {
-        architecture: 'modular',
-        modules: {
-          ruleEngine: !!this.ruleEngine,
-          riskAssessment: !!this.riskAssessment,
-          leadValidator: !!this.leadValidator,
-          authAuditLogger: !!this.authAuditLogger,
-        },
-        configCached: !!this.configCache,
-      };
-    } else {
-      return {
-        architecture: 'legacy',
-      };
-    }
+    return {
+      architecture: 'modular',
+      modules: {
+        ruleEngine: !!this.ruleEngine,
+        riskAssessment: !!this.riskAssessment,
+        leadValidator: !!this.leadValidator,
+        authAuditLogger: !!this.authAuditLogger,
+      },
+      configCached: !!this.configCache,
+    };
   }
 }
 

@@ -117,12 +117,8 @@ export class WhatsAppServiceRefactored implements IWhatsAppService {
         // Create session using SessionManager
         const session = await this.sessionManager.createSession(sessionId);
 
-        // Create connection using ConnectionManager
-        const client = await this.connectionManager.createConnection(sessionId, {
-          headless:
-            process.env.PUPPETEER_HEADLESS === 'true' || process.env.NODE_ENV === 'production',
-          executablePath: process.env.CHROME_EXECUTABLE_PATH,
-        });
+        // Create connection using ConnectionManager (Puppeteer config resolved centrally)
+        const client = await this.connectionManager.createConnection(sessionId);
 
         // Setup event handlers for the client
         this.eventHandler.setupEventListeners(sessionId, client);

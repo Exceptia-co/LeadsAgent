@@ -46,6 +46,9 @@
   "pnpm": {
     "overrides": {
       "next": "14.2.35"
+    },
+    "patchedDependencies": {
+      "whatsapp-web.js@1.34.6": "patches/whatsapp-web.js@1.34.6.patch"
     }
   },
   "packageManager": "pnpm@9.0.0",
