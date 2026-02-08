@@ -124,15 +124,18 @@ export function EditLeadModal({
         source: formData.source.trim() || undefined,
       };
 
-      // Get authentication token
+      // Get authentication token from Clerk
+      // Using default template which should work with @clerk/backend verifyToken
       const token = await getToken();
+
+      if (!token) {
+        throw new Error("No se pudo obtener el token de autenticación");
+      }
+
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
       };
-
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
 
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
       const response = await fetch(`${API_BASE_URL}/leads/${lead.id}`, {
@@ -164,6 +167,8 @@ export function EditLeadModal({
       onClose();
     } catch (error) {
       console.error("Error updating lead:", error);
+      console.error("Lead ID:", lead.id);
+      console.error("API URL:", process.env.NEXT_PUBLIC_API_URL);
 
       // Si es un error de duplicado específico
       if (
