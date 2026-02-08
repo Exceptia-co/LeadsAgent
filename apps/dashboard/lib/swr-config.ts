@@ -133,7 +133,11 @@ export const CACHE_KEYS = {
 
 // Global fetcher function with error handling
 export const globalFetcher = async (url: string) => {
-  const response = await fetch(url, {
+  // Use NEXT_PUBLIC_API_URL for client-side requests
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+  const fullUrl = `${API_BASE_URL}${url}`;
+
+  const response = await fetch(fullUrl, {
     headers: {
       "Cache-Control": "no-cache, no-store, must-revalidate",
       Pragma: "no-cache",
