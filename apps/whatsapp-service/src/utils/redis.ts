@@ -8,7 +8,7 @@ class RedisManager {
   private prefix: string;
 
   constructor() {
-    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6381';
     this.prefix = process.env.REDIS_PREFIX || 'whatsapp:';
 
     // Temporarily disabled - need to install redis package first

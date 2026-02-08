@@ -18,7 +18,13 @@ build/
 .env.local
 .env.production
 .env.staging
+.env*.local
+apps/**/.env
+apps/**/.env.local
+apps/**/.env.local.template
+packages/**/.env
 !.env.example
+!.env.production.example
 
 # Database
 *.db
@@ -108,5 +114,4 @@ acli.exe
 
 #AI
 .opencode/
-.env*.local
 tmpclaude-*

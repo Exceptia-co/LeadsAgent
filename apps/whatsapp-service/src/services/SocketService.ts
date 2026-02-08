@@ -30,9 +30,9 @@ export class SocketService {
     this.io = new SocketIOServer(httpServer, {
       cors: {
         origin: process.env.CORS_ORIGIN?.split(',') || [
-          'http://localhost:3000', // Dashboard
-          'http://localhost:3001', // Alternate dashboard
-          'http://localhost:3003', // API server
+          'http://localhost:3001', // Dashboard (Next.js)
+          'http://localhost:3002', // WhatsApp service (self)
+          'http://localhost:3003', // API server (NestJS)
         ],
         methods: ['GET', 'POST'],
         credentials: true,

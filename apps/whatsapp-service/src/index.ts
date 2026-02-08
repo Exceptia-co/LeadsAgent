@@ -23,20 +23,12 @@ process.on('unhandledRejection', (reason, promise) => {
 
 logger.info('🏁 Starting bootstrap process...');
 
-// Load environment variables from project root and local
 const rootEnvPath = path.resolve(process.cwd(), '../../.env');
-const localEnvPath = path.resolve(process.cwd(), '.env');
-
-// Try to load local .env first (higher priority)
-if (fs.existsSync(localEnvPath)) {
-  dotenv.config({ path: localEnvPath });
-  logger.info(`📁 Loaded local .env from: ${localEnvPath}`);
-}
-
-// Then load root .env (will not override existing vars)
 if (fs.existsSync(rootEnvPath)) {
   dotenv.config({ path: rootEnvPath });
   logger.info(`📁 Loaded root .env from: ${rootEnvPath}`);
+} else {
+  logger.info('📁 No root .env found, using system environment variables');
 }
 
 const app: Express = express();
@@ -52,16 +44,6 @@ async function bootstrap() {
     logger.info(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
     logger.info(`🔧 Port: ${PORT}`);
     logger.info(`📁 Current working directory: ${process.cwd()}`);
-
-    // Check if .env file exists
-    const envPath = path.resolve(process.cwd(), '../../.env');
-    logger.info(`🔍 Looking for .env file at: ${envPath}`);
-
-    if (fs.existsSync(envPath)) {
-      logger.info('✅ .env file found');
-    } else {
-      logger.warn('⚠️  .env file not found, using system environment variables');
-    }
 
     logger.info('📦 Loading middleware and routes...');
 

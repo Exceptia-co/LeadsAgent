@@ -6,9 +6,21 @@
     "NEXT_PUBLIC_*",
     "DATABASE_URL",
     "DIRECT_URL",
-    "OPENAI_API_KEY",
     "CLERK_*",
-    "SUPABASE_SERVICE_ROLE_KEY"
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "REDIS_*",
+    "CORS_ORIGIN",
+    "WEBHOOK_URL",
+    "WHATSAPP_*",
+    "AI_PROVIDER",
+    "OPENROUTER_*",
+    "OPENAI_API_KEY",
+    "GEMINI_*",
+    "API_BASE_URL",
+    "API_PORT",
+    "API_HOST",
+    "JWT_SECRET",
+    "ENCRYPTION_KEY"
   ],
   "tasks": {
     "build": {
@@ -28,7 +40,7 @@
         "build/**",
         "!build/cache/**"
       ],
-      "env": ["NODE_ENV", "NEXT_PUBLIC_*", "API_URL", "WHATSAPP_SERVICE_URL"]
+      "env": ["NODE_ENV", "NEXT_PUBLIC_*", "API_URL", "WHATSAPP_SERVICE_URL", "WHATSAPP_SERVICE_PORT", "API_PORT"]
     },
     "dev": {
       "dependsOn": ["^db:generate"],
