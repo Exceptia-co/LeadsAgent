@@ -5,6 +5,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as Select from "@radix-ui/react-select";
 import * as Label from "@radix-ui/react-label";
 import { X, ChevronDown, Loader2 } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
 import { Lead, LeadStatus, STATUS_LABELS } from "../types";
 
 interface EditLeadModalProps {
@@ -37,6 +38,7 @@ export function EditLeadModal({
   onSuccess,
   lead,
 }: EditLeadModalProps) {
+  const { getToken } = useAuth();
   const [formData, setFormData] = useState<FormData>({
     name: "",
     email: "",
@@ -122,11 +124,20 @@ export function EditLeadModal({
         source: formData.source.trim() || undefined,
       };
 
-      const response = await fetch(`/api/leads/${lead.id}`, {
+      // Get authentication token
+      const token = await getToken();
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+      const response = await fetch(`${API_BASE_URL}/public/leads/${lead.id}`, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(updateData),
       });
 
