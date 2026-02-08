@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
-import { QRCodeSVG } from "react-qr-code";
+import QRCodeSVG from "react-qr-code";
 import { useWhatsAppApi } from "../../../hooks/use-whatsapp-api";
 import { WhatsAppSession, WhatsAppMessage } from "../../../types";
 import { LeadSelector } from "../../../components/LeadSelector";

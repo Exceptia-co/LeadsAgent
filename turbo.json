@@ -28,7 +28,7 @@
         "build/**",
         "!build/cache/**"
       ],
-      "env": ["NODE_ENV", "NEXT_PUBLIC_*"]
+      "env": ["NODE_ENV", "NEXT_PUBLIC_*", "API_URL", "WHATSAPP_SERVICE_URL"]
     },
     "dev": {
       "dependsOn": ["^db:generate"],
