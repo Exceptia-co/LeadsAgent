@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
+import { QRCodeSVG } from "react-qr-code";
 import { useWhatsAppApi } from "../../../hooks/use-whatsapp-api";
 import { WhatsAppSession, WhatsAppMessage } from "../../../types";
 import { LeadSelector } from "../../../components/LeadSelector";
@@ -896,6 +897,29 @@ function SessionManager({
                     </div>
                   )}
                 </div>
+
+                {/* Show QR Code if session is pending */}
+                {(session.status === "QR_PENDING" ||
+                  session.status === "QR_READY") &&
+                  session.qr && (
+                    <div className="mt-4 pt-3 border-t border-gray-100">
+                      <div className="flex flex-col items-center space-y-2">
+                        <div className="flex items-center text-sm text-gray-700 mb-2">
+                          <QrCode className="h-4 w-4 mr-2 text-green-600" />
+                          <span className="font-medium">
+                            Escanea este código QR
+                          </span>
+                        </div>
+                        <div className="bg-white p-4 rounded-lg border-2 border-green-200">
+                          <QRCodeSVG value={session.qr} size={200} />
+                        </div>
+                        <p className="text-xs text-gray-500 text-center max-w-xs">
+                          Abre WhatsApp en tu teléfono y escanea este código
+                          para conectar la sesión
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                 <div className="mt-4 pt-3 border-t border-gray-100">
                   <button

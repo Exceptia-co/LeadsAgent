@@ -35,7 +35,9 @@
     "whatsapp:cleanup-chrome-force": "turbo run cleanup-chrome-force --filter=@leadcrm/whatsapp-service"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "next": "14.2.35",
+    "playwright": "^1.58.2",
     "prettier": "^3.6.2",
     "tsx": "^4.7.1",
     "turbo": "^2.5.6",
