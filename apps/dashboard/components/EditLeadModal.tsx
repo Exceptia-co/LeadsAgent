@@ -135,7 +135,7 @@ export function EditLeadModal({
       }
 
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
-      const response = await fetch(`${API_BASE_URL}/public/leads/${lead.id}`, {
+      const response = await fetch(`${API_BASE_URL}/leads/${lead.id}`, {
         method: "PATCH",
         headers,
         body: JSON.stringify(updateData),
