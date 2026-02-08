@@ -234,7 +234,7 @@ export const useAuthenticatedApi = () => {
       try {
         console.log("🚀 Creating new lead...", { name: leadData.name });
 
-        const result = await mutateFn("/api/public/leads", {
+        const result = await mutateFn("/public/leads", {
           method: "POST",
           body: JSON.stringify(leadData),
         });
@@ -254,7 +254,7 @@ export const useAuthenticatedApi = () => {
       try {
         console.log("🔄 Updating lead...", { id, updates });
 
-        const result = await mutateFn(`/api/public/leads/${id}`, {
+        const result = await mutateFn(`/public/leads/${id}`, {
           method: "PATCH",
           body: JSON.stringify(updates),
         });
@@ -274,7 +274,7 @@ export const useAuthenticatedApi = () => {
       try {
         console.log("🔄 Updating lead status...", { id, status });
 
-        const result = await mutateFn(`/api/public/leads/${id}`, {
+        const result = await mutateFn(`/public/leads/${id}`, {
           method: "PATCH",
           body: JSON.stringify({ status }),
         });
@@ -294,7 +294,7 @@ export const useAuthenticatedApi = () => {
       try {
         console.log("🗑️ Deleting lead...", { id });
 
-        const result = await mutateFn(`/api/public/leads/${id}`, {
+        const result = await mutateFn(`/public/leads/${id}`, {
           method: "DELETE",
         });
 

@@ -126,9 +126,9 @@ export const createCacheKey = (
 
 // Cache keys for different data types
 export const CACHE_KEYS = {
-  LEADS: "/api/public/leads",
-  LEAD_STATS: "/api/public/leads/stats",
-  WHATSAPP_STATS: "/api/whatsapp/stats",
+  LEADS: "/public/leads",
+  LEAD_STATS: "/public/leads/stats",
+  WHATSAPP_STATS: "/whatsapp/stats",
 } as const;
 
 // Global fetcher function with error handling

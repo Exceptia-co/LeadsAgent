@@ -127,7 +127,8 @@ export function AddLeadModal({
         leadData.source = formData.source.trim();
       }
 
-      const response = await fetch("/api/public/leads", {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+      const response = await fetch(`${API_BASE_URL}/public/leads`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
