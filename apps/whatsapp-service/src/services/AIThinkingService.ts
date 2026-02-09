@@ -883,57 +883,6 @@ class AIThinkingService {
     }
   }
 
-  /**
-   * Generar respuesta contextual rápida para consultas específicas
-   */
-  private async generateQuickContextualResponse(message: string): Promise<string | null> {
-    try {
-      // Detectar el tipo específico de consulta
-      const normalizedMessage = message.toLowerCase();
-
-      // PRECIOS
-      if (
-        normalizedMessage.includes('precio') ||
-        normalizedMessage.includes('cuesta') ||
-        normalizedMessage.includes('coste')
-      ) {
-        return `Nuestros paquetes: Basic (100 HUB/80€) y Plus (500 HUB/300€) con mejor precio por moneda. El Plus incluye anuncios TOP desde 450 HUB. ¿Te interesa alguno específico?`;
-      }
-
-      // PRODUCTOS/SERVICIOS
-      if (
-        normalizedMessage.includes('servicio') ||
-        normalizedMessage.includes('anuncio') ||
-        normalizedMessage.includes('destacado')
-      ) {
-        return `Ofrecemos anuncios VIP, destacados y premium para escorts. El anuncio TOP (30 días) es nuestro más popular por 450 HUB. ¿Qué tipo de promoción necesitas?`;
-      }
-
-      // REGISTRO
-      if (
-        normalizedMessage.includes('registr') ||
-        normalizedMessage.includes('cuenta') ||
-        normalizedMessage.includes('alta')
-      ) {
-        return `El registro es completamente gratuito en https://www.escortshub.net/es/sign-up. Solo pagas por los productos que decidas activar. ¿Te ayudo con algún paso?`;
-      }
-
-      // INFORMACIÓN GENERAL
-      if (
-        normalizedMessage.includes('info') ||
-        normalizedMessage.includes('funciona') ||
-        normalizedMessage.includes('plataforma')
-      ) {
-        return `EscortsHub.net es la plataforma líder para escorts en España. Usamos monedas HUB para servicios premium. Registro gratis, solo pagas lo que usas. ¿Qué te interesa saber?`;
-      }
-
-      // Si no coincide con ninguna categoría específica
-      return null;
-    } catch (error) {
-      logger.error('Error generando respuesta contextual rápida:', error);
-      return null;
-    }
-  }
 }
 
 // Exportar instancia singleton

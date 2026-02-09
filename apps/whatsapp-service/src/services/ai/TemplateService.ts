@@ -172,29 +172,13 @@ export class TemplateService implements ITemplateService {
    * Check if template should be used instead of AI generation
    */
   public shouldUseTemplate(
-    intent: IntentCategory,
+    _intent: IntentCategory,
     _confidence: number,
-    messageLength: number
+    _messageLength: number
   ): boolean {
-    try {
-      // Check if templates are enabled
-      if (!this.config.enableFallback) {
-        return false;
-      }
-
-      // Only use templates proactively for simple greetings (short "hola", "hello", etc.)
-      // All other intents should go through the full AI provider (OpenRouter) for
-      // contextual, personalized responses. Templates are still used as error fallbacks
-      // via createFallbackResponse() when the AI provider fails.
-      if (intent === 'saludo' && messageLength <= 20) {
-        return true;
-      }
-
-      return false;
-    } catch (error) {
-      logger.error('Error in shouldUseTemplate:', error);
-      return false;
-    }
+    // Templates proactivos ELIMINADOS - todas las respuestas van a OpenRouter/IA
+    // Templates solo se usan como fallback de error via createFallbackResponse()
+    return false;
   }
 
   /**

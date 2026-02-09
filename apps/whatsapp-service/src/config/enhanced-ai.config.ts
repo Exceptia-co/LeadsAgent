@@ -111,7 +111,7 @@ class EnhancedAIConfigService {
         openrouter: {
           apiKey: process.env['OPENROUTER_API_KEY'] || '',
           baseURL: process.env['OPENROUTER_BASE_URL'] || 'https://openrouter.ai/api/v1',
-          model: 'openai/gpt-oss-120b', // FIXED - must always be this model
+          model: process.env['OPENROUTER_MODEL'] || 'openai/gpt-oss-120b',
           maxTokens: parseInt(process.env['AI_MAX_TOKENS'] || '2048'),
           temperature: parseFloat(process.env['AI_TEMPERATURE'] || '0.7'),
           timeout: parseInt(process.env['AI_TIMEOUT'] || '30000'),
@@ -288,10 +288,8 @@ class EnhancedAIConfigService {
         warnings.push(`${provider.toUpperCase()}_API_KEY is not configured`);
       }
 
-      if (provider === 'openrouter' && providerConfig.model !== 'openai/gpt-oss-120b') {
-        errors.push(
-          `OpenRouter model must be 'openai/gpt-oss-120b', got '${providerConfig.model}'`
-        );
+      if (provider === 'openrouter' && !providerConfig.model) {
+        errors.push('OpenRouter model is not configured');
       }
 
       if (providerConfig.maxTokens < 100 || providerConfig.maxTokens > 8000) {
@@ -342,7 +340,7 @@ class EnhancedAIConfigService {
   private logConfigurationSummary(): void {
     logger.info('🔧 Enhanced AI Configuration Summary:');
     logger.info(`  - Default Provider: ${this.config.defaultProvider}`);
-    logger.info(`  - OpenRouter Model: ${this.config.providers.openrouter.model} (FIXED)`);
+    logger.info(`  - OpenRouter Model: ${this.config.providers.openrouter.model}`);
     logger.info(`  - Max Response Words: ${this.config.response.maxWords}`);
     logger.info(`  - Templates Enabled: ${this.config.response.enableTemplates}`);
     logger.info(`  - Fallbacks Enabled: ${this.config.response.enableFallbacks}`);
@@ -379,7 +377,7 @@ class EnhancedAIConfigService {
    * Get model name (maintains compatibility with ai.config.ts)
    */
   public getModelName(): string {
-    return this.config.providers.openrouter.model; // Always 'openai/gpt-oss-120b'
+    return this.config.providers.openrouter.model;
   }
 }
 

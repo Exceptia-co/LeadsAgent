@@ -31,10 +31,5 @@ export interface IResponseFormatter {
 
 export interface IQuickResponseEngine {
   tryQuick(message: string, context: any): Promise<AIResponse | null>;
-  generateQuickContextualResponse(
-    message: string,
-    context: any,
-    complexity: any
-  ): Promise<string | null>;
   generateCacheKey(message: string, context: any): string;
 }

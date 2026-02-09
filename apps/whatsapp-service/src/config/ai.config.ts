@@ -1,13 +1,15 @@
 /**
  * Configuración centralizada de IA para LeadsCRM
  *
- * Este archivo garantiza que SIEMPRE se use el modelo openai/gpt-oss-120b
- * sin importar otras configuraciones locales
+ * El modelo de OpenRouter se configura via OPENROUTER_MODEL en .env
+ * con fallback a 'openai/gpt-oss-120b'
  */
 
+const DEFAULT_MODEL = 'openai/gpt-oss-120b';
+
 export const AI_CONFIG = {
-  // Modelo fijo para OpenRouter - SIEMPRE openai/gpt-oss-120b
-  OPENROUTER_MODEL: 'openai/gpt-oss-120b',
+  // Modelo para OpenRouter - configurable via OPENROUTER_MODEL env var
+  OPENROUTER_MODEL: process.env['OPENROUTER_MODEL'] || DEFAULT_MODEL,
 
   // Base URL para OpenRouter
   OPENROUTER_BASE_URL: process.env['OPENROUTER_BASE_URL'] || 'https://openrouter.ai/api/v1',
@@ -33,8 +35,7 @@ export const AI_CONFIG = {
 } as const;
 
 /**
- * Obtiene el modelo que DEBE ser usado
- * Ignora variables de entorno y siempre devuelve openai/gpt-oss-120b
+ * Obtiene el modelo configurado para OpenRouter
  */
 export function getModelName(): string {
   return AI_CONFIG.OPENROUTER_MODEL;
@@ -50,8 +51,8 @@ export function validateAIConfig(): { isValid: boolean; errors: string[] } {
     errors.push('OPENROUTER_API_KEY is not configured');
   }
 
-  if (AI_CONFIG.OPENROUTER_MODEL !== 'openai/gpt-oss-120b') {
-    errors.push(`Expected model 'openai/gpt-oss-120b' but got '${AI_CONFIG.OPENROUTER_MODEL}'`);
+  if (!AI_CONFIG.OPENROUTER_MODEL) {
+    errors.push('OPENROUTER_MODEL is not configured');
   }
 
   return {

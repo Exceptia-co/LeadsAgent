@@ -2,7 +2,7 @@
  * OpenRouter AI Provider
  *
  * Implements the IAIProvider interface for OpenRouter API integration.
- * Maintains the fixed model requirement (openai/gpt-oss-120b).
+ * Model is configurable via OPENROUTER_MODEL env var (default: openai/gpt-oss-120b).
  */
 
 import OpenAI from 'openai';
@@ -15,6 +15,15 @@ import type {
   ProviderStatus,
 } from '../interfaces/IAIProvider';
 
+/** Status codes that are safe to retry (transient errors) */
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+
+/** Default max retries if not configured */
+const DEFAULT_MAX_RETRIES = 2;
+
+/** Base delay in ms for exponential backoff */
+const BASE_RETRY_DELAY_MS = 1000;
+
 /**
  * OpenRouter provider implementation
  */
@@ -23,6 +32,7 @@ export class OpenRouterProvider implements IAIProvider {
 
   private client: OpenAI | null = null;
   private config: ProviderConfig | null = null;
+  private maxRetries: number = DEFAULT_MAX_RETRIES;
   private status: ProviderStatus = {
     ready: false,
     lastHealthCheck: new Date(),
@@ -49,12 +59,10 @@ export class OpenRouterProvider implements IAIProvider {
         return;
       }
 
-      // Enforce fixed model requirement
-      if (config.model !== 'openai/gpt-oss-120b') {
-        logger.warn(
-          `⚠️  OpenRouter model should be 'openai/gpt-oss-120b', got '${config.model}'. Forcing correct model.`
-        );
+      // Validate model is configured
+      if (!config.model) {
         config.model = 'openai/gpt-oss-120b';
+        logger.warn('⚠️  No OpenRouter model specified, using default: openai/gpt-oss-120b');
       }
 
       // Initialize OpenAI client with OpenRouter configuration
@@ -69,6 +77,7 @@ export class OpenRouterProvider implements IAIProvider {
       });
 
       this.config = config;
+      this.maxRetries = parseInt(process.env['AI_MAX_RETRIES'] || String(DEFAULT_MAX_RETRIES));
 
       // Test connection
       await this.healthCheck();
@@ -78,7 +87,7 @@ export class OpenRouterProvider implements IAIProvider {
       this.status.lastHealthCheck = new Date();
 
       logger.info(`✅ OpenRouter provider initialized successfully`);
-      logger.info(`   - Model: ${config.model} (FIXED)`);
+      logger.info(`   - Model: ${config.model}`);
       logger.info(`   - Base URL: ${config.baseURL}`);
       logger.info(`   - Max Tokens: ${config.maxTokens}`);
       logger.info(`   - Temperature: ${config.temperature}`);
@@ -99,7 +108,7 @@ export class OpenRouterProvider implements IAIProvider {
   }
 
   /**
-   * Generate response using OpenRouter
+   * Generate response using OpenRouter with retry on transient failures
    */
   public async generateResponse(
     message: string,
@@ -112,96 +121,126 @@ export class OpenRouterProvider implements IAIProvider {
       throw new Error('OpenRouter provider not initialized or not ready');
     }
 
-    try {
-      // Build message array for conversation context
-      const messages: any[] = [{ role: 'system', content: systemPrompt }];
+    // Build message array once (reused across retries)
+    const messages: any[] = [{ role: 'system', content: systemPrompt }];
 
-      // Add conversation history if available
-      if (context?.conversationHistory) {
-        context.conversationHistory.forEach(msg => {
-          messages.push({
-            role: msg.role,
-            content: msg.content,
-          });
-        });
-      }
-
-      // Add current user message
-      messages.push({
-        role: 'user',
-        content: message,
+    if (context?.conversationHistory) {
+      context.conversationHistory.forEach(msg => {
+        messages.push({ role: msg.role, content: msg.content });
       });
-
-      logger.debug(`🤖 OpenRouter API Request:`, {
-        model: this.config.model,
-        messagesCount: messages.length,
-        maxTokens: this.config.maxTokens,
-        temperature: this.config.temperature,
-      });
-
-      // Make API call to OpenRouter
-      const completion = await this.client.chat.completions.create({
-        model: this.config.model, // Always 'openai/gpt-oss-120b'
-        messages,
-        max_tokens: this.config.maxTokens,
-        temperature: this.config.temperature,
-        stream: false,
-      });
-
-      const responseContent = completion.choices[0]?.message?.content;
-      if (!responseContent) {
-        throw new Error('Empty response received from OpenRouter');
-      }
-
-      const processingTime = Date.now() - startTime;
-
-      // Update status
-      this.status.responseTime = processingTime;
-      this.status.lastHealthCheck = new Date();
-
-      logger.debug(`✅ OpenRouter response generated in ${processingTime}ms`);
-
-      return {
-        success: true,
-        content: responseContent,
-        provider: this.name,
-        tokensUsed: completion.usage?.total_tokens,
-        processingTime,
-      };
-    } catch (error: any) {
-      const processingTime = Date.now() - startTime;
-
-      // Update error status
-      this.status.lastError = error.message;
-      this.status.responseTime = processingTime;
-
-      // Log detailed error information
-      logger.error(`❌ OpenRouter API Error:`, {
-        error: error.message,
-        status: error.status,
-        model: this.config?.model,
-        code: error.code,
-        processingTime: `${processingTime}ms`,
-      });
-
-      // Handle specific error cases
-      let errorMessage = error.message;
-      if (error.status === 404 || error.message?.includes('model not found')) {
-        errorMessage = `Model '${this.config.model}' not found in OpenRouter. Please check configuration.`;
-      } else if (error.status === 401) {
-        errorMessage = 'OpenRouter API key is invalid or expired';
-        this.status.ready = false; // Mark as not ready on auth errors
-      } else if (error.status === 429) {
-        errorMessage = 'OpenRouter rate limit exceeded. Please try again later.';
-      }
-
-      return {
-        success: false,
-        error: errorMessage,
-        provider: this.name,
-        processingTime,
-      };
     }
+
+    messages.push({ role: 'user', content: message });
+
+    logger.debug(`🤖 OpenRouter API Request:`, {
+      model: this.config.model,
+      messagesCount: messages.length,
+      maxTokens: this.config.maxTokens,
+      temperature: this.config.temperature,
+    });
+
+    let lastError: any = null;
+
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        // Wait before retry (exponential backoff)
+        if (attempt > 0) {
+          const delay = BASE_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+          logger.warn(`🔄 OpenRouter retry ${attempt}/${this.maxRetries} after ${delay}ms`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+        const completion = await this.client!.chat.completions.create({
+          model: this.config.model,
+          messages,
+          max_tokens: this.config.maxTokens,
+          temperature: this.config.temperature,
+          stream: false,
+        });
+
+        const responseContent = completion.choices[0]?.message?.content;
+        if (!responseContent) {
+          throw new Error('Empty response received from OpenRouter');
+        }
+
+        const processingTime = Date.now() - startTime;
+
+        this.status.responseTime = processingTime;
+        this.status.lastHealthCheck = new Date();
+
+        if (attempt > 0) {
+          logger.info(`✅ OpenRouter response succeeded on retry ${attempt} in ${processingTime}ms`);
+        } else {
+          logger.debug(`✅ OpenRouter response generated in ${processingTime}ms`);
+        }
+
+        return {
+          success: true,
+          content: responseContent,
+          provider: this.name,
+          tokensUsed: completion.usage?.total_tokens,
+          processingTime,
+        };
+      } catch (error: any) {
+        lastError = error;
+
+        // Only retry on transient errors
+        if (!this.isRetryableError(error) || attempt >= this.maxRetries) {
+          break;
+        }
+      }
+    }
+
+    // All attempts failed — return error response
+    const processingTime = Date.now() - startTime;
+    this.status.lastError = lastError.message;
+    this.status.responseTime = processingTime;
+
+    logger.error(`❌ OpenRouter API Error (after ${this.maxRetries + 1} attempts):`, {
+      error: lastError.message,
+      status: lastError.status,
+      model: this.config?.model,
+      code: lastError.code,
+      processingTime: `${processingTime}ms`,
+    });
+
+    const errorMessage = this.formatErrorMessage(lastError);
+
+    return {
+      success: false,
+      error: errorMessage,
+      provider: this.name,
+      processingTime,
+    };
+  }
+
+  /**
+   * Check if an error is transient and safe to retry
+   */
+  private isRetryableError(error: any): boolean {
+    // Network/timeout errors are retryable
+    if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
+      return true;
+    }
+    // HTTP status-based retryable errors (429, 5xx)
+    return typeof error.status === 'number' && RETRYABLE_STATUS_CODES.has(error.status);
+  }
+
+  /**
+   * Format error message based on error type
+   */
+  private formatErrorMessage(error: any): string {
+    if (error.status === 404 || error.message?.includes('model not found')) {
+      return `Model '${this.config?.model}' not found in OpenRouter. Please check configuration.`;
+    }
+    if (error.status === 401) {
+      this.status.ready = false;
+      return 'OpenRouter API key is invalid or expired';
+    }
+    if (error.status === 429) {
+      return 'OpenRouter rate limit exceeded after retries. Please try again later.';
+    }
+    return error.message;
   }
 
   /**

@@ -495,14 +495,12 @@ describe('ResponseGenerator', () => {
   });
 
   describe('Template Response Handling', () => {
-    test('should handle greeting templates', async () => {
+    test('should always return null (templates disabled, all responses go to AI)', async () => {
       const greetingAnalysis: IntentAnalysisExtended = {
         ...mockIntentAnalysis,
         intent: 'saludo',
         category: 'greeting',
       };
-
-      mockAIService.getTemplateResponse.mockReturnValue('¡Hola! Soy tu asistente.');
 
       const result = await responseGenerator['tryTemplateResponse'](
         greetingAnalysis,
@@ -510,36 +508,10 @@ describe('ResponseGenerator', () => {
         mockResponseStrategy
       );
 
-      expect(result).toEqual({
-        success: true,
-        content: '¡Hola! Soy tu asistente.',
-        provider: 'openrouter',
-        tokensUsed: 0,
-      });
+      expect(result).toBeNull();
     });
 
-    test('should handle category-specific templates', async () => {
-      mockAIService.getTemplateResponse
-        .mockReturnValueOnce(null) // First call for greeting
-        .mockReturnValueOnce('Template response for pricing'); // Second call for category
-
-      const result = await responseGenerator['tryTemplateResponse'](
-        mockIntentAnalysis,
-        mockEnrichedContext,
-        mockResponseStrategy
-      );
-
-      expect(result).toEqual({
-        success: true,
-        content: 'Template response for pricing',
-        provider: 'openrouter',
-        tokensUsed: 0,
-      });
-    });
-
-    test('should return null when no template available', async () => {
-      mockAIService.getTemplateResponse.mockReturnValue(null);
-
+    test('should return null for any intent category', async () => {
       const result = await responseGenerator['tryTemplateResponse'](
         mockIntentAnalysis,
         mockEnrichedContext,
@@ -547,24 +519,6 @@ describe('ResponseGenerator', () => {
       );
 
       expect(result).toBeNull();
-    });
-
-    test('should handle template errors gracefully', async () => {
-      mockAIService.getTemplateResponse.mockImplementation(() => {
-        throw new Error('Template error');
-      });
-
-      const result = await responseGenerator['tryTemplateResponse'](
-        mockIntentAnalysis,
-        mockEnrichedContext,
-        mockResponseStrategy
-      );
-
-      expect(result).toBeNull();
-      expect(mockLogger.error).toHaveBeenCalledWith(
-        'Error getting template response:',
-        expect.any(Error)
-      );
     });
   });
 
