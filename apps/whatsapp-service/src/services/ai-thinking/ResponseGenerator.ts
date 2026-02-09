@@ -257,46 +257,13 @@ export class ResponseGenerator {
    * Try template response for common patterns
    */
   private async tryTemplateResponse(
-    intentAnalysis: IntentAnalysisExtended,
-    context: EnrichedContext,
-    strategy: ResponseStrategy
+    _intentAnalysis: IntentAnalysisExtended,
+    _context: EnrichedContext,
+    _strategy: ResponseStrategy
   ): Promise<AIResponse | null> {
-    try {
-      // Check for greeting template
-      if (intentAnalysis.intent === 'saludo' || intentAnalysis.intent === 'greeting') {
-        const greetingResponse = AIService.getTemplateResponse('saludo', context, true);
-        if (greetingResponse) {
-          return {
-            success: true,
-            content: greetingResponse,
-            provider: AIService.getCurrentProvider() as any,
-            tokensUsed: 0,
-          };
-        }
-      }
-
-      // Check for category-specific templates
-      if (strategy.templateCategory) {
-        const templateResponse = AIService.getTemplateResponse(
-          strategy.templateCategory,
-          context,
-          false
-        );
-        if (templateResponse) {
-          return {
-            success: true,
-            content: templateResponse,
-            provider: AIService.getCurrentProvider() as any,
-            tokensUsed: 0,
-          };
-        }
-      }
-
-      return null;
-    } catch (error) {
-      logger.error('Error getting template response:', error);
-      return null;
-    }
+    // Templates proactivos ELIMINADOS - todas las respuestas van a OpenRouter/IA
+    // Los fallbacks de error se manejan en el catch de generateContextualResponse()
+    return null;
   }
 
   /**

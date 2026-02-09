@@ -173,39 +173,21 @@ export class TemplateService implements ITemplateService {
    */
   public shouldUseTemplate(
     intent: IntentCategory,
-    confidence: number,
+    _confidence: number,
     messageLength: number
   ): boolean {
     try {
-      const intentConfig = aiConfig.getIntentConfig();
-
       // Check if templates are enabled
       if (!this.config.enableFallback) {
         return false;
       }
 
-      // Never use templates proactively for consulta_general - those are error fallbacks only
-      // They should only be used via createFallbackResponse() when AI provider fails
-      if (intent === 'consulta_general') {
-        return false;
-      }
-
-      // Use template for high-confidence, simple intents
-      const highConfidenceThreshold = intentConfig.confidenceThreshold + 0.1;
-
-      // Simple greetings should always use templates
+      // Only use templates proactively for simple greetings (short "hola", "hello", etc.)
+      // All other intents should go through the full AI provider (OpenRouter) for
+      // contextual, personalized responses. Templates are still used as error fallbacks
+      // via createFallbackResponse() when the AI provider fails.
       if (intent === 'saludo' && messageLength <= 20) {
         return true;
-      }
-
-      // High confidence intents with templates available
-      if (confidence >= highConfidenceThreshold && this.templates.has(intent)) {
-        return true;
-      }
-
-      // Priority-based decision
-      if (this.config.priority === 'high' && confidence >= intentConfig.confidenceThreshold) {
-        return this.templates.has(intent);
       }
 
       return false;

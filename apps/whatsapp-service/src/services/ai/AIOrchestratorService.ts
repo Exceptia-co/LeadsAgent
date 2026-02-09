@@ -203,23 +203,11 @@ export class AIOrchestratorService {
 
       this.metrics.aiGenerations++;
 
-      // Apply template fallback if response is too long
-      let finalContent = aiResponse.content;
-      let fallbackUsed = false;
-
-      const maxWords = options?.maxWords || this.config.templateConfig.maxWords || 80;
+      // Truncación post-IA ELIMINADA - la IA ya tiene instrucciones de brevedad en el system prompt
+      // No reemplazamos respuestas de IA con templates hardcodeados
+      const finalContent = aiResponse.content;
+      const fallbackUsed = false;
       const wordCount = finalContent.split(/\s+/).length;
-
-      if (wordCount > maxWords && options?.enableFallback !== false) {
-        logger.debug(`Response too long (${wordCount} words), applying template fallback`);
-        finalContent = this.templateService.applyFallback(
-          finalContent,
-          intentAnalysis.intent as any,
-          maxWords
-        );
-        fallbackUsed = true;
-        this.metrics.fallbacksUsed++;
-      }
 
       const processingTime = Date.now() - startTime;
 
@@ -296,21 +284,13 @@ export class AIOrchestratorService {
    * Determine if template should be used instead of AI
    */
   private shouldUseTemplate(
-    message: string,
-    intentAnalysis: IntentAnalysis,
+    _message: string,
+    _intentAnalysis: IntentAnalysis,
     options?: ResponseOptions
   ): boolean {
-    // Always prefer templates if explicitly requested
-    if (options?.preferTemplate) {
-      return true;
-    }
-
-    // Use template service logic
-    return this.templateService.shouldUseTemplate(
-      intentAnalysis.intent as any,
-      intentAnalysis.confidence,
-      message.length
-    );
+    // Templates proactivos ELIMINADOS - solo usar si se solicita explícitamente
+    // Todas las respuestas van a OpenRouter/IA para respuestas contextuales
+    return options?.preferTemplate === true;
   }
 
   /**

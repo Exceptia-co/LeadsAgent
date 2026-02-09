@@ -873,33 +873,9 @@ class AIThinkingService {
         this.cacheManager.setComplexity(complexityKey, complexity);
       }
 
-      // 3. DECISIÓN DE RESPUESTA RÁPIDA BASADA EN COMPLEJIDAD
-      const processingTime = Date.now() - startTime;
-
-      if (complexity.complexity === 'simple_greeting' && complexity.confidence > 0.8) {
-        // SALUDOS SIMPLES - Usar template directo
-        const greetingResponse = AIService.getTemplateResponse('saludo', context, true);
-        if (greetingResponse) {
-          this.cacheManager.setResponse(cacheKey, greetingResponse);
-          logger.debug('⚡ Saludo procesado en modo express:', { processingTime });
-
-          return {
-            success: true,
-            content: greetingResponse,
-            provider: AIService.getCurrentProvider() as any,
-            tokensUsed: 0,
-          };
-        }
-      }
-
-      // specific_query: Disabled express mode - let the full AI thinking process handle these
-      // so OpenRouter generates contextual, personalized responses instead of hardcoded templates
-      if (complexity.complexity === 'specific_query') {
-        logger.debug('🔄 specific_query detected, skipping express mode for full AI processing');
-      }
-
-      // Si llegamos aquí, no podemos procesar rápidamente
-      logger.debug('🔄 No se puede procesar en modo express, usando proceso completo');
+      // 3. Templates proactivos ELIMINADOS - todas las respuestas van a OpenRouter/IA
+      // Solo el cache (arriba) puede devolver respuestas rápidas
+      logger.debug('🔄 No hay cache hit, usando proceso completo de IA');
       return null;
     } catch (error) {
       logger.error('Error en respuesta rápida:', error);
