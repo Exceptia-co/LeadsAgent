@@ -892,20 +892,10 @@ class AIThinkingService {
         }
       }
 
-      if (complexity.complexity === 'specific_query' && complexity.confidence > 0.7) {
-        // CONSULTAS ESPECÍFICAS - Respuesta contextual rápida
-        const quickContextualResponse = await this.generateQuickContextualResponse(message);
-        if (quickContextualResponse) {
-          this.cacheManager.setResponse(cacheKey, quickContextualResponse);
-          logger.debug('⚡ Consulta específica procesada en modo express:', { processingTime });
-
-          return {
-            success: true,
-            content: quickContextualResponse,
-            provider: AIService.getCurrentProvider() as any,
-            tokensUsed: 50, // Estimado para respuesta rápida
-          };
-        }
+      // specific_query: Disabled express mode - let the full AI thinking process handle these
+      // so OpenRouter generates contextual, personalized responses instead of hardcoded templates
+      if (complexity.complexity === 'specific_query') {
+        logger.debug('🔄 specific_query detected, skipping express mode for full AI processing');
       }
 
       // Si llegamos aquí, no podemos procesar rápidamente

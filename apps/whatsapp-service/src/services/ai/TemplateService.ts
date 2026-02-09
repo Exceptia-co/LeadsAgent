@@ -184,6 +184,12 @@ export class TemplateService implements ITemplateService {
         return false;
       }
 
+      // Never use templates proactively for consulta_general - those are error fallbacks only
+      // They should only be used via createFallbackResponse() when AI provider fails
+      if (intent === 'consulta_general') {
+        return false;
+      }
+
       // Use template for high-confidence, simple intents
       const highConfidenceThreshold = intentConfig.confidenceThreshold + 0.1;
 
