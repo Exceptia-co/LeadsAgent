@@ -11,7 +11,7 @@ Status: MVP (dashboard+api+db); WhatsApp+AI integrating.
 
 ## Commands
 
-Run order: retrieve knowledge -> task -> store knowledge (see .github/copilot-instructions.md).
+Run order: review docs -> execute tasks -> document learnings.
 
 **Development:**
 
@@ -128,10 +128,10 @@ OPENAI_API_KEY="sk-..."               # AI services (optional)
 
 ## AI Assistant Integration
 
-**MCP Tools (Mandatory):**
+**MCP Tools:**
 
-- Always use `byterover-retrieve-knowledge` before starting tasks
-- Use `byterover-store-knowledge` after completing critical work
-- Maintains persistent context across development sessions
+- Context7: Real-time library documentation
+- Sequential Thinking: Complex problem analysis
+- Browser: Web automation and testing
 
 **Benefits:** Reduced context explanation, better architectural decisions, shared knowledge base
