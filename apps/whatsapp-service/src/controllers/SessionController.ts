@@ -100,8 +100,9 @@ export class SessionController {
       case 'connecting':
         return 'CONNECTING';
       case 'disconnected':
-      case 'auth_failure':
         return 'DISCONNECTED';
+      case 'auth_failure':
+        return 'AUTH_INVALID';
       default:
         return 'QR_READY';
     }

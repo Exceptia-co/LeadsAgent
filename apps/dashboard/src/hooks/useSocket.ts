@@ -53,6 +53,19 @@ export interface SocketEvents {
     timestamp: string;
   }) => void;
 
+  "session:snapshot_created": (data: {
+    sessionId: string;
+    sizeBytes: number;
+    createdAt: string;
+    timestamp: string;
+  }) => void;
+
+  "session:snapshot_restored": (data: {
+    sessionId: string;
+    restoredAt: string;
+    timestamp: string;
+  }) => void;
+
   "server:shutdown": (data: { message: string; timestamp: string }) => void;
 
   error: (data: { message: string; timestamp: string }) => void;
@@ -365,6 +378,14 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
       newSocket.on("session:disconnected", handleSessionDisconnected);
       newSocket.on("error", handleError);
       newSocket.on("server:shutdown", handleServerShutdown);
+
+      // Snapshot events - log for now, dashboard will react via status_changed
+      newSocket.on("session:snapshot_created", (data: any) => {
+        console.log("Snapshot created for session:", data.sessionId);
+      });
+      newSocket.on("session:snapshot_restored", (data: any) => {
+        console.log("Snapshot restored for session:", data.sessionId);
+      });
 
       socketRef.current = newSocket;
       setSocket(newSocket);

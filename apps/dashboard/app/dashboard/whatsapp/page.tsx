@@ -29,6 +29,12 @@ import {
   WifiOff,
   Zap,
   Circle,
+  HardDrive,
+  RefreshCw,
+  Heart,
+  Shield,
+  Pause,
+  Play,
 } from "lucide-react";
 import { Tooltip } from "../../../components/ui/tooltip";
 import { useToast } from "../../../components/ui/toast";
@@ -50,6 +56,7 @@ import { ProactiveMessage } from "../../../components/proactive/ProactiveMessage
 // Status variants for sessions
 const SESSION_STATUS_VARIANTS = {
   DISCONNECTED: "destructive" as const,
+  AUTH_INVALID: "destructive" as const,
   CONNECTING: "warning" as const,
   CONNECTED: "success" as const,
   QR_READY: "secondary" as const,
@@ -58,6 +65,7 @@ const SESSION_STATUS_VARIANTS = {
 
 const SESSION_STATUS_LABELS = {
   DISCONNECTED: "Desconectado",
+  AUTH_INVALID: "Desvinculado",
   CONNECTING: "Conectando",
   CONNECTED: "Conectado",
   QR_READY: "QR Listo",
@@ -786,6 +794,184 @@ function SessionManager({
   const [newSessionId, setNewSessionId] = useState("");
   const [newSessionName, setNewSessionName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [sessionHealth, setSessionHealth] = useState<Record<string, any>>({});
+  const [backupInProgress, setBackupInProgress] = useState<string | null>(null);
+  const [pauseInProgress, setPauseInProgress] = useState<string | null>(null);
+  const [reconnectInProgress, setReconnectInProgress] = useState<string | null>(null);
+
+  const { showToast } = useToast();
+
+  // Load health data for all sessions
+  useEffect(() => {
+    const loadHealth = async () => {
+      for (const session of sessions) {
+        try {
+          const res = await fetch(
+            `${getWhatsAppUrl()}/sessions/${session.id}/health`,
+          );
+          const data = await res.json();
+          if (data.success) {
+            setSessionHealth((prev) => ({
+              ...prev,
+              [session.id]: data.data,
+            }));
+          }
+        } catch {
+          // ignore individual health check failures
+        }
+      }
+    };
+
+    if (sessions.length > 0) {
+      loadHealth();
+      const interval = setInterval(loadHealth, 30000); // refresh every 30s
+      return () => clearInterval(interval);
+    }
+  }, [sessions.length]);
+
+  const handleForceBackup = async (sessionId: string) => {
+    setBackupInProgress(sessionId);
+    try {
+      const res = await fetch(
+        `${getWhatsAppUrl()}/sessions/${sessionId}/backup`,
+        { method: "POST" },
+      );
+      const data = await res.json();
+      if (data.success) {
+        showToast({
+          type: "success",
+          title: "Backup creado",
+          description: `Backup creado (${((data.data?.sizeBytes || 0) / 1024 / 1024).toFixed(2)}MB)`,
+        });
+      } else {
+        showToast({
+          type: "error",
+          title: "Error de backup",
+          description: data.error || "No se pudo crear el backup",
+        });
+      }
+    } catch {
+      showToast({
+        type: "error",
+        title: "Error de backup",
+        description: "Error de conexion al servidor",
+      });
+    } finally {
+      setBackupInProgress(null);
+    }
+  };
+
+  const handleRestoreBackup = async (sessionId: string) => {
+    if (
+      !confirm(
+        "Esto restaurara la sesion desde el ultimo backup. Continuar?",
+      )
+    )
+      return;
+
+    try {
+      const res = await fetch(
+        `${getWhatsAppUrl()}/sessions/${sessionId}/restore-backup`,
+        { method: "POST" },
+      );
+      const data = await res.json();
+      if (data.success) {
+        showToast({
+          type: "success",
+          title: "Backup restaurado",
+          description: "Reinicia la sesion para aplicar los cambios",
+        });
+      } else {
+        showToast({
+          type: "error",
+          title: "Error de restauracion",
+          description: data.error || "No se pudo restaurar el backup",
+        });
+      }
+    } catch {
+      showToast({
+        type: "error",
+        title: "Error de restauracion",
+        description: "Error de conexion al servidor",
+      });
+    }
+  };
+
+  const handlePauseSession = async (sessionId: string) => {
+    if (
+      !confirm(
+        "Esto desconectará la sesión sin eliminarla. Los archivos de autenticación se mantienen para reconectar después. ¿Continuar?",
+      )
+    )
+      return;
+
+    setPauseInProgress(sessionId);
+    try {
+      const res = await fetch(
+        `${getWhatsAppUrl()}/sessions/${sessionId}/force-disconnect`,
+        { method: "POST" },
+      );
+      const data = await res.json();
+      if (data.success) {
+        showToast({
+          type: "success",
+          title: "Sesión pausada",
+          description:
+            "La sesión se desconectó. Puedes reconectarla cuando quieras.",
+        });
+        onSessionsChange();
+      } else {
+        showToast({
+          type: "error",
+          title: "Error al pausar",
+          description: data.error || "No se pudo desconectar la sesión",
+        });
+      }
+    } catch {
+      showToast({
+        type: "error",
+        title: "Error al pausar",
+        description: "Error de conexión al servidor",
+      });
+    } finally {
+      setPauseInProgress(null);
+    }
+  };
+
+  const handleReconnectSession = async (sessionId: string) => {
+    setReconnectInProgress(sessionId);
+    try {
+      const res = await fetch(`${getWhatsAppUrl()}/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast({
+          type: "success",
+          title: "Reconectando sesión",
+          description:
+            "La sesión se está reconectando usando la autenticación guardada.",
+        });
+        onSessionsChange();
+      } else {
+        showToast({
+          type: "error",
+          title: "Error al reconectar",
+          description: data.error || "No se pudo reconectar la sesión",
+        });
+      }
+    } catch {
+      showToast({
+        type: "error",
+        title: "Error al reconectar",
+        description: "Error de conexión al servidor",
+      });
+    } finally {
+      setReconnectInProgress(null);
+    }
+  };
 
   const handleCreateSession = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -947,14 +1133,177 @@ function SessionManager({
                     </div>
                   )}
 
-                <div className="mt-4 pt-3 border-t border-gray-100">
-                  <button
-                    onClick={() => handleDeleteSession(session.id)}
-                    className="text-red-600 hover:text-red-800 text-sm flex items-center"
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" />
-                    Eliminar
-                  </button>
+                {/* Health & Backup Indicators */}
+                {(() => {
+                  const health = sessionHealth[session.id];
+                  if (!health) return null;
+
+                  const getHeartbeatColor = () => {
+                    if (!health.heartbeatAge) return "text-gray-400";
+                    if (health.heartbeatAge < 60000) return "text-green-500";
+                    if (health.heartbeatAge < 120000)
+                      return "text-yellow-500";
+                    return "text-red-500";
+                  };
+
+                  return (
+                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+                      {/* Heartbeat */}
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center">
+                          <Heart
+                            className={`h-3 w-3 mr-1 ${getHeartbeatColor()}`}
+                          />
+                          <span className="text-gray-500">Heartbeat</span>
+                        </div>
+                        <span className={`font-medium ${getHeartbeatColor()}`}>
+                          {health.heartbeatAge
+                            ? health.heartbeatAge < 60000
+                              ? "OK"
+                              : health.heartbeatAge < 120000
+                                ? "Lento"
+                                : "Sin respuesta"
+                            : "N/A"}
+                        </span>
+                      </div>
+
+                      {/* Backup Status */}
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center">
+                          <Shield
+                            className={`h-3 w-3 mr-1 ${health.backupStatus?.hasBackup ? "text-green-500" : "text-gray-400"}`}
+                          />
+                          <span className="text-gray-500">Backup</span>
+                        </div>
+                        <span className="text-gray-600">
+                          {health.backupStatus?.hasBackup
+                            ? new Date(
+                                health.backupStatus.lastBackupDate,
+                              ).toLocaleDateString("es-ES", {
+                                day: "2-digit",
+                                month: "short",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "Sin backup"}
+                        </span>
+                      </div>
+
+                      {/* Auth Files */}
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center">
+                          <HardDrive
+                            className={`h-3 w-3 mr-1 ${health.hasLocalAuth ? "text-green-500" : "text-red-500"}`}
+                          />
+                          <span className="text-gray-500">Auth Local</span>
+                        </div>
+                        <span
+                          className={
+                            health.hasLocalAuth
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }
+                        >
+                          {health.hasLocalAuth ? "OK" : "No encontrado"}
+                        </span>
+                      </div>
+
+                      {/* Auth Invalidated Warning */}
+                      {health.authInvalidated && (
+                        <div className="flex items-center bg-orange-50 border border-orange-200 rounded px-2 py-1 mt-1">
+                          <AlertCircle className="h-3 w-3 mr-1 text-orange-500 flex-shrink-0" />
+                          <span className="text-xs text-orange-700">
+                            Sesión desvinculada — necesita nuevo QR
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Session Action Buttons */}
+                <div className="mt-4 pt-3 border-t border-gray-100 space-y-2">
+                  {/* Primary actions: Pause / Reconnect */}
+                  <div className="flex items-center justify-between">
+                    {session.status === "CONNECTED" ? (
+                      <button
+                        onClick={() => handlePauseSession(session.id)}
+                        disabled={pauseInProgress === session.id}
+                        className="text-yellow-600 hover:text-yellow-800 text-sm flex items-center disabled:opacity-50"
+                        title="Desconectar sin eliminar (mantiene auth)"
+                      >
+                        {pauseInProgress === session.id ? (
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <Pause className="h-4 w-4 mr-1" />
+                        )}
+                        Pausar
+                      </button>
+                    ) : session.status === "DISCONNECTED" ||
+                      session.status === "AUTH_INVALID" ? (
+                      <button
+                        onClick={() => handleReconnectSession(session.id)}
+                        disabled={reconnectInProgress === session.id}
+                        className={`text-sm flex items-center disabled:opacity-50 ${
+                          session.status === "AUTH_INVALID"
+                            ? "text-orange-600 hover:text-orange-800"
+                            : "text-green-600 hover:text-green-800"
+                        }`}
+                        title={
+                          session.status === "AUTH_INVALID"
+                            ? "Sesión desvinculada — se pedirá nuevo QR"
+                            : "Reconectar usando auth guardada"
+                        }
+                      >
+                        {reconnectInProgress === session.id ? (
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                        ) : (
+                          <Play className="h-4 w-4 mr-1" />
+                        )}
+                        {session.status === "AUTH_INVALID"
+                          ? "Reconectar (QR)"
+                          : "Reconectar"}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-400 italic">
+                        {SESSION_STATUS_LABELS[session.status]}...
+                      </span>
+                    )}
+
+                    <button
+                      onClick={() => handleDeleteSession(session.id)}
+                      className="text-red-600 hover:text-red-800 text-sm flex items-center"
+                      title="Eliminar sesión completamente"
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Eliminar
+                    </button>
+                  </div>
+
+                  {/* Secondary actions: Backup / Restore */}
+                  <div className="flex items-center justify-end space-x-2">
+                    <button
+                      onClick={() => handleForceBackup(session.id)}
+                      disabled={backupInProgress === session.id}
+                      className="text-blue-600 hover:text-blue-800 text-sm flex items-center disabled:opacity-50"
+                      title="Crear backup ahora"
+                    >
+                      {backupInProgress === session.id ? (
+                        <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                      ) : (
+                        <HardDrive className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      Backup
+                    </button>
+                    <button
+                      onClick={() => handleRestoreBackup(session.id)}
+                      className="text-orange-600 hover:text-orange-800 text-sm flex items-center"
+                      title="Restaurar desde backup"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                      Restaurar
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

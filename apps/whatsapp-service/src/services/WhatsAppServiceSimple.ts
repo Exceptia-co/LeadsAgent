@@ -3,6 +3,9 @@ import { logger } from '../utils/logger';
 import type { WhatsAppSession, SendMessageResponse } from '../types';
 import SessionRecoveryService from './SessionRecoveryService';
 import SessionHealthCheckService from './SessionHealthCheckService';
+import SnapshotService from './auth-snapshot/SnapshotService';
+import SessionPersistenceService from './SessionPersistenceService';
+import redisClient, { REDIS_KEYS } from '../config/redis';
 
 // Import modular components
 import MessageHandler from './whatsapp-core/MessageHandler';
@@ -27,6 +30,7 @@ import AuthenticationManager from './whatsapp-core/AuthenticationManager';
 class WhatsAppServiceSimple {
   private clients: Map<string, Client> = new Map();
   private useModularArchitecture: boolean;
+  private snapshotIntervalId: ReturnType<typeof setInterval> | null = null;
 
   // Module instances
   private messageHandler: typeof MessageHandler;
@@ -94,6 +98,9 @@ class WhatsAppServiceSimple {
     // Start advanced health monitoring
     SessionHealthCheckService.startMonitoring(this);
 
+    // Start Redis heartbeat updates for session health tracking
+    this.sessionManager.startHeartbeatUpdates();
+
     // Register alert callback for logging
     SessionHealthCheckService.onAlert(alert => {
       logger.warn(
@@ -105,6 +112,15 @@ class WhatsAppServiceSimple {
         }
       );
     });
+
+    // Schedule periodic snapshots for ready sessions
+    if (SnapshotService.isEnabled()) {
+      const intervalHours = parseInt(process.env.SNAPSHOT_INTERVAL_HOURS || '4', 10);
+      this.snapshotIntervalId = setInterval(async () => {
+        await this.runPeriodicSnapshots();
+      }, intervalHours * 60 * 60 * 1000);
+      logger.info(`Periodic snapshots scheduled every ${intervalHours} hours`);
+    }
 
     logger.info('✅ WhatsApp service initialized successfully with modular architecture');
   }
@@ -119,6 +135,21 @@ class WhatsAppServiceSimple {
         throw new Error(`Session ${sessionId} already exists`);
       }
 
+      // Acquire Redis lock to prevent double initialization
+      try {
+        const lockKey = `${REDIS_KEYS.SESSION_LOCK}${sessionId}`;
+        const lockAcquired = await redisClient.getClient().set(
+          lockKey, process.pid.toString(), 'EX', 300, 'NX'
+        );
+        if (!lockAcquired) {
+          throw new Error(`Session ${sessionId} is already being initialized (lock exists)`);
+        }
+      } catch (lockError: any) {
+        if (lockError.message?.includes('already being initialized')) throw lockError;
+        logger.debug(`Redis lock warning for ${sessionId}:`, lockError);
+        // Continue without lock if Redis is unavailable
+      }
+
       logger.info(`🚀 Creating session ${sessionId} with modular architecture`);
 
       // Setup authentication using AuthenticationManager
@@ -127,6 +158,22 @@ class WhatsAppServiceSimple {
         sessionId,
         authDataPath
       );
+
+      // If no local auth files exist, try restoring from snapshot
+      if (!authFileInfo.exists && SnapshotService.isEnabled()) {
+        logger.info(`No local auth for session ${sessionId}, attempting snapshot restore...`);
+        const snapshotData = await SessionPersistenceService.getSnapshotData(sessionId);
+        if (snapshotData) {
+          const restored = await SnapshotService.restoreSnapshot(sessionId, snapshotData);
+          if (restored) {
+            logger.info(`Snapshot restored for session ${sessionId}, auth files available`);
+          } else {
+            logger.warn(`Snapshot restore failed for session ${sessionId}, will need QR`);
+          }
+        } else {
+          logger.debug(`No snapshot found for session ${sessionId}, new session will need QR`);
+        }
+      }
 
       // Create WhatsApp client using ConnectionManager
       const client = await this.connectionManager.createClient(sessionId, authDataPath);
@@ -140,7 +187,7 @@ class WhatsAppServiceSimple {
       // Persist session to database
       await this.sessionManager.persistSession(sessionId, process.env.WEBHOOK_URL, authFileInfo);
 
-      // Setup event listeners using EventDispatcher
+      // Setup event listeners using EventDispatcher (with snapshot trigger callback)
       this.eventDispatcher.setupClientEventListeners(
         client,
         sessionId,
@@ -156,7 +203,9 @@ class WhatsAppServiceSimple {
         },
         {
           checkPhoneNumberAllowedWithLog: this.checkPhoneNumberAllowedWithLog.bind(this),
-        }
+        },
+        this.triggerSnapshot.bind(this),
+        this.handleAuthInvalidated.bind(this)
       );
 
       // Initialize client with monitoring using ConnectionManager
@@ -169,6 +218,10 @@ class WhatsAppServiceSimple {
       logger.info(`✅ Session ${sessionId} created successfully with modular architecture`);
       return session;
     } catch (error) {
+      // Release lock on failure
+      try {
+        await redisClient.del(`${REDIS_KEYS.SESSION_LOCK}${sessionId}`);
+      } catch { /* ignore */ }
       logger.error(`Error creating session ${sessionId}:`, error);
       throw error;
     }
@@ -249,6 +302,11 @@ class WhatsAppServiceSimple {
 
       const client = this.clients.get(sessionId);
       if (client) {
+        // Remove all event listeners BEFORE destroying to prevent the
+        // 'disconnected' event from triggering handleSessionDisconnect
+        // which would race with this destroy flow
+        client.removeAllListeners();
+
         // Clean up client using ConnectionManager
         await this.connectionManager.destroyClient(client, sessionId);
         this.clients.delete(sessionId);
@@ -264,6 +322,11 @@ class WhatsAppServiceSimple {
         }
       );
 
+      // Release Redis session lock
+      try {
+        await redisClient.del(`${REDIS_KEYS.SESSION_LOCK}${sessionId}`);
+      } catch { /* ignore */ }
+
       logger.info(`✅ Session ${sessionId} destroyed completely with modular architecture`);
     } catch (error) {
       logger.error(`❌ Error destroying session ${sessionId} with modular architecture:`, error);
@@ -278,10 +341,15 @@ class WhatsAppServiceSimple {
 
     logger.info('🛑 Starting graceful shutdown with modular architecture...');
 
-    // Stop health monitoring
+    // Stop health monitoring and periodic tasks
     try {
       SessionHealthCheckService.stopMonitoring();
-      logger.info('✅ Health monitoring stopped');
+      this.sessionManager.stopHeartbeatUpdates();
+      if (this.snapshotIntervalId) {
+        clearInterval(this.snapshotIntervalId);
+        this.snapshotIntervalId = null;
+      }
+      logger.info('✅ Health monitoring and periodic tasks stopped');
     } catch (error) {
       logger.error('Error stopping health monitoring:', error);
     }
@@ -303,21 +371,36 @@ class WhatsAppServiceSimple {
       // return LegacyService.forceDisconnectSession(sessionId);
     }
 
-    logger.info(`💪 Force disconnecting session ${sessionId} with modular architecture`);
+    logger.info(`💪 Force disconnecting (pause) session ${sessionId} with modular architecture`);
 
     try {
-      // Force disconnect using SessionManager
+      // 1. Close the WhatsApp client (browser) WITHOUT destroying session data
+      const client = this.clients.get(sessionId);
+      if (client) {
+        // Remove event listeners to prevent the 'disconnected' event from
+        // triggering handleSessionDisconnect which would delete from memory
+        client.removeAllListeners();
+        try {
+          await client.destroy();
+        } catch (clientErr) {
+          logger.warn(`Error closing client for session ${sessionId}:`, clientErr);
+        }
+        this.clients.delete(sessionId);
+      }
+
+      // 2. Clean up browser monitoring (intervals) for this session
+      this.connectionManager.cleanupMonitoring(sessionId);
+
+      // 3. Update status to 'disconnected' in all 3 layers (memory, DB, Redis)
+      //    but keep the session in memory Map and isActive=true in DB
       await this.sessionManager.forceDisconnectSession(sessionId);
 
-      // Destroy the session
-      await this.destroySession(sessionId);
-
-      // Send webhook notification using EventDispatcher
+      // 4. Send webhook notification
       await this.eventDispatcher.sendForceDisconnectWebhook(sessionId);
 
-      logger.info(`✅ Session ${sessionId} force disconnected successfully (modular)`);
+      logger.info(`✅ Session ${sessionId} paused successfully — auth files preserved (modular)`);
     } catch (error) {
-      logger.error(`❌ Error force disconnecting session ${sessionId} (modular):`, error);
+      logger.error(`❌ Error pausing session ${sessionId} (modular):`, error);
       throw error;
     }
   }
@@ -465,6 +548,205 @@ class WhatsAppServiceSimple {
     }
 
     return await this.eventDispatcher.testWebhook();
+  }
+
+  // ─── Snapshot / Backup Methods ─────────────────────────────────────
+
+  /**
+   * Trigger a snapshot for a single session (called from EventDispatcher on 'ready')
+   */
+  private async triggerSnapshot(sessionId: string): Promise<void> {
+    try {
+      const snapshotData = await SnapshotService.createSnapshot(sessionId);
+      if (snapshotData) {
+        await SessionPersistenceService.saveSnapshotData(sessionId, snapshotData);
+        logger.info(`Snapshot saved for session ${sessionId}`);
+
+        // Emit socket event for dashboard
+        try {
+          const WhatsAppServiceModule = await import('./WhatsAppService');
+          await WhatsAppServiceModule.default.notifySocketEvent({
+            event: 'session:snapshot_created',
+            sessionId,
+            data: {
+              sizeBytes: snapshotData.metadata.sizeBytes,
+              createdAt: snapshotData.metadata.createdAt,
+            },
+            timestamp: new Date().toISOString(),
+          });
+        } catch { /* ignore socket errors */ }
+      }
+    } catch (error) {
+      logger.error(`Snapshot trigger failed for session ${sessionId}:`, error);
+    }
+  }
+
+  /**
+   * Handle auth invalidation (unpaired from phone or auth_failure).
+   * Cleans up stale auth files and snapshot so next reconnect generates a fresh QR.
+   */
+  private async handleAuthInvalidated(sessionId: string, reason: string): Promise<void> {
+    logger.warn(`🔑 Auth invalidated for session ${sessionId} — reason: ${reason}`);
+
+    // 1. Clean up stale local auth files
+    try {
+      await this.authenticationManager.cleanupSessionAuth(sessionId);
+      logger.info(`Stale auth files cleaned for session ${sessionId}`);
+    } catch (err) {
+      logger.warn(`Error cleaning auth files for ${sessionId}:`, err);
+    }
+
+    // 2. Clear stale snapshot from DB (it was generated from now-invalid auth)
+    try {
+      await SessionPersistenceService.clearSnapshotData(sessionId);
+      logger.info(`Stale snapshot cleared for session ${sessionId}`);
+    } catch (err) {
+      logger.warn(`Error clearing snapshot for ${sessionId}:`, err);
+    }
+
+    logger.info(`✅ Auth invalidation cleanup done for ${sessionId} — reconnect will require fresh QR`);
+  }
+
+  /**
+   * Run periodic snapshots for all ready sessions
+   */
+  private async runPeriodicSnapshots(): Promise<void> {
+    const allSessions = await this.sessionManager.getAllSessions();
+    const readySessions = allSessions.filter(s => s.status === 'ready');
+
+    if (readySessions.length === 0) return;
+
+    logger.info(`Running periodic snapshots for ${readySessions.length} ready sessions`);
+
+    for (const session of readySessions) {
+      await this.triggerSnapshot(session.id);
+    }
+  }
+
+  /**
+   * Force backup a specific session (called from REST API)
+   */
+  async forceBackup(sessionId: string): Promise<{ success: boolean; sizeBytes?: number; error?: string }> {
+    if (!SnapshotService.isEnabled()) {
+      return { success: false, error: 'Snapshots are disabled' };
+    }
+
+    if (!SnapshotService.hasLocalAuth(sessionId)) {
+      return { success: false, error: 'No local auth files found for this session' };
+    }
+
+    try {
+      const snapshotData = await SnapshotService.createSnapshot(sessionId);
+      if (!snapshotData) {
+        return { success: false, error: 'Failed to create snapshot' };
+      }
+
+      const saved = await SessionPersistenceService.saveSnapshotData(sessionId, snapshotData);
+      if (!saved) {
+        return { success: false, error: 'Failed to save snapshot to database' };
+      }
+
+      return { success: true, sizeBytes: snapshotData.metadata.sizeBytes };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Restore backup for a specific session (called from REST API)
+   */
+  async restoreBackup(sessionId: string): Promise<{ success: boolean; error?: string }> {
+    if (!SnapshotService.isEnabled()) {
+      return { success: false, error: 'Snapshots are disabled' };
+    }
+
+    try {
+      const snapshotData = await SessionPersistenceService.getSnapshotData(sessionId);
+      if (!snapshotData) {
+        return { success: false, error: 'No snapshot found for this session' };
+      }
+
+      const restored = await SnapshotService.restoreSnapshot(sessionId, snapshotData);
+      if (!restored) {
+        return { success: false, error: 'Failed to restore snapshot' };
+      }
+
+      // Emit socket event
+      try {
+        const WhatsAppServiceModule = await import('./WhatsAppService');
+        await WhatsAppServiceModule.default.notifySocketEvent({
+          event: 'session:snapshot_restored',
+          sessionId,
+          data: { restoredAt: new Date().toISOString() },
+          timestamp: new Date().toISOString(),
+        });
+      } catch { /* ignore socket errors */ }
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+  }
+
+  /**
+   * Get backup status for a specific session
+   */
+  async getBackupStatus(sessionId: string): Promise<{
+    hasBackup: boolean;
+    lastBackupDate?: string;
+    sizeBytes?: number;
+    checksum?: string;
+  }> {
+    try {
+      const snapshotData = await SessionPersistenceService.getSnapshotData(sessionId);
+      if (!snapshotData) {
+        return { hasBackup: false };
+      }
+
+      return {
+        hasBackup: true,
+        lastBackupDate: snapshotData.metadata.createdAt,
+        sizeBytes: snapshotData.metadata.sizeBytes,
+        checksum: snapshotData.metadata.checksum,
+      };
+    } catch {
+      return { hasBackup: false };
+    }
+  }
+
+  /**
+   * Get health info for a specific session
+   */
+  async getSessionHealth(sessionId: string): Promise<{
+    status: string;
+    hasLocalAuth: boolean;
+    backupStatus: { hasBackup: boolean; lastBackupDate?: string; sizeBytes?: number };
+    heartbeatAge?: number;
+    authInvalidated?: boolean;
+  }> {
+    const session = this.sessionManager.getSession(sessionId);
+    const hasLocalAuth = SnapshotService.hasLocalAuth(sessionId);
+    const backupStatus = await this.getBackupStatus(sessionId);
+
+    let heartbeatAge: number | undefined;
+    try {
+      const hb = await redisClient.get(`${REDIS_KEYS.SESSION_HEARTBEAT}${sessionId}`);
+      if (hb) {
+        heartbeatAge = Date.now() - parseInt(hb, 10);
+      }
+    } catch { /* ignore */ }
+
+    // Check if auth was invalidated (unpaired from phone or auth_failure)
+    const authInvalidated = session?.metadata?.authInvalidated === true
+      || session?.status === 'auth_failure';
+
+    return {
+      status: session?.status || 'unknown',
+      hasLocalAuth,
+      backupStatus,
+      heartbeatAge,
+      authInvalidated,
+    };
   }
 }
 

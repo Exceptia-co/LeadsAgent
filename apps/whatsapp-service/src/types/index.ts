@@ -64,7 +64,10 @@ export interface WebhookPayload {
     | 'authenticated'
     | 'disconnected'
     | 'browser_closed'
-    | 'force_disconnected';
+    | 'force_disconnected'
+    | 'session:snapshot_created'
+    | 'session:snapshot_restored'
+    | 'webhook_test';
   sessionId: string;
   data: any;
   timestamp: string;

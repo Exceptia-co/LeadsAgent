@@ -76,7 +76,27 @@ export class SocketService {
           const WhatsAppServiceModule = await import('./WhatsAppService');
           const whatsappService = WhatsAppServiceModule.default;
 
-          const sessions = await whatsappService.getAllSessions();
+          let sessions = await whatsappService.getAllSessions();
+
+          // Fallback to DB if in-memory Map is empty (e.g. right after restart before recovery)
+          if (sessions.length === 0) {
+            try {
+              const { default: SessionPersistenceService } = await import('./SessionPersistenceService');
+              const dbSessions = await SessionPersistenceService.loadActiveSessions();
+              sessions = dbSessions.map(s => ({
+                id: s.sessionId,
+                clientId: s.sessionId,
+                name: s.name,
+                status: s.status as any,
+                connectedNumber: s.connectedNumber,
+                qrCode: s.qrCode,
+                lastSeen: s.lastSeen,
+              }));
+              logger.debug(`📊 Loaded ${sessions.length} sessions from DB fallback`);
+            } catch (dbError) {
+              logger.debug('DB fallback failed:', dbError);
+            }
+          }
 
           socket.emit('sessions:current_state', {
             sessions: sessions.map(session => ({
@@ -268,6 +288,24 @@ export class SocketService {
           timestamp: payload.timestamp,
           metadata: payload.data,
         });
+        break;
+
+      case 'session:snapshot_created':
+        this.io.of('/whatsapp-sessions').emit('session:snapshot_created', {
+          sessionId: payload.sessionId,
+          ...payload.data,
+          timestamp: payload.timestamp,
+        });
+        logger.debug(`📡 Snapshot created event broadcasted for ${payload.sessionId}`);
+        break;
+
+      case 'session:snapshot_restored':
+        this.io.of('/whatsapp-sessions').emit('session:snapshot_restored', {
+          sessionId: payload.sessionId,
+          ...payload.data,
+          timestamp: payload.timestamp,
+        });
+        logger.debug(`📡 Snapshot restored event broadcasted for ${payload.sessionId}`);
         break;
 
       default:

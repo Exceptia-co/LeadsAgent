@@ -3,6 +3,7 @@ import qrcode from 'qrcode-terminal';
 import { logger } from '../../utils/logger';
 import advancedLogger from '../../utils/advancedLogger';
 import type { WhatsAppMessage, WebhookPayload } from '../../types';
+import redisClient, { REDIS_KEYS } from '../../config/redis';
 
 /**
  * EventDispatcher - Handles all WhatsApp client events, webhooks, and event-driven operations
@@ -52,7 +53,9 @@ export class EventDispatcher {
         sessionId: string,
         messagePreview?: string
       ) => Promise<{ allowed: boolean; reason: string; leadInfo?: any }>;
-    }
+    },
+    onSnapshotTrigger?: (sessionId: string) => Promise<void>,
+    onAuthInvalidated?: (sessionId: string, reason: string) => Promise<void>
   ): void {
     // ─── Diagnostic logging for event flow debugging ───
     logger.info(`[DIAG] Setting up event listeners for session ${sessionId}`);
@@ -67,8 +70,15 @@ export class EventDispatcher {
         qrcode.generate(qr, { small: true });
       }
 
-      // Store QR code in session
+      // Store QR code in session (memory + DB)
       await sessionManager.updateSessionStatus(sessionId, 'connecting', { qrCode: qr });
+
+      // Cache QR in Redis with 60s TTL for fast dashboard access
+      try {
+        await redisClient.set(`${REDIS_KEYS.SESSION_QR}${sessionId}`, qr, 60);
+      } catch (redisError) {
+        logger.debug(`Redis QR cache failed for ${sessionId}:`, redisError);
+      }
 
       // Send webhook
       await this.sendWebhook({
@@ -113,6 +123,15 @@ export class EventDispatcher {
         data: { number: clientInfo?.wid?.user },
         timestamp: new Date().toISOString(),
       });
+
+      // Trigger snapshot backup after 5s delay (LocalAuth may still be writing)
+      if (onSnapshotTrigger) {
+        setTimeout(() => {
+          onSnapshotTrigger(sessionId).catch(err => {
+            logger.warn(`Snapshot trigger failed for session ${sessionId}:`, err);
+          });
+        }, 5000);
+      }
     });
 
     // Authenticated event (once: whatsapp-web.js may emit this multiple times due to hasSynced race condition)
@@ -149,13 +168,25 @@ export class EventDispatcher {
       logger.error(`Authentication failed for session ${sessionId}:`, msg);
       await sessionManager.updateSessionStatus(sessionId, 'auth_failure', {
         lastError: `Authentication failed: ${msg}`,
+        metadata: {
+          authInvalidated: true,
+          invalidatedAt: new Date().toISOString(),
+          invalidationReason: 'auth_failure',
+        },
       });
+
+      // Clean up stale auth files and snapshot so next reconnect requires fresh QR
+      if (onAuthInvalidated) {
+        onAuthInvalidated(sessionId, 'auth_failure').catch(err => {
+          logger.warn(`Auth invalidation cleanup failed for ${sessionId}:`, err);
+        });
+      }
 
       // Send webhook
       await this.sendWebhook({
         event: 'status_change',
         sessionId,
-        data: { status: 'auth_failure', message: msg },
+        data: { status: 'auth_failure', message: msg, authInvalidated: true },
         timestamp: new Date().toISOString(),
       });
     });
@@ -191,12 +222,19 @@ export class EventDispatcher {
 
       // Handle different WhatsApp Web states
       if (state === 'UNPAIRED' || state === 'UNPAIRED_IDLE') {
-        logger.warn(`Session ${sessionId} became unpaired, marking as disconnected`);
+        logger.warn(`Session ${sessionId} became unpaired — user unlinked from phone`);
         await sessionManager.handleSessionDisconnect(
           sessionId,
           'WHATSAPP_UNPAIRED',
           `State: ${state}`
         );
+
+        // Clean up stale auth files and snapshot so next reconnect requires fresh QR
+        if (onAuthInvalidated) {
+          onAuthInvalidated(sessionId, `unpaired:${state}`).catch(err => {
+            logger.warn(`Auth invalidation cleanup failed for ${sessionId}:`, err);
+          });
+        }
       } else if (state === 'TIMEOUT') {
         logger.warn(`Session ${sessionId} timed out`);
         await sessionManager.handleSessionDisconnect(

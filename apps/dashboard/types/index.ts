@@ -142,6 +142,7 @@ export interface WhatsAppSession {
   name?: string;
   status:
     | "DISCONNECTED"
+    | "AUTH_INVALID"
     | "CONNECTING"
     | "CONNECTED"
     | "QR_READY"
@@ -151,6 +152,12 @@ export interface WhatsAppSession {
   createdAt: string;
   updatedAt: string;
   lastSeen?: string;
+  lastHeartbeat?: string;
+  backupStatus?: {
+    hasBackup: boolean;
+    lastBackupDate?: string;
+    sizeBytes?: number;
+  };
 }
 
 export interface WhatsAppMessage {

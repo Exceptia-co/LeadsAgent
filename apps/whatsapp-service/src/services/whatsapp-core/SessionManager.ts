@@ -2,6 +2,7 @@ import type { Client } from 'whatsapp-web.js';
 import { logger } from '../../utils/logger';
 import type { WhatsAppSession } from '../../types';
 import SessionPersistenceService from '../SessionPersistenceService';
+import redisClient, { REDIS_KEYS } from '../../config/redis';
 
 /**
  * SessionManager - Handles session lifecycle, status management, and persistence operations
@@ -17,6 +18,7 @@ import SessionPersistenceService from '../SessionPersistenceService';
  */
 export class SessionManager {
   private sessions: Map<string, WhatsAppSession> = new Map();
+  private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Create a new session object
@@ -51,14 +53,14 @@ export class SessionManager {
   }
 
   /**
-   * Update session status in memory and database
+   * Update session status in memory, database, and Redis (3-layer sync)
    */
   async updateSessionStatus(
     sessionId: string,
     status: WhatsAppSession['status'],
     data?: any
   ): Promise<void> {
-    // Update in-memory session
+    // Layer 1: Update in-memory session
     const session = this.sessions.get(sessionId);
     if (session) {
       session.status = status;
@@ -68,12 +70,22 @@ export class SessionManager {
       }
     }
 
-    // Persist to database asynchronously
+    // Layer 2: Persist to database asynchronously
     try {
       await SessionPersistenceService.updateSessionStatus(sessionId, status, data);
     } catch (error) {
       logger.error(`Error persisting session status update for ${sessionId}:`, error);
-      // Don't throw - continue execution even if persistence fails
+    }
+
+    // Layer 3: Sync to Redis for fast access
+    try {
+      await redisClient.setObject(`${REDIS_KEYS.SESSION_STATUS}${sessionId}`, {
+        status,
+        connectedNumber: data?.connectedNumber,
+        lastSeen: new Date().toISOString(),
+      }, 3600); // 1h TTL
+    } catch (redisError) {
+      logger.debug(`Redis status sync failed for ${sessionId}:`, redisError);
     }
   }
 
@@ -206,6 +218,7 @@ export class SessionManager {
       logger.info(`🔌 Handling session disconnect: ${sessionId} - Type: ${disconnectType}`);
 
       let shouldAutoReconnect = true;
+      let authInvalidated = false;
       let errorMessage = `Session disconnected: ${disconnectType}`;
 
       // Determine reconnection strategy based on disconnect type
@@ -219,7 +232,8 @@ export class SessionManager {
 
         case 'WHATSAPP_UNPAIRED':
         case 'WHATSAPP_TIMEOUT':
-          shouldAutoReconnect = false; // WhatsApp Web session expired
+          shouldAutoReconnect = false; // WhatsApp Web session expired / unlinked from phone
+          authInvalidated = true;
           errorMessage = `WhatsApp Web session expired: ${disconnectType}`;
           break;
 
@@ -233,33 +247,20 @@ export class SessionManager {
           errorMessage = `Unknown disconnect: ${originalReason || disconnectType}`;
       }
 
-      // Update session status
-      await this.updateSessionStatus(sessionId, 'disconnected', {
+      // Update session status in all 3 layers (memory, DB, Redis)
+      // Note: we keep the session in the memory Map so the dashboard can still see it.
+      // Only destroySession() should remove from memory (intentional delete).
+      await this.updateSessionStatus(sessionId, authInvalidated ? 'auth_failure' : 'disconnected', {
         lastError: errorMessage,
         metadata: {
           disconnectType,
           autoReconnect: shouldAutoReconnect,
+          authInvalidated,
           lastHealthCheck: new Date().toISOString(),
+          originalReason: originalReason?.toString() || 'N/A',
+          disconnectedAt: new Date().toISOString(),
         },
       });
-
-      // Remove from active sessions
-      this.sessions.delete(sessionId);
-
-      // Update database
-      try {
-        await SessionPersistenceService.updateSessionStatus(sessionId, 'disconnected', {
-          lastError: errorMessage,
-          metadata: {
-            autoReconnect: shouldAutoReconnect,
-            disconnectType,
-            originalReason: originalReason?.toString() || 'N/A',
-            disconnectedAt: new Date().toISOString(),
-          },
-        });
-      } catch (dbError) {
-        logger.error(`Error updating database for disconnected session ${sessionId}:`, dbError);
-      }
 
       logger.info(
         `✅ Session disconnect handled: ${sessionId} (autoReconnect: ${shouldAutoReconnect})`
@@ -380,6 +381,43 @@ export class SessionManager {
     } catch (error) {
       logger.error(`Error recovering session ${sessionId} with validation:`, error);
       return false;
+    }
+  }
+
+  /**
+   * Start heartbeat updates for all ready sessions
+   * Sets Redis key with TTL 120s every 30s
+   */
+  startHeartbeatUpdates(): void {
+    if (this.heartbeatIntervalId) return;
+
+    this.heartbeatIntervalId = setInterval(async () => {
+      for (const [sessionId, session] of this.sessions) {
+        if (session.status === 'ready') {
+          try {
+            await redisClient.set(
+              `${REDIS_KEYS.SESSION_HEARTBEAT}${sessionId}`,
+              Date.now().toString(),
+              120
+            );
+          } catch {
+            // Silently ignore heartbeat failures
+          }
+        }
+      }
+    }, 30000);
+
+    logger.info('Session heartbeat updates started (every 30s)');
+  }
+
+  /**
+   * Stop heartbeat updates
+   */
+  stopHeartbeatUpdates(): void {
+    if (this.heartbeatIntervalId) {
+      clearInterval(this.heartbeatIntervalId);
+      this.heartbeatIntervalId = null;
+      logger.info('Session heartbeat updates stopped');
     }
   }
 }

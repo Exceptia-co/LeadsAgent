@@ -81,11 +81,92 @@ router.post(
   sessionController.forceDisconnectSession.bind(sessionController)
 );
 
-// QR code route
+// QR code route (with Redis fast-read fallback)
 router.get(
   '/sessions/:sessionId/qr',
   validateSessionId,
+  async (req, res, next) => {
+    try {
+      // Try Redis first for fast access
+      const { redisClient, REDIS_KEYS } = await import('../config/redis');
+      const qr = await redisClient.get(`${REDIS_KEYS.SESSION_QR}${req.params.sessionId}`);
+      if (qr) {
+        return res.json({ success: true, qrCode: qr, source: 'redis' });
+      }
+    } catch { /* fall through to controller */ }
+    next();
+  },
   sessionController.getQRCode.bind(sessionController)
+);
+
+// ── Session Backup / Restore / Health endpoints ──────────────────
+
+// Force backup a session
+router.post(
+  '/sessions/:sessionId/backup',
+  validateSessionId,
+  async (req, res) => {
+    try {
+      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+      const result = await WhatsAppService.forceBackup(req.params.sessionId);
+      if (result.success) {
+        res.json({ success: true, data: { sizeBytes: result.sizeBytes } });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({ success: false, error: 'Error creating backup' });
+    }
+  }
+);
+
+// Restore backup for a session
+router.post(
+  '/sessions/:sessionId/restore-backup',
+  validateSessionId,
+  async (req, res) => {
+    try {
+      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+      const result = await WhatsAppService.restoreBackup(req.params.sessionId);
+      if (result.success) {
+        res.json({ success: true, message: 'Backup restored successfully' });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({ success: false, error: 'Error restoring backup' });
+    }
+  }
+);
+
+// Get backup status for a session
+router.get(
+  '/sessions/:sessionId/backup-status',
+  validateSessionId,
+  async (req, res) => {
+    try {
+      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+      const status = await WhatsAppService.getBackupStatus(req.params.sessionId);
+      res.json({ success: true, data: status });
+    } catch (error) {
+      res.status(500).json({ success: false, error: 'Error getting backup status' });
+    }
+  }
+);
+
+// Get session health
+router.get(
+  '/sessions/:sessionId/health',
+  validateSessionId,
+  async (req, res) => {
+    try {
+      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+      const health = await WhatsAppService.getSessionHealth(req.params.sessionId);
+      res.json({ success: true, data: health });
+    } catch (error) {
+      res.status(500).json({ success: false, error: 'Error getting session health' });
+    }
+  }
 );
 
 // Message routes
