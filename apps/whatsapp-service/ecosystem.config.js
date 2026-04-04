@@ -20,8 +20,8 @@ module.exports = {
       watch: false,
       max_memory_restart: '1G',
       
-      // Graceful shutdown
-      kill_timeout: 5000,
+      // Graceful shutdown (15s to allow session cleanup with multiple sessions)
+      kill_timeout: 15000,
       wait_ready: true,
       listen_timeout: 10000,
       

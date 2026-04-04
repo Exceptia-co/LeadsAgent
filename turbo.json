@@ -20,7 +20,9 @@
     "API_PORT",
     "API_HOST",
     "JWT_SECRET",
-    "ENCRYPTION_KEY"
+    "ENCRYPTION_KEY",
+    "ENABLE_AUTH_SNAPSHOTS",
+    "SNAPSHOT_*"
   ],
   "tasks": {
     "build": {
