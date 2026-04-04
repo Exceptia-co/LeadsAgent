@@ -16,6 +16,7 @@ import { buildPuppeteerConfig } from '../../config/puppeteer.config';
  */
 export class ConnectionManager {
   private monitoringIntervals: Map<string, NodeJS.Timeout> = new Map();
+  private pendingTimeouts: Map<string, NodeJS.Timeout[]> = new Map();
   private lastMemoryLog: number = 0;
 
   /**
@@ -56,6 +57,9 @@ export class ConnectionManager {
         logger.error(`⏰ Session ${sessionId} initialization timeout after 2 minutes`);
         onBrowserDisconnect(sessionId, 'INIT_TIMEOUT');
       }, 120000); // 2 minutes timeout
+
+      // Track timeout for cleanup on session destroy
+      this.trackTimeout(sessionId, initTimeout);
 
       // Set up browser monitoring before initialization
       this.setupBrowserMonitoring(client, sessionId, onBrowserDisconnect);
@@ -174,8 +178,14 @@ export class ConnectionManager {
     onBrowserDisconnect: (sessionId: string, disconnectType: string) => Promise<void>
   ): Promise<void> {
     try {
-      // Store monitoring interval reference
       const monitoringKey = `memory_monitor_${sessionId}`;
+
+      // Clear any existing interval before starting a new one (prevents stacking on reconnect)
+      if (this.monitoringIntervals.has(monitoringKey)) {
+        clearInterval(this.monitoringIntervals.get(monitoringKey)!);
+        this.monitoringIntervals.delete(monitoringKey);
+        logger.debug(`Cleared stale memory monitor for session ${sessionId} before restart`);
+      }
 
       const memoryMonitorInterval = setInterval(async () => {
         try {
@@ -221,12 +231,13 @@ export class ConnectionManager {
             );
 
             // Consider triggering disconnect to prevent crash
-            setTimeout(async () => {
+            const memCriticalTimeout = setTimeout(async () => {
               logger.warn(
                 `💥 Proactively disconnecting session ${sessionId} due to critical memory usage`
               );
               await onBrowserDisconnect(sessionId, 'MEMORY_OVERLOAD');
             }, 10000); // Wait 10 seconds before disconnecting
+            this.trackTimeout(sessionId, memCriticalTimeout);
           } else if (usedMB > WARNING_THRESHOLD) {
             logger.warn(
               `⚠️ High memory usage for session ${sessionId}: ${usedMB}MB (>${WARNING_THRESHOLD}MB threshold)`
@@ -257,6 +268,14 @@ export class ConnectionManager {
   ): Promise<void> {
     try {
       const heartbeatKey = `heartbeat_${sessionId}`;
+
+      // Clear any existing interval before starting a new one (prevents stacking on reconnect)
+      if (this.monitoringIntervals.has(heartbeatKey)) {
+        clearInterval(this.monitoringIntervals.get(heartbeatKey)!);
+        this.monitoringIntervals.delete(heartbeatKey);
+        logger.debug(`Cleared stale heartbeat monitor for session ${sessionId} before restart`);
+      }
+
       let consecutiveFailures = 0;
       const MAX_FAILURES = 3;
 
@@ -365,6 +384,14 @@ export class ConnectionManager {
       this.monitoringIntervals.delete(heartbeatKey);
       logger.debug(`🧹 Heartbeat monitoring cleaned up for session ${sessionId}`);
     }
+
+    // Clear pending timeouts for this session
+    const timeouts = this.pendingTimeouts.get(sessionId);
+    if (timeouts) {
+      for (const t of timeouts) clearTimeout(t);
+      this.pendingTimeouts.delete(sessionId);
+      logger.debug(`🧹 Pending timeouts cleaned up for session ${sessionId}`);
+    }
   }
 
   /**
@@ -419,9 +446,23 @@ export class ConnectionManager {
       clearInterval(interval);
       logger.debug(`🧹 Cleaned up monitoring interval: ${key}`);
     }
-
     this.monitoringIntervals.clear();
+
+    for (const [, timeouts] of this.pendingTimeouts) {
+      for (const t of timeouts) clearTimeout(t);
+    }
+    this.pendingTimeouts.clear();
+
     logger.info('✅ All connection monitoring cleaned up');
+  }
+
+  /**
+   * Track a timeout for cleanup on session destroy
+   */
+  private trackTimeout(sessionId: string, timeout: NodeJS.Timeout): void {
+    const timeouts = this.pendingTimeouts.get(sessionId) || [];
+    timeouts.push(timeout);
+    this.pendingTimeouts.set(sessionId, timeouts);
   }
 }
 

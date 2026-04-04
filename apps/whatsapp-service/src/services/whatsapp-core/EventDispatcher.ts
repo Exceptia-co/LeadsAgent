@@ -20,6 +20,8 @@ import redisClient, { REDIS_KEYS } from '../../config/redis';
  */
 export class EventDispatcher {
   private webhookUrl: string | undefined;
+  private sessionListeners: Map<string, Array<{ event: string; handler: (...args: any[]) => any }>> = new Map();
+  private sessionTimeouts: Map<string, NodeJS.Timeout[]> = new Map();
 
   constructor(webhookUrl?: string) {
     this.webhookUrl = webhookUrl;
@@ -55,13 +57,23 @@ export class EventDispatcher {
       ) => Promise<{ allowed: boolean; reason: string; leadInfo?: any }>;
     },
     onSnapshotTrigger?: (sessionId: string) => Promise<void>,
-    onAuthInvalidated?: (sessionId: string, reason: string) => Promise<void>
+    onAuthInvalidated?: (sessionId: string, reason: string) => Promise<void>,
+    isSessionDestroying?: (sessionId: string) => boolean
   ): void {
     // ─── Diagnostic logging for event flow debugging ───
     logger.info(`[DIAG] Setting up event listeners for session ${sessionId}`);
 
+    // Initialize listener and timeout tracking for this session
+    const listeners: Array<{ event: string; handler: (...args: any[]) => any }> = [];
+    const timeouts: NodeJS.Timeout[] = [];
+    this.sessionListeners.set(sessionId, listeners);
+    this.sessionTimeouts.set(sessionId, timeouts);
+
+    // Throttle: only update health check in DB/Redis at most once per 30s per session
+    let lastHealthUpdate = 0;
+
     // QR Code event
-    client.on('qr', async qr => {
+    const onQr = async (qr: string) => {
       logger.info(`[DIAG] QR event fired for session ${sessionId}`);
       logger.info(`QR Code generated for session ${sessionId}`);
 
@@ -87,7 +99,9 @@ export class EventDispatcher {
         data: { qrCode: qr },
         timestamp: new Date().toISOString(),
       });
-    });
+    };
+    client.on('qr', onQr);
+    listeners.push({ event: 'qr', handler: onQr });
 
     // Ready event (once: whatsapp-web.js may emit this multiple times due to internal race conditions)
     client.once('ready', async () => {
@@ -126,11 +140,12 @@ export class EventDispatcher {
 
       // Trigger snapshot backup after 5s delay (LocalAuth may still be writing)
       if (onSnapshotTrigger) {
-        setTimeout(() => {
+        const snapshotTimeout = setTimeout(() => {
           onSnapshotTrigger(sessionId).catch(err => {
             logger.warn(`Snapshot trigger failed for session ${sessionId}:`, err);
           });
         }, 5000);
+        timeouts.push(snapshotTimeout);
       }
     });
 
@@ -141,13 +156,14 @@ export class EventDispatcher {
       await sessionManager.updateSessionStatus(sessionId, 'authenticated');
 
       // Safety timeout: if ready doesn't arrive within 90s after authenticated, log warning
-      const readyTimeout = setTimeout(() => {
+      const authReadyTimeout = setTimeout(() => {
         logger.warn(`[DIAG] Session ${sessionId}: READY event NOT received 90s after AUTHENTICATED. Client info: ${client.info ? 'has info' : 'no info'}`);
         logger.warn(`[DIAG] Session ${sessionId}: This likely means attachEventListeners() in whatsapp-web.js is stuck waiting for window.Store`);
       }, 90000);
+      timeouts.push(authReadyTimeout);
 
       client.once('ready', () => {
-        clearTimeout(readyTimeout);
+        clearTimeout(authReadyTimeout);
         logger.info(`[DIAG] Session ${sessionId}: READY arrived after AUTHENTICATED (safety timeout cleared)`);
       });
 
@@ -164,7 +180,7 @@ export class EventDispatcher {
     });
 
     // Authentication failure event
-    client.on('auth_failure', async msg => {
+    const onAuthFailure = async (msg: string) => {
       logger.error(`Authentication failed for session ${sessionId}:`, msg);
       await sessionManager.updateSessionStatus(sessionId, 'auth_failure', {
         lastError: `Authentication failed: ${msg}`,
@@ -189,10 +205,18 @@ export class EventDispatcher {
         data: { status: 'auth_failure', message: msg, authInvalidated: true },
         timestamp: new Date().toISOString(),
       });
-    });
+    };
+    client.on('auth_failure', onAuthFailure);
+    listeners.push({ event: 'auth_failure', handler: onAuthFailure });
 
     // Disconnected event - Enhanced with reason detection
-    client.on('disconnected', async reason => {
+    const onDisconnected = async (reason: string) => {
+      // Skip if session is being intentionally destroyed (prevents race condition)
+      if (isSessionDestroying?.(sessionId)) {
+        logger.debug(`Ignoring disconnected event for ${sessionId} — intentional destroy in progress`);
+        return;
+      }
+
       logger.info(`WhatsApp client ${sessionId} disconnected:`, reason);
 
       // Detect if this is a browser closure vs network issue
@@ -214,10 +238,18 @@ export class EventDispatcher {
         data: { reason, disconnectType: disconnectReason },
         timestamp: new Date().toISOString(),
       });
-    });
+    };
+    client.on('disconnected', onDisconnected);
+    listeners.push({ event: 'disconnected', handler: onDisconnected });
 
     // State change event - Detect WhatsApp Web states
-    client.on('change_state', async state => {
+    const onChangeState = async (state: string) => {
+      // Skip if session is being intentionally destroyed
+      if (isSessionDestroying?.(sessionId)) {
+        logger.debug(`Ignoring change_state event for ${sessionId} — intentional destroy in progress`);
+        return;
+      }
+
       logger.info(`WhatsApp client ${sessionId} state changed:`, state);
 
       // Handle different WhatsApp Web states
@@ -243,10 +275,12 @@ export class EventDispatcher {
           `State: ${state}`
         );
       }
-    });
+    };
+    client.on('change_state', onChangeState);
+    listeners.push({ event: 'change_state', handler: onChangeState });
 
     // Loading screen event - Detect when WhatsApp Web shows loading screen
-    client.on('loading_screen', async (percent: string, message: string) => {
+    const onLoadingScreen = async (percent: string, message: string) => {
       logger.info(`[DIAG] Loading screen ${sessionId}: ${percent}% - ${message}`);
       // Convert percent to number for comparison
       const percentNum = parseInt(percent) || 0;
@@ -257,16 +291,22 @@ export class EventDispatcher {
           metadata: { loading: true, loadingMessage: message },
         });
       }
-    });
+    };
+    client.on('loading_screen', onLoadingScreen);
+    listeners.push({ event: 'loading_screen', handler: onLoadingScreen });
 
     // Message event
-    client.on('message', async (message: Message) => {
+    const onMessage = async (message: Message) => {
       logger.info(`[DIAG] MESSAGE event fired for session ${sessionId} from=${message.from} body=${message.body?.substring(0, 50)}`);
       try {
-        // Update last health check on successful message receipt
-        await sessionManager.updateSessionStatus(sessionId, 'ready', {
-          lastHealthCheck: new Date(),
-        });
+        // Throttled health check update — avoids DB/Redis writes on every message
+        const now = Date.now();
+        if (now - lastHealthUpdate > 30000) {
+          lastHealthUpdate = now;
+          await sessionManager.updateSessionStatus(sessionId, 'ready', {
+            lastHealthCheck: new Date(),
+          });
+        }
 
         const whatsappMessage = await messageHandler.parseMessage(message, sessionId);
         logger.info(`Message received in session ${sessionId}:`, {
@@ -301,7 +341,31 @@ export class EventDispatcher {
       } catch (error) {
         logger.error(`Error processing message in session ${sessionId}:`, error);
       }
-    });
+    };
+    client.on('message', onMessage);
+    listeners.push({ event: 'message', handler: onMessage });
+  }
+
+  /**
+   * Remove all tracked event listeners and clear timeouts for a session
+   */
+  cleanupSessionListeners(client: Client, sessionId: string): void {
+    // Remove tracked listeners
+    const listeners = this.sessionListeners.get(sessionId);
+    if (listeners) {
+      for (const { event, handler } of listeners) {
+        client.removeListener(event, handler);
+      }
+      this.sessionListeners.delete(sessionId);
+      logger.debug(`Removed ${listeners.length} event listeners for session ${sessionId}`);
+    }
+
+    // Clear tracked timeouts
+    const timeouts = this.sessionTimeouts.get(sessionId);
+    if (timeouts) {
+      for (const t of timeouts) clearTimeout(t);
+      this.sessionTimeouts.delete(sessionId);
+    }
   }
 
   /**

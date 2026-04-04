@@ -2,6 +2,7 @@ import { logger } from '../../utils/logger';
 import type { SessionPersistenceData } from '../SessionPersistenceService';
 import SessionPersistenceService from '../SessionPersistenceService';
 import { AuthValidator } from './AuthValidator';
+import { SESSION_CONSTANTS } from '../../config/session-constants';
 import path from 'path';
 
 export interface RecoveryOptions {
@@ -356,10 +357,10 @@ export class RecoveryRunner {
   }
 
   private isHealthCheckTooOld(lastSeen: Date): boolean {
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const cutoff = new Date(Date.now() - SESSION_CONSTANTS.MAX_RECOVERY_AGE_MS);
     const lastSeenDate = new Date(lastSeen);
 
-    return lastSeenDate < fiveMinutesAgo;
+    return lastSeenDate < cutoff;
   }
 
   private batchSessions(

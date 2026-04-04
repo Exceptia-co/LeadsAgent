@@ -6,6 +6,7 @@ import SessionHealthCheckService from './SessionHealthCheckService';
 import SnapshotService from './auth-snapshot/SnapshotService';
 import SessionPersistenceService from './SessionPersistenceService';
 import redisClient, { REDIS_KEYS } from '../config/redis';
+import { SESSION_CONSTANTS } from '../config/session-constants';
 
 // Import modular components
 import MessageHandler from './whatsapp-core/MessageHandler';
@@ -29,41 +30,23 @@ import AuthenticationManager from './whatsapp-core/AuthenticationManager';
  */
 class WhatsAppServiceSimple {
   private clients: Map<string, Client> = new Map();
-  private useModularArchitecture: boolean;
   private snapshotIntervalId: ReturnType<typeof setInterval> | null = null;
+  private isSnapshotBatchRunning: boolean = false;
+  private destroyingSessions: Set<string> = new Set();
+  private sessionInitLocks: Set<string> = new Set();
 
   // Module instances
-  private messageHandler: typeof MessageHandler;
-  private sessionManager: typeof SessionManager;
-  private connectionManager: typeof ConnectionManager;
-  private eventDispatcher: EventDispatcher;
-  private authenticationManager: typeof AuthenticationManager;
+  private messageHandler = MessageHandler;
+  private sessionManager = SessionManager;
+  private connectionManager = ConnectionManager;
+  private eventDispatcher = new EventDispatcher(process.env.WEBHOOK_URL);
+  private authenticationManager = AuthenticationManager;
 
   constructor() {
-    // Force modular architecture to true - Legacy services removed
-    this.useModularArchitecture = true;
-
-    if (this.useModularArchitecture) {
-      logger.info('🚀 WhatsApp Service initialized with MODULAR architecture');
-
-      // Initialize modular components
-      this.messageHandler = MessageHandler;
-      this.sessionManager = SessionManager;
-      this.connectionManager = ConnectionManager;
-      this.eventDispatcher = new EventDispatcher(process.env.WEBHOOK_URL);
-      this.authenticationManager = AuthenticationManager;
-    } else {
-      logger.info('🚀 WhatsApp Service initialized with LEGACY architecture');
-      // Legacy mode will fall back to the original implementation
-    }
+    logger.info('🚀 WhatsApp Service initialized with MODULAR architecture');
   }
 
   async initialize(): Promise<void> {
-    if (!this.useModularArchitecture) {
-      // Import and delegate to legacy service
-      // return LegacyService.initialize();
-    }
-
     logger.info('🚀 Iniciando WhatsApp service con persistencia y monitoreo avanzado (MODULAR)...');
 
     // Recover existing sessions from database using smart filtering
@@ -75,7 +58,7 @@ class WhatsAppServiceSimple {
           {
             validateAuthFiles: true,
             cleanupCorruptedAuth: true,
-            maxReconnectAttempts: 3,
+            maxReconnectAttempts: SESSION_CONSTANTS.MAX_RECONNECT_ATTEMPTS,
           }
         );
         logger.info(
@@ -126,28 +109,28 @@ class WhatsAppServiceSimple {
   }
 
   async createSession(sessionId: string): Promise<WhatsAppSession> {
-    if (!this.useModularArchitecture) {
-      // return LegacyService.createSession(sessionId);
-    }
-
     try {
       if (this.clients.has(sessionId)) {
         throw new Error(`Session ${sessionId} already exists`);
       }
 
-      // Acquire Redis lock to prevent double initialization
+      // Acquire lock to prevent double initialization (Redis primary, in-memory fallback)
       try {
         const lockKey = `${REDIS_KEYS.SESSION_LOCK}${sessionId}`;
-        const lockAcquired = await redisClient.getClient().set(
+        const redisLock = await redisClient.getClient().set(
           lockKey, process.pid.toString(), 'EX', 300, 'NX'
         );
-        if (!lockAcquired) {
+        if (!redisLock) {
           throw new Error(`Session ${sessionId} is already being initialized (lock exists)`);
         }
       } catch (lockError: any) {
         if (lockError.message?.includes('already being initialized')) throw lockError;
-        logger.debug(`Redis lock warning for ${sessionId}:`, lockError);
-        // Continue without lock if Redis is unavailable
+        // Redis unavailable — use in-memory lock as fallback
+        logger.warn(`Redis lock unavailable for ${sessionId}, using in-memory lock:`, lockError.message);
+        if (this.sessionInitLocks.has(sessionId)) {
+          throw new Error(`Session ${sessionId} is already being initialized (in-memory lock)`);
+        }
+        this.sessionInitLocks.add(sessionId);
       }
 
       logger.info(`🚀 Creating session ${sessionId} with modular architecture`);
@@ -205,7 +188,8 @@ class WhatsAppServiceSimple {
           checkPhoneNumberAllowedWithLog: this.checkPhoneNumberAllowedWithLog.bind(this),
         },
         this.triggerSnapshot.bind(this),
-        this.handleAuthInvalidated.bind(this)
+        this.handleAuthInvalidated.bind(this),
+        (id: string) => this.destroyingSessions.has(id)
       );
 
       // Initialize client with monitoring using ConnectionManager
@@ -218,7 +202,8 @@ class WhatsAppServiceSimple {
       logger.info(`✅ Session ${sessionId} created successfully with modular architecture`);
       return session;
     } catch (error) {
-      // Release lock on failure
+      // Release locks on failure
+      this.sessionInitLocks.delete(sessionId);
       try {
         await redisClient.del(`${REDIS_KEYS.SESSION_LOCK}${sessionId}`);
       } catch { /* ignore */ }
@@ -228,20 +213,10 @@ class WhatsAppServiceSimple {
   }
 
   getSession(sessionId: string): WhatsAppSession | null {
-    if (!this.useModularArchitecture) {
-      // Delegate to legacy - note: this is a sync method so we can't use dynamic import
-      // We'll need to handle this differently or ensure the legacy service is available
-      return null; // For now, return null in legacy mode to avoid errors
-    }
-
     return this.sessionManager.getSession(sessionId);
   }
 
   async sendMessage(sessionId: string, to: string, message: string): Promise<SendMessageResponse> {
-    if (!this.useModularArchitecture) {
-      // return LegacyService.sendMessage(sessionId, to, message);
-    }
-
     try {
       const client = this.clients.get(sessionId);
       if (!client) {
@@ -277,35 +252,22 @@ class WhatsAppServiceSimple {
   }
 
   async getSessionStatus(sessionId: string): Promise<WhatsAppSession | null> {
-    if (!this.useModularArchitecture) {
-      // return LegacyService.getSessionStatus(sessionId);
-    }
-
     return this.sessionManager.getSession(sessionId);
   }
 
   async getAllSessions(): Promise<WhatsAppSession[]> {
-    if (!this.useModularArchitecture) {
-      // return LegacyService.getAllSessions();
-    }
-
     return this.sessionManager.getAllSessions();
   }
 
   async destroySession(sessionId: string): Promise<void> {
-    if (!this.useModularArchitecture) {
-      // return LegacyService.destroySession(sessionId);
-    }
-
+    this.destroyingSessions.add(sessionId);
     try {
       logger.info(`🗑️ Destroying session ${sessionId} with modular architecture`);
 
       const client = this.clients.get(sessionId);
       if (client) {
-        // Remove all event listeners BEFORE destroying to prevent the
-        // 'disconnected' event from triggering handleSessionDisconnect
-        // which would race with this destroy flow
-        client.removeAllListeners();
+        // Remove tracked event listeners surgically (prevents disconnect/destroy race)
+        this.eventDispatcher.cleanupSessionListeners(client, sessionId);
 
         // Clean up client using ConnectionManager
         await this.connectionManager.destroyClient(client, sessionId);
@@ -316,13 +278,13 @@ class WhatsAppServiceSimple {
       await this.sessionManager.destroySession(
         sessionId,
         undefined, // client already handled above
-        async (sessionId: string) => {
-          // Custom cleanup callback for auth files
-          await this.authenticationManager.cleanupSessionAuth(sessionId);
+        async (sid: string) => {
+          await this.authenticationManager.cleanupSessionAuth(sid);
         }
       );
 
-      // Release Redis session lock
+      // Release locks
+      this.sessionInitLocks.delete(sessionId);
       try {
         await redisClient.del(`${REDIS_KEYS.SESSION_LOCK}${sessionId}`);
       } catch { /* ignore */ }
@@ -331,14 +293,12 @@ class WhatsAppServiceSimple {
     } catch (error) {
       logger.error(`❌ Error destroying session ${sessionId} with modular architecture:`, error);
       throw error;
+    } finally {
+      this.destroyingSessions.delete(sessionId);
     }
   }
 
   async shutdown(): Promise<void> {
-    if (!this.useModularArchitecture) {
-      // return LegacyService.shutdown();
-    }
-
     logger.info('🛑 Starting graceful shutdown with modular architecture...');
 
     // Stop health monitoring and periodic tasks
@@ -367,19 +327,15 @@ class WhatsAppServiceSimple {
   }
 
   async forceDisconnectSession(sessionId: string): Promise<void> {
-    if (!this.useModularArchitecture) {
-      // return LegacyService.forceDisconnectSession(sessionId);
-    }
-
+    this.destroyingSessions.add(sessionId);
     logger.info(`💪 Force disconnecting (pause) session ${sessionId} with modular architecture`);
 
     try {
       // 1. Close the WhatsApp client (browser) WITHOUT destroying session data
       const client = this.clients.get(sessionId);
       if (client) {
-        // Remove event listeners to prevent the 'disconnected' event from
-        // triggering handleSessionDisconnect which would delete from memory
-        client.removeAllListeners();
+        // Remove tracked event listeners surgically (prevents disconnect/destroy race)
+        this.eventDispatcher.cleanupSessionListeners(client, sessionId);
         try {
           await client.destroy();
         } catch (clientErr) {
@@ -402,6 +358,8 @@ class WhatsAppServiceSimple {
     } catch (error) {
       logger.error(`❌ Error pausing session ${sessionId} (modular):`, error);
       throw error;
+    } finally {
+      this.destroyingSessions.delete(sessionId);
     }
   }
 
@@ -487,10 +445,6 @@ class WhatsAppServiceSimple {
 
   // Session recovery method used by SessionRecoveryService
   async recoverSessionWithAuthValidation(sessionId: string, persistedData: any): Promise<boolean> {
-    if (!this.useModularArchitecture) {
-      // return LegacyService.recoverSessionWithAuthValidation(sessionId, persistedData);
-    }
-
     try {
       logger.info(`🔄 Recovering session ${sessionId} with modular architecture`);
 
@@ -513,18 +467,14 @@ class WhatsAppServiceSimple {
   /**
    * Get service architecture mode
    */
-  getArchitectureMode(): 'modular' | 'legacy' {
-    return this.useModularArchitecture ? 'modular' : 'legacy';
+  getArchitectureMode(): 'modular' {
+    return 'modular';
   }
 
   /**
    * Get module status (only available in modular mode)
    */
   getModuleStatus(): any {
-    if (!this.useModularArchitecture) {
-      return { error: 'Module status only available in modular mode' };
-    }
-
     return {
       architecture: 'modular',
       modules: {
@@ -543,10 +493,6 @@ class WhatsAppServiceSimple {
    * Test webhook (only available in modular mode)
    */
   async testWebhook(): Promise<{ success: boolean; error?: string }> {
-    if (!this.useModularArchitecture) {
-      return { success: false, error: 'Webhook testing only available in modular mode' };
-    }
-
     return await this.eventDispatcher.testWebhook();
   }
 
@@ -611,15 +557,24 @@ class WhatsAppServiceSimple {
    * Run periodic snapshots for all ready sessions
    */
   private async runPeriodicSnapshots(): Promise<void> {
-    const allSessions = await this.sessionManager.getAllSessions();
-    const readySessions = allSessions.filter(s => s.status === 'ready');
+    if (this.isSnapshotBatchRunning) {
+      logger.warn('Snapshot batch already in progress, skipping this cycle');
+      return;
+    }
+    this.isSnapshotBatchRunning = true;
+    try {
+      const allSessions = await this.sessionManager.getAllSessions();
+      const readySessions = allSessions.filter(s => s.status === 'ready');
 
-    if (readySessions.length === 0) return;
+      if (readySessions.length === 0) return;
 
-    logger.info(`Running periodic snapshots for ${readySessions.length} ready sessions`);
+      logger.info(`Running periodic snapshots for ${readySessions.length} ready sessions`);
 
-    for (const session of readySessions) {
-      await this.triggerSnapshot(session.id);
+      for (const session of readySessions) {
+        await this.triggerSnapshot(session.id);
+      }
+    } finally {
+      this.isSnapshotBatchRunning = false;
     }
   }
 

@@ -19,6 +19,23 @@ import redisClient, { REDIS_KEYS } from '../../config/redis';
 export class SessionManager {
   private sessions: Map<string, WhatsAppSession> = new Map();
   private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
+  private statusUpdateLocks: Map<string, Promise<void>> = new Map();
+
+  /**
+   * Promise-chaining mutex to prevent concurrent status updates for the same session
+   */
+  private async withSessionLock(sessionId: string, fn: () => Promise<void>): Promise<void> {
+    const prev = this.statusUpdateLocks.get(sessionId) || Promise.resolve();
+    const current = prev.then(fn, fn);
+    this.statusUpdateLocks.set(sessionId, current);
+    try {
+      await current;
+    } finally {
+      if (this.statusUpdateLocks.get(sessionId) === current) {
+        this.statusUpdateLocks.delete(sessionId);
+      }
+    }
+  }
 
   /**
    * Create a new session object
@@ -53,40 +70,43 @@ export class SessionManager {
   }
 
   /**
-   * Update session status in memory, database, and Redis (3-layer sync)
+   * Update session status in database, memory, and Redis (DB-first 3-layer sync)
    */
   async updateSessionStatus(
     sessionId: string,
     status: WhatsAppSession['status'],
     data?: any
   ): Promise<void> {
-    // Layer 1: Update in-memory session
-    const session = this.sessions.get(sessionId);
-    if (session) {
-      session.status = status;
-      session.lastSeen = new Date();
-      if (data) {
-        Object.assign(session, data);
+    await this.withSessionLock(sessionId, async () => {
+      // Layer 1 (primary): Persist to database FIRST — DB is source of truth for recovery
+      try {
+        await SessionPersistenceService.updateSessionStatus(sessionId, status, data);
+      } catch (dbError) {
+        logger.error(`DB write failed for session ${sessionId} status update, aborting:`, dbError);
+        throw dbError;
       }
-    }
 
-    // Layer 2: Persist to database asynchronously
-    try {
-      await SessionPersistenceService.updateSessionStatus(sessionId, status, data);
-    } catch (error) {
-      logger.error(`Error persisting session status update for ${sessionId}:`, error);
-    }
+      // Layer 2: Update in-memory session (only after DB succeeds)
+      const session = this.sessions.get(sessionId);
+      if (session) {
+        session.status = status;
+        session.lastSeen = new Date();
+        if (data) {
+          Object.assign(session, data);
+        }
+      }
 
-    // Layer 3: Sync to Redis for fast access
-    try {
-      await redisClient.setObject(`${REDIS_KEYS.SESSION_STATUS}${sessionId}`, {
-        status,
-        connectedNumber: data?.connectedNumber,
-        lastSeen: new Date().toISOString(),
-      }, 3600); // 1h TTL
-    } catch (redisError) {
-      logger.debug(`Redis status sync failed for ${sessionId}:`, redisError);
-    }
+      // Layer 3: Sync to Redis for fast dashboard access (non-blocking)
+      try {
+        await redisClient.setObject(`${REDIS_KEYS.SESSION_STATUS}${sessionId}`, {
+          status,
+          connectedNumber: data?.connectedNumber,
+          lastSeen: new Date().toISOString(),
+        }, 3600); // 1h TTL
+      } catch (redisError) {
+        logger.warn(`Redis status sync failed for ${sessionId}:`, redisError);
+      }
+    });
   }
 
   /**

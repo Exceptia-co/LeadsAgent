@@ -5,6 +5,7 @@ import tar from 'tar';
 import { logger } from '../../utils/logger';
 import EncryptionService from './EncryptionService';
 import type { SnapshotData, SnapshotMetadata } from './types';
+import { SESSION_CONSTANTS } from '../../config/session-constants';
 
 const AUTH_DATA_PATH = './wwebjs_auth';
 
@@ -51,6 +52,14 @@ export class SnapshotService {
 
       // 1. Create tar.gz in memory
       const tarBuffer = await this.createTarGz(sessionAuthPath, sessionId);
+
+      // Reject snapshots exceeding size limit to prevent DB bloat
+      if (tarBuffer.length > SESSION_CONSTANTS.MAX_SNAPSHOT_SIZE_BYTES) {
+        const sizeMB = (tarBuffer.length / 1024 / 1024).toFixed(2);
+        const limitMB = (SESSION_CONSTANTS.MAX_SNAPSHOT_SIZE_BYTES / 1024 / 1024).toFixed(0);
+        logger.warn(`Snapshot for session ${sessionId} exceeds size limit: ${sizeMB}MB > ${limitMB}MB. Skipping.`);
+        return null;
+      }
 
       // 2. Calculate checksum of compressed data
       const checksum = crypto.createHash('sha256').update(tarBuffer).digest('hex');

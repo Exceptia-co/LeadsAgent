@@ -2,6 +2,7 @@ import { logger } from '../../utils/logger';
 import { SessionCleanupUtil } from '../../utils/sessionCleanup';
 import type { SessionPersistenceData } from '../SessionPersistenceService';
 import SessionPersistenceService from '../SessionPersistenceService';
+import { countValidEssentialFiles, MIN_ESSENTIAL_AUTH_FILES } from '../whatsapp-core/AuthenticationManager';
 import fs from 'fs';
 import path from 'path';
 
@@ -91,18 +92,10 @@ export class AuthValidator {
         };
       }
 
-      const essentialFiles = ['Default', 'RemoteAuth', 'Session Storage'];
-      let foundEssentialFiles = 0;
-
-      for (const fileName of essentialFiles) {
-        const filePath = path.join(sessionAuthPath, fileName);
-        if (fs.existsSync(filePath)) {
-          foundEssentialFiles++;
-        }
-      }
+      const foundEssentialFiles = countValidEssentialFiles(sessionAuthPath);
 
       const hasLockFiles = await this.hasActiveLockFiles(sessionAuthPath);
-      const hasEssentialFiles = foundEssentialFiles > 0;
+      const hasEssentialFiles = foundEssentialFiles >= MIN_ESSENTIAL_AUTH_FILES;
       const isValid = hasEssentialFiles && !hasLockFiles;
 
       return {
@@ -111,7 +104,7 @@ export class AuthValidator {
         hasEssentialFiles,
         corruptionDetected: hasLockFiles || !hasEssentialFiles,
         errorMessage: !isValid
-          ? `Lock files: ${hasLockFiles}, Essential files: ${foundEssentialFiles}/${essentialFiles.length}`
+          ? `Lock files: ${hasLockFiles}, Essential files: ${foundEssentialFiles}/${MIN_ESSENTIAL_AUTH_FILES} required`
           : undefined,
       };
     } catch (error) {

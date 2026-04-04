@@ -4,6 +4,30 @@ import SessionPersistenceService from '../SessionPersistenceService';
 import fs from 'fs';
 import path from 'path';
 
+const ESSENTIAL_AUTH_FILES = ['Default', 'RemoteAuth', 'Session Storage'];
+export const MIN_ESSENTIAL_AUTH_FILES = 2;
+
+/**
+ * Count essential auth files/dirs that have actual content.
+ * Shared by AuthenticationManager and AuthValidator to avoid duplication.
+ */
+export function countValidEssentialFiles(sessionAuthPath: string): number {
+  let count = 0;
+  for (const fileName of ESSENTIAL_AUTH_FILES) {
+    try {
+      const stat = fs.statSync(path.join(sessionAuthPath, fileName));
+      if (stat.isDirectory()) {
+        if (fs.readdirSync(path.join(sessionAuthPath, fileName)).length > 0) count++;
+      } else if (stat.size > 0) {
+        count++;
+      }
+    } catch {
+      // File doesn't exist — skip
+    }
+  }
+  return count;
+}
+
 /**
  * AuthenticationManager - Handles LocalAuth file management, validation, and cleanup operations
  *
@@ -44,20 +68,10 @@ export class AuthenticationManager {
         return true; // No files means clean slate, which is valid
       }
 
-      // Check for essential auth files
-      const essentialFiles = ['Default', 'RemoteAuth', 'Session Storage'];
-      let foundEssentialFiles = 0;
+      const foundEssentialFiles = countValidEssentialFiles(sessionAuthPath);
 
-      for (const fileName of essentialFiles) {
-        const filePath = path.join(sessionAuthPath, fileName);
-        if (fs.existsSync(filePath)) {
-          foundEssentialFiles++;
-        }
-      }
-
-      // Check for common corruption indicators
       const hasLockFiles = await this.hasActiveLockFiles(sessionAuthPath);
-      const hasValidStructure = foundEssentialFiles > 0;
+      const hasValidStructure = foundEssentialFiles >= MIN_ESSENTIAL_AUTH_FILES;
 
       const isValid = hasValidStructure && !hasLockFiles;
 

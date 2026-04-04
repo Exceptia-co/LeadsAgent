@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger';
 import SessionPersistenceService from './SessionPersistenceService';
 import SnapshotService from './auth-snapshot/SnapshotService';
+import { SESSION_CONSTANTS } from '../config/session-constants';
 
 // Import modular components
 import { AuthValidator } from './session/AuthValidator';
@@ -40,7 +41,7 @@ export class SessionRecoveryService {
   private defaultOptions: RecoveryOptions = {
     maxRetries: 3,
     retryDelayMs: 5000,
-    maxReconnectAttempts: 5,
+    maxReconnectAttempts: SESSION_CONSTANTS.MAX_RECONNECT_ATTEMPTS,
     timeoutMs: 30000,
     validateAuthFiles: true,
     cleanupCorruptedAuth: true,
