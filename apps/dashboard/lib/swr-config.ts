@@ -120,8 +120,8 @@ export const createCacheKey = (endpoint: string, params?: Record<string, any>) =
 
 // Cache keys for different data types
 export const CACHE_KEYS = {
-  LEADS: "/public/leads",
-  LEAD_STATS: "/public/leads/stats",
+  LEADS: "/leads",
+  LEAD_STATS: "/leads/stats",
   WHATSAPP_STATS: "/whatsapp/stats",
 } as const;
 

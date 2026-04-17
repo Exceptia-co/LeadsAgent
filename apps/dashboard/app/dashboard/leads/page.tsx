@@ -207,8 +207,7 @@ export default function LeadsPage() {
 
     setIsBulkUpdating(true);
     try {
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
-      const response = await fetch(`${API_BASE_URL}/public/leads/bulk-update-whatsapp`, {
+      const response = await fetch(`/api/leads/bulk-update-whatsapp`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

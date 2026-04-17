@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Select from "@radix-ui/react-select";
 import * as Label from "@radix-ui/react-label";
+import { useAuth } from "@clerk/nextjs";
 import { X, ChevronDown, Loader2 } from "lucide-react";
 import { CreateLeadData, LeadStatus, STATUS_LABELS } from "../types";
 
@@ -31,6 +32,7 @@ interface FormErrors {
 }
 
 export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) {
+  const { getToken } = useAuth();
   const [formData, setFormData] = useState<FormData>({
     name: "",
     email: "",
@@ -124,10 +126,12 @@ export function AddLeadModal({ isOpen, onClose, onSuccess }: AddLeadModalProps) 
       }
 
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
-      const response = await fetch(`${API_BASE_URL}/public/leads`, {
+      const token = await getToken();
+      const response = await fetch(`${API_BASE_URL}/leads`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(leadData),
       });

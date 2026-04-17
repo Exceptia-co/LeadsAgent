@@ -113,6 +113,20 @@ export class LeadsController {
     return this.leadsService.updateStatus(id, status);
   }
 
+  @Patch(':id/whatsapp')
+  @ApiOperation({ summary: 'Update WhatsApp authorization for a lead' })
+  @ApiResponse({
+    status: 200,
+    description: 'The lead WhatsApp authorization has been updated.',
+  })
+  @ApiResponse({ status: 404, description: 'Lead not found.' })
+  updateWhatsAppAuth(
+    @Param('id') id: string,
+    @Body('whatsappAuthorized') whatsappAuthorized: boolean,
+  ) {
+    return this.leadsService.updateWhatsAppAuth(id, whatsappAuthorized);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete a lead' })
