@@ -606,30 +606,36 @@ Estas migraciones ejecutaron `CREATE TABLE campaigns` y `CREATE TABLE campaign_l
 
 ---
 
-#### T2.4 — Proteger y añadir rate limiting por sesión a Bulk/Proactive Messaging
+#### T2.4 — Proteger y añadir rate limiting por sesión a Bulk/Proactive Messaging ✅ cerrada parcial (v5.12)
 
-**Problema (verificado):** Los endpoints de bulk messaging existen en `routes/index.ts:976-1344` pero sin auth y con un rate limiting genérico insuficiente contra ban de WhatsApp.
+**Problema original:** endpoints de proactive/bulk messaging sin cuota por sesión WhatsApp; el rate limit existente era por IP y se bypaseaba completo en `NODE_ENV=development`.
 
-**Estado actual (verificado):**
-- `routes/index.ts:976` → `POST /proactive-messages` — validación de `leadId` y `content` en `:980`.
-- `routes/index.ts:1148` → `POST /proactive-messages/bulk`.
-- `routes/index.ts:1229-1232` → delay de 2000ms entre mensajes bulk.
-- `apps/whatsapp-service/src/middleware/validation.ts:220-284` → rate limit global por IP: 300/min, **deshabilitado en `NODE_ENV=development`** (`:227`).
-- `routes/index.ts:1308` → `GET /proactive-messages/stats`.
+**Estado real al momento del fix (líneas actualizadas tras T2.2):**
+- `routes/index.ts:543` → `POST /proactive-messages`.
+- `routes/index.ts:715` → `POST /proactive-messages/bulk`.
+- `routes/index.ts:795-799` → delay fijo de 2000ms entre mensajes bulk.
+- `middleware/validation.ts:220-284` → rate limit global por IP (300/min, bypass dev).
 
-> **Nota v4:** v3 decía "sin rate limiting" — matizado: existe rate limit global por IP y delay 2s entre bulk; lo que **no existe** es cuota por sesión WhatsApp ni cuota horaria anti-ban.
+**Fix aplicado (v5.12):**
+1. **Nuevo middleware `rateLimitBySession`** en `middleware/validation.ts:288-386`. In-memory `Map<sessionId, number[]>` con ventana rodante de 1h; cuota configurable via `WHATSAPP_MAX_MSGS_PER_HOUR_PER_SESSION` (default `200`, conservador para cuenta nueva). Cuenta **optimista**: reserva `leadIds.length` slots al aceptar el request, no al confirmar envío (un retry fallido también puede gatillar el ban). Para bulk hace fail-closed: si `current + batchSize > quota`, rechaza el batch completo con 429, `retryAfter` (segundos hasta que libere el slot más viejo) y metadata (`sessionId`, `quotaPerHour`, `usage`, `attemptedBatch`).
+2. **Throttle adaptativo**: el middleware escribe `req.sessionThrottle = { throttleFactor: 1|2|4 }` según uso (>80% → 2x, >90% → 4x). El handler de `/proactive-messages/bulk` lo usa para multiplicar el delay base de 2s entre mensajes.
+3. **Aplicado a**: `POST /proactive-messages` (batchSize=1) y `POST /proactive-messages/bulk`.
+4. **Bypass `rateLimit` global IP**: cambiado de `NODE_ENV === 'development'` a `NODE_ENV === 'test'` en `middleware/validation.ts:227`. Desarrollo local ahora respeta los 300/min (suficientemente permisivo; solo tests automatizados conservan el bypass).
 
-**Cambios requeridos:**
-1. Agregar middleware de auth (depende de T0.4-ter).
-2. Implementar rate limiting **por sesión WhatsApp**: máximo configurable (default 200 msgs/hora para cuentas nuevas).
-3. Configurar throttling adaptativo: delay creciente si la sesión tiene historial reciente de envíos.
-4. Mejorar tracking de estado: PENDING → QUEUED → SENT → DELIVERED → FAILED.
-5. Eliminar el bypass de rate limit global en dev o dejarlo solo en `NODE_ENV=test`.
+**Cambios NO aplicados (fuera de scope — tracked en follow-ups):**
+- Auth middleware (punto 1 original) → depende de T0.4-ter (HMAC Nest↔whatsapp-service). De momento el acceso desde internet ya pasa por el proxy autenticado `/api/whatsapp/*` de Next (T0.4), que aplica `requireClerkToken()`.
+- Tracking de estado (PENDING → QUEUED → SENT → DELIVERED → FAILED) (punto 4 original): tracked separadamente; no es bloqueador anti-ban.
+
+**Validación end-to-end (browser + curl directo contra :3002):**
+- Happy path: `POST /proactive-messages/bulk` con 5 leadIds inexistentes → 200 OK, body `{successful:0, failed:5}` (middleware pasó, 5 slots reservados para `t24-happy`).
+- Stress: segundo burst con 196 leadIds en la misma sesión → **429** con `"Cuota de 200 mensajes/hora alcanzada para la sesión 't24-happy'. Usadas 5, intento de 196."`, `retryAfter: 3597`. Persistencia del contador confirmada.
+- Stress sin warm-up: 201 leadIds en sesión fresca → **429** inmediato con `usage: 0, attemptedBatch: 201`.
+- `POST /proactive-messages` con lead inexistente → 404 "Lead not found" (middleware pasó; happy path no roto).
 
 **Criterio de aceptación:**
-- Endpoints protegidos con auth.
-- Rate limiting por sesión activo.
-- Envío masivo no excede la cuota configurada por hora por sesión.
+- Rate limiting por sesión activo ✅.
+- Envío masivo no excede la cuota configurada por hora por sesión ✅ (verificado con stress test).
+- Endpoints protegidos con auth: parcial — auth en internet via proxy Next, HMAC directo bajo T0.4-ter.
 
 ---
 
@@ -790,6 +796,7 @@ Semana 6+ (Escalabilidad + Tests):
 | v5.6 | 2026-04-17 | **Fase 0 sexta ola (decisiones + Clerk webhook).** Cerrada **T0.6**: el PO decidió mantener el repo público (justificación: comodidad con Vercel Hobby; Vercel soporta repos privados, pero se respeta la decisión). Cerrada **T0.5**: endpoint de webhook creado en Clerk Development instance (`ins_31WLEulvioak3keE58HPWDIQ2Gu`) apuntando a `https://cromgod.space/api/webhooks/clerk` con eventos `user.created`/`user.updated`/`user.deleted`; signing secret inyectado en Vercel env vars del project `prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6` como `CLERK_WEBHOOK_SECRET` con target `production,preview,development` (encrypted); redeploy del commit actual de main lanzado (`dpl_GSYsAQ6MBMnSTHYZjqw2g1zUeGde`). Fase 0 efectiva completada salvo T0.1 (RLS + policies) y T0.4-ter (HMAC webhook follow-up). |
 | v5.7 | 2026-04-17 | **Fase 0 cierre (decisión T0.1).** El PO eligió la **opción C** para T0.1: aceptar el WARN de audit A2 como informativo permanente y no ejecutar la habilitación de RLS en este ciclo. Justificación: operación con 1 usuario administrador, todos los clientes de DB bypass RLS por diseño, la autorización de negocio vive en la capa de aplicación (Clerk guards + `requireClerkToken`). Triggers documentados para reabrir: segundo usuario, exposición de PostgREST, JWT Clerk→Supabase, auditoría externa. **Fase 0 efectivamente cerrada** — el único pendiente técnico es **T0.4-ter** (HMAC entre Nest y whatsapp-service, follow-up de endurecimiento, no crítico). Scorecard estable `Infra Audit`: **15 pass / 1 warn (A2 aceptado) / 0 fail / 0 skip**. |
 | v5.8 | 2026-04-17 | **Fix post-T0.5 (GRANT service_role).** Al probar el webhook de Clerk end-to-end con Send Example, el handler `api/webhooks/clerk` devolvía 200 pero no insertaba en `public.users`. Diagnóstico: PostgREST con `SUPABASE_SERVICE_ROLE_KEY` (JWT con `role: service_role`) devolvía `HTTP 403 "permission denied for schema public"`. La causa: en proyectos Supabase nuevos, el rol `service_role` **no tiene por defecto** `GRANT` sobre el schema `public`; solo `postgres` tiene privileges en las tablas. Mientras Prisma (que se conecta con rol `postgres` via `DATABASE_URL`) funcionaba sin problema, el SDK Supabase JS usado en rutas Next se quedaba fuera. Fix aplicado con migration `grant_service_role_access_public_schema`: `GRANT USAGE ON SCHEMA public`, `GRANT SELECT/INSERT/UPDATE/DELETE/REFERENCES/TRIGGER/TRUNCATE ON ALL TABLES`, `GRANT USAGE/SELECT/UPDATE ON ALL SEQUENCES`, `GRANT EXECUTE ON ALL FUNCTIONS`, más `ALTER DEFAULT PRIVILEGES` para que nuevas tablas hereden los grants automáticamente. Post-fix, curl de prueba contra `/rest/v1/users` devuelve `HTTP 201` con la fila creada. |
+| v5.12 | 2026-04-17 | **T2.4 cerrada parcial (rate limit por sesión WhatsApp).** Nuevo middleware `rateLimitBySession` en `apps/whatsapp-service/src/middleware/validation.ts` con in-memory `Map<sessionId, timestamps[]>`, ventana rodante 1h, cuota default 200 msgs/h configurable via `WHATSAPP_MAX_MSGS_PER_HOUR_PER_SESSION`. Fail-closed para bulk: batch se rechaza completo si no cabe. Conteo optimista: reserva slots al aceptar, no al confirmar envío (anti-ban). Throttle adaptativo vía `req.sessionThrottle.throttleFactor` (1/2/4 según uso >80% / >90%) multiplica el delay base de 2s en el loop de `/proactive-messages/bulk`. Aplicado a `POST /proactive-messages` y `POST /proactive-messages/bulk`. Bypass del `rateLimit` global IP cambiado de `NODE_ENV === 'development'` → `NODE_ENV === 'test'`. Validación con curl: batch de 201 leadIds devuelve 429 inmediato; burst de 5 pasa y burst siguiente de 196 en misma sesión devuelve 429 con `usage: 5` (persistencia del contador confirmada). Typecheck OK 3 paquetes. Pendiente follow-up: auth directo Nest↔whatsapp-service tracked bajo T0.4-ter. |
 | v5.11-bis | 2026-04-17 | **T2.2 post-audit browser.** Tras levantar front local y abrir `/dashboard/templates`, el `Network` tab reveló 5 consumers adicionales llamando a `:3002/templates` (`templates/page.tsx` CRUD x4, `messaging/page.tsx` CRUD x4, `whatsapp/page.tsx` list, `BulkSendMessageModal.tsx` list, `AdvancedPreview.tsx` preview+leads). Migrados al mismo patrón Bearer/Nest. El `TemplatesController` envuelve responses en `{ success, data }` para compat de shape; se añade alias `PUT /templates/:id` que delega en PATCH. `AdvancedPreview.tsx`: campo `previewContent` renombrado a `rendered` para alinearse con el servicio. Browser retest: 4 × `GET /templates?activeOnly=false → 200`, cero 404s contra `:3002`. |
 | v5.11 | 2026-04-17 | **T2.2 cerrada (Templates auth + Nest CRUD).** Nuevo `TemplatesModule` en `apps/api/src/templates/*` con `ClerkAuthGuard` + DTOs validados (`class-validator`) + preview con `missingVariables[]`. Dashboard `TemplateContext.tsx` reescrito para consumir `NEXT_PUBLIC_API_URL/templates` con Bearer Clerk (patrón de `use-leads.ts`). `AIAssistant.tsx` + `VariablePicker.tsx`: llamadas directas a `${getWhatsAppUrl()}` migradas al proxy `/api/whatsapp/*` que aplica `requireClerkToken()`. `apps/whatsapp-service/src/routes/index.ts`: eliminadas las 5 rutas CRUD/preview (`-171` líneas en bruto; conservadas `/templates/variables`, `/templates/ai-suggest`, `/templates/ai-improve` que dependen de servicios locales). Auditoría inline: las líneas del PRD v3/v4 estaban desplazadas (`:534` en vez de `:806`); reemplazadas con las cifras reales al momento del fix. Follow-up tracked: refuerzo HMAC Nest↔whatsapp-service bajo T0.4-ter. Validación: typecheck OK en los 3 paquetes, Prettier limpio. |
 | v5.10 | 2026-04-17 | **T2.3 cerrada (Socket.IO + handlers DB).** `apps/whatsapp-service/src/services/SocketService.ts:144-159`: separado el `case 'auth_failure'` del `'connecting'`; ahora retorna `AUTH_INVALID` coherente con la UI. `apps/dashboard/src/hooks/useSocket.ts:8`: tipo local extendido con `AUTH_INVALID` y `QR_READY` para ser superconjunto de `types/index.ts:138`. `apps/api/src/whatsapp/whatsapp.service.ts:140-206`: los 3 handlers (`handleSessionAuthenticated`, `handleSessionDisconnected`, `handleStatusChange`) persisten el status via `prisma.whatsAppSession.update({ where: { sessionId }, data: { status, lastSeen, lastError, connectedNumber? } })` con try/catch para no romper el webhook si la sesión no existe. Validación: typecheck OK en `@leadcrm/api`, `@leadcrm/dashboard`, `@leadcrm/whatsapp-service`; Prettier limpio. Hallazgo de auditoría: el bug de mapeo sólo vivía en `SocketService.mapStatusToFrontend`; `SessionController.mapStatusToDashboard:95-109` ya era correcto — dos copias divergentes del mismo switch reconciliadas. |

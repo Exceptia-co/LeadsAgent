@@ -8,6 +8,8 @@ import {
   validateSessionId,
   validateWhatsAppSendMessage,
   rateLimit,
+  rateLimitBySession,
+  type SessionThrottleContext,
 } from '../middleware/validation';
 
 const router: Router = Router();
@@ -540,7 +542,7 @@ router.get('/stats/whitelist', async (req, res) => {
 // ============================================
 
 // Crear y enviar mensaje proactivo
-router.post('/proactive-messages', async (req, res) => {
+router.post('/proactive-messages', rateLimitBySession, async (req, res) => {
   try {
     const { leadId, templateId, sessionId = 'default-session', content, variables = {} } = req.body;
 
@@ -712,7 +714,7 @@ router.post('/proactive-messages', async (req, res) => {
 });
 
 // Enviar mensajes proactivos masivos
-router.post('/proactive-messages/bulk', async (req, res) => {
+router.post('/proactive-messages/bulk', rateLimitBySession, async (req, res) => {
   try {
     const { leadIds, templateId, sessionId, content, variables } = req.body;
 
@@ -728,6 +730,17 @@ router.post('/proactive-messages/bulk', async (req, res) => {
         success: false,
         error: 'sessionId is required',
       });
+    }
+
+    // T2.4: throttle adaptativo según uso actual de la cuota por sesión
+    const throttleCtx = (req as typeof req & { sessionThrottle?: SessionThrottleContext })
+      .sessionThrottle;
+    const baseDelayMs = 2000;
+    const adaptiveDelayMs = baseDelayMs * (throttleCtx?.throttleFactor ?? 1);
+    if (throttleCtx && throttleCtx.throttleFactor > 1) {
+      console.log(
+        `⚠️ Session ${throttleCtx.sessionId} at ${throttleCtx.usageAfter}/${throttleCtx.quota} → delay x${throttleCtx.throttleFactor}`
+      );
     }
 
     const results = {
@@ -792,10 +805,10 @@ router.post('/proactive-messages/bulk', async (req, res) => {
         console.log(`📤 Sending message to: ${lead.phone} via session: ${sessionId}`);
         console.log(`💬 Message content: ${messageContent.substring(0, 50)}...`);
 
-        // Add small delay to avoid rate limiting
+        // Add delay (adaptive based on session quota usage — see T2.4)
         if (leadIds.indexOf(leadId) > 0) {
-          console.log('⏱️ Adding delay to avoid rate limiting...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          console.log(`⏱️ Adding ${adaptiveDelayMs}ms delay to avoid rate limiting...`);
+          await new Promise(resolve => setTimeout(resolve, adaptiveDelayMs));
         }
 
         const sendResult = await WhatsAppService.sendMessage(sessionId, lead.phone, messageContent);
