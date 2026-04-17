@@ -142,19 +142,67 @@ export class WhatsAppService {
     data: any,
   ): Promise<void> {
     this.logger.log(`Session ${sessionId} authenticated successfully`);
-    // TODO: Update session status in database
-    // TODO: Notify dashboard via WebSocket/SSE
+    try {
+      await this.prisma.whatsAppSession.update({
+        where: { sessionId },
+        data: {
+          status: 'authenticated',
+          lastSeen: new Date(),
+          lastError: null,
+          connectedNumber: data?.number ?? undefined,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to persist authenticated status for ${sessionId}`,
+        error,
+      );
+    }
   }
 
   async handleSessionDisconnected(sessionId: string, data: any): Promise<void> {
-    this.logger.log(`Session ${sessionId} disconnected: ${data.reason}`);
-    // TODO: Update session status in database
-    // TODO: Notify dashboard
+    this.logger.log(`Session ${sessionId} disconnected: ${data?.reason}`);
+    try {
+      await this.prisma.whatsAppSession.update({
+        where: { sessionId },
+        data: {
+          status: data?.authInvalidated ? 'auth_failure' : 'disconnected',
+          lastSeen: new Date(),
+          lastError: data?.reason ?? null,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to persist disconnected status for ${sessionId}`,
+        error,
+      );
+    }
   }
 
   async handleStatusChange(sessionId: string, data: any): Promise<void> {
     this.logger.log(`Session ${sessionId} status changed:`, data);
-    // TODO: Update session status in database
+    const nextStatus: string | undefined = data?.status;
+    if (!nextStatus) {
+      return;
+    }
+    try {
+      await this.prisma.whatsAppSession.update({
+        where: { sessionId },
+        data: {
+          status: nextStatus,
+          lastSeen: new Date(),
+          lastError:
+            nextStatus === 'auth_failure'
+              ? (data?.message ?? data?.reason ?? 'auth_failure')
+              : null,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to persist status change for ${sessionId}`,
+        error,
+      );
+    }
   }
 
   // Method to send message through WhatsApp service

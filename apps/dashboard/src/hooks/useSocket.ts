@@ -5,7 +5,7 @@ import { getWhatsAppUrl } from "../../hooks/use-whatsapp-url";
 export interface WhatsAppSession {
   id: string;
   name: string;
-  status: "CONNECTED" | "CONNECTING" | "DISCONNECTED" | "QR_PENDING";
+  status: "CONNECTED" | "CONNECTING" | "DISCONNECTED" | "AUTH_INVALID" | "QR_PENDING" | "QR_READY";
   phoneNumber?: string;
   qrCode?: string;
   lastActivity?: string;

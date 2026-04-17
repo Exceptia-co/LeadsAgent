@@ -147,8 +147,9 @@ export class SocketService {
       case 'authenticated':
         return 'CONNECTED';
       case 'connecting':
-      case 'auth_failure':
         return 'CONNECTING';
+      case 'auth_failure':
+        return 'AUTH_INVALID';
       case 'disconnected':
         return 'DISCONNECTED';
       default:

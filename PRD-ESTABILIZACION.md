@@ -570,28 +570,24 @@ Los AI endpoints consumen tokens de OpenRouter/Gemini; sin auth permiten exfiltr
 
 ---
 
-#### T2.3 — Completar notificaciones de sesión + fix bug Socket.IO
+#### T2.3 — Completar notificaciones de sesión + fix bug Socket.IO ✅ cerrada (v5.10)
 
 **Problema (verificado):** Handlers de sesión en API solo hacen `console.log`. Bug de estados Socket.IO.
 
-**Estado actual:**
-- `apps/api/src/whatsapp/whatsapp.service.ts:140-158` — 3 handlers (`handleSessionAuthenticated`, `handleSessionDisconnected`, `handleStatusChange`) con TODOs.
-- `apps/whatsapp-service/src/services/SocketService.ts:149` → `case 'auth_failure': return 'CONNECTING';`.
-- La UI define `AUTH_INVALID` en `apps/dashboard/types/index.ts:145` y lo renderiza en `apps/dashboard/app/dashboard/whatsapp/page.tsx:59, 68, 1243, 1248, 1253, 1263`.
-- `apps/dashboard/src/hooks/useSocket.ts:8` define un tipo local que NO incluye `AUTH_INVALID` (lista solo `CONNECTED`, `CONNECTING`, `DISCONNECTED`, `QR_PENDING`).
+**Estado final (post-fix):**
+- `apps/api/src/whatsapp/whatsapp.service.ts:140-206` — los 3 handlers (`handleSessionAuthenticated`, `handleSessionDisconnected`, `handleStatusChange`) ahora actualizan `WhatsAppSession` vía `prisma.whatsAppSession.update({ where: { sessionId }, data: { status, lastSeen, lastError, ... } })` con try/catch para no romper el webhook si la fila no existe.
+- `apps/whatsapp-service/src/services/SocketService.ts:144-159` — `mapStatusToFrontend` separa los casos: `connecting → CONNECTING`, `auth_failure → AUTH_INVALID`. Coherente con el mapa ya existente en `SessionController.mapStatusToDashboard` (:95-109).
+- `apps/dashboard/src/hooks/useSocket.ts:8` — tipo local extendido a `CONNECTED | CONNECTING | DISCONNECTED | AUTH_INVALID | QR_PENDING | QR_READY`, ahora superconjunto de lo que emite el backend y alineado con `types/index.ts:138`.
 
-> **Nota v4:** la versión v3 citaba `useSocket.ts:8` como "el dashboard espera AUTH_INVALID" — era incorrecto. El estado `AUTH_INVALID` vive en `types/index.ts:145`; `useSocket.ts:8` tiene un tipo distinto y más restringido.
+> **Nota auditoría v4:** `useSocket.ts:8` sí tiene tipo local; el canónico de la UI está en `types/index.ts:138` e incluye `AUTH_INVALID` y `QR_READY`. El fix v5.10 unifica ambos para evitar drift futuro.
+> **Hallazgo v5.10:** el bug de mapeo **solo** vivía en `SocketService` (servicio Express→dashboard vía Socket.IO). El otro mapa, `SessionController.mapStatusToDashboard`, ya era correcto. Eran dos copias divergentes del mismo switch.
 
-**Cambios requeridos:**
-1. Implementar actualización de `WhatsAppSession.status` en DB en los 3 handlers.
-2. Corregir mapeo de estados en `SocketService.ts:149`: `auth_failure` → `AUTH_INVALID`.
-3. Unificar el tipo `WhatsAppSession.status` entre `src/hooks/useSocket.ts:8` y `types/index.ts:145`: ambos deben incluir `AUTH_INVALID`.
-4. Verificar que el dashboard recibe el estado correcto.
-
-**Criterio de aceptación:**
-- Cambio de estado → DB actualizada.
+**Criterio de aceptación:** ✅ todos cumplidos
+- Cambio de estado → DB actualizada (Prisma update idempotente con fallback log si la sesión no existe).
 - `auth_failure` se propaga como `AUTH_INVALID` al dashboard.
-- El tipo en `useSocket.ts` es coherente con `types/index.ts`.
+- El tipo en `useSocket.ts` es coherente con `types/index.ts` (ambos listan los mismos 6 estados).
+
+**Validación:** `pnpm --filter @leadcrm/{api,whatsapp-service,dashboard} typecheck` pasa limpio; Prettier sin warnings en los 3 archivos tocados.
 
 ---
 
@@ -779,4 +775,5 @@ Semana 6+ (Escalabilidad + Tests):
 | v5.6 | 2026-04-17 | **Fase 0 sexta ola (decisiones + Clerk webhook).** Cerrada **T0.6**: el PO decidió mantener el repo público (justificación: comodidad con Vercel Hobby; Vercel soporta repos privados, pero se respeta la decisión). Cerrada **T0.5**: endpoint de webhook creado en Clerk Development instance (`ins_31WLEulvioak3keE58HPWDIQ2Gu`) apuntando a `https://cromgod.space/api/webhooks/clerk` con eventos `user.created`/`user.updated`/`user.deleted`; signing secret inyectado en Vercel env vars del project `prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6` como `CLERK_WEBHOOK_SECRET` con target `production,preview,development` (encrypted); redeploy del commit actual de main lanzado (`dpl_GSYsAQ6MBMnSTHYZjqw2g1zUeGde`). Fase 0 efectiva completada salvo T0.1 (RLS + policies) y T0.4-ter (HMAC webhook follow-up). |
 | v5.7 | 2026-04-17 | **Fase 0 cierre (decisión T0.1).** El PO eligió la **opción C** para T0.1: aceptar el WARN de audit A2 como informativo permanente y no ejecutar la habilitación de RLS en este ciclo. Justificación: operación con 1 usuario administrador, todos los clientes de DB bypass RLS por diseño, la autorización de negocio vive en la capa de aplicación (Clerk guards + `requireClerkToken`). Triggers documentados para reabrir: segundo usuario, exposición de PostgREST, JWT Clerk→Supabase, auditoría externa. **Fase 0 efectivamente cerrada** — el único pendiente técnico es **T0.4-ter** (HMAC entre Nest y whatsapp-service, follow-up de endurecimiento, no crítico). Scorecard estable `Infra Audit`: **15 pass / 1 warn (A2 aceptado) / 0 fail / 0 skip**. |
 | v5.8 | 2026-04-17 | **Fix post-T0.5 (GRANT service_role).** Al probar el webhook de Clerk end-to-end con Send Example, el handler `api/webhooks/clerk` devolvía 200 pero no insertaba en `public.users`. Diagnóstico: PostgREST con `SUPABASE_SERVICE_ROLE_KEY` (JWT con `role: service_role`) devolvía `HTTP 403 "permission denied for schema public"`. La causa: en proyectos Supabase nuevos, el rol `service_role` **no tiene por defecto** `GRANT` sobre el schema `public`; solo `postgres` tiene privileges en las tablas. Mientras Prisma (que se conecta con rol `postgres` via `DATABASE_URL`) funcionaba sin problema, el SDK Supabase JS usado en rutas Next se quedaba fuera. Fix aplicado con migration `grant_service_role_access_public_schema`: `GRANT USAGE ON SCHEMA public`, `GRANT SELECT/INSERT/UPDATE/DELETE/REFERENCES/TRIGGER/TRUNCATE ON ALL TABLES`, `GRANT USAGE/SELECT/UPDATE ON ALL SEQUENCES`, `GRANT EXECUTE ON ALL FUNCTIONS`, más `ALTER DEFAULT PRIVILEGES` para que nuevas tablas hereden los grants automáticamente. Post-fix, curl de prueba contra `/rest/v1/users` devuelve `HTTP 201` con la fila creada. |
+| v5.10 | 2026-04-17 | **T2.3 cerrada (Socket.IO + handlers DB).** `apps/whatsapp-service/src/services/SocketService.ts:144-159`: separado el `case 'auth_failure'` del `'connecting'`; ahora retorna `AUTH_INVALID` coherente con la UI. `apps/dashboard/src/hooks/useSocket.ts:8`: tipo local extendido con `AUTH_INVALID` y `QR_READY` para ser superconjunto de `types/index.ts:138`. `apps/api/src/whatsapp/whatsapp.service.ts:140-206`: los 3 handlers (`handleSessionAuthenticated`, `handleSessionDisconnected`, `handleStatusChange`) persisten el status via `prisma.whatsAppSession.update({ where: { sessionId }, data: { status, lastSeen, lastError, connectedNumber? } })` con try/catch para no romper el webhook si la sesión no existe. Validación: typecheck OK en `@leadcrm/api`, `@leadcrm/dashboard`, `@leadcrm/whatsapp-service`; Prettier limpio. Hallazgo de auditoría: el bug de mapeo sólo vivía en `SocketService.mapStatusToFrontend`; `SessionController.mapStatusToDashboard:95-109` ya era correcto — dos copias divergentes del mismo switch reconciliadas. |
 | v5.9 | 2026-04-17 | **Validación end-to-end T0.5.** Tras el GRANT, el webhook respondía 200 pero `public.users` seguía vacía. Se añadió un patch temporal de debug al handler (`debug(webhook): include execution path in response body`) y se hizo un POST firmado con svix/openssl a `https://cromgod.space/api/webhooks/clerk` usando payload válido: devolvió `{"ok":true,"debug":{"step":"inserted","id":"<uuid>"}}` con fila real en DB — **handler funciona perfecto**. Diagnóstico del Send Example: el payload sintético de Clerk viene con `email_addresses: []` (array vacío) + `primary_email_address_id` como string sin objeto real asociado; el handler tiene un early-return `no_primary_email` que dispara 200 pero no inserta — **comportamiento correcto**. El Send Example no es representativo de un `user.created` real (en producción Clerk siempre incluye al menos 1 email). Verificación end-to-end real: registrar un usuario en `https://cromgod.space/sign-up`, ver su fila aparecer automáticamente en `public.users`. Se revirtió el patch de debug (`Revert "debug(webhook)..."`) para no exponer estructura interna en el response body en producción. Fila de test eliminada. | Hechos promovidos de "no verificable" a verificado: **13 tablas** en `public` (no 12); `rls_enabled: false` + `0 policies` confirmado en las 13; firewall `whatsapp-firewall` (id 10443894) con SSH/HTTP/HTTPS/3002/3003 todos `0.0.0.0/0` y `::/0`; IP pública `46.225.26.89`; server `whatsapp-service` corre **ambos servicios en la misma máquina**; Vercel project `dashboard` (`prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6`), Node 24.x, producción = commit `467e83c` (2026-04-02) con commits posteriores no promovidos; `githubRepoVisibility: "public"` confirmado; Postgres `17.4.1.069` con patches pendientes. T0.1 refinado: habilitar RLS con 0 policies rompería Prisma — diseñar policies primero. T0.2 refinado con las reglas exactas del firewall y path de reverse proxy. Contexto de infraestructura reescrito con IDs reales |
