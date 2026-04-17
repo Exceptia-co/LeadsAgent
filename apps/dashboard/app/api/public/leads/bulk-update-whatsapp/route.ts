@@ -46,11 +46,7 @@ export async function PATCH(request: NextRequest) {
     });
 
     // Validate required fields
-    if (
-      !body.leadIds ||
-      !Array.isArray(body.leadIds) ||
-      body.leadIds.length === 0
-    ) {
+    if (!body.leadIds || !Array.isArray(body.leadIds) || body.leadIds.length === 0) {
       return NextResponse.json(
         { error: "leadIds array is required and cannot be empty" },
         { status: 400 },
@@ -65,16 +61,11 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (typeof body.whatsappAuthorized !== "boolean") {
-      return NextResponse.json(
-        { error: "whatsappAuthorized must be a boolean" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "whatsappAuthorized must be a boolean" }, { status: 400 });
     }
 
     // Validate that all IDs are strings
-    const validIds = body.leadIds.filter(
-      (id) => typeof id === "string" && id.trim() !== "",
-    );
+    const validIds = body.leadIds.filter((id) => typeof id === "string" && id.trim() !== "");
     if (validIds.length !== body.leadIds.length) {
       return NextResponse.json(
         { error: "All lead IDs must be valid non-empty strings" },
@@ -148,8 +139,7 @@ export async function PATCH(request: NextRequest) {
       if (error.message.includes("Missing Supabase")) {
         return NextResponse.json(
           {
-            error:
-              "Database configuration error. Please check environment variables.",
+            error: "Database configuration error. Please check environment variables.",
           },
           { status: 503 },
         );

@@ -9,12 +9,7 @@ interface TooltipProps {
   className?: string;
 }
 
-export function Tooltip({
-  children,
-  content,
-  position = "top",
-  className = "",
-}: TooltipProps) {
+export function Tooltip({ children, content, position = "top", className = "" }: TooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
 
   const positionClasses = {
@@ -45,9 +40,7 @@ export function Tooltip({
           className={`absolute z-50 px-2 py-1 text-xs font-medium text-white bg-gray-800 rounded-md shadow-lg whitespace-nowrap transition-opacity duration-200 ${positionClasses[position]}`}
         >
           {content}
-          <div
-            className={`absolute w-0 h-0 border-4 ${arrowClasses[position]}`}
-          />
+          <div className={`absolute w-0 h-0 border-4 ${arrowClasses[position]}`} />
         </div>
       )}
     </div>

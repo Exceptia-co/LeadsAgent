@@ -13,8 +13,7 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   title: "LeadsAgent Documentation",
-  description:
-    "Comprehensive documentation for LeadsAgent CRM with WhatsApp automation",
+  description: "Comprehensive documentation for LeadsAgent CRM with WhatsApp automation",
 };
 
 export default function RootLayout({
@@ -24,9 +23,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable}`}>
-        {children}
-      </body>
+      <body className={`${geistSans.variable} ${geistMono.variable}`}>{children}</body>
     </html>
   );
 }

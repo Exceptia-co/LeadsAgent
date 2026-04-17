@@ -52,9 +52,9 @@ export default function VariablePicker({
   });
   const [examples, setExamples] = useState<any>({});
   const [loading, setLoading] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState<
-    "all" | "lead" | "system" | "dynamic"
-  >("all");
+  const [selectedCategory, setSelectedCategory] = useState<"all" | "lead" | "system" | "dynamic">(
+    "all",
+  );
 
   useEffect(() => {
     fetchAvailableVariables();
@@ -158,8 +158,7 @@ export default function VariablePicker({
             key: "fecha_actual",
             label: "Fecha Actual",
             description: "Fecha de hoy",
-            example:
-              result.examples?.dynamic?.["{{fecha_actual}}"] || "28/08/2025",
+            example: result.examples?.dynamic?.["{{fecha_actual}}"] || "28/08/2025",
             category: "dynamic",
             icon: Calendar,
           },
@@ -175,8 +174,7 @@ export default function VariablePicker({
             key: "dia_semana",
             label: "Día de la Semana",
             description: "Día actual de la semana",
-            example:
-              result.examples?.dynamic?.["{{dia_semana}}"] || "miércoles",
+            example: result.examples?.dynamic?.["{{dia_semana}}"] || "miércoles",
             category: "dynamic",
             icon: Calendar,
           },
@@ -324,9 +322,7 @@ export default function VariablePicker({
             </button>
           ))}
         </div>
-        <p className="text-xs text-gray-500">
-          Haz clic en una variable para insertarla
-        </p>
+        <p className="text-xs text-gray-500">Haz clic en una variable para insertarla</p>
       </div>
     );
   }
@@ -337,13 +333,9 @@ export default function VariablePicker({
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-gray-900">
-              Variables Disponibles
-            </h3>
+            <h3 className="text-sm font-semibold text-gray-900">Variables Disponibles</h3>
             <p className="text-xs text-gray-500">
-              {onVariableSelect
-                ? "Haz clic para insertar"
-                : "Haz clic para copiar"}
+              {onVariableSelect ? "Haz clic para insertar" : "Haz clic para copiar"}
             </p>
           </div>
           <Badge variant="outline" className="text-xs">
@@ -383,9 +375,7 @@ export default function VariablePicker({
               className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors group"
             >
               <div className="flex items-center space-x-3 flex-1">
-                <div
-                  className={`p-1.5 rounded-md ${getCategoryColor(variable.category)}`}
-                >
+                <div className={`p-1.5 rounded-md ${getCategoryColor(variable.category)}`}>
                   {variable.icon && <variable.icon className="h-3 w-3" />}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -397,18 +387,14 @@ export default function VariablePicker({
                       {variable.category}
                     </Badge>
                   </div>
-                  <p className="text-xs text-gray-500 truncate">
-                    {variable.description}
-                  </p>
+                  <p className="text-xs text-gray-500 truncate">{variable.description}</p>
                 </div>
               </div>
               <div className="flex items-center space-x-2">
                 {showExamples && (
                   <div className="text-right">
                     <p className="text-xs text-gray-400">ej:</p>
-                    <p className="text-xs text-gray-600 font-mono">
-                      {variable.example}
-                    </p>
+                    <p className="text-xs text-gray-600 font-mono">{variable.example}</p>
                   </div>
                 )}
                 <Copy className="h-4 w-4 text-gray-400 group-hover:text-green-600" />
@@ -420,9 +406,7 @@ export default function VariablePicker({
         {getFilteredVariables().length === 0 && (
           <div className="text-center py-8">
             <Info className="mx-auto h-8 w-8 text-gray-300 mb-2" />
-            <p className="text-sm text-gray-500">
-              No hay variables en esta categoría
-            </p>
+            <p className="text-sm text-gray-500">No hay variables en esta categoría</p>
           </div>
         )}
       </div>

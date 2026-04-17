@@ -2,7 +2,10 @@ import { logger } from '../../utils/logger';
 import { SessionCleanupUtil } from '../../utils/sessionCleanup';
 import type { SessionPersistenceData } from '../SessionPersistenceService';
 import SessionPersistenceService from '../SessionPersistenceService';
-import { countValidEssentialFiles, MIN_ESSENTIAL_AUTH_FILES } from '../whatsapp-core/AuthenticationManager';
+import {
+  countValidEssentialFiles,
+  MIN_ESSENTIAL_AUTH_FILES,
+} from '../whatsapp-core/AuthenticationManager';
 import fs from 'fs';
 import path from 'path';
 

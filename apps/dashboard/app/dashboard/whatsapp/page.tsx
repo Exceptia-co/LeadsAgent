@@ -74,16 +74,9 @@ const SESSION_STATUS_LABELS = {
 
 export default function WhatsAppPage() {
   const [activeTab, setActiveTab] = useState<
-    | "sessions"
-    | "send"
-    | "conversations"
-    | "templates"
-    | "proactive"
-    | "messages"
+    "sessions" | "send" | "conversations" | "templates" | "proactive" | "messages"
   >("sessions");
-  const [proactiveSubTab, setProactiveSubTab] = useState<"send" | "history">(
-    "send",
-  );
+  const [proactiveSubTab, setProactiveSubTab] = useState<"send" | "history">("send");
   const [sessions, setSessions] = useState<WhatsAppSession[]>([]);
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
   const [selectedSession, setSelectedSession] = useState<string>("");
@@ -108,18 +101,16 @@ export default function WhatsAppPage() {
   useEffect(() => {
     if (socketSessions.length > 0) {
       // Convert socket sessions to WhatsApp sessions format
-      const convertedSessions: WhatsAppSession[] = socketSessions.map(
-        (socketSession) => ({
-          id: socketSession.id,
-          name: socketSession.name,
-          status: socketSession.status as WhatsAppSession["status"],
-          phoneNumber: socketSession.phoneNumber,
-          qr: socketSession.qrCode,
-          createdAt: socketSession.timestamp,
-          updatedAt: socketSession.timestamp,
-          lastSeen: socketSession.lastActivity,
-        }),
-      );
+      const convertedSessions: WhatsAppSession[] = socketSessions.map((socketSession) => ({
+        id: socketSession.id,
+        name: socketSession.name,
+        status: socketSession.status as WhatsAppSession["status"],
+        phoneNumber: socketSession.phoneNumber,
+        qr: socketSession.qrCode,
+        createdAt: socketSession.timestamp,
+        updatedAt: socketSession.timestamp,
+        lastSeen: socketSession.lastActivity,
+      }));
 
       setSessions(convertedSessions);
 
@@ -176,13 +167,9 @@ export default function WhatsAppPage() {
 
   // Template and proactive message states
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [proactiveMessages, setProactiveMessages] = useState<
-    ProactiveMessage[]
-  >([]);
+  const [proactiveMessages, setProactiveMessages] = useState<ProactiveMessage[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(
-    null,
-  );
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
 
   // Loading states for individual data fetching
   const [dataLoading, setDataLoading] = useState({
@@ -209,12 +196,7 @@ export default function WhatsAppPage() {
   useEffect(() => {
     const loadAllData = async () => {
       try {
-        await Promise.all([
-          loadSessions(),
-          loadTemplates(),
-          loadProactiveMessages(),
-          loadLeads(),
-        ]);
+        await Promise.all([loadSessions(), loadTemplates(), loadProactiveMessages(), loadLeads()]);
 
         // No toast for successful initial load - keep it quiet
       } catch (error) {
@@ -222,8 +204,7 @@ export default function WhatsAppPage() {
         showToast({
           type: "error",
           title: "Error de carga",
-          description:
-            "Hubo un problema al cargar algunos datos. Refresca la página.",
+          description: "Hubo un problema al cargar algunos datos. Refresca la página.",
         });
       } finally {
         // Mark initial load as complete
@@ -444,20 +425,17 @@ export default function WhatsAppPage() {
       }
 
       // Use the bulk endpoint
-      const response = await fetch(
-        `${getWhatsAppUrl()}/proactive-messages/bulk`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            leadIds,
-            templateId,
-            sessionId,
-            content,
-            variables,
-          }),
-        },
-      );
+      const response = await fetch(`${getWhatsAppUrl()}/proactive-messages/bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leadIds,
+          templateId,
+          sessionId,
+          content,
+          variables,
+        }),
+      });
 
       const result = await response.json();
 
@@ -533,9 +511,7 @@ export default function WhatsAppPage() {
               <Tooltip content="Conectando a WebSocket...">
                 <div className="flex items-center">
                   <Loader2 className="h-4 w-4 text-yellow-500 animate-spin" />
-                  <span className="text-xs text-yellow-600 ml-1">
-                    Conectando
-                  </span>
+                  <span className="text-xs text-yellow-600 ml-1">Conectando</span>
                 </div>
               </Tooltip>
             ) : socketError ? (
@@ -549,9 +525,7 @@ export default function WhatsAppPage() {
               <Tooltip content="WebSocket desconectado">
                 <div className="flex items-center">
                   <Circle className="h-4 w-4 text-gray-400" />
-                  <span className="text-xs text-gray-500 ml-1">
-                    Desconectado
-                  </span>
+                  <span className="text-xs text-gray-500 ml-1">Desconectado</span>
                 </div>
               </Tooltip>
             )}
@@ -569,8 +543,7 @@ export default function WhatsAppPage() {
               </Tooltip>
             )}
             <span className="text-sm text-gray-600">
-              {sessions.filter((s) => s.status === "CONNECTED").length} sesiones
-              conectadas
+              {sessions.filter((s) => s.status === "CONNECTED").length} sesiones conectadas
             </span>
           </div>
         </div>
@@ -617,9 +590,7 @@ export default function WhatsAppPage() {
           ].map(({ id, label, icon: Icon, count, countLabel }) => {
             const getBadgeVariant = () => {
               if (id === "sessions") {
-                const connectedCount = sessions.filter(
-                  (s) => s.status === "CONNECTED",
-                ).length;
+                const connectedCount = sessions.filter((s) => s.status === "CONNECTED").length;
                 return connectedCount > 0 ? "success" : "secondary";
               }
               return count && count > 0 ? "default" : "secondary";
@@ -634,9 +605,7 @@ export default function WhatsAppPage() {
 
             const getTooltipContent = () => {
               if (id === "sessions") {
-                const connectedCount = sessions.filter(
-                  (s) => s.status === "CONNECTED",
-                ).length;
+                const connectedCount = sessions.filter((s) => s.status === "CONNECTED").length;
                 const totalCount = sessions.length;
                 return `${connectedCount} de ${totalCount} sesiones conectadas`;
               }
@@ -659,11 +628,7 @@ export default function WhatsAppPage() {
                     : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                 }`}
               >
-                <Icon
-                  className={`h-4 w-4 mr-2 ${
-                    activeTab === id ? "animate-pulse" : ""
-                  }`}
-                />
+                <Icon className={`h-4 w-4 mr-2 ${activeTab === id ? "animate-pulse" : ""}`} />
                 <span className="mr-2">{label}</span>
                 {count !== undefined && (
                   <Tooltip content={getTooltipContent()} position="top">
@@ -709,10 +674,7 @@ export default function WhatsAppPage() {
       {activeTab === "conversations" && <WhatsAppConversations />}
 
       {activeTab === "templates" && (
-        <TemplateManager
-          onUseTemplate={handleUseTemplate}
-          onTemplatesChange={loadTemplates}
-        />
+        <TemplateManager onUseTemplate={handleUseTemplate} onTemplatesChange={loadTemplates} />
       )}
 
       {activeTab === "proactive" && (
@@ -755,9 +717,7 @@ export default function WhatsAppPage() {
             />
           )}
 
-          {proactiveSubTab === "history" && (
-            <ProactiveMessageHistory leads={leads} />
-          )}
+          {proactiveSubTab === "history" && <ProactiveMessageHistory leads={leads} />}
         </div>
       )}
 
@@ -806,9 +766,7 @@ function SessionManager({
     const loadHealth = async () => {
       for (const session of sessions) {
         try {
-          const res = await fetch(
-            `${getWhatsAppUrl()}/sessions/${session.id}/health`,
-          );
+          const res = await fetch(`${getWhatsAppUrl()}/sessions/${session.id}/health`);
           const data = await res.json();
           if (data.success) {
             setSessionHealth((prev) => ({
@@ -832,10 +790,9 @@ function SessionManager({
   const handleForceBackup = async (sessionId: string) => {
     setBackupInProgress(sessionId);
     try {
-      const res = await fetch(
-        `${getWhatsAppUrl()}/sessions/${sessionId}/backup`,
-        { method: "POST" },
-      );
+      const res = await fetch(`${getWhatsAppUrl()}/sessions/${sessionId}/backup`, {
+        method: "POST",
+      });
       const data = await res.json();
       if (data.success) {
         showToast({
@@ -862,18 +819,12 @@ function SessionManager({
   };
 
   const handleRestoreBackup = async (sessionId: string) => {
-    if (
-      !confirm(
-        "Esto restaurara la sesion desde el ultimo backup. Continuar?",
-      )
-    )
-      return;
+    if (!confirm("Esto restaurara la sesion desde el ultimo backup. Continuar?")) return;
 
     try {
-      const res = await fetch(
-        `${getWhatsAppUrl()}/sessions/${sessionId}/restore-backup`,
-        { method: "POST" },
-      );
+      const res = await fetch(`${getWhatsAppUrl()}/sessions/${sessionId}/restore-backup`, {
+        method: "POST",
+      });
       const data = await res.json();
       if (data.success) {
         showToast({
@@ -907,17 +858,15 @@ function SessionManager({
 
     setPauseInProgress(sessionId);
     try {
-      const res = await fetch(
-        `${getWhatsAppUrl()}/sessions/${sessionId}/force-disconnect`,
-        { method: "POST" },
-      );
+      const res = await fetch(`${getWhatsAppUrl()}/sessions/${sessionId}/force-disconnect`, {
+        method: "POST",
+      });
       const data = await res.json();
       if (data.success) {
         showToast({
           type: "success",
           title: "Sesión pausada",
-          description:
-            "La sesión se desconectó. Puedes reconectarla cuando quieras.",
+          description: "La sesión se desconectó. Puedes reconectarla cuando quieras.",
         });
         onSessionsChange();
       } else {
@@ -951,8 +900,7 @@ function SessionManager({
         showToast({
           type: "success",
           title: "Reconectando sesión",
-          description:
-            "La sesión se está reconectando usando la autenticación guardada.",
+          description: "La sesión se está reconectando usando la autenticación guardada.",
         });
         onSessionsChange();
       } else {
@@ -979,10 +927,7 @@ function SessionManager({
 
     setCreating(true);
     try {
-      await createSession(
-        newSessionId.trim(),
-        newSessionName.trim() || undefined,
-      );
+      await createSession(newSessionId.trim(), newSessionName.trim() || undefined);
       setNewSessionId("");
       setNewSessionName("");
       onSessionsChange();
@@ -1015,9 +960,7 @@ function SessionManager({
         <form onSubmit={handleCreateSession} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Session ID *
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Session ID *</label>
               <input
                 type="text"
                 value={newSessionId}
@@ -1052,8 +995,7 @@ function SessionManager({
         <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md">
           <p className="text-sm text-green-800">
             <QrCode className="inline h-4 w-4 mr-1" />
-            Al crear una sesión, se abrirá Chrome para escanear el código QR de
-            WhatsApp.
+            Al crear una sesión, se abrirá Chrome para escanear el código QR de WhatsApp.
           </p>
         </div>
       </Card>
@@ -1074,15 +1016,10 @@ function SessionManager({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {sessions.map((session) => (
-              <div
-                key={session.id}
-                className="border border-gray-200 rounded-lg p-4"
-              >
+              <div key={session.id} className="border border-gray-200 rounded-lg p-4">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <h3 className="font-medium text-gray-900">
-                      {session.name || session.id}
-                    </h3>
+                    <h3 className="font-medium text-gray-900">{session.name || session.id}</h3>
                     <p className="text-sm text-gray-500">{session.id}</p>
                   </div>
                   <Badge variant={SESSION_STATUS_VARIANTS[session.status]}>
@@ -1104,30 +1041,25 @@ function SessionManager({
                   {session.lastSeen && (
                     <div className="flex items-center">
                       <CheckCircle2 className="h-4 w-4 mr-2" />
-                      Último contacto:{" "}
-                      {new Date(session.lastSeen).toLocaleString("es-ES")}
+                      Último contacto: {new Date(session.lastSeen).toLocaleString("es-ES")}
                     </div>
                   )}
                 </div>
 
                 {/* Show QR Code if session is pending */}
-                {(session.status === "QR_PENDING" ||
-                  session.status === "QR_READY") &&
+                {(session.status === "QR_PENDING" || session.status === "QR_READY") &&
                   session.qr && (
                     <div className="mt-4 pt-3 border-t border-gray-100">
                       <div className="flex flex-col items-center space-y-2">
                         <div className="flex items-center text-sm text-gray-700 mb-2">
                           <QrCode className="h-4 w-4 mr-2 text-green-600" />
-                          <span className="font-medium">
-                            Escanea este código QR
-                          </span>
+                          <span className="font-medium">Escanea este código QR</span>
                         </div>
                         <div className="bg-white p-4 rounded-lg border-2 border-green-200">
                           <QRCodeSVG value={session.qr} size={200} />
                         </div>
                         <p className="text-xs text-gray-500 text-center max-w-xs">
-                          Abre WhatsApp en tu teléfono y escanea este código
-                          para conectar la sesión
+                          Abre WhatsApp en tu teléfono y escanea este código para conectar la sesión
                         </p>
                       </div>
                     </div>
@@ -1141,8 +1073,7 @@ function SessionManager({
                   const getHeartbeatColor = () => {
                     if (!health.heartbeatAge) return "text-gray-400";
                     if (health.heartbeatAge < 60000) return "text-green-500";
-                    if (health.heartbeatAge < 120000)
-                      return "text-yellow-500";
+                    if (health.heartbeatAge < 120000) return "text-yellow-500";
                     return "text-red-500";
                   };
 
@@ -1151,9 +1082,7 @@ function SessionManager({
                       {/* Heartbeat */}
                       <div className="flex items-center justify-between text-xs">
                         <div className="flex items-center">
-                          <Heart
-                            className={`h-3 w-3 mr-1 ${getHeartbeatColor()}`}
-                          />
+                          <Heart className={`h-3 w-3 mr-1 ${getHeartbeatColor()}`} />
                           <span className="text-gray-500">Heartbeat</span>
                         </div>
                         <span className={`font-medium ${getHeartbeatColor()}`}>
@@ -1177,14 +1106,15 @@ function SessionManager({
                         </div>
                         <span className="text-gray-600">
                           {health.backupStatus?.hasBackup
-                            ? new Date(
-                                health.backupStatus.lastBackupDate,
-                              ).toLocaleDateString("es-ES", {
-                                day: "2-digit",
-                                month: "short",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
+                            ? new Date(health.backupStatus.lastBackupDate).toLocaleDateString(
+                                "es-ES",
+                                {
+                                  day: "2-digit",
+                                  month: "short",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                },
+                              )
                             : "Sin backup"}
                         </span>
                       </div>
@@ -1197,13 +1127,7 @@ function SessionManager({
                           />
                           <span className="text-gray-500">Auth Local</span>
                         </div>
-                        <span
-                          className={
-                            health.hasLocalAuth
-                              ? "text-green-600"
-                              : "text-red-600"
-                          }
-                        >
+                        <span className={health.hasLocalAuth ? "text-green-600" : "text-red-600"}>
                           {health.hasLocalAuth ? "OK" : "No encontrado"}
                         </span>
                       </div>
@@ -1239,8 +1163,7 @@ function SessionManager({
                         )}
                         Pausar
                       </button>
-                    ) : session.status === "DISCONNECTED" ||
-                      session.status === "AUTH_INVALID" ? (
+                    ) : session.status === "DISCONNECTED" || session.status === "AUTH_INVALID" ? (
                       <button
                         onClick={() => handleReconnectSession(session.id)}
                         disabled={reconnectInProgress === session.id}
@@ -1260,9 +1183,7 @@ function SessionManager({
                         ) : (
                           <Play className="h-4 w-4 mr-1" />
                         )}
-                        {session.status === "AUTH_INVALID"
-                          ? "Reconectar (QR)"
-                          : "Reconectar"}
+                        {session.status === "AUTH_INVALID" ? "Reconectar (QR)" : "Reconectar"}
                       </button>
                     ) : (
                       <span className="text-xs text-gray-400 italic">
@@ -1326,11 +1247,7 @@ function SendMessage({
   sessions: WhatsAppSession[];
   selectedSession: string;
   setSelectedSession: (id: string) => void;
-  sendDirectMessage: (
-    sessionId: string,
-    phone: string,
-    message: string,
-  ) => Promise<boolean>;
+  sendDirectMessage: (sessionId: string, phone: string, message: string) => Promise<boolean>;
   isLoading: boolean;
   error: string | null;
 }) {
@@ -1394,9 +1311,7 @@ function SendMessage({
         {connectedSessions.length === 0 ? (
           <div className="text-center py-8">
             <AlertCircle className="mx-auto h-12 w-12 text-orange-500 mb-4" />
-            <p className="text-gray-900 font-medium">
-              No hay sesiones conectadas
-            </p>
+            <p className="text-gray-900 font-medium">No hay sesiones conectadas</p>
             <p className="text-sm text-gray-500 mt-1">
               Crea y conecta una sesión primero en la pestaña "Sesiones"
             </p>
@@ -1404,9 +1319,7 @@ function SendMessage({
         ) : (
           <form onSubmit={handleSendMessage} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Sesión
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Sesión</label>
               <select
                 value={selectedSession}
                 onChange={(e) => setSelectedSession(e.target.value)}
@@ -1422,10 +1335,7 @@ function SendMessage({
             </div>
 
             {/* Lead Selector */}
-            <LeadSelector
-              selectedLead={selectedLead}
-              onSelectLead={handleLeadSelect}
-            />
+            <LeadSelector selectedLead={selectedLead} onSelectLead={handleLeadSelect} />
 
             {/* Manual phone input (only shown if manual input is selected) */}
             {useManualInput && (
@@ -1448,9 +1358,7 @@ function SendMessage({
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Mensaje
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Mensaje</label>
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
@@ -1472,9 +1380,7 @@ function SendMessage({
 
             <button
               type="submit"
-              disabled={
-                sending || !selectedSession || !phone.trim() || !message.trim()
-              }
+              disabled={sending || !selectedSession || !phone.trim() || !message.trim()}
               className="w-full bg-green-500 text-white px-4 py-2 rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
               <Send className="h-4 w-4 mr-2" />
@@ -1499,19 +1405,13 @@ function MessageHistory({
   sessions: WhatsAppSession[];
   selectedSession: string;
   setSelectedSession: (id: string) => void;
-  getMessageAnalytics: (
-    sessionId?: string,
-    startDate?: string,
-    endDate?: string,
-  ) => Promise<any>;
+  getMessageAnalytics: (sessionId?: string, startDate?: string, endDate?: string) => Promise<any>;
   isLoading: boolean;
   error: string | null;
 }) {
   const [analytics, setAnalytics] = useState<any>(null);
   const [dateRange, setDateRange] = useState({
-    startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split("T")[0],
+    startDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
     endDate: new Date().toISOString().split("T")[0],
   });
 
@@ -1545,9 +1445,7 @@ function MessageHistory({
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Sesión
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Sesión</label>
             <select
               value={selectedSession}
               onChange={(e) => setSelectedSession(e.target.value)}
@@ -1563,29 +1461,21 @@ function MessageHistory({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Fecha Inicio
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Inicio</label>
             <input
               type="date"
               value={dateRange.startDate}
-              onChange={(e) =>
-                setDateRange((prev) => ({ ...prev, startDate: e.target.value }))
-              }
+              onChange={(e) => setDateRange((prev) => ({ ...prev, startDate: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Fecha Fin
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Fecha Fin</label>
             <input
               type="date"
               value={dateRange.endDate}
-              onChange={(e) =>
-                setDateRange((prev) => ({ ...prev, endDate: e.target.value }))
-              }
+              onChange={(e) => setDateRange((prev) => ({ ...prev, endDate: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
             />
           </div>
@@ -1602,9 +1492,7 @@ function MessageHistory({
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-500">Enviados</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {analytics.totalSent || 0}
-                </p>
+                <p className="text-2xl font-bold text-gray-900">{analytics.totalSent || 0}</p>
               </div>
             </div>
           </Card>
@@ -1616,9 +1504,7 @@ function MessageHistory({
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-500">Recibidos</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {analytics.totalReceived || 0}
-                </p>
+                <p className="text-2xl font-bold text-gray-900">{analytics.totalReceived || 0}</p>
               </div>
             </div>
           </Card>
@@ -1656,9 +1542,7 @@ function MessageHistory({
       {/* Top Contacts */}
       {analytics?.topContacts && analytics.topContacts.length > 0 && (
         <Card className="p-6">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">
-            Contactos Principales
-          </h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Contactos Principales</h3>
           <div className="space-y-3">
             {analytics.topContacts.map((contact: any, index: number) => (
               <div
@@ -1667,9 +1551,7 @@ function MessageHistory({
               >
                 <div>
                   <p className="font-medium text-gray-900">{contact.phone}</p>
-                  <p className="text-sm text-gray-500 truncate max-w-xs">
-                    {contact.lastMessage}
-                  </p>
+                  <p className="text-sm text-gray-500 truncate max-w-xs">{contact.lastMessage}</p>
                 </div>
                 <div className="text-right">
                   <Badge variant="secondary">{contact.count} mensajes</Badge>

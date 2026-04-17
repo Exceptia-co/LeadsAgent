@@ -18,24 +18,17 @@ export function Footer() {
 
           {/* Links */}
           <div className="flex items-center gap-8 text-sm text-neutral-400">
-            <Link
-              href="/sign-in"
-              className="hover:text-white transition-colors"
-            >
+            <Link href="/sign-in" className="hover:text-white transition-colors">
               Iniciar Sesion
             </Link>
-            <Link
-              href="/sign-up"
-              className="hover:text-white transition-colors"
-            >
+            <Link href="/sign-up" className="hover:text-white transition-colors">
               Registrarse
             </Link>
           </div>
 
           {/* Copyright */}
           <p className="text-sm text-neutral-500">
-            &copy; {new Date().getFullYear()} LeadsCRM. Todos los derechos
-            reservados.
+            &copy; {new Date().getFullYear()} LeadsCRM. Todos los derechos reservados.
           </p>
         </div>
       </div>

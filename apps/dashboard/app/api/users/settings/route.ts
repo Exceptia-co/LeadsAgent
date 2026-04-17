@@ -17,20 +17,14 @@ export async function PATCH(request: NextRequest) {
     const { settings } = body;
 
     if (!settings || typeof settings !== "object") {
-      return NextResponse.json(
-        { error: "Invalid settings data" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Invalid settings data" }, { status: 400 });
     }
 
     // Actualizar configuraciones
     const success = await updateUserSettings(user.clerkId, settings);
 
     if (!success) {
-      return NextResponse.json(
-        { error: "Failed to update settings" },
-        { status: 500 },
-      );
+      return NextResponse.json({ error: "Failed to update settings" }, { status: 500 });
     }
 
     return NextResponse.json({
@@ -47,9 +41,6 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

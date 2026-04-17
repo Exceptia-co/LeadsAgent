@@ -49,9 +49,7 @@ export async function GET(request: NextRequest) {
     const response = await fetchWithRetry(backendUrl.toString());
 
     if (!response.ok) {
-      console.error(
-        `Backend returned ${response.status}: ${response.statusText}`,
-      );
+      console.error(`Backend returned ${response.status}: ${response.statusText}`);
       return NextResponse.json(
         { error: `Backend error: ${response.status} ${response.statusText}` },
         { status: response.status },
@@ -59,10 +57,7 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await response.json();
-    console.log(
-      "Successfully fetched leads:",
-      data.meta || { total: data.data?.length || 0 },
-    );
+    console.log("Successfully fetched leads:", data.meta || { total: data.data?.length || 0 });
     return NextResponse.json(data);
   } catch (error) {
     console.error("Error in leads API:", error);
@@ -82,18 +77,14 @@ export async function GET(request: NextRequest) {
       if (error.name === "TimeoutError") {
         return NextResponse.json(
           {
-            error:
-              "Request timeout. The backend service is taking too long to respond.",
+            error: "Request timeout. The backend service is taking too long to respond.",
           },
           { status: 504 },
         );
       }
     }
 
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
@@ -108,10 +99,7 @@ export async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!body.phone) {
-      return NextResponse.json(
-        { error: "Phone number is required" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Phone number is required" }, { status: 400 });
     }
 
     // Forward the request to the backend service
@@ -126,9 +114,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!response.ok) {
-      const errorData = await response
-        .json()
-        .catch(() => ({ error: "Unknown error" }));
+      const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
       console.error(`Backend returned ${response.status}:`, errorData);
 
       return NextResponse.json(errorData, { status: response.status });
@@ -159,17 +145,13 @@ export async function POST(request: NextRequest) {
       if (error.name === "TimeoutError") {
         return NextResponse.json(
           {
-            error:
-              "Request timeout. The backend service is taking too long to respond.",
+            error: "Request timeout. The backend service is taking too long to respond.",
           },
           { status: 504 },
         );
       }
     }
 
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

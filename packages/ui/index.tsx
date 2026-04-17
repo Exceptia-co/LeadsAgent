@@ -11,14 +11,7 @@ export * from "./src/alert";
 // Export specific components that might be commonly used
 export { Badge } from "./src/badge";
 export { Button } from "./src/button";
-export {
-  Card,
-  CardHeader,
-  CardFooter,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "./src/card";
+export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent } from "./src/card";
 export { Checkbox } from "./src/checkbox";
 export { Code } from "./src/code";
 export { Input } from "./src/input";

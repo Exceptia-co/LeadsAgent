@@ -8,17 +8,14 @@ export default function Home() {
         <div className={styles.hero}>
           <h1 className={styles.title}>📚 LeadsAgent Documentation</h1>
           <p className={styles.subtitle}>
-            Comprehensive documentation for the LeadsAgent CRM system with
-            WhatsApp automation
+            Comprehensive documentation for the LeadsAgent CRM system with WhatsApp automation
           </p>
         </div>
 
         <div className={styles.grid}>
           <div className={styles.card}>
             <h2>🚀 API Documentation</h2>
-            <p>
-              Complete API reference with interactive endpoints and examples.
-            </p>
+            <p>Complete API reference with interactive endpoints and examples.</p>
             <a
               href="http://localhost:3001/api/docs"
               target="_blank"
@@ -31,10 +28,7 @@ export default function Home() {
 
           <div className={styles.card}>
             <h2>📱 Dashboard</h2>
-            <p>
-              Access the main application dashboard for managing leads and
-              campaigns.
-            </p>
+            <p>Access the main application dashboard for managing leads and campaigns.</p>
             <a
               href="http://localhost:3000"
               target="_blank"
@@ -47,10 +41,7 @@ export default function Home() {
 
           <div className={styles.card}>
             <h2>💬 WhatsApp Service</h2>
-            <p>
-              WhatsApp integration service for automated messaging and lead
-              capture.
-            </p>
+            <p>WhatsApp integration service for automated messaging and lead capture.</p>
             <a
               href="http://localhost:3002/api"
               target="_blank"

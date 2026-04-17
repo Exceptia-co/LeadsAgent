@@ -203,7 +203,7 @@ function MyComponent() {
 ### **2. Proteger API route**
 
 ```typescript
-import { requireAuth } from "@/lib/auth/unified-auth";
+import { requireAuth } from '@/lib/auth/unified-auth';
 
 export async function GET() {
   try {
@@ -215,7 +215,7 @@ export async function GET() {
       role: user.role,
     });
   } catch (error) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 }
 ```
@@ -223,19 +223,16 @@ export async function GET() {
 ### **3. Proteger por rol**
 
 ```typescript
-import { requireRole } from "@/lib/auth/unified-auth";
+import { requireRole } from '@/lib/auth/unified-auth';
 
 export async function DELETE() {
   try {
     // Solo admins pueden acceder
-    const user = await requireRole(["admin"]);
+    const user = await requireRole(['admin']);
 
     // Lógica para admins...
   } catch (error) {
-    return NextResponse.json(
-      { error: "Permisos insuficientes" },
-      { status: 403 },
-    );
+    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
   }
 }
 ```

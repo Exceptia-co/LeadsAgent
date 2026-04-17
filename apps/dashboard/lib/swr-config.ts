@@ -89,10 +89,7 @@ export const swrConfig: SWRConfiguration = {
 };
 
 // Helper function to create cache keys
-export const createCacheKey = (
-  endpoint: string,
-  params?: Record<string, any>,
-) => {
+export const createCacheKey = (endpoint: string, params?: Record<string, any>) => {
   if (!params) return endpoint;
 
   const searchParams = new URLSearchParams();
@@ -106,10 +103,7 @@ export const createCacheKey = (
         if (Array.isArray(value)) {
           serializedValue = value.join(",");
         } else {
-          console.warn(
-            `Skipping object parameter '${key}' in createCacheKey:`,
-            value,
-          );
+          console.warn(`Skipping object parameter '${key}' in createCacheKey:`, value);
           return; // Skip object parameters to prevent [object Object]
         }
       } else {
@@ -134,7 +128,7 @@ export const CACHE_KEYS = {
 // Global fetcher function with error handling
 export const globalFetcher = async (url: string) => {
   // Use NEXT_PUBLIC_API_URL for client-side requests
-  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
   const fullUrl = `${API_BASE_URL}${url}`;
 
   const response = await fetch(fullUrl, {

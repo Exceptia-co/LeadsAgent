@@ -9,8 +9,7 @@ import { Loader2, Settings, User, Shield, Activity } from "lucide-react";
  * Utiliza tanto datos de Clerk como de Supabase de forma seamless
  */
 export function UserProfile() {
-  const { user, clerkUser, isLoading, error, updateSettings, refreshUser } =
-    useUnifiedUser();
+  const { user, clerkUser, isLoading, error, updateSettings, refreshUser } = useUnifiedUser();
   const [isUpdatingSettings, setIsUpdatingSettings] = useState(false);
 
   const handleUpdateNotifications = async () => {
@@ -96,11 +95,7 @@ export function UserProfile() {
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center space-x-4">
             {user.profileImageUrl && (
-              <img
-                src={user.profileImageUrl}
-                alt="Profile"
-                className="h-12 w-12 rounded-full"
-              />
+              <img src={user.profileImageUrl} alt="Profile" className="h-12 w-12 rounded-full" />
             )}
             <div>
               <h2 className="text-xl font-semibold">
@@ -110,18 +105,12 @@ export function UserProfile() {
               </h2>
               <p className="text-gray-600">{user.email}</p>
               <div className="flex items-center space-x-2 mt-1">
-                <Badge
-                  variant={getRoleBadgeColor(user.role)}
-                  className="text-xs"
-                >
+                <Badge variant={getRoleBadgeColor(user.role)} className="text-xs">
                   <Shield className="h-3 w-3 mr-1" />
                   {user.role.toUpperCase()}
                 </Badge>
                 {user.isActive ? (
-                  <Badge
-                    variant="default"
-                    className="text-xs bg-green-100 text-green-800"
-                  >
+                  <Badge variant="default" className="text-xs bg-green-100 text-green-800">
                     <Activity className="h-3 w-3 mr-1" />
                     Activo
                   </Badge>
@@ -146,16 +135,12 @@ export function UserProfile() {
           <div>
             <span className="text-gray-600">Último acceso:</span>
             <p className="font-medium">
-              {user.lastLoginAt
-                ? new Date(user.lastLoginAt).toLocaleString("es-ES")
-                : "Nunca"}
+              {user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString("es-ES") : "Nunca"}
             </p>
           </div>
           <div>
             <span className="text-gray-600">Miembro desde:</span>
-            <p className="font-medium">
-              {new Date(user.createdAt).toLocaleDateString("es-ES")}
-            </p>
+            <p className="font-medium">{new Date(user.createdAt).toLocaleDateString("es-ES")}</p>
           </div>
         </div>
       </Card>
@@ -201,9 +186,7 @@ export function UserProfile() {
                   disabled={isUpdatingSettings}
                 />
                 <span className="text-sm">WhatsApp</span>
-                {isUpdatingSettings && (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                )}
+                {isUpdatingSettings && <Loader2 className="h-4 w-4 animate-spin" />}
               </label>
             </div>
           </div>
@@ -218,15 +201,11 @@ export function UserProfile() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Zona horaria:</span>
-                <span>
-                  {user.settings.preferences?.timezone || "Europe/Madrid"}
-                </span>
+                <span>{user.settings.preferences?.timezone || "Europe/Madrid"}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Vista del dashboard:</span>
-                <span>
-                  {user.settings.preferences?.dashboard_view || "grid"}
-                </span>
+                <span>{user.settings.preferences?.dashboard_view || "grid"}</span>
               </div>
             </div>
           </div>
@@ -276,12 +255,8 @@ export function AuthenticatedUserProfile() {
     return (
       <div className="flex flex-col items-center justify-center p-8 text-center">
         <User className="h-12 w-12 text-gray-400 mb-4" />
-        <h2 className="text-xl font-semibold text-gray-700 mb-2">
-          Acceso requerido
-        </h2>
-        <p className="text-gray-600 mb-4">
-          Necesitas iniciar sesión para ver esta página
-        </p>
+        <h2 className="text-xl font-semibold text-gray-700 mb-2">Acceso requerido</h2>
+        <p className="text-gray-600 mb-4">Necesitas iniciar sesión para ver esta página</p>
         <button
           onClick={() => (window.location.href = "/sign-in")}
           className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"

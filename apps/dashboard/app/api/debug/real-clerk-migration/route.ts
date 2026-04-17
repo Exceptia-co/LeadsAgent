@@ -90,9 +90,7 @@ async function listClerkUsers() {
       firstName: user.first_name || "",
       lastName: user.last_name || "",
       createdAt: new Date(user.created_at).toISOString(),
-      lastSignInAt: user.last_sign_in_at
-        ? new Date(user.last_sign_in_at).toISOString()
-        : null,
+      lastSignInAt: user.last_sign_in_at ? new Date(user.last_sign_in_at).toISOString() : null,
       imageUrl: user.image_url || null,
       username: user.username || null,
     }));
@@ -134,8 +132,7 @@ async function migrateRealClerkUsers() {
 
     const migratedUsers: MigratedUser[] = [];
     const errors: { clerkId: string; email?: string; error: string }[] = [];
-    const skippedUsers: { clerkId: string; email?: string; reason: string }[] =
-      [];
+    const skippedUsers: { clerkId: string; email?: string; reason: string }[] = [];
 
     for (const clerkUser of clerkUsers) {
       try {
@@ -157,9 +154,7 @@ async function migrateRealClerkUsers() {
           .single();
 
         if (existingUser) {
-          console.log(
-            `User ${clerkUser.id} already exists in Supabase, skipping...`,
-          );
+          console.log(`User ${clerkUser.id} already exists in Supabase, skipping...`);
           skippedUsers.push({
             clerkId: clerkUser.id,
             email: primaryEmail,
@@ -170,15 +165,9 @@ async function migrateRealClerkUsers() {
 
         // Determinar rol basado en email domain o username
         let role = "user"; // default role
-        if (
-          primaryEmail.includes("admin") ||
-          clerkUser.username?.includes("admin")
-        ) {
+        if (primaryEmail.includes("admin") || clerkUser.username?.includes("admin")) {
           role = "admin";
-        } else if (
-          primaryEmail.includes("manager") ||
-          clerkUser.username?.includes("manager")
-        ) {
+        } else if (primaryEmail.includes("manager") || clerkUser.username?.includes("manager")) {
           role = "manager";
         }
 
@@ -266,14 +255,12 @@ export async function GET() {
     description:
       "This endpoint fetches real users from your Clerk dashboard and migrates them to Supabase",
     endpoints: {
-      "POST /api/debug/real-clerk-migration":
-        "List or migrate real Clerk users",
+      "POST /api/debug/real-clerk-migration": "List or migrate real Clerk users",
       actions: ["list", "migrate"],
     },
     usage: {
       list: 'POST with { "action": "list" } - Shows users in Clerk without migrating',
-      migrate:
-        'POST with { "action": "migrate" } - Migrates real Clerk users to Supabase',
+      migrate: 'POST with { "action": "migrate" } - Migrates real Clerk users to Supabase',
     },
     warning: "This endpoint uses real Clerk API credentials",
   });

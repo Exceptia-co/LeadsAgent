@@ -18,9 +18,7 @@ export default function TestClerkPage() {
 
         <div className="bg-gray-100 p-4 rounded">
           <h2 className="font-semibold">User Object:</h2>
-          <pre className="text-sm overflow-auto max-h-40">
-            {JSON.stringify(user, null, 2)}
-          </pre>
+          <pre className="text-sm overflow-auto max-h-40">{JSON.stringify(user, null, 2)}</pre>
         </div>
 
         <div className="bg-gray-100 p-4 rounded">
@@ -29,10 +27,7 @@ export default function TestClerkPage() {
             Publishable Key Present:{" "}
             {process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ? "✅ Yes" : "❌ No"}
           </p>
-          <p>
-            Key Preview:{" "}
-            {process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.substring(0, 20)}...
-          </p>
+          <p>Key Preview: {process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.substring(0, 20)}...</p>
         </div>
 
         <div className="bg-gray-100 p-4 rounded">
@@ -42,16 +37,10 @@ export default function TestClerkPage() {
       </div>
 
       <div className="mt-8">
-        <a
-          href="/sign-in"
-          className="bg-green-500 text-white px-4 py-2 rounded mr-4"
-        >
+        <a href="/sign-in" className="bg-green-500 text-white px-4 py-2 rounded mr-4">
           Go to Sign In
         </a>
-        <a
-          href="/dashboard"
-          className="bg-green-500 text-white px-4 py-2 rounded"
-        >
+        <a href="/dashboard" className="bg-green-500 text-white px-4 py-2 rounded">
           Go to Dashboard
         </a>
       </div>

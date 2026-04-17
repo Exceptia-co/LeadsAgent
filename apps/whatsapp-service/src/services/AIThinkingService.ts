@@ -882,7 +882,6 @@ class AIThinkingService {
       return null;
     }
   }
-
 }
 
 // Exportar instancia singleton

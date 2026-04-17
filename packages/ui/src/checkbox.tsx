@@ -42,9 +42,7 @@ const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
                 {label}
               </label>
             )}
-            {description && (
-              <p className="text-sm text-gray-500">{description}</p>
-            )}
+            {description && <p className="text-sm text-gray-500">{description}</p>}
           </div>
         </div>
       );

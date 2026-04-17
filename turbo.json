@@ -35,14 +35,15 @@
         "!**/test/**",
         "!**/tests/**"
       ],
-      "outputs": [
-        "dist/**",
-        ".next/**",
-        "!.next/cache/**",
-        "build/**",
-        "!build/cache/**"
-      ],
-      "env": ["NODE_ENV", "NEXT_PUBLIC_*", "API_URL", "WHATSAPP_SERVICE_URL", "WHATSAPP_SERVICE_PORT", "API_PORT"]
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**", "build/**", "!build/cache/**"],
+      "env": [
+        "NODE_ENV",
+        "NEXT_PUBLIC_*",
+        "API_URL",
+        "WHATSAPP_SERVICE_URL",
+        "WHATSAPP_SERVICE_PORT",
+        "API_PORT"
+      ]
     },
     "dev": {
       "dependsOn": ["^db:generate"],

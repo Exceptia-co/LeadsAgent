@@ -32,9 +32,7 @@ export default function ProactiveMessageHistory({
   onRefresh,
 }: ProactiveMessageHistoryProps) {
   const [messages, setMessages] = useState<ProactiveMessage[]>([]);
-  const [filteredMessages, setFilteredMessages] = useState<ProactiveMessage[]>(
-    [],
-  );
+  const [filteredMessages, setFilteredMessages] = useState<ProactiveMessage[]>([]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
 
@@ -113,30 +111,20 @@ export default function ProactiveMessageHistory({
                     <h3 className="font-medium text-gray-900">
                       {lead?.name || "Lead desconocido"}
                     </h3>
-                    <p className="text-sm text-gray-600">
-                      {message.phoneNumber}
-                    </p>
+                    <p className="text-sm text-gray-600">{message.phoneNumber}</p>
                     {message.templateName && (
-                      <p className="text-xs text-green-600">
-                        Template: {message.templateName}
-                      </p>
+                      <p className="text-xs text-green-600">Template: {message.templateName}</p>
                     )}
                   </div>
                 </div>
 
                 <div className="flex items-center space-x-2">
-                  {message.status === "pending" && (
-                    <Clock className="h-4 w-4 text-yellow-500" />
-                  )}
-                  {message.status === "sent" && (
-                    <CheckCircle className="h-4 w-4 text-green-500" />
-                  )}
+                  {message.status === "pending" && <Clock className="h-4 w-4 text-yellow-500" />}
+                  {message.status === "sent" && <CheckCircle className="h-4 w-4 text-green-500" />}
                   {message.status === "delivered" && (
                     <CheckCircle className="h-4 w-4 text-green-500" />
                   )}
-                  {message.status === "failed" && (
-                    <XCircle className="h-4 w-4 text-red-500" />
-                  )}
+                  {message.status === "failed" && <XCircle className="h-4 w-4 text-red-500" />}
                   <Badge
                     variant={
                       message.status === "delivered"
@@ -161,20 +149,14 @@ export default function ProactiveMessageHistory({
               </div>
 
               <div className="bg-gray-50 p-4 rounded-lg mb-4">
-                <pre className="whitespace-pre-wrap text-sm text-gray-700">
-                  {message.content}
-                </pre>
+                <pre className="whitespace-pre-wrap text-sm text-gray-700">{message.content}</pre>
               </div>
 
               <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>
-                  Creado: {new Date(message.createdAt).toLocaleString("es-ES")}
-                </span>
+                <span>Creado: {new Date(message.createdAt).toLocaleString("es-ES")}</span>
 
                 {message.sentAt && (
-                  <span>
-                    Enviado: {new Date(message.sentAt).toLocaleString("es-ES")}
-                  </span>
+                  <span>Enviado: {new Date(message.sentAt).toLocaleString("es-ES")}</span>
                 )}
               </div>
 
@@ -191,9 +173,7 @@ export default function ProactiveMessageHistory({
       {filteredMessages.length === 0 && (
         <Card className="p-12 text-center">
           <MessageSquare className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            No hay mensajes
-          </h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No hay mensajes</h3>
           <p className="text-gray-500">
             {statusFilter !== "all"
               ? "No hay mensajes con el estado seleccionado."

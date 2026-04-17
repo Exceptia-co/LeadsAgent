@@ -34,20 +34,19 @@ const getAuthHeaders = async (getToken?: () => Promise<string | null>) => {
 };
 
 // Configuración del fetcher para SWR
-const createFetcher =
-  (getToken?: () => Promise<string | null>) => async (url: string) => {
-    const headers = await getAuthHeaders(getToken);
+const createFetcher = (getToken?: () => Promise<string | null>) => async (url: string) => {
+  const headers = await getAuthHeaders(getToken);
 
-    const response = await fetch(`${API_BASE_URL}${url}`, {
-      headers,
-    });
+  const response = await fetch(`${API_BASE_URL}${url}`, {
+    headers,
+  });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
 
-    return response.json();
-  };
+  return response.json();
+};
 
 // Función helper para POST/PUT/PATCH requests
 const createMutate =
@@ -77,9 +76,7 @@ export const refreshAllLeadData = async () => {
   // Invalidate all lead-related cache entries
   await Promise.all([
     mutate((key) => typeof key === "string" && key.includes(CACHE_KEYS.LEADS)),
-    mutate(
-      (key) => typeof key === "string" && key.includes(CACHE_KEYS.LEAD_STATS),
-    ),
+    mutate((key) => typeof key === "string" && key.includes(CACHE_KEYS.LEAD_STATS)),
   ]);
 
   console.log("✅ All lead data refreshed");
@@ -109,9 +106,7 @@ export const useLeads = (
   // Determine smart refresh interval
   const baseInterval =
     options?.refreshInterval ||
-    (options?.priority === "low"
-      ? REFRESH_INTERVALS.LOW
-      : REFRESH_INTERVALS.STANDARD);
+    (options?.priority === "low" ? REFRESH_INTERVALS.LOW : REFRESH_INTERVALS.STANDARD);
 
   const smartInterval = getDynamicInterval(baseInterval);
 
@@ -206,11 +201,7 @@ export const useLead = (id: string) => {
   const { getToken } = useAuth();
   const fetcher = createFetcher(getToken);
 
-  const {
-    data,
-    error,
-    mutate: refetch,
-  } = useSWR(id ? `/leads/${id}` : null, fetcher);
+  const { data, error, mutate: refetch } = useSWR(id ? `/leads/${id}` : null, fetcher);
 
   return {
     lead: data,
@@ -226,11 +217,7 @@ export const useAuthenticatedApi = () => {
   const mutateFn = createMutate(getToken);
 
   return {
-    createLead: async (leadData: {
-      name: string;
-      phone: string;
-      status?: string;
-    }) => {
+    createLead: async (leadData: { name: string; phone: string; status?: string }) => {
       try {
         console.log("🚀 Creating new lead...", { name: leadData.name });
 
@@ -315,14 +302,8 @@ export const useAuthenticatedApi = () => {
 };
 
 // Funciones compatibles hacia atrás (deprecadas - usar useAuthenticatedApi)
-export const createLead = async (leadData: {
-  name: string;
-  phone: string;
-  status?: string;
-}) => {
-  console.warn(
-    "createLead is deprecated. Use useAuthenticatedApi() hook instead.",
-  );
+export const createLead = async (leadData: { name: string; phone: string; status?: string }) => {
+  console.warn("createLead is deprecated. Use useAuthenticatedApi() hook instead.");
   const mutate = createMutate();
   return mutate("/leads", {
     method: "POST",
@@ -331,9 +312,7 @@ export const createLead = async (leadData: {
 };
 
 export const updateLead = async (id: string, updates: Record<string, any>) => {
-  console.warn(
-    "updateLead is deprecated. Use useAuthenticatedApi() hook instead.",
-  );
+  console.warn("updateLead is deprecated. Use useAuthenticatedApi() hook instead.");
   const mutate = createMutate();
   return mutate(`/leads/${id}`, {
     method: "PATCH",
@@ -342,9 +321,7 @@ export const updateLead = async (id: string, updates: Record<string, any>) => {
 };
 
 export const updateLeadStatus = async (id: string, status: string) => {
-  console.warn(
-    "updateLeadStatus is deprecated. Use useAuthenticatedApi() hook instead.",
-  );
+  console.warn("updateLeadStatus is deprecated. Use useAuthenticatedApi() hook instead.");
   const mutate = createMutate();
   return mutate(`/leads/${id}/status`, {
     method: "PATCH",
@@ -353,9 +330,7 @@ export const updateLeadStatus = async (id: string, status: string) => {
 };
 
 export const deleteLead = async (id: string) => {
-  console.warn(
-    "deleteLead is deprecated. Use useAuthenticatedApi() hook instead.",
-  );
+  console.warn("deleteLead is deprecated. Use useAuthenticatedApi() hook instead.");
   const mutate = createMutate();
   return mutate(`/leads/${id}`, {
     method: "DELETE",

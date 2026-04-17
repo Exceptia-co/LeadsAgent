@@ -7,14 +7,10 @@ const toggleVariants = cva(
   {
     variants: {
       variant: {
-        default:
-          "data-[state=checked]:bg-primary data-[state=unchecked]:bg-input",
-        success:
-          "data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-input",
-        warning:
-          "data-[state=checked]:bg-yellow-500 data-[state=unchecked]:bg-input",
-        destructive:
-          "data-[state=checked]:bg-red-500 data-[state=unchecked]:bg-input",
+        default: "data-[state=checked]:bg-primary data-[state=unchecked]:bg-input",
+        success: "data-[state=checked]:bg-green-500 data-[state=unchecked]:bg-input",
+        warning: "data-[state=checked]:bg-yellow-500 data-[state=unchecked]:bg-input",
+        destructive: "data-[state=checked]:bg-red-500 data-[state=unchecked]:bg-input",
       },
     },
     defaultVariants: {
@@ -24,9 +20,7 @@ const toggleVariants = cva(
 );
 
 interface ToggleProps
-  extends
-    React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof toggleVariants> {
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof toggleVariants> {
   checked?: boolean;
   onCheckedChange?: (checked: boolean) => void;
 }

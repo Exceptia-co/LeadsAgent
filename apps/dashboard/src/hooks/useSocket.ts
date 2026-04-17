@@ -19,10 +19,7 @@ export interface SocketEvents {
     message: string;
   }) => void;
 
-  "sessions:current_state": (data: {
-    sessions: WhatsAppSession[];
-    timestamp: string;
-  }) => void;
+  "sessions:current_state": (data: { sessions: WhatsAppSession[]; timestamp: string }) => void;
 
   "session:status_changed": (data: {
     sessionId: string;
@@ -33,11 +30,7 @@ export interface SocketEvents {
     metadata?: any;
   }) => void;
 
-  "session:qr_updated": (data: {
-    sessionId: string;
-    qrCode: string;
-    timestamp: string;
-  }) => void;
+  "session:qr_updated": (data: { sessionId: string; qrCode: string; timestamp: string }) => void;
 
   "session:connected": (data: {
     sessionId: string;
@@ -287,21 +280,15 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
     [],
   );
 
-  const handleError = useCallback(
-    (data: { message: string; timestamp: string }) => {
-      console.error("❌ Socket error:", data);
-      setError(data.message);
-    },
-    [],
-  );
+  const handleError = useCallback((data: { message: string; timestamp: string }) => {
+    console.error("❌ Socket error:", data);
+    setError(data.message);
+  }, []);
 
-  const handleServerShutdown = useCallback(
-    (data: { message: string; timestamp: string }) => {
-      console.warn("🔄 Server shutdown:", data);
-      setError("Server is restarting, reconnecting automatically...");
-    },
-    [],
-  );
+  const handleServerShutdown = useCallback((data: { message: string; timestamp: string }) => {
+    console.warn("🔄 Server shutdown:", data);
+    setError("Server is restarting, reconnecting automatically...");
+  }, []);
 
   const connect = useCallback(() => {
     if (socketRef.current?.connected) {
@@ -437,27 +424,21 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
     }
   }, []);
 
-  const on = useCallback(
-    <T extends SocketEventName>(event: T, handler: SocketEvents[T]) => {
-      if (socketRef.current) {
-        socketRef.current.on(event, handler as any);
-      }
-    },
-    [],
-  );
+  const on = useCallback(<T extends SocketEventName>(event: T, handler: SocketEvents[T]) => {
+    if (socketRef.current) {
+      socketRef.current.on(event, handler as any);
+    }
+  }, []);
 
-  const off = useCallback(
-    (event: SocketEventName, handler?: (...args: any[]) => void) => {
-      if (socketRef.current) {
-        if (handler) {
-          socketRef.current.off(event, handler);
-        } else {
-          socketRef.current.off(event);
-        }
+  const off = useCallback((event: SocketEventName, handler?: (...args: any[]) => void) => {
+    if (socketRef.current) {
+      if (handler) {
+        socketRef.current.off(event, handler);
+      } else {
+        socketRef.current.off(event);
       }
-    },
-    [],
-  );
+    }
+  }, []);
 
   const getCurrentState = useCallback(() => {
     emit("sessions:get_current_state");

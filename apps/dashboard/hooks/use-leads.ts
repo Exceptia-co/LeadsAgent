@@ -17,10 +17,7 @@ export interface UseLeadsResult {
   error: string | null;
   loadLeads: () => Promise<void>;
   refreshLeads: () => Promise<void>;
-  updateLeadWhatsAppAuth: (
-    leadId: string,
-    authorized: boolean,
-  ) => Promise<boolean>;
+  updateLeadWhatsAppAuth: (leadId: string, authorized: boolean) => Promise<boolean>;
 }
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
@@ -41,38 +38,25 @@ export function useLeads(): UseLeadsResult {
       // Try WhatsApp service first (has both Supabase leads and WhatsApp authorization status)
       try {
         console.log("Loading leads from WhatsApp service...");
-        const whatsappResponse = await fetch(
-          `${WHATSAPP_API_BASE_URL}/api/leads?limit=50`,
-          {
-            signal: AbortSignal.timeout(5000), // 5 second timeout
-          },
-        );
+        const whatsappResponse = await fetch(`${WHATSAPP_API_BASE_URL}/api/leads?limit=50`, {
+          signal: AbortSignal.timeout(5000), // 5 second timeout
+        });
 
         if (whatsappResponse.ok) {
           const whatsappData = await whatsappResponse.json();
           loadedLeads = whatsappData.leads || [];
-          console.log(
-            `✅ Loaded ${loadedLeads.length} leads from WhatsApp service`,
-          );
+          console.log(`✅ Loaded ${loadedLeads.length} leads from WhatsApp service`);
         } else {
-          throw new Error(
-            `WhatsApp service error: ${whatsappResponse.statusText}`,
-          );
+          throw new Error(`WhatsApp service error: ${whatsappResponse.statusText}`);
         }
       } catch (whatsappError) {
-        console.warn(
-          "WhatsApp service not available, trying main API:",
-          whatsappError,
-        );
+        console.warn("WhatsApp service not available, trying main API:", whatsappError);
 
         // Fallback to main API (Supabase)
         try {
-          const mainApiResponse = await fetch(
-            `${API_BASE_URL}/api/leads?limit=50`,
-            {
-              signal: AbortSignal.timeout(5000),
-            },
-          );
+          const mainApiResponse = await fetch(`${API_BASE_URL}/api/leads?limit=50`, {
+            signal: AbortSignal.timeout(5000),
+          });
 
           if (mainApiResponse.ok) {
             const mainApiData = await mainApiResponse.json();
@@ -86,9 +70,7 @@ export function useLeads(): UseLeadsResult {
               createdAt: lead.createdAt,
               whatsappAuthorized: false, // Default to false when loading from main API
             }));
-            console.log(
-              `✅ Loaded ${loadedLeads.length} leads from main API (fallback)`,
-            );
+            console.log(`✅ Loaded ${loadedLeads.length} leads from main API (fallback)`);
           } else {
             throw new Error(`Main API error: ${mainApiResponse.statusText}`);
           }
@@ -100,8 +82,7 @@ export function useLeads(): UseLeadsResult {
 
       setLeads(loadedLeads);
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to load leads";
+      const errorMessage = err instanceof Error ? err.message : "Failed to load leads";
       setError(errorMessage);
       console.error("Error loading leads:", err);
     } finally {
@@ -113,32 +94,24 @@ export function useLeads(): UseLeadsResult {
     async (leadId: string, authorized: boolean): Promise<boolean> => {
       try {
         // Try WhatsApp service first
-        const response = await fetch(
-          `${WHATSAPP_API_BASE_URL}/api/leads/${leadId}/whatsapp`,
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ whatsappAuthorized: authorized }),
+        const response = await fetch(`${WHATSAPP_API_BASE_URL}/api/leads/${leadId}/whatsapp`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
           },
-        );
+          body: JSON.stringify({ whatsappAuthorized: authorized }),
+        });
 
         if (response.ok) {
           // Update local state
           setLeads((prevLeads) =>
             prevLeads.map((lead) =>
-              lead.id === leadId
-                ? { ...lead, whatsappAuthorized: authorized }
-                : lead,
+              lead.id === leadId ? { ...lead, whatsappAuthorized: authorized } : lead,
             ),
           );
           return true;
         } else {
-          console.error(
-            "Failed to update WhatsApp authorization:",
-            response.statusText,
-          );
+          console.error("Failed to update WhatsApp authorization:", response.statusText);
           return false;
         }
       } catch (error) {

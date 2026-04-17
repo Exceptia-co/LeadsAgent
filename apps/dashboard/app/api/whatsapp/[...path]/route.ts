@@ -11,11 +11,7 @@ export const runtime = "nodejs";
  * This avoids Mixed Content issues by proxying HTTP through HTTPS
  */
 
-async function proxyRequest(
-  request: NextRequest,
-  path: string[],
-  method: string,
-) {
+async function proxyRequest(request: NextRequest, path: string[], method: string) {
   try {
     const pathString = path.join("/");
     const whatsAppUrl = getWhatsAppServiceUrl();

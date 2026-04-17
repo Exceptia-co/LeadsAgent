@@ -21,7 +21,7 @@ export class EncryptionService {
     if (!hexKey || hexKey.length !== 64) {
       throw new Error(
         'SNAPSHOT_ENCRYPTION_KEY must be a 64-character hex string (32 bytes). ' +
-          'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'
+          "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
       );
     }
 
@@ -44,9 +44,7 @@ export class EncryptionService {
       const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
       const authTag = cipher.getAuthTag();
 
-      logger.debug(
-        `Encrypted ${plaintext.length} bytes -> ${encrypted.length} bytes`
-      );
+      logger.debug(`Encrypted ${plaintext.length} bytes -> ${encrypted.length} bytes`);
 
       return {
         encrypted,
@@ -55,7 +53,9 @@ export class EncryptionService {
       };
     } catch (error) {
       logger.error('Encryption failed:', error);
-      throw new Error(`Encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 
@@ -75,14 +75,14 @@ export class EncryptionService {
 
       const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
 
-      logger.debug(
-        `Decrypted ${encrypted.length} bytes -> ${decrypted.length} bytes`
-      );
+      logger.debug(`Decrypted ${encrypted.length} bytes -> ${decrypted.length} bytes`);
 
       return decrypted;
     } catch (error) {
       logger.error('Decryption failed:', error);
-      throw new Error(`Decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw new Error(
+        `Decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
     }
   }
 

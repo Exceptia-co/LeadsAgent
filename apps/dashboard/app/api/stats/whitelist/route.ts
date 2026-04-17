@@ -10,9 +10,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
 
     // Construir la URL del backend con los parámetros de búsqueda
-    const backendUrl = new URL(
-      `${getWhatsAppServiceUrl()}/api/stats/whitelist`,
-    );
+    const backendUrl = new URL(`${getWhatsAppServiceUrl()}/api/stats/whitelist`);
     searchParams.forEach((value, key) => {
       backendUrl.searchParams.set(key, value);
     });
@@ -30,9 +28,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(data);
   } catch (error) {
     console.error("Error in whitelist stats API:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

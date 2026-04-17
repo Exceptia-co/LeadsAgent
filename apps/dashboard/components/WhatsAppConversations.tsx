@@ -112,9 +112,7 @@ export default function WhatsAppConversations() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">
-            Conversaciones
-          </h3>
+          <h3 className="text-lg font-semibold text-gray-900">Conversaciones</h3>
           <div className="animate-spin h-4 w-4">
             <RefreshCw className="h-4 w-4" />
           </div>
@@ -132,13 +130,8 @@ export default function WhatsAppConversations() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">
-            Conversaciones
-          </h3>
-          <button
-            onClick={refreshData}
-            className="p-2 text-gray-400 hover:text-gray-600"
-          >
+          <h3 className="text-lg font-semibold text-gray-900">Conversaciones</h3>
+          <button onClick={refreshData} className="p-2 text-gray-400 hover:text-gray-600">
             <RefreshCw className="h-4 w-4" />
           </button>
         </div>
@@ -187,9 +180,7 @@ export default function WhatsAppConversations() {
             </div>
             <div className="ml-3">
               <p className="text-xs font-medium text-gray-500">Mensajes</p>
-              <p className="text-lg font-semibold text-gray-900">
-                {stats.totalConversations}
-              </p>
+              <p className="text-lg font-semibold text-gray-900">{stats.totalConversations}</p>
             </div>
           </div>
         </Card>
@@ -201,9 +192,7 @@ export default function WhatsAppConversations() {
             </div>
             <div className="ml-3">
               <p className="text-xs font-medium text-gray-500">Contactos</p>
-              <p className="text-lg font-semibold text-gray-900">
-                {stats.uniqueContacts}
-              </p>
+              <p className="text-lg font-semibold text-gray-900">{stats.uniqueContacts}</p>
             </div>
           </div>
         </Card>
@@ -215,9 +204,7 @@ export default function WhatsAppConversations() {
             </div>
             <div className="ml-3">
               <p className="text-xs font-medium text-gray-500">IA</p>
-              <p className="text-lg font-semibold text-gray-900">
-                {stats.aiResponses}
-              </p>
+              <p className="text-lg font-semibold text-gray-900">{stats.aiResponses}</p>
             </div>
           </div>
         </Card>
@@ -242,22 +229,16 @@ export default function WhatsAppConversations() {
         <Card className="p-6">
           <div className="text-center">
             <MessageSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h4 className="text-sm font-medium text-gray-900 mb-2">
-              No hay conversaciones aún
-            </h4>
+            <h4 className="text-sm font-medium text-gray-900 mb-2">No hay conversaciones aún</h4>
             <p className="text-sm text-gray-500">
-              Las conversaciones aparecerán aquí cuando envíes o recibas
-              mensajes de WhatsApp.
+              Las conversaciones aparecerán aquí cuando envíes o recibas mensajes de WhatsApp.
             </p>
           </div>
         </Card>
       ) : (
         <div className="space-y-3">
           {conversations.map((conversation) => (
-            <Card
-              key={conversation.id}
-              className="p-4 hover:bg-gray-50 transition-colors"
-            >
+            <Card key={conversation.id} className="p-4 hover:bg-gray-50 transition-colors">
               <div className="flex items-start justify-between">
                 <div className="flex items-start space-x-3 flex-1">
                   <div className="flex-shrink-0">
@@ -274,13 +255,9 @@ export default function WhatsAppConversations() {
                         {formatDate(conversation.lastMessage.createdAt)}
                       </p>
                     </div>
-                    <p className="text-xs text-gray-500 mb-1">
-                      {conversation.lead.phone}
-                    </p>
+                    <p className="text-xs text-gray-500 mb-1">{conversation.lead.phone}</p>
                     <p className="text-sm text-gray-600 line-clamp-2">
-                      {conversation.lastMessage.direction === "INBOUND"
-                        ? "📱 "
-                        : "💬 "}
+                      {conversation.lastMessage.direction === "INBOUND" ? "📱 " : "💬 "}
                       {conversation.lastMessage.content}
                     </p>
                     <div className="flex items-center justify-between mt-2">

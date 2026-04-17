@@ -6,10 +6,7 @@ import { getApiUrl } from "../../../../lib/api-config";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     // Get authentication token
     const { getToken } = await auth();
@@ -39,9 +36,7 @@ export async function PATCH(
     });
 
     if (!response.ok) {
-      const errorData = await response
-        .json()
-        .catch(() => ({ error: "Unknown error" }));
+      const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
       console.error(`Backend returned ${response.status}:`, errorData);
 
       return NextResponse.json(errorData, { status: response.status });
@@ -72,25 +67,18 @@ export async function PATCH(
       if (error.name === "TimeoutError") {
         return NextResponse.json(
           {
-            error:
-              "Request timeout. The backend service is taking too long to respond.",
+            error: "Request timeout. The backend service is taking too long to respond.",
           },
           { status: 504 },
         );
       }
     }
 
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     // Get authentication token
     const { getToken } = await auth();
@@ -113,9 +101,7 @@ export async function DELETE(
     });
 
     if (!response.ok && response.status !== 204) {
-      const errorData = await response
-        .json()
-        .catch(() => ({ error: "Unknown error" }));
+      const errorData = await response.json().catch(() => ({ error: "Unknown error" }));
       console.error(`Backend returned ${response.status}:`, errorData);
 
       return NextResponse.json(errorData, { status: response.status });
@@ -143,17 +129,13 @@ export async function DELETE(
       if (error.name === "TimeoutError") {
         return NextResponse.json(
           {
-            error:
-              "Request timeout. The backend service is taking too long to respond.",
+            error: "Request timeout. The backend service is taking too long to respond.",
           },
           { status: 504 },
         );
       }
     }
 
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

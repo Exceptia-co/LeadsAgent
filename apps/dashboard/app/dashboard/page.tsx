@@ -4,13 +4,7 @@ import { Card } from "../../components/ui/card";
 import { Badge } from "../../components/ui/badge";
 import { useLeadStats, useLeads, refreshAllLeadData } from "../../lib/api";
 import { STATUS_LABELS, STATUS_VARIANTS, type Lead } from "../../types";
-import {
-  Users,
-  TrendingUp,
-  MessageSquare,
-  Target,
-  RefreshCw,
-} from "lucide-react";
+import { Users, TrendingUp, MessageSquare, Target, RefreshCw } from "lucide-react";
 import { useState, useCallback, useRef, useEffect } from "react";
 
 export default function DashboardPage() {
@@ -72,8 +66,7 @@ export default function DashboardPage() {
   }, []);
 
   // Check if any data is currently refreshing
-  const isAnyRefreshing =
-    statsRefreshing || leadsRefreshing || isManualRefreshing;
+  const isAnyRefreshing = statsRefreshing || leadsRefreshing || isManualRefreshing;
 
   if (statsLoading || leadsLoading) {
     return (
@@ -97,8 +90,7 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <div className="bg-red-50 border border-red-200 rounded-md p-4">
           <p className="text-red-800">
-            Error al cargar las estadísticas. Verifica que el servidor backend
-            esté funcionando.
+            Error al cargar las estadísticas. Verifica que el servidor backend esté funcionando.
           </p>
         </div>
       </div>
@@ -112,8 +104,7 @@ export default function DashboardPage() {
   // Calcular métricas adicionales
   const newLeads = byStatus["NUEVO"] || 0;
   const convertedLeads = byStatus["GANADO"] || 0;
-  const conversionRate =
-    totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0;
+  const conversionRate = totalLeads > 0 ? (convertedLeads / totalLeads) * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -136,9 +127,7 @@ export default function DashboardPage() {
               />
               <span
                 className={`text-sm ${
-                  refreshSuccess
-                    ? "text-green-600 font-medium"
-                    : "text-gray-500"
+                  refreshSuccess ? "text-green-600 font-medium" : "text-gray-500"
                 }`}
               >
                 {refreshSuccess
@@ -180,9 +169,7 @@ export default function DashboardPage() {
             }`}
             title="Actualizar datos manualmente"
           >
-            <RefreshCw
-              className={`h-4 w-4 ${isManualRefreshing ? "animate-spin" : ""}`}
-            />
+            <RefreshCw className={`h-4 w-4 ${isManualRefreshing ? "animate-spin" : ""}`} />
             <span>{isManualRefreshing ? "Actualizando..." : "Actualizar"}</span>
           </button>
         </div>
@@ -208,12 +195,8 @@ export default function DashboardPage() {
               <TrendingUp className="h-6 w-6 text-green-600" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">
-                Tasa Conversión
-              </p>
-              <p className="text-2xl font-bold text-gray-900">
-                {conversionRate.toFixed(1)}%
-              </p>
+              <p className="text-sm font-medium text-gray-500">Tasa Conversión</p>
+              <p className="text-2xl font-bold text-gray-900">{conversionRate.toFixed(1)}%</p>
             </div>
           </div>
         </Card>
@@ -224,12 +207,8 @@ export default function DashboardPage() {
               <Target className="h-6 w-6 text-yellow-600" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-500">
-                Score Promedio
-              </p>
-              <p className="text-2xl font-bold text-gray-900">
-                {averageScore.toFixed(1)}
-              </p>
+              <p className="text-sm font-medium text-gray-500">Score Promedio</p>
+              <p className="text-2xl font-bold text-gray-900">{averageScore.toFixed(1)}</p>
             </div>
           </div>
         </Card>
@@ -250,31 +229,20 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Distribución por estado */}
         <Card className="p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">
-            Leads por Estado
-          </h2>
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Leads por Estado</h2>
           <div className="space-y-3">
             {Object.entries(STATUS_LABELS).map(([status, label]) => {
               const count = byStatus[status as keyof typeof byStatus] || 0;
-              const percentage =
-                totalLeads > 0 ? (count / totalLeads) * 100 : 0;
+              const percentage = totalLeads > 0 ? (count / totalLeads) * 100 : 0;
               return (
                 <div key={status} className="flex items-center justify-between">
                   <div className="flex items-center">
-                    <Badge
-                      variant={
-                        STATUS_VARIANTS[status as keyof typeof STATUS_VARIANTS]
-                      }
-                    >
+                    <Badge variant={STATUS_VARIANTS[status as keyof typeof STATUS_VARIANTS]}>
                       {label}
                     </Badge>
-                    <span className="ml-2 text-sm text-gray-600">
-                      {count} leads
-                    </span>
+                    <span className="ml-2 text-sm text-gray-600">{count} leads</span>
                   </div>
-                  <div className="text-sm text-gray-500">
-                    {percentage.toFixed(1)}%
-                  </div>
+                  <div className="text-sm text-gray-500">{percentage.toFixed(1)}%</div>
                 </div>
               );
             })}
@@ -283,9 +251,7 @@ export default function DashboardPage() {
 
         {/* Leads recientes */}
         <Card className="p-6">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">
-            Leads Recientes
-          </h2>
+          <h2 className="text-lg font-medium text-gray-900 mb-4">Leads Recientes</h2>
           <div className="space-y-3">
             {leads.length > 0 ? (
               leads.map((lead: Lead) => (
@@ -320,36 +286,28 @@ export default function DashboardPage() {
 
       {/* Acciones rápidas */}
       <Card className="p-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">
-          Acciones Rápidas
-        </h2>
+        <h2 className="text-lg font-medium text-gray-900 mb-4">Acciones Rápidas</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <a
             href="/dashboard/leads"
             className="flex items-center justify-center px-4 py-6 border border-gray-300 rounded-lg hover:border-gray-400 transition-colors"
           >
             <Users className="h-6 w-6 text-gray-600 mr-2" />
-            <span className="font-medium text-gray-900">
-              Ver todos los leads
-            </span>
+            <span className="font-medium text-gray-900">Ver todos los leads</span>
           </a>
           <a
             href="/dashboard/whatsapp/conversations"
             className="flex items-center justify-center px-4 py-6 border border-gray-300 rounded-lg hover:border-gray-400 transition-colors"
           >
             <MessageSquare className="h-6 w-6 text-gray-600 mr-2" />
-            <span className="font-medium text-gray-900">
-              Ver conversaciones
-            </span>
+            <span className="font-medium text-gray-900">Ver conversaciones</span>
           </a>
           <a
             href="/dashboard/whatsapp"
             className="flex items-center justify-center px-4 py-6 border border-gray-300 rounded-lg hover:border-gray-400 transition-colors"
           >
             <Target className="h-6 w-6 text-gray-600 mr-2" />
-            <span className="font-medium text-gray-900">
-              Configurar WhatsApp
-            </span>
+            <span className="font-medium text-gray-900">Configurar WhatsApp</span>
           </a>
         </div>
       </Card>

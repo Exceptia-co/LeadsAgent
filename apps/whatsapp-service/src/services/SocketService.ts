@@ -81,7 +81,8 @@ export class SocketService {
           // Fallback to DB if in-memory Map is empty (e.g. right after restart before recovery)
           if (sessions.length === 0) {
             try {
-              const { default: SessionPersistenceService } = await import('./SessionPersistenceService');
+              const { default: SessionPersistenceService } =
+                await import('./SessionPersistenceService');
               const dbSessions = await SessionPersistenceService.loadActiveSessions();
               sessions = dbSessions.map(s => ({
                 id: s.sessionId,

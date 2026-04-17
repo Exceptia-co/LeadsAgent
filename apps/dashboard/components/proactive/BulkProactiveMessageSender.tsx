@@ -4,15 +4,7 @@ import { useState, useEffect } from "react";
 import { getWhatsAppUrl } from "../../hooks/use-whatsapp-url";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
-import {
-  Search,
-  Send,
-  User,
-  Users,
-  X,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { Search, Send, User, Users, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Template } from "../templates/TemplateCard";
 import BulkSendMessageModal from "./BulkSendMessageModal";
 import FloatingLeadSelectionBanner from "./FloatingLeadSelectionBanner";
@@ -122,14 +114,11 @@ export default function BulkProactiveMessageSender({
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       const currentPageLeadIds = currentLeads.map((lead) => lead.id);
-      setSelectedLeads(
-        (prev) => new Set([...Array.from(prev), ...currentPageLeadIds]),
-      );
+      setSelectedLeads((prev) => new Set([...Array.from(prev), ...currentPageLeadIds]));
     } else {
       const currentPageLeadIds = new Set(currentLeads.map((lead) => lead.id));
       setSelectedLeads(
-        (prev) =>
-          new Set(Array.from(prev).filter((id) => !currentPageLeadIds.has(id))),
+        (prev) => new Set(Array.from(prev).filter((id) => !currentPageLeadIds.has(id))),
       );
     }
   };
@@ -180,8 +169,7 @@ export default function BulkProactiveMessageSender({
     selectedLeads.has(id),
   );
   const isAllCurrentPageSelected =
-    currentPageLeadIds.size > 0 &&
-    selectedCurrentPageLeads.length === currentPageLeadIds.size;
+    currentPageLeadIds.size > 0 && selectedCurrentPageLeads.length === currentPageLeadIds.size;
   const isSomeCurrentPageSelected =
     selectedCurrentPageLeads.length > 0 &&
     selectedCurrentPageLeads.length < currentPageLeadIds.size;
@@ -189,9 +177,7 @@ export default function BulkProactiveMessageSender({
   if (loading) {
     return (
       <div className="space-y-6">
-        <h2 className="text-xl font-semibold text-gray-900">
-          Mensajes Proactivos
-        </h2>
+        <h2 className="text-xl font-semibold text-gray-900">Mensajes Proactivos</h2>
         <div className="animate-pulse space-y-4">
           {[...Array(3)].map((_, i) => (
             <div key={i} className="h-16 bg-gray-200 rounded-lg"></div>
@@ -262,9 +248,7 @@ export default function BulkProactiveMessageSender({
                   <td className="px-6 py-4 whitespace-nowrap">
                     <Checkbox
                       checked={selectedLeads.has(lead.id)}
-                      onChange={(e) =>
-                        handleSelectLead(lead.id, e.target.checked)
-                      }
+                      onChange={(e) => handleSelectLead(lead.id, e.target.checked)}
                     />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
@@ -276,9 +260,7 @@ export default function BulkProactiveMessageSender({
                     <div className="text-sm text-gray-900">{lead.phone}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">
-                      {lead.email || "-"}
-                    </div>
+                    <div className="text-sm text-gray-500">{lead.email || "-"}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <Badge variant="outline" className="text-xs">
@@ -297,20 +279,14 @@ export default function BulkProactiveMessageSender({
             <div className="flex-1 flex justify-between items-center">
               <div>
                 <p className="text-sm text-gray-700">
-                  Mostrando{" "}
-                  <span className="font-medium">{startIndex + 1}</span> a{" "}
-                  <span className="font-medium">
-                    {Math.min(endIndex, filteredLeads.length)}
-                  </span>{" "}
-                  de <span className="font-medium">{filteredLeads.length}</span>{" "}
-                  resultados
+                  Mostrando <span className="font-medium">{startIndex + 1}</span> a{" "}
+                  <span className="font-medium">{Math.min(endIndex, filteredLeads.length)}</span> de{" "}
+                  <span className="font-medium">{filteredLeads.length}</span> resultados
                 </p>
               </div>
               <div className="flex items-center space-x-2">
                 <button
-                  onClick={() =>
-                    setCurrentPage((prev) => Math.max(prev - 1, 1))
-                  }
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                   disabled={currentPage === 1}
                   className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -320,9 +296,7 @@ export default function BulkProactiveMessageSender({
                   Página {currentPage} de {totalPages}
                 </span>
                 <button
-                  onClick={() =>
-                    setCurrentPage((prev) => Math.min(prev + 1, totalPages))
-                  }
+                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                   disabled={currentPage === totalPages}
                   className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -337,9 +311,7 @@ export default function BulkProactiveMessageSender({
       {filteredLeads.length === 0 && !loading && (
         <Card className="p-12 text-center">
           <User className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            No hay leads disponibles
-          </h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No hay leads disponibles</h3>
           <p className="text-gray-500">
             {searchTerm
               ? "No se encontraron leads con los criterios de búsqueda."

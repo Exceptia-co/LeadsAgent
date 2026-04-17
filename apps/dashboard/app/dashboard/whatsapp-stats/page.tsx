@@ -63,20 +63,11 @@ export default function WhatsAppStatsPage() {
     try {
       const params = new URLSearchParams();
       if (dateRange === "24h") {
-        params.set(
-          "startDate",
-          new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-        );
+        params.set("startDate", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
       } else if (dateRange === "7d") {
-        params.set(
-          "startDate",
-          new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-        );
+        params.set("startDate", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
       } else if (dateRange === "30d") {
-        params.set(
-          "startDate",
-          new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-        );
+        params.set("startDate", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
       }
 
       const response = await fetch(`/api/stats/whitelist?${params}`);
@@ -98,20 +89,11 @@ export default function WhatsAppStatsPage() {
         params.set("decision", selectedDecision);
       }
       if (dateRange === "24h") {
-        params.set(
-          "startDate",
-          new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-        );
+        params.set("startDate", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
       } else if (dateRange === "7d") {
-        params.set(
-          "startDate",
-          new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-        );
+        params.set("startDate", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
       } else if (dateRange === "30d") {
-        params.set(
-          "startDate",
-          new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-        );
+        params.set("startDate", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
       }
 
       const response = await fetch(`/api/logs/whitelist?${params}`);
@@ -143,9 +125,7 @@ export default function WhatsAppStatsPage() {
   if (isLoading && logs.length === 0) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Estadísticas WhatsApp IA
-        </h1>
+        <h1 className="text-2xl font-bold text-gray-900">Estadísticas WhatsApp IA</h1>
         <div className="animate-pulse space-y-4">
           {[...Array(4)].map((_, i) => (
             <div key={i} className="h-32 bg-gray-200 rounded-lg"></div>
@@ -159,9 +139,7 @@ export default function WhatsAppStatsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Estadísticas WhatsApp IA
-        </h1>
+        <h1 className="text-2xl font-bold text-gray-900">Estadísticas WhatsApp IA</h1>
         <div className="flex items-center space-x-2 text-sm text-gray-500">
           <Shield className="h-4 w-4" />
           <span>Sistema de autorización inteligente</span>
@@ -186,9 +164,7 @@ export default function WhatsAppStatsPage() {
             </select>
           </div>
           <div className="flex-1">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Rango de fechas:
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Rango de fechas:</label>
             <select
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value)}
@@ -211,12 +187,8 @@ export default function WhatsAppStatsPage() {
               <Activity className="h-8 w-8 text-green-500" />
             </div>
             <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">
-                Total Decisiones
-              </p>
-              <p className="text-2xl font-semibold text-gray-900">
-                {stats.totalDecisions}
-              </p>
+              <p className="text-sm font-medium text-gray-500">Total Decisiones</p>
+              <p className="text-2xl font-semibold text-gray-900">{stats.totalDecisions}</p>
             </div>
           </div>
         </Card>
@@ -255,12 +227,8 @@ export default function WhatsAppStatsPage() {
               <Users className="h-8 w-8 text-purple-500" />
             </div>
             <div className="ml-3">
-              <p className="text-sm font-medium text-gray-500">
-                Números Únicos
-              </p>
-              <p className="text-2xl font-semibold text-gray-900">
-                {stats.uniquePhones}
-              </p>
+              <p className="text-sm font-medium text-gray-500">Números Únicos</p>
+              <p className="text-2xl font-semibold text-gray-900">{stats.uniquePhones}</p>
             </div>
           </div>
         </Card>
@@ -270,12 +238,8 @@ export default function WhatsAppStatsPage() {
       <Card>
         <div className="overflow-hidden">
           <div className="bg-gray-50 px-6 py-3 border-b flex items-center justify-between">
-            <h3 className="text-lg font-medium text-gray-900">
-              Registro de Decisiones
-            </h3>
-            <span className="text-sm text-gray-500">
-              {logs.length} registros encontrados
-            </span>
+            <h3 className="text-lg font-medium text-gray-900">Registro de Decisiones</h3>
+            <span className="text-sm text-gray-500">{logs.length} registros encontrados</span>
           </div>
 
           {error && (
@@ -299,9 +263,7 @@ export default function WhatsAppStatsPage() {
                       <div className="flex-shrink-0">
                         <div
                           className={`h-8 w-8 rounded-full flex items-center justify-center ${
-                            log.decision === "ALLOWED"
-                              ? "bg-green-100"
-                              : "bg-red-100"
+                            log.decision === "ALLOWED" ? "bg-green-100" : "bg-red-100"
                           }`}
                         >
                           {log.decision === "ALLOWED" ? (
@@ -317,16 +279,8 @@ export default function WhatsAppStatsPage() {
                           <p className="text-sm font-medium text-gray-900">
                             {formatPhoneNumber(log.phoneNumber)}
                           </p>
-                          <Badge
-                            variant={
-                              log.decision === "ALLOWED"
-                                ? "default"
-                                : "destructive"
-                            }
-                          >
-                            {log.decision === "ALLOWED"
-                              ? "Permitido"
-                              : "Bloqueado"}
+                          <Badge variant={log.decision === "ALLOWED" ? "default" : "destructive"}>
+                            {log.decision === "ALLOWED" ? "Permitido" : "Bloqueado"}
                           </Badge>
                           {log.leadName && (
                             <Badge variant="outline" className="text-xs">
@@ -368,8 +322,7 @@ export default function WhatsAppStatsPage() {
                 </p>
                 {!(selectedDecision || dateRange) && (
                   <p className="text-sm text-gray-400 mt-2">
-                    Los registros aparecerán aquí cuando se reciban mensajes de
-                    WhatsApp
+                    Los registros aparecerán aquí cuando se reciban mensajes de WhatsApp
                   </p>
                 )}
               </div>

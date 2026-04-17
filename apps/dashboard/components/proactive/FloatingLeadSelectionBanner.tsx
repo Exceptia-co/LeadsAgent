@@ -31,9 +31,7 @@ export default function FloatingLeadSelectionBanner({
         {/* Contador de leads seleccionados */}
         <div className="flex items-center space-x-2 text-gray-700">
           <div className="flex items-center justify-center w-8 h-8 bg-green-100 rounded-full">
-            <span className="text-sm font-bold text-green-600">
-              {selectedCount}
-            </span>
+            <span className="text-sm font-bold text-green-600">{selectedCount}</span>
           </div>
           <span className="text-sm font-medium whitespace-nowrap">
             {selectedCount === 1 ? "lead seleccionado" : "leads seleccionados"}

@@ -12,11 +12,7 @@
 // NestJS API (leads, auth, etc.)
 export function getApiUrl(): string {
   // Server-side can use API_URL, client uses NEXT_PUBLIC_API_URL
-  return (
-    process.env.API_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    "http://localhost:3003"
-  );
+  return process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:3003";
 }
 
 // WhatsApp Service - INTERNAL use only (server-side proxy)
@@ -39,9 +35,7 @@ export function getWhatsAppProxyUrl(): string {
     return "/api/whatsapp";
   }
   // In development or server-side, use direct URL
-  return (
-    process.env.NEXT_PUBLIC_WHATSAPP_SERVICE_URL || "http://localhost:3002"
-  );
+  return process.env.NEXT_PUBLIC_WHATSAPP_SERVICE_URL || "http://localhost:3002";
 }
 
 // Helper to check if running in production
@@ -63,7 +57,5 @@ export function getWhatsAppClientUrl(): string {
     return "/api/whatsapp";
   }
   // In development or SSR, use direct URL
-  return (
-    process.env.NEXT_PUBLIC_WHATSAPP_SERVICE_URL || "http://localhost:3002"
-  );
+  return process.env.NEXT_PUBLIC_WHATSAPP_SERVICE_URL || "http://localhost:3002";
 }

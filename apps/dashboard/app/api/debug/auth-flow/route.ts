@@ -112,8 +112,7 @@ export async function GET(request: NextRequest) {
           supabaseUser: null,
           status: "clerk_only",
           reason: "User exists in Clerk but not in Supabase",
-          recommendation:
-            "User would be auto-created on first app access, or run migration",
+          recommendation: "User would be auto-created on first app access, or run migration",
         };
       } else {
         debugInfo.error = "Database error occurred";

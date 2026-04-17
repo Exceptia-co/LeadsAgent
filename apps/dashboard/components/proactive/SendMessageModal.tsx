@@ -27,9 +27,7 @@ export default function SendMessageModal({
   templates,
   selectedTemplate,
 }: SendMessageModalProps) {
-  const [currentTemplate, setCurrentTemplate] = useState<Template | null>(
-    selectedTemplate || null,
-  );
+  const [currentTemplate, setCurrentTemplate] = useState<Template | null>(selectedTemplate || null);
   const [customMessage, setCustomMessage] = useState("");
   const [variables, setVariables] = useState<{ [key: string]: string }>({});
   const [previewContent, setPreviewContent] = useState("");
@@ -94,13 +92,8 @@ export default function SendMessageModal({
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white rounded-lg shadow-lg border">
         <div className="p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold">
-              Enviar mensaje a {lead.name}
-            </h2>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
-            >
+            <h2 className="text-xl font-semibold">Enviar mensaje a {lead.name}</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
               <X className="h-6 w-6" />
             </button>
           </div>
@@ -113,9 +106,7 @@ export default function SendMessageModal({
               <select
                 value={currentTemplate?.id || ""}
                 onChange={(e) => {
-                  const template = templates.find(
-                    (t) => t.id === e.target.value,
-                  );
+                  const template = templates.find((t) => t.id === e.target.value);
                   setCurrentTemplate(template || null);
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
@@ -131,9 +122,7 @@ export default function SendMessageModal({
 
             {currentTemplate && currentTemplate.variables.length > 0 && (
               <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-3">
-                  Variables del Template
-                </h3>
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Variables del Template</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {currentTemplate.variables.map((variable) => (
                     <div key={variable}>
@@ -175,9 +164,7 @@ export default function SendMessageModal({
 
             {(currentTemplate || customMessage) && (
               <div>
-                <h3 className="text-sm font-medium text-gray-700 mb-2">
-                  Vista Previa
-                </h3>
+                <h3 className="text-sm font-medium text-gray-700 mb-2">Vista Previa</h3>
                 <div className="bg-gray-50 p-4 rounded-lg border">
                   <pre className="whitespace-pre-wrap text-sm text-gray-700">
                     {currentTemplate ? previewContent : customMessage}

@@ -1,12 +1,6 @@
 "use client";
 
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-} from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { getWhatsAppUrl } from "../hooks/use-whatsapp-url";
 
 export interface Template {
@@ -38,9 +32,7 @@ interface TemplateContextType {
   getTemplatesByCategory: (category: string) => Template[];
 }
 
-const TemplateContext = createContext<TemplateContextType | undefined>(
-  undefined,
-);
+const TemplateContext = createContext<TemplateContextType | undefined>(undefined);
 
 export const useTemplates = () => {
   const context = useContext(TemplateContext);
@@ -110,9 +102,7 @@ export function TemplateProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         console.error("Error creating template:", err);
-        setError(
-          err instanceof Error ? err.message : "Error al crear template",
-        );
+        setError(err instanceof Error ? err.message : "Error al crear template");
         return false;
       }
     },
@@ -146,9 +136,7 @@ export function TemplateProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         console.error("Error updating template:", err);
-        setError(
-          err instanceof Error ? err.message : "Error al actualizar template",
-        );
+        setError(err instanceof Error ? err.message : "Error al actualizar template");
         return false;
       }
     },
@@ -172,9 +160,7 @@ export function TemplateProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       console.error("Error deleting template:", err);
-      setError(
-        err instanceof Error ? err.message : "Error al eliminar template",
-      );
+      setError(err instanceof Error ? err.message : "Error al eliminar template");
       return false;
     }
   }, []);
@@ -193,8 +179,7 @@ export function TemplateProvider({ children }: { children: React.ReactNode }) {
   const getTemplatesByCategory = useCallback(
     (category: string): Template[] => {
       return templates.filter(
-        (template) =>
-          template.category === category && template.isActive !== false,
+        (template) => template.category === category && template.isActive !== false,
       );
     },
     [templates],

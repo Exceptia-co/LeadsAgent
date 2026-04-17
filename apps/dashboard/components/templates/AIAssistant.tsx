@@ -185,12 +185,8 @@ export default function AIAssistant({
           objective: formData.objective,
           tone: formData.tone,
           context: formData.context,
-          includeOffer: formData.improvements.includes(
-            "Añadir beneficios específicos",
-          ),
-          urgency: formData.improvements.includes("Aumentar la urgencia")
-            ? "high"
-            : "normal",
+          includeOffer: formData.improvements.includes("Añadir beneficios específicos"),
+          urgency: formData.improvements.includes("Aumentar la urgencia") ? "high" : "normal",
         };
       }
 
@@ -221,9 +217,7 @@ export default function AIAssistant({
       onTemplateGenerated(generatedResult);
     } else if (onContentGenerated) {
       const content =
-        generatedResult?.improved ||
-        generatedResult?.content ||
-        generatedResult?.name;
+        generatedResult?.improved || generatedResult?.content || generatedResult?.name;
       onContentGenerated(content);
     }
 
@@ -248,15 +242,11 @@ export default function AIAssistant({
                 <Sparkles className="h-5 w-5 text-white" />
               </div>
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">
-                  Asistente IA para Templates
-                </h2>
+                <h2 className="text-xl font-semibold text-gray-900">Asistente IA para Templates</h2>
                 <p className="text-sm text-gray-500">
-                  {mode === "template" &&
-                    "Crea templates efectivos con inteligencia artificial"}
+                  {mode === "template" && "Crea templates efectivos con inteligencia artificial"}
                   {mode === "improve" && "Mejora tu contenido existente con IA"}
-                  {mode === "proactive" &&
-                    "Genera mensajes personalizados para leads"}
+                  {mode === "proactive" && "Genera mensajes personalizados para leads"}
                 </p>
               </div>
             </div>
@@ -280,9 +270,7 @@ export default function AIAssistant({
                 <div key={stepInfo.num} className="flex items-center">
                   <div
                     className={`flex items-center justify-center w-8 h-8 rounded-full ${
-                      step >= stepInfo.num
-                        ? "bg-green-600 text-white"
-                        : "bg-gray-200 text-gray-500"
+                      step >= stepInfo.num ? "bg-green-600 text-white" : "bg-gray-200 text-gray-500"
                     }`}
                   >
                     {step > stepInfo.num ? (
@@ -291,12 +279,8 @@ export default function AIAssistant({
                       <stepInfo.icon className="h-4 w-4" />
                     )}
                   </div>
-                  <span className="ml-2 text-sm font-medium text-gray-600">
-                    {stepInfo.label}
-                  </span>
-                  {index < 2 && (
-                    <ArrowRight className="h-4 w-4 text-gray-300 ml-4" />
-                  )}
+                  <span className="ml-2 text-sm font-medium text-gray-600">{stepInfo.label}</span>
+                  {index < 2 && <ArrowRight className="h-4 w-4 text-gray-300 ml-4" />}
                 </div>
               ))}
             </div>
@@ -337,9 +321,7 @@ export default function AIAssistant({
                             }`}
                           >
                             <div className="font-medium">{category.label}</div>
-                            <div className="text-xs text-gray-500">
-                              {category.description}
-                            </div>
+                            <div className="text-xs text-gray-500">{category.description}</div>
                           </div>
                         </label>
                       ))}
@@ -368,9 +350,7 @@ export default function AIAssistant({
 
                   {/* Quick suggestions */}
                   <div className="mt-2">
-                    <p className="text-xs text-gray-500 mb-2">
-                      Sugerencias rápidas:
-                    </p>
+                    <p className="text-xs text-gray-500 mb-2">Sugerencias rápidas:</p>
                     <div className="flex flex-wrap gap-1">
                       {[
                         "Generar interés en productos",
@@ -431,9 +411,7 @@ export default function AIAssistant({
                             <span className="text-lg mr-2">{tone.icon}</span>
                             <div>
                               <div className="font-medium">{tone.label}</div>
-                              <div className="text-xs text-gray-500">
-                                {tone.description}
-                              </div>
+                              <div className="text-xs text-gray-500">{tone.description}</div>
                             </div>
                           </div>
                         </div>
@@ -471,9 +449,7 @@ export default function AIAssistant({
                           }`}
                         >
                           <div className="font-medium">{length.label}</div>
-                          <div className="text-xs text-gray-500">
-                            {length.description}
-                          </div>
+                          <div className="text-xs text-gray-500">{length.description}</div>
                         </div>
                       </label>
                     ))}
@@ -498,10 +474,7 @@ export default function AIAssistant({
                             if (e.target.checked) {
                               setFormData((prev) => ({
                                 ...prev,
-                                improvements: [
-                                  ...prev.improvements,
-                                  improvement,
-                                ],
+                                improvements: [...prev.improvements, improvement],
                               }));
                             } else {
                               setFormData((prev) => ({
@@ -521,9 +494,7 @@ export default function AIAssistant({
                               : "border-gray-200 hover:border-gray-300"
                           }`}
                         >
-                          <div className="text-xs font-medium">
-                            {improvement}
-                          </div>
+                          <div className="text-xs font-medium">{improvement}</div>
                         </div>
                       </label>
                     ))}
@@ -588,18 +559,14 @@ export default function AIAssistant({
                         {mode === "template" && (
                           <div>
                             <strong>Categoría:</strong>{" "}
-                            {
-                              categories.find((c) => c.id === formData.category)
-                                ?.label
-                            }
+                            {categories.find((c) => c.id === formData.category)?.label}
                           </div>
                         )}
                         <div>
                           <strong>Objetivo:</strong> {formData.objective}
                         </div>
                         <div>
-                          <strong>Tono:</strong>{" "}
-                          {tones.find((t) => t.id === formData.tone)?.label}
+                          <strong>Tono:</strong> {tones.find((t) => t.id === formData.tone)?.label}
                         </div>
                         <div>
                           <strong>Longitud:</strong>{" "}
@@ -635,8 +602,7 @@ export default function AIAssistant({
                       Generando contenido...
                     </h3>
                     <p className="text-gray-600">
-                      La IA está creando tu{" "}
-                      {mode === "template" ? "template" : "contenido"}{" "}
+                      La IA está creando tu {mode === "template" ? "template" : "contenido"}{" "}
                       personalizado. Esto puede tomar unos segundos.
                     </p>
                   </div>
@@ -677,15 +643,11 @@ export default function AIAssistant({
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-lg font-semibold text-gray-900">
-                      {mode === "template"
-                        ? "Template Generado"
-                        : "Contenido Mejorado"}
+                      {mode === "template" ? "Template Generado" : "Contenido Mejorado"}
                     </h3>
                     <button
                       onClick={() =>
-                        copyToClipboard(
-                          generatedResult.content || generatedResult.improved,
-                        )
+                        copyToClipboard(generatedResult.content || generatedResult.improved)
                       }
                       className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
                       title="Copiar al portapapeles"
@@ -700,54 +662,39 @@ export default function AIAssistant({
                     </pre>
                   </div>
 
-                  {generatedResult.variables &&
-                    generatedResult.variables.length > 0 && (
-                      <div className="mt-3">
-                        <p className="text-sm font-medium text-gray-700 mb-2">
-                          Variables detectadas:
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {generatedResult.variables.map((variable: string) => (
-                            <Badge
-                              key={variable}
-                              variant="secondary"
-                              className="text-xs"
-                            >
-                              {`{{${variable}}}`}
-                            </Badge>
-                          ))}
-                        </div>
+                  {generatedResult.variables && generatedResult.variables.length > 0 && (
+                    <div className="mt-3">
+                      <p className="text-sm font-medium text-gray-700 mb-2">
+                        Variables detectadas:
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {generatedResult.variables.map((variable: string) => (
+                          <Badge key={variable} variant="secondary" className="text-xs">
+                            {`{{${variable}}}`}
+                          </Badge>
+                        ))}
                       </div>
-                    )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Metadata and Actions */}
                 <div className="space-y-4">
                   {mode === "template" && (
                     <div>
-                      <h4 className="font-medium text-gray-900 mb-2">
-                        Información del Template
-                      </h4>
+                      <h4 className="font-medium text-gray-900 mb-2">Información del Template</h4>
                       <div className="bg-white border rounded-lg p-4 space-y-3">
                         <div>
-                          <label className="text-xs text-gray-500">
-                            Nombre Sugerido:
-                          </label>
+                          <label className="text-xs text-gray-500">Nombre Sugerido:</label>
                           <p className="font-medium">{generatedResult.name}</p>
                         </div>
                         <div>
-                          <label className="text-xs text-gray-500">
-                            Categoría:
-                          </label>
-                          <p className="capitalize">
-                            {generatedResult.category}
-                          </p>
+                          <label className="text-xs text-gray-500">Categoría:</label>
+                          <p className="capitalize">{generatedResult.category}</p>
                         </div>
                         {generatedResult.subject && (
                           <div>
-                            <label className="text-xs text-gray-500">
-                              Asunto:
-                            </label>
+                            <label className="text-xs text-gray-500">Asunto:</label>
                             <p>{generatedResult.subject}</p>
                           </div>
                         )}
@@ -757,9 +704,7 @@ export default function AIAssistant({
 
                   {mode === "improve" && generatedResult.changes && (
                     <div>
-                      <h4 className="font-medium text-gray-900 mb-2">
-                        Cambios Realizados
-                      </h4>
+                      <h4 className="font-medium text-gray-900 mb-2">Cambios Realizados</h4>
                       <div className="bg-white border rounded-lg p-4 space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span>Cambio de longitud:</span>
@@ -770,29 +715,19 @@ export default function AIAssistant({
                                 : "text-red-600"
                             }
                           >
-                            {generatedResult.changes.lengthChange > 0
-                              ? "+"
-                              : ""}
+                            {generatedResult.changes.lengthChange > 0 ? "+" : ""}
                             {generatedResult.changes.lengthChange} caracteres
                           </span>
                         </div>
                         {generatedResult.changes.addedVariables?.length > 0 && (
                           <div>
-                            <span className="text-green-600">
-                              Variables añadidas:
-                            </span>
+                            <span className="text-green-600">Variables añadidas:</span>
                             <div className="mt-1">
-                              {generatedResult.changes.addedVariables.map(
-                                (variable: string) => (
-                                  <Badge
-                                    key={variable}
-                                    variant="secondary"
-                                    className="text-xs mr-1"
-                                  >
-                                    {`{{${variable}}}`}
-                                  </Badge>
-                                ),
-                              )}
+                              {generatedResult.changes.addedVariables.map((variable: string) => (
+                                <Badge key={variable} variant="secondary" className="text-xs mr-1">
+                                  {`{{${variable}}}`}
+                                </Badge>
+                              ))}
                             </div>
                           </div>
                         )}
@@ -801,9 +736,7 @@ export default function AIAssistant({
                   )}
 
                   <div>
-                    <h4 className="font-medium text-gray-900 mb-2">
-                      Metadatos
-                    </h4>
+                    <h4 className="font-medium text-gray-900 mb-2">Metadatos</h4>
                     <div className="bg-white border rounded-lg p-4 text-sm space-y-2">
                       <div className="flex justify-between">
                         <span>Proveedor IA:</span>
@@ -839,9 +772,7 @@ export default function AIAssistant({
                 <div className="flex space-x-3">
                   <button
                     onClick={() =>
-                      copyToClipboard(
-                        generatedResult.content || generatedResult.improved,
-                      )
+                      copyToClipboard(generatedResult.content || generatedResult.improved)
                     }
                     className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center"
                   >

@@ -3,10 +3,7 @@ import { getApiUrl } from "../../../../../lib/api-config";
 
 export const dynamic = "force-dynamic";
 
-export async function PATCH(
-  request: NextRequest,
-  { params }: { params: { id: string } },
-) {
+export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const { id } = params;
     const body = await request.json();
@@ -30,9 +27,6 @@ export async function PATCH(
     return NextResponse.json(data);
   } catch (error) {
     console.error("Error in lead whatsapp PATCH API:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

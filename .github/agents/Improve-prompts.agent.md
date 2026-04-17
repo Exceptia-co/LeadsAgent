@@ -1,5 +1,5 @@
 ---
-description: "Mejora prompts siguiendo mejores prácticas de prompt engineering para maximizar la calidad de respuestas de IA."
+description: 'Mejora prompts siguiendo mejores prácticas de prompt engineering para maximizar la calidad de respuestas de IA.'
 tools: []
 ---
 

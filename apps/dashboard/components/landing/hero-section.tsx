@@ -9,10 +9,7 @@ import { MessageSquare, Zap, BarChart3 } from "lucide-react";
 export function HeroSection() {
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center bg-black/[0.96] antialiased bg-grid-white/[0.02] relative overflow-hidden">
-      <Spotlight
-        className="-top-40 left-0 md:left-60 md:-top-20"
-        fill="white"
-      />
+      <Spotlight className="-top-40 left-0 md:left-60 md:-top-20" fill="white" />
 
       <div className="p-4 max-w-7xl mx-auto relative z-10 w-full pt-20 md:pt-0">
         {/* Badge */}
@@ -63,12 +60,7 @@ export function HeroSection() {
               viewBox="0 0 24 24"
               stroke="currentColor"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M9 5l7 7-7 7"
-              />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
             </svg>
           </Link>
 

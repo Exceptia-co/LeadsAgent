@@ -113,14 +113,21 @@ export class SessionRecoveryService {
       if (SnapshotService.isEnabled()) {
         for (const session of persistedSessions) {
           if (!SnapshotService.hasLocalAuth(session.sessionId)) {
-            logger.info(`Session ${session.sessionId} missing local auth, attempting snapshot restore...`);
+            logger.info(
+              `Session ${session.sessionId} missing local auth, attempting snapshot restore...`
+            );
             const snapshotData = await this.persistenceService.getSnapshotData(session.sessionId);
             if (snapshotData) {
-              const restored = await SnapshotService.restoreSnapshot(session.sessionId, snapshotData);
+              const restored = await SnapshotService.restoreSnapshot(
+                session.sessionId,
+                snapshotData
+              );
               if (restored) {
                 logger.info(`Snapshot restored for session ${session.sessionId} during recovery`);
               } else {
-                logger.warn(`Snapshot restore failed for session ${session.sessionId}, will need fresh QR`);
+                logger.warn(
+                  `Snapshot restore failed for session ${session.sessionId}, will need fresh QR`
+                );
                 result.errors.push(`${session.sessionId}: snapshot restore failed`);
               }
             } else {

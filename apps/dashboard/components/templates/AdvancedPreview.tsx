@@ -137,23 +137,20 @@ export default function AdvancedPreview({
     try {
       // Si tenemos templateId, usar el endpoint de preview del backend
       if (templateId) {
-        const response = await fetch(
-          `${getWhatsAppUrl()}/templates/${templateId}/preview`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              variables: {
-                nombre: selectedLead.name || "Usuario",
-                telefono: selectedLead.phone,
-                email: selectedLead.email || "",
-                estado: selectedLead.status,
-                origen: selectedLead.source,
-                ...customVariables,
-              },
-            }),
-          },
-        );
+        const response = await fetch(`${getWhatsAppUrl()}/templates/${templateId}/preview`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            variables: {
+              nombre: selectedLead.name || "Usuario",
+              telefono: selectedLead.phone,
+              email: selectedLead.email || "",
+              estado: selectedLead.status,
+              origen: selectedLead.source,
+              ...customVariables,
+            },
+          }),
+        });
 
         const result = await response.json();
         if (result.success) {
@@ -259,9 +256,7 @@ export default function AdvancedPreview({
                 <Eye className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <h2 className="text-xl font-semibold text-gray-900">
-                  Vista Previa Avanzada
-                </h2>
+                <h2 className="text-xl font-semibold text-gray-900">Vista Previa Avanzada</h2>
                 <p className="text-sm text-gray-500">
                   Prueba tu template con datos reales de leads
                 </p>
@@ -311,9 +306,7 @@ export default function AdvancedPreview({
                 ) : filteredLeads.length === 0 ? (
                   <div className="text-center py-8">
                     <User className="h-8 w-8 mx-auto text-gray-300 mb-2" />
-                    <p className="text-sm text-gray-500">
-                      No se encontraron leads
-                    </p>
+                    <p className="text-sm text-gray-500">No se encontraron leads</p>
                   </div>
                 ) : (
                   filteredLeads.map((lead) => (
@@ -330,9 +323,7 @@ export default function AdvancedPreview({
                         <h4 className="font-medium text-sm text-gray-900">
                           {lead.name || "Sin nombre"}
                         </h4>
-                        <Badge
-                          className={`text-xs ${getStatusColor(lead.status)}`}
-                        >
+                        <Badge className={`text-xs ${getStatusColor(lead.status)}`}>
                           {lead.status}
                         </Badge>
                       </div>
@@ -361,9 +352,7 @@ export default function AdvancedPreview({
             {/* Template Preview */}
             <div className="lg:col-span-2 space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-medium text-gray-900">
-                  Vista Previa del Mensaje
-                </h3>
+                <h3 className="text-lg font-medium text-gray-900">Vista Previa del Mensaje</h3>
                 <div className="flex items-center space-x-2">
                   <button
                     onClick={() => generatePreview()}
@@ -371,9 +360,7 @@ export default function AdvancedPreview({
                     className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                     title="Actualizar preview"
                   >
-                    <RefreshCw
-                      className={`h-4 w-4 ${previewLoading ? "animate-spin" : ""}`}
-                    />
+                    <RefreshCw className={`h-4 w-4 ${previewLoading ? "animate-spin" : ""}`} />
                   </button>
                   <button
                     onClick={() => copyToClipboard(previewContent)}
@@ -396,12 +383,8 @@ export default function AdvancedPreview({
                       </h4>
                       <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
                         <span>{selectedLead.phone}</span>
-                        {selectedLead.email && (
-                          <span>{selectedLead.email}</span>
-                        )}
-                        <Badge
-                          className={`text-xs ${getStatusColor(selectedLead.status)}`}
-                        >
+                        {selectedLead.email && <span>{selectedLead.email}</span>}
+                        <Badge className={`text-xs ${getStatusColor(selectedLead.status)}`}>
                           {selectedLead.status}
                         </Badge>
                       </div>
@@ -426,14 +409,7 @@ export default function AdvancedPreview({
                   <div className="grid grid-cols-2 gap-3">
                     {variables
                       .filter(
-                        (v) =>
-                          ![
-                            "nombre",
-                            "telefono",
-                            "email",
-                            "estado",
-                            "origen",
-                          ].includes(v),
+                        (v) => !["nombre", "telefono", "email", "estado", "origen"].includes(v),
                       )
                       .map((variable) => (
                         <div key={variable}>
@@ -460,9 +436,7 @@ export default function AdvancedPreview({
 
               {/* Message Preview */}
               <div className="relative">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">
-                  Mensaje Final
-                </h4>
+                <h4 className="text-sm font-medium text-gray-700 mb-2">Mensaje Final</h4>
                 <div className="bg-white border rounded-lg shadow-sm">
                   {/* WhatsApp-like header */}
                   <div className="px-4 py-2 bg-green-500 text-white rounded-t-lg flex items-center space-x-2">
@@ -494,9 +468,7 @@ export default function AdvancedPreview({
               {/* Actions */}
               <div className="flex justify-between items-center pt-4 border-t">
                 <div className="text-sm text-gray-500">
-                  {variables.length > 0 && (
-                    <span>{variables.length} variables • </span>
-                  )}
+                  {variables.length > 0 && <span>{variables.length} variables • </span>}
                   {previewContent.length} caracteres
                 </div>
 
