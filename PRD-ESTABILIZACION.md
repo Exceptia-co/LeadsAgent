@@ -456,20 +456,29 @@ Categoría `SECURITY`, nivel `WARN`, `facing: EXTERNAL`. Remediation: https://su
 
 ---
 
-#### T1.2 — Corregir el seed de la base de datos
+#### T1.2 — Corregir el seed de la base de datos ✅ cerrada (v5.13)
 
-**Problema:** Schema drift — campos inexistentes, nombres incorrectos (verificado).
+**Problema original:** Schema drift en `packages/db/prisma/seed.ts` — `name` (no existe en User), `clerkId` (schema usa `clerk_id` sin @map), `type` (campo real es `messageType`), y `sentiment`/`confidence`/`aiAnalyzed` inexistentes en Message.
 
-**Estado actual:** `packages/db/prisma/seed.ts`:
-- `:17, 28` → `name` (no existe en `User`; debería usar `first_name`/`last_name`).
-- `:19, 31` → `clerkId` (el schema usa `clerk_id` sin `@map`).
-- `:52, 60, 83, 107, 122` → `type: "TEXT"` (el campo es `messageType`).
-- `:54, 55, 56` → `sentiment`, `confidence`, `aiAnalyzed` — ninguno existe en el modelo `Message`.
+**Hallazgo extra (audit v5.13):** el seed usaba `prisma.user.upsert({ where: { email: ... } })` pero **el schema User sólo tiene `clerk_id` como @unique**, no `email`. El upsert por email nunca habría funcionado aunque los nombres de campos fueran correctos.
 
-**Cambios requeridos:**
-1. Actualizar seed con campos reales del schema.
-2. Incluir datos para `ai_knowledge_base` y `message_templates` (ambas vacías — cifra infra).
-3. Verificar `pnpm db:reset` sin errores de compilación TypeScript ni runtime.
+**Fix aplicado:**
+1. Campos renombrados a los reales: `first_name`/`last_name`, `clerk_id`, `messageType`; eliminados `sentiment`/`confidence`/`aiAnalyzed`.
+2. Uso de enums Prisma en lugar de strings: `LeadStatus.NUEVO`, `MessageType.TEXT`, `MessageDirection.INBOUND`, `MessageStatus.SENT` — el typechecker ahora detecta regresiones futuras.
+3. Upsert por `clerk_id` (la única constraint unique disponible) en vez de `email`.
+4. Leads upsert por `phone` (unique) en vez de `create` — permite re-ejecución sin violar el constraint.
+5. `ai_knowledge_base` y `message_templates`: patrón `count() + createMany({ skipDuplicates: true })` para que el seed sea idempotente sin unique natural disponible (sólo `id` es unique).
+6. `assignedTo: agentUser.clerk_id` (antes `agentUser.clerkId` devolvía undefined en runtime).
+
+**Criterio de aceptación:** ✅
+- Campos del schema correctos — typecheck con `@prisma/client` generado pasa.
+- Idempotente: segunda ejecución no crea duplicados (verificado live, ver validación).
+- Incluye seeds para knowledge y templates.
+
+**Validación end-to-end (Supabase MCP + ejecución real):**
+- 1ª corrida: 2 users, 12 leads (5 nuevos sobre 7 previos), 23 messages (6 nuevos sobre 17 previos), 3 knowledge (antes 0), 1 template (ya existía, skip).
+- 2ª corrida (idempotencia): mismas cuentas, logs `already has 3 rows — skipping seed` y `already has 1 rows — skipping seed`.
+- SQL de verificación confirma categorías `products`/`pricing`/`support` con los títulos esperados.
 
 ---
 
@@ -796,6 +805,7 @@ Semana 6+ (Escalabilidad + Tests):
 | v5.6 | 2026-04-17 | **Fase 0 sexta ola (decisiones + Clerk webhook).** Cerrada **T0.6**: el PO decidió mantener el repo público (justificación: comodidad con Vercel Hobby; Vercel soporta repos privados, pero se respeta la decisión). Cerrada **T0.5**: endpoint de webhook creado en Clerk Development instance (`ins_31WLEulvioak3keE58HPWDIQ2Gu`) apuntando a `https://cromgod.space/api/webhooks/clerk` con eventos `user.created`/`user.updated`/`user.deleted`; signing secret inyectado en Vercel env vars del project `prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6` como `CLERK_WEBHOOK_SECRET` con target `production,preview,development` (encrypted); redeploy del commit actual de main lanzado (`dpl_GSYsAQ6MBMnSTHYZjqw2g1zUeGde`). Fase 0 efectiva completada salvo T0.1 (RLS + policies) y T0.4-ter (HMAC webhook follow-up). |
 | v5.7 | 2026-04-17 | **Fase 0 cierre (decisión T0.1).** El PO eligió la **opción C** para T0.1: aceptar el WARN de audit A2 como informativo permanente y no ejecutar la habilitación de RLS en este ciclo. Justificación: operación con 1 usuario administrador, todos los clientes de DB bypass RLS por diseño, la autorización de negocio vive en la capa de aplicación (Clerk guards + `requireClerkToken`). Triggers documentados para reabrir: segundo usuario, exposición de PostgREST, JWT Clerk→Supabase, auditoría externa. **Fase 0 efectivamente cerrada** — el único pendiente técnico es **T0.4-ter** (HMAC entre Nest y whatsapp-service, follow-up de endurecimiento, no crítico). Scorecard estable `Infra Audit`: **15 pass / 1 warn (A2 aceptado) / 0 fail / 0 skip**. |
 | v5.8 | 2026-04-17 | **Fix post-T0.5 (GRANT service_role).** Al probar el webhook de Clerk end-to-end con Send Example, el handler `api/webhooks/clerk` devolvía 200 pero no insertaba en `public.users`. Diagnóstico: PostgREST con `SUPABASE_SERVICE_ROLE_KEY` (JWT con `role: service_role`) devolvía `HTTP 403 "permission denied for schema public"`. La causa: en proyectos Supabase nuevos, el rol `service_role` **no tiene por defecto** `GRANT` sobre el schema `public`; solo `postgres` tiene privileges en las tablas. Mientras Prisma (que se conecta con rol `postgres` via `DATABASE_URL`) funcionaba sin problema, el SDK Supabase JS usado en rutas Next se quedaba fuera. Fix aplicado con migration `grant_service_role_access_public_schema`: `GRANT USAGE ON SCHEMA public`, `GRANT SELECT/INSERT/UPDATE/DELETE/REFERENCES/TRIGGER/TRUNCATE ON ALL TABLES`, `GRANT USAGE/SELECT/UPDATE ON ALL SEQUENCES`, `GRANT EXECUTE ON ALL FUNCTIONS`, más `ALTER DEFAULT PRIVILEGES` para que nuevas tablas hereden los grants automáticamente. Post-fix, curl de prueba contra `/rest/v1/users` devuelve `HTTP 201` con la fila creada. |
+| v5.13 | 2026-04-17 | **T1.2 cerrada (seed idempotente).** `packages/db/prisma/seed.ts` reescrito: campos reales del schema (`first_name`/`last_name`/`clerk_id`/`messageType`; eliminados `sentiment`/`confidence`/`aiAnalyzed`); enums Prisma en vez de strings; `user.upsert` por `clerk_id` (antes usaba `email` que no es @unique); `lead.upsert` por `phone`; `ai_knowledge_base` y `message_templates` con `createMany({ skipDuplicates: true })` condicional a `count() === 0`. Hallazgo extra auditado: el seed anterior hubiera fallado en runtime incluso corrigiendo los nombres, porque el `where: { email }` del upsert de users no hubiera encontrado el constraint unique. Validación live vía Supabase MCP: 1ª corrida crea 2 users + 3 knowledge; 2ª corrida idempotente (skip explícito). Totales tras seed: 2 users, 12 leads, 23 messages, 3 knowledge, 1 template. |
 | v5.12 | 2026-04-17 | **T2.4 cerrada parcial (rate limit por sesión WhatsApp).** Nuevo middleware `rateLimitBySession` en `apps/whatsapp-service/src/middleware/validation.ts` con in-memory `Map<sessionId, timestamps[]>`, ventana rodante 1h, cuota default 200 msgs/h configurable via `WHATSAPP_MAX_MSGS_PER_HOUR_PER_SESSION`. Fail-closed para bulk: batch se rechaza completo si no cabe. Conteo optimista: reserva slots al aceptar, no al confirmar envío (anti-ban). Throttle adaptativo vía `req.sessionThrottle.throttleFactor` (1/2/4 según uso >80% / >90%) multiplica el delay base de 2s en el loop de `/proactive-messages/bulk`. Aplicado a `POST /proactive-messages` y `POST /proactive-messages/bulk`. Bypass del `rateLimit` global IP cambiado de `NODE_ENV === 'development'` → `NODE_ENV === 'test'`. Validación con curl: batch de 201 leadIds devuelve 429 inmediato; burst de 5 pasa y burst siguiente de 196 en misma sesión devuelve 429 con `usage: 5` (persistencia del contador confirmada). Typecheck OK 3 paquetes. Pendiente follow-up: auth directo Nest↔whatsapp-service tracked bajo T0.4-ter. |
 | v5.11-bis | 2026-04-17 | **T2.2 post-audit browser.** Tras levantar front local y abrir `/dashboard/templates`, el `Network` tab reveló 5 consumers adicionales llamando a `:3002/templates` (`templates/page.tsx` CRUD x4, `messaging/page.tsx` CRUD x4, `whatsapp/page.tsx` list, `BulkSendMessageModal.tsx` list, `AdvancedPreview.tsx` preview+leads). Migrados al mismo patrón Bearer/Nest. El `TemplatesController` envuelve responses en `{ success, data }` para compat de shape; se añade alias `PUT /templates/:id` que delega en PATCH. `AdvancedPreview.tsx`: campo `previewContent` renombrado a `rendered` para alinearse con el servicio. Browser retest: 4 × `GET /templates?activeOnly=false → 200`, cero 404s contra `:3002`. |
 | v5.11 | 2026-04-17 | **T2.2 cerrada (Templates auth + Nest CRUD).** Nuevo `TemplatesModule` en `apps/api/src/templates/*` con `ClerkAuthGuard` + DTOs validados (`class-validator`) + preview con `missingVariables[]`. Dashboard `TemplateContext.tsx` reescrito para consumir `NEXT_PUBLIC_API_URL/templates` con Bearer Clerk (patrón de `use-leads.ts`). `AIAssistant.tsx` + `VariablePicker.tsx`: llamadas directas a `${getWhatsAppUrl()}` migradas al proxy `/api/whatsapp/*` que aplica `requireClerkToken()`. `apps/whatsapp-service/src/routes/index.ts`: eliminadas las 5 rutas CRUD/preview (`-171` líneas en bruto; conservadas `/templates/variables`, `/templates/ai-suggest`, `/templates/ai-improve` que dependen de servicios locales). Auditoría inline: las líneas del PRD v3/v4 estaban desplazadas (`:534` en vez de `:806`); reemplazadas con las cifras reales al momento del fix. Follow-up tracked: refuerzo HMAC Nest↔whatsapp-service bajo T0.4-ter. Validación: typecheck OK en los 3 paquetes, Prettier limpio. |
