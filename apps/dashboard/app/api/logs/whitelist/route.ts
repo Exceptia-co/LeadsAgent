@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWhatsAppServiceUrl } from "../../../../lib/api-config";
+import { requireClerkToken } from "../../../../lib/auth/proxy-auth";
 
 // Force dynamic rendering for this route
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
+  const gate = await requireClerkToken();
+  if (gate instanceof NextResponse) return gate;
+
   try {
     const searchParams = request.nextUrl.searchParams;
 

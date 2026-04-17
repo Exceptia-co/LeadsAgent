@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWhatsAppServiceUrl } from "../../../../lib/api-config";
+import { requireClerkToken } from "../../../../lib/auth/proxy-auth";
 
 // Force dynamic rendering for this route
 export const dynamic = "force-dynamic";
@@ -9,9 +10,16 @@ export const runtime = "nodejs";
  * Catch-all proxy for WhatsApp service
  * Routes all requests from /api/whatsapp/* to the WhatsApp service
  * This avoids Mixed Content issues by proxying HTTP through HTTPS
+ *
+ * Gated by Clerk session. The whatsapp-service itself does not (yet) validate
+ * the forwarded token — the auth here is the public-internet gate until the
+ * service grows its own middleware (see PRD T0.4-ter).
  */
 
 async function proxyRequest(request: NextRequest, path: string[], method: string) {
+  const gate = await requireClerkToken();
+  if (gate instanceof NextResponse) return gate;
+
   try {
     const pathString = path.join("/");
     const whatsAppUrl = getWhatsAppServiceUrl();

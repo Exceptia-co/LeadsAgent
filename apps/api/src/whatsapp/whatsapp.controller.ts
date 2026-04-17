@@ -7,9 +7,11 @@ import {
   Logger,
   BadRequestException,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { WhatsAppService } from './whatsapp.service';
 import { WhitelistService } from './whitelist.service';
+import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 
 interface SendMessageDto {
   sessionId: string;
@@ -100,6 +102,7 @@ export class WhatsAppController {
   }
 
   @Post('send')
+  @UseGuards(ClerkAuthGuard)
   async sendMessage(@Body() sendMessageDto: SendMessageDto) {
     this.logger.log(
       `Sending message to ${sendMessageDto.phone} via session ${sendMessageDto.sessionId}`,
@@ -124,6 +127,7 @@ export class WhatsAppController {
   }
 
   @Get('whitelist/stats')
+  @UseGuards(ClerkAuthGuard)
   async getWhitelistStats(@Query('days') days?: string) {
     try {
       const daysNumber = days ? parseInt(days) : 7;
@@ -141,6 +145,7 @@ export class WhatsAppController {
   }
 
   @Post('whitelist/authorize')
+  @UseGuards(ClerkAuthGuard)
   async updateLeadAuthorization(
     @Body() body: { leadId: string; authorized: boolean; reason?: string },
   ) {

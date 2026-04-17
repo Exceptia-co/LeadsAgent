@@ -272,7 +272,7 @@ async function checkSupabaseAdvisors(): Promise<void> {
   }
   try {
     const res = await fetch(
-      `https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/advisors?type=security`,
+      `https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/advisors/security`,
       { headers: { Authorization: `Bearer ${pat}` } },
     );
     if (!res.ok) {
@@ -285,10 +285,10 @@ async function checkSupabaseAdvisors(): Promise<void> {
       });
       return;
     }
-    const body = (await res.json()) as {
-      lints?: Array<{ name: string; title?: string; detail?: string }>;
-    };
-    const lints = body.lints ?? [];
+    const body = (await res.json()) as
+      | { lints?: Array<{ name: string; title?: string; detail?: string }> }
+      | Array<{ name: string; title?: string; detail?: string }>;
+    const lints = Array.isArray(body) ? body : (body.lints ?? []);
 
     const vpv = lints.find((l) => l.name === 'vulnerable_postgres_version');
     record({
@@ -410,7 +410,7 @@ async function checkVercel(): Promise<void> {
   }
   try {
     const res = await fetch(
-      `https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?teamId=${VERCEL_TEAM_ID}`,
+      `https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&teamId=${VERCEL_TEAM_ID}&target=production&limit=5&state=READY`,
       { headers: { Authorization: `Bearer ${token}` } },
     );
     if (!res.ok) {
@@ -423,13 +423,21 @@ async function checkVercel(): Promise<void> {
       });
       return;
     }
-    const body = (await res.json()) as { live?: boolean; name?: string };
+    const body = (await res.json()) as {
+      deployments?: Array<{ uid: string; state: string; target?: string | null; created: number }>;
+    };
+    const prodReady = (body.deployments ?? []).filter(
+      (d) => d.state === 'READY' && d.target === 'production',
+    );
     record({
       section,
       id: 'D1',
-      level: body.live === true ? 'PASS' : 'FAIL',
-      title: 'Vercel project.live === true',
-      detail: body.live === true ? '' : `project.live = ${String(body.live)}`,
+      level: prodReady.length > 0 ? 'PASS' : 'FAIL',
+      title: 'Vercel has a production deployment in READY state',
+      detail:
+        prodReady.length > 0
+          ? `${prodReady.length} READY production deployment(s); latest uid=${prodReady[0].uid}`
+          : 'no READY deployment with target=production found',
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
