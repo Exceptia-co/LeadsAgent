@@ -183,9 +183,6 @@ model ProactiveMessage {
 
   @@index([createdAt], map: "idx_proactive_created")
   @@index([leadId], map: "idx_proactive_lead")
-  @@index([createdAt], map: "idx_proactive_messages_created_at")
-  @@index([leadId], map: "idx_proactive_messages_lead_id")
-  @@index([status], map: "idx_proactive_messages_status")
   @@index([phoneNumber], map: "idx_proactive_phone")
   @@index([status], map: "idx_proactive_status")
   @@map("proactive_messages")
@@ -250,7 +247,7 @@ model WhatsAppWhitelistLog {
   sessionId      String?   @map("session_id") @db.VarChar(255)
   decision       String    @db.VarChar(20) // NOT NULL - standardized on this field
   reason         String?   @db.Text
-  leadId         String?   @map("lead_id") @db.VarChar(255)
+  leadId         String?   @map("lead_id") @db.Uuid
   leadName       String?   @map("lead_name") @db.VarChar(255)
   messagePreview String?   @map("message_preview") @db.Text
   aiProvider     String?   @map("ai_provider") @db.VarChar(50)

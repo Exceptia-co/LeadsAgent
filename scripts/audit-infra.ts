@@ -205,39 +205,47 @@ async function checkSupabaseDb(): Promise<void> {
       });
     }
 
-    // A5: orphan campaigns migrations vs missing table
+    // A5: orphan campaigns migrations vs missing table.
+    // PASS when the tables match history, or when a cleanup migration
+    // (name matches /drop_legacy_campaigns/i) reconciles the older
+    // create_campaigns_table / create_campaign_leads_table entries.
     const campaignsRel = await client.query<{ reg: string | null }>(`
       SELECT to_regclass('public.campaigns')::text AS reg;
     `);
     const campaignsExists = campaignsRel.rows[0]?.reg !== null;
 
     let orphanMigrationFound = false;
+    let cleanupMigrationFound = false;
     try {
       const q = await client.query<{ name: string }>(`
         SELECT name
         FROM supabase_migrations.schema_migrations
-        WHERE name IN ('create_campaigns_table', 'create_campaign_leads_table');
+        WHERE name IN ('create_campaigns_table', 'create_campaign_leads_table')
+           OR name ILIKE '%drop_legacy_campaigns%';
       `);
-      orphanMigrationFound = q.rows.length > 0;
+      for (const row of q.rows) {
+        if (/drop_legacy_campaigns/i.test(row.name)) cleanupMigrationFound = true;
+        else orphanMigrationFound = true;
+      }
     } catch {
       // supabase_migrations may be inaccessible to this role — silently tolerate.
     }
 
-    if (!campaignsExists && orphanMigrationFound) {
-      record({
-        section,
-        id: 'A5',
-        level: 'FAIL',
-        title: 'No orphan campaigns migrations',
-        detail: 'campaigns migrations applied but table does not exist',
-      });
-    } else if (campaignsExists) {
+    if (campaignsExists) {
       record({
         section,
         id: 'A5',
         level: 'WARN',
         title: 'No orphan campaigns migrations',
         detail: 'campaigns table unexpectedly exists (PRD says feature removed)',
+      });
+    } else if (orphanMigrationFound && !cleanupMigrationFound) {
+      record({
+        section,
+        id: 'A5',
+        level: 'FAIL',
+        title: 'No orphan campaigns migrations',
+        detail: 'campaigns migrations applied but no drop_legacy_campaigns cleanup recorded',
       });
     } else {
       record({
