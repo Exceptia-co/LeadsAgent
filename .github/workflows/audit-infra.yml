@@ -4,10 +4,12 @@ name: Infra Audit
 # infrastructure and against code-level invariants declared in PRD-ESTABILIZACION.md.
 #
 # Current policy (April 2026):
-#   - PRs and pushes on main/develop trigger an informational run (continue-on-error: true).
+#   - PRs and pushes on main/develop trigger a blocking run (continue-on-error: false).
+#     Scorecard baseline is 15 pass / 1 warn / 0 fail / 0 skip; any new FAIL is a
+#     regression and blocks merge.
 #   - Weekly cron (Mon 06:00 UTC) provides a drift signal even without repo activity.
-#   - Flip `continue-on-error` to `false` once Fase 0 of the PRD is complete
-#     so that a single FAIL becomes a required-check blocker.
+#   - Optional next step: add this workflow to branch protection required checks
+#     (Settings -> Branches -> Branch protection rules) to enforce on main.
 #
 # Secrets required to exercise each section (missing ones turn that section into SKIP):
 #   DATABASE_URL        — Supabase Postgres connection string (section A)
@@ -38,7 +40,7 @@ jobs:
     name: scripts/audit-infra.ts
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    continue-on-error: true # Flip to false once Fase 0 of PRD-ESTABILIZACION is done
+    continue-on-error: false # Promoted to blocking on 2026-04-17 after reaching 15/1/0/0
 
     steps:
       - name: Checkout
@@ -87,5 +89,5 @@ jobs:
             tail -40 audit-report.txt || echo "(no report)"
             echo '```'
             echo ""
-            echo "Non-blocking for now. Flip \`continue-on-error\` in .github/workflows/audit-infra.yml to make required."
+            echo "Blocking: any new FAIL fails the CI. A2 WARN on RLS is informational (PRD T0.1)."
           } >> "$GITHUB_STEP_SUMMARY"
