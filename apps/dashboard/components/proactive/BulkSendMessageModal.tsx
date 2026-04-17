@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { getWhatsAppUrl } from "../../hooks/use-whatsapp-url";
+import { useAuth } from "@clerk/nextjs";
 import { X, Send, Users, AlertTriangle, RefreshCw } from "lucide-react";
 import { Template } from "../templates/TemplateCard";
 import { Lead } from "./ProactiveMessageSender";
@@ -27,6 +27,7 @@ export default function BulkSendMessageModal({
   templates,
   selectedTemplate,
 }: BulkSendMessageModalProps) {
+  const { getToken } = useAuth();
   const [currentTemplate, setCurrentTemplate] = useState<Template | null>(selectedTemplate || null);
   const [customMessage, setCustomMessage] = useState("");
   const [previewContent, setPreviewContent] = useState("");
@@ -95,7 +96,16 @@ export default function BulkSendMessageModal({
   const handleRefreshTemplates = async () => {
     setRefreshingTemplates(true);
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/templates`);
+      const token = await getToken();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/templates?activeOnly=false`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        },
+      );
       const result = await response.json();
       if (result.success) {
         setLocalTemplates(result.data || []);

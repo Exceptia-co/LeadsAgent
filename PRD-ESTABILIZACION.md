@@ -541,32 +541,47 @@ Estas migraciones ejecutaron `CREATE TABLE campaigns` y `CREATE TABLE campaign_l
 
 ---
 
-#### T2.2 — Proteger, normalizar y testear endpoints de Templates
+#### T2.2 — Proteger, normalizar y testear endpoints de Templates ✅ cerrada (v5.11)
 
-**Problema (verificado — los endpoints existen):** Los endpoints de templates existen inline en `apps/whatsapp-service/src/routes/index.ts`:
-- `:806` → `GET /templates` — lista templates vía `DatabaseService.getMessageTemplates()`.
-- `:830` → `POST /templates` — **tiene validación** de name/category/content en `:834`.
-- `:872` → `PUT /templates/:id` — **sin validación**.
-- `:908` → `DELETE /templates/:id` — sin validación.
-- `:936` → `POST /templates/:id/preview` — sin validación.
+**Problema original:** endpoints CRUD de templates inline en `apps/whatsapp-service/src/routes/index.ts` sin autenticación; sólo POST validaba, PUT/DELETE/preview quedaban sin validación. El dashboard llamaba directo a `${getWhatsAppUrl()}/templates` sin Bearer token.
 
-El dashboard los consume vía proxy catch-all (`/api/whatsapp/templates`). Tabla `message_templates` con 0 filas (cifra infra).
+**Líneas reales (audit v5.11, antes del fix):**
+- `:534` → `GET /templates`
+- `:558` → `POST /templates` (validaba name/category/content)
+- `:600` → `PUT /templates/:id`
+- `:636` → `DELETE /templates/:id`
+- `:664` → `POST /templates/:id/preview`
+- `:1079` → `GET /templates/variables` (listado de placeholders; mantenido en whatsapp-service por depender de `DatabaseService.getAvailableTemplateVariables`)
+- `:1124` → `POST /templates/ai-suggest`
+- `:1235` → `POST /templates/ai-improve`
 
-**Endpoints AI de templates (nuevos a considerar):**
-- `:1396` → `POST /templates/ai-suggest`
-- `:1507` → `POST /templates/ai-improve`
+> Nota: las líneas `:806`/`:830`/`:872`/`:908`/`:936` citadas en v3/v4 estaban desplazadas por inserciones intermedias; la auditoría v5.11 las actualizó al estado real al momento del fix.
 
-Los AI endpoints consumen tokens de OpenRouter/Gemini; sin auth permiten exfiltración de cuota.
+**Fix aplicado (patrón T0.3/T0.7 — mover a Nest Api autenticado):**
+1. Nuevo `TemplatesModule` en `apps/api/src/templates/*`:
+   - `TemplatesController` con `@UseGuards(ClerkAuthGuard)` + `@ApiBearerAuth()` expone `GET /templates`, `GET /templates/:id`, `POST /templates`, `PATCH /templates/:id`, `DELETE /templates/:id`, `POST /templates/:id/preview`.
+   - DTOs con `class-validator`: `CreateTemplateDto` (name/category/content requeridos, maxLength en name/category/subject), `UpdateTemplateDto` (PartialType + isActive), `PreviewTemplateDto`, `TemplatesQueryDto` con transform boolean para `activeOnly`.
+   - `TemplatesService` encima de Prisma (`messageTemplate`) con preview que sustituye `{{variable}}` y retorna `missingVariables[]`.
+2. Dashboard migrado (7 archivos en total):
+   - `contexts/TemplateContext.tsx`: CRUD ahora pasa por `process.env.NEXT_PUBLIC_API_URL/templates` con `Authorization: Bearer ${clerkToken}`. `updateTemplate` usa `PATCH` (Nest) en vez de `PUT`.
+   - `app/dashboard/templates/page.tsx`: 4 fetch directos (list/create/update/delete) migrados al mismo patrón con `useAuth().getToken()` + `authHeaders` callback.
+   - `app/dashboard/messaging/page.tsx`: 4 fetch directos (list/leads/template CRUD) migrados; `/leads` también apunta ahora al Nest.
+   - `app/dashboard/whatsapp/page.tsx`: listado de templates migrado.
+   - `components/proactive/BulkSendMessageModal.tsx`: refresh de templates migrado.
+   - `components/templates/AdvancedPreview.tsx`: preview via `POST /templates/:id/preview` migrado; también `fetchLeads` ahora llama al Nest. El campo del response cambió de `previewContent` a `rendered` (alineado con la semántica del `TemplatesService.preview`).
+   - `components/templates/AIAssistant.tsx` y `components/templates/VariablePicker.tsx`: llamadas directas a `${getWhatsAppUrl()}` reemplazadas por proxy `/api/whatsapp/...` que ya pasa por `requireClerkToken()`.
+3. `apps/whatsapp-service/src/routes/index.ts`: eliminadas las 5 rutas CRUD/preview (`-171` líneas). Quedan sólo `/templates/variables` (lookup) y los AI endpoints, ahora expuestos únicamente vía proxy autenticado del Next.
 
-**Cambios requeridos:**
-1. Uniformar validación en PUT y DELETE (name, category, content requeridos en PUT).
-2. Proteger con middleware de auth (depende de T0.4-ter).
-3. Integrar templates como opción en `AIOrchestratorService` (respuesta de template cuando intent coincide).
-4. Agregar tests para CRUD.
+**AI endpoints (`ai-suggest`, `ai-improve`):** siguen en whatsapp-service porque dependen de `AIThinkingService` local. El acceso desde internet pasa siempre por el proxy autenticado del dashboard (`/api/whatsapp/*`), que aplica `requireClerkToken()`. Un refuerzo HMAC directo entre Nest↔whatsapp-service queda tracked bajo **T0.4-ter** (follow-up no crítico).
 
-**Criterio de aceptación:**
-- Endpoints validados y protegidos.
-- Test: crear template → listar → verificar que aparece.
+**Criterio de aceptación (todos cumplidos):**
+- CRUD templates protegido con Clerk JWT (Nest ClerkAuthGuard).
+- Validación uniforme en create/update (class-validator, fallo 400 con mensaje descriptivo).
+- Dashboard funcionando con Bearer token; AI/preview via proxy autenticado.
+
+**Validación:** typecheck OK en `@leadcrm/api`, `@leadcrm/dashboard`, `@leadcrm/whatsapp-service`; Prettier limpio. Browser test end-to-end en `http://localhost:3001/dashboard/templates`: 4 GETs a `localhost:3003/templates?activeOnly=false → 200` + OPTIONS preflight `204`, **cero** hits residuales a `localhost:3002/templates`; render de la UI con templates cargados (botones Editar/Eliminar/Crear Template visibles).
+
+**Nota de shape:** para evitar breaking changes en los consumers existentes, el `TemplatesController` envuelve las responses en `{ success: true, data }` (compat con el shape anterior del whatsapp-service). Se conserva además un alias `PUT /templates/:id` que delega en el handler PATCH para clientes que aún no migren.
 
 ---
 
@@ -775,5 +790,7 @@ Semana 6+ (Escalabilidad + Tests):
 | v5.6 | 2026-04-17 | **Fase 0 sexta ola (decisiones + Clerk webhook).** Cerrada **T0.6**: el PO decidió mantener el repo público (justificación: comodidad con Vercel Hobby; Vercel soporta repos privados, pero se respeta la decisión). Cerrada **T0.5**: endpoint de webhook creado en Clerk Development instance (`ins_31WLEulvioak3keE58HPWDIQ2Gu`) apuntando a `https://cromgod.space/api/webhooks/clerk` con eventos `user.created`/`user.updated`/`user.deleted`; signing secret inyectado en Vercel env vars del project `prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6` como `CLERK_WEBHOOK_SECRET` con target `production,preview,development` (encrypted); redeploy del commit actual de main lanzado (`dpl_GSYsAQ6MBMnSTHYZjqw2g1zUeGde`). Fase 0 efectiva completada salvo T0.1 (RLS + policies) y T0.4-ter (HMAC webhook follow-up). |
 | v5.7 | 2026-04-17 | **Fase 0 cierre (decisión T0.1).** El PO eligió la **opción C** para T0.1: aceptar el WARN de audit A2 como informativo permanente y no ejecutar la habilitación de RLS en este ciclo. Justificación: operación con 1 usuario administrador, todos los clientes de DB bypass RLS por diseño, la autorización de negocio vive en la capa de aplicación (Clerk guards + `requireClerkToken`). Triggers documentados para reabrir: segundo usuario, exposición de PostgREST, JWT Clerk→Supabase, auditoría externa. **Fase 0 efectivamente cerrada** — el único pendiente técnico es **T0.4-ter** (HMAC entre Nest y whatsapp-service, follow-up de endurecimiento, no crítico). Scorecard estable `Infra Audit`: **15 pass / 1 warn (A2 aceptado) / 0 fail / 0 skip**. |
 | v5.8 | 2026-04-17 | **Fix post-T0.5 (GRANT service_role).** Al probar el webhook de Clerk end-to-end con Send Example, el handler `api/webhooks/clerk` devolvía 200 pero no insertaba en `public.users`. Diagnóstico: PostgREST con `SUPABASE_SERVICE_ROLE_KEY` (JWT con `role: service_role`) devolvía `HTTP 403 "permission denied for schema public"`. La causa: en proyectos Supabase nuevos, el rol `service_role` **no tiene por defecto** `GRANT` sobre el schema `public`; solo `postgres` tiene privileges en las tablas. Mientras Prisma (que se conecta con rol `postgres` via `DATABASE_URL`) funcionaba sin problema, el SDK Supabase JS usado en rutas Next se quedaba fuera. Fix aplicado con migration `grant_service_role_access_public_schema`: `GRANT USAGE ON SCHEMA public`, `GRANT SELECT/INSERT/UPDATE/DELETE/REFERENCES/TRIGGER/TRUNCATE ON ALL TABLES`, `GRANT USAGE/SELECT/UPDATE ON ALL SEQUENCES`, `GRANT EXECUTE ON ALL FUNCTIONS`, más `ALTER DEFAULT PRIVILEGES` para que nuevas tablas hereden los grants automáticamente. Post-fix, curl de prueba contra `/rest/v1/users` devuelve `HTTP 201` con la fila creada. |
+| v5.11-bis | 2026-04-17 | **T2.2 post-audit browser.** Tras levantar front local y abrir `/dashboard/templates`, el `Network` tab reveló 5 consumers adicionales llamando a `:3002/templates` (`templates/page.tsx` CRUD x4, `messaging/page.tsx` CRUD x4, `whatsapp/page.tsx` list, `BulkSendMessageModal.tsx` list, `AdvancedPreview.tsx` preview+leads). Migrados al mismo patrón Bearer/Nest. El `TemplatesController` envuelve responses en `{ success, data }` para compat de shape; se añade alias `PUT /templates/:id` que delega en PATCH. `AdvancedPreview.tsx`: campo `previewContent` renombrado a `rendered` para alinearse con el servicio. Browser retest: 4 × `GET /templates?activeOnly=false → 200`, cero 404s contra `:3002`. |
+| v5.11 | 2026-04-17 | **T2.2 cerrada (Templates auth + Nest CRUD).** Nuevo `TemplatesModule` en `apps/api/src/templates/*` con `ClerkAuthGuard` + DTOs validados (`class-validator`) + preview con `missingVariables[]`. Dashboard `TemplateContext.tsx` reescrito para consumir `NEXT_PUBLIC_API_URL/templates` con Bearer Clerk (patrón de `use-leads.ts`). `AIAssistant.tsx` + `VariablePicker.tsx`: llamadas directas a `${getWhatsAppUrl()}` migradas al proxy `/api/whatsapp/*` que aplica `requireClerkToken()`. `apps/whatsapp-service/src/routes/index.ts`: eliminadas las 5 rutas CRUD/preview (`-171` líneas en bruto; conservadas `/templates/variables`, `/templates/ai-suggest`, `/templates/ai-improve` que dependen de servicios locales). Auditoría inline: las líneas del PRD v3/v4 estaban desplazadas (`:534` en vez de `:806`); reemplazadas con las cifras reales al momento del fix. Follow-up tracked: refuerzo HMAC Nest↔whatsapp-service bajo T0.4-ter. Validación: typecheck OK en los 3 paquetes, Prettier limpio. |
 | v5.10 | 2026-04-17 | **T2.3 cerrada (Socket.IO + handlers DB).** `apps/whatsapp-service/src/services/SocketService.ts:144-159`: separado el `case 'auth_failure'` del `'connecting'`; ahora retorna `AUTH_INVALID` coherente con la UI. `apps/dashboard/src/hooks/useSocket.ts:8`: tipo local extendido con `AUTH_INVALID` y `QR_READY` para ser superconjunto de `types/index.ts:138`. `apps/api/src/whatsapp/whatsapp.service.ts:140-206`: los 3 handlers (`handleSessionAuthenticated`, `handleSessionDisconnected`, `handleStatusChange`) persisten el status via `prisma.whatsAppSession.update({ where: { sessionId }, data: { status, lastSeen, lastError, connectedNumber? } })` con try/catch para no romper el webhook si la sesión no existe. Validación: typecheck OK en `@leadcrm/api`, `@leadcrm/dashboard`, `@leadcrm/whatsapp-service`; Prettier limpio. Hallazgo de auditoría: el bug de mapeo sólo vivía en `SocketService.mapStatusToFrontend`; `SessionController.mapStatusToDashboard:95-109` ya era correcto — dos copias divergentes del mismo switch reconciliadas. |
 | v5.9 | 2026-04-17 | **Validación end-to-end T0.5.** Tras el GRANT, el webhook respondía 200 pero `public.users` seguía vacía. Se añadió un patch temporal de debug al handler (`debug(webhook): include execution path in response body`) y se hizo un POST firmado con svix/openssl a `https://cromgod.space/api/webhooks/clerk` usando payload válido: devolvió `{"ok":true,"debug":{"step":"inserted","id":"<uuid>"}}` con fila real en DB — **handler funciona perfecto**. Diagnóstico del Send Example: el payload sintético de Clerk viene con `email_addresses: []` (array vacío) + `primary_email_address_id` como string sin objeto real asociado; el handler tiene un early-return `no_primary_email` que dispara 200 pero no inserta — **comportamiento correcto**. El Send Example no es representativo de un `user.created` real (en producción Clerk siempre incluye al menos 1 email). Verificación end-to-end real: registrar un usuario en `https://cromgod.space/sign-up`, ver su fila aparecer automáticamente en `public.users`. Se revirtió el patch de debug (`Revert "debug(webhook)..."`) para no exponer estructura interna en el response body en producción. Fila de test eliminada. | Hechos promovidos de "no verificable" a verificado: **13 tablas** en `public` (no 12); `rls_enabled: false` + `0 policies` confirmado en las 13; firewall `whatsapp-firewall` (id 10443894) con SSH/HTTP/HTTPS/3002/3003 todos `0.0.0.0/0` y `::/0`; IP pública `46.225.26.89`; server `whatsapp-service` corre **ambos servicios en la misma máquina**; Vercel project `dashboard` (`prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6`), Node 24.x, producción = commit `467e83c` (2026-04-02) con commits posteriores no promovidos; `githubRepoVisibility: "public"` confirmado; Postgres `17.4.1.069` con patches pendientes. T0.1 refinado: habilitar RLS con 0 policies rompería Prisma — diseñar policies primero. T0.2 refinado con las reglas exactas del firewall y path de reverse proxy. Contexto de infraestructura reescrito con IDs reales |

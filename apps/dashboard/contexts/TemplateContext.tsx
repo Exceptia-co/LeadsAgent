@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { getWhatsAppUrl } from "../hooks/use-whatsapp-url";
+import { useAuth } from "@clerk/nextjs";
 
 export interface Template {
   id: string;
@@ -42,128 +42,127 @@ export const useTemplates = () => {
   return context;
 };
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
 export function TemplateProvider({ children }: { children: React.ReactNode }) {
+  const { getToken } = useAuth();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const authHeaders = useCallback(async (): Promise<HeadersInit> => {
+    const token = await getToken();
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  }, [getToken]);
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/templates`);
-      const result = await response.json();
+      const headers = await authHeaders();
+      const response = await fetch(`${API_BASE_URL}/templates?activeOnly=false`, { headers });
 
-      if (result.success) {
-        setTemplates(result.data || []);
-      } else {
-        throw new Error(result.error || "Error al obtener templates");
+      if (!response.ok) {
+        throw new Error(`Templates endpoint returned ${response.status}`);
       }
+
+      const payload = await response.json();
+      const loaded: Template[] = Array.isArray(payload) ? payload : (payload?.data ?? []);
+      setTemplates(loaded);
     } catch (err) {
       console.error("Error fetching templates:", err);
       setError(err instanceof Error ? err.message : "Error desconocido");
-
-      // Fallback to mock data for development
-      setTemplates([
-        {
-          id: "mock_1",
-          name: "Mensaje de Bienvenida",
-          category: "welcome",
-          content: "¡Hola {{nombre}}! 👋\n\nBienvenido/a a EscortsHub.",
-          variables: ["nombre"],
-          usageCount: 0,
-          isActive: true,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
+      setTemplates([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authHeaders]);
 
   const createTemplate = useCallback(
     async (templateData: any): Promise<boolean> => {
       try {
-        const response = await fetch(`${getWhatsAppUrl()}/templates`, {
+        const headers = await authHeaders();
+        const response = await fetch(`${API_BASE_URL}/templates`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify(templateData),
         });
 
-        const result = await response.json();
-
-        if (result.success) {
-          // Refetch templates to get the latest data
-          await fetchTemplates();
-          return true;
-        } else {
-          throw new Error(result.error || "Error al crear template");
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `HTTP ${response.status}`);
         }
+
+        await fetchTemplates();
+        return true;
       } catch (err) {
         console.error("Error creating template:", err);
         setError(err instanceof Error ? err.message : "Error al crear template");
         return false;
       }
     },
-    [fetchTemplates],
+    [authHeaders, fetchTemplates],
   );
 
   const updateTemplate = useCallback(
     async (id: string, templateData: any): Promise<boolean> => {
       try {
-        const response = await fetch(`${getWhatsAppUrl()}/templates/${id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
+        const headers = await authHeaders();
+        const response = await fetch(`${API_BASE_URL}/templates/${id}`, {
+          method: "PATCH",
+          headers,
           body: JSON.stringify(templateData),
         });
 
-        const result = await response.json();
-
-        if (result.success) {
-          // Update local state immediately for better UX
-          setTemplates((prev) =>
-            prev.map((template) =>
-              template.id === id ? { ...template, ...templateData } : template,
-            ),
-          );
-
-          // Then refetch to ensure consistency
-          await fetchTemplates();
-          return true;
-        } else {
-          throw new Error(result.error || "Error al actualizar template");
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || `HTTP ${response.status}`);
         }
+
+        setTemplates((prev) =>
+          prev.map((template) =>
+            template.id === id ? { ...template, ...templateData } : template,
+          ),
+        );
+        await fetchTemplates();
+        return true;
       } catch (err) {
         console.error("Error updating template:", err);
         setError(err instanceof Error ? err.message : "Error al actualizar template");
         return false;
       }
     },
-    [fetchTemplates],
+    [authHeaders, fetchTemplates],
   );
 
-  const deleteTemplate = useCallback(async (id: string): Promise<boolean> => {
-    try {
-      const response = await fetch(`${getWhatsAppUrl()}/templates/${id}`, {
-        method: "DELETE",
-      });
+  const deleteTemplate = useCallback(
+    async (id: string): Promise<boolean> => {
+      try {
+        const headers = await authHeaders();
+        const response = await fetch(`${API_BASE_URL}/templates/${id}`, {
+          method: "DELETE",
+          headers,
+        });
 
-      const result = await response.json();
+        if (!response.ok && response.status !== 204) {
+          const text = await response.text();
+          throw new Error(text || `HTTP ${response.status}`);
+        }
 
-      if (result.success) {
-        // Update local state immediately
         setTemplates((prev) => prev.filter((template) => template.id !== id));
         return true;
-      } else {
-        throw new Error(result.error || "Error al eliminar template");
+      } catch (err) {
+        console.error("Error deleting template:", err);
+        setError(err instanceof Error ? err.message : "Error al eliminar template");
+        return false;
       }
-    } catch (err) {
-      console.error("Error deleting template:", err);
-      setError(err instanceof Error ? err.message : "Error al eliminar template");
-      return false;
-    }
-  }, []);
+    },
+    [authHeaders],
+  );
 
   const refreshTemplates = useCallback(() => {
     fetchTemplates();

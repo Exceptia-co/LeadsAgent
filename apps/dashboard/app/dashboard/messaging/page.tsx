@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { getWhatsAppUrl } from "../../../hooks/use-whatsapp-url";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
@@ -58,7 +59,17 @@ interface ProactiveMessage {
   createdAt: string;
 }
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
 export default function MessagingPage() {
+  const { getToken } = useAuth();
+  const authHeaders = useCallback(async (): Promise<HeadersInit> => {
+    const token = await getToken();
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  }, [getToken]);
   // Data states
   const [leads, setLeads] = useState<Lead[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -144,9 +155,10 @@ export default function MessagingPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const headers = await authHeaders();
       const [leadsRes, templatesRes, messagesRes] = await Promise.all([
-        fetch(`${getWhatsAppUrl()}/leads`),
-        fetch(`${getWhatsAppUrl()}/templates`),
+        fetch(`${API_BASE_URL}/leads?limit=100`, { headers }),
+        fetch(`${API_BASE_URL}/templates?activeOnly=false`, { headers }),
         fetch(`${getWhatsAppUrl()}/proactive-messages`),
       ]);
 
@@ -230,14 +242,15 @@ export default function MessagingPage() {
       };
 
       const url = editingTemplate
-        ? `${getWhatsAppUrl()}/templates/${editingTemplate.id}`
-        : `${getWhatsAppUrl()}/templates`;
+        ? `${API_BASE_URL}/templates/${editingTemplate.id}`
+        : `${API_BASE_URL}/templates`;
 
-      const method = editingTemplate ? "PUT" : "POST";
+      const method = editingTemplate ? "PATCH" : "POST";
+      const headers = await authHeaders();
 
       const response = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(templateData),
       });
 
@@ -263,8 +276,10 @@ export default function MessagingPage() {
     if (!confirm("¿Estás seguro de eliminar este template?")) return;
 
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/templates/${id}`, {
+      const headers = await authHeaders();
+      const response = await fetch(`${API_BASE_URL}/templates/${id}`, {
         method: "DELETE",
+        headers,
       });
 
       const result = await response.json();

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { getWhatsAppUrl } from "../../../hooks/use-whatsapp-url";
+import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
 import {
@@ -32,7 +32,17 @@ interface Template {
   createdAt: string;
 }
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
 export default function TemplatesPage() {
+  const { getToken } = useAuth();
+  const authHeaders = useCallback(async (): Promise<HeadersInit> => {
+    const token = await getToken();
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  }, [getToken]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -71,7 +81,8 @@ export default function TemplatesPage() {
   const fetchTemplates = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/templates`);
+      const headers = await authHeaders();
+      const response = await fetch(`${API_BASE_URL}/templates?activeOnly=false`, { headers });
       const result = await response.json();
 
       if (result.success) {
@@ -118,9 +129,10 @@ export default function TemplatesPage() {
         .map((v) => v.trim())
         .filter((v) => v);
 
-      const response = await fetch(`${getWhatsAppUrl()}/templates`, {
+      const headers = await authHeaders();
+      const response = await fetch(`${API_BASE_URL}/templates`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           name: formData.name,
           category: formData.category,
@@ -151,9 +163,10 @@ export default function TemplatesPage() {
         .map((v) => v.trim())
         .filter((v) => v);
 
-      const response = await fetch(`${getWhatsAppUrl()}/templates/${editingTemplate.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
+      const headers = await authHeaders();
+      const response = await fetch(`${API_BASE_URL}/templates/${editingTemplate.id}`, {
+        method: "PATCH",
+        headers,
         body: JSON.stringify({
           name: formData.name,
           category: formData.category,
@@ -178,8 +191,10 @@ export default function TemplatesPage() {
     if (!confirm("¿Estás seguro de que quieres eliminar este template?")) return;
 
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/templates/${id}`, {
+      const headers = await authHeaders();
+      const response = await fetch(`${API_BASE_URL}/templates/${id}`, {
         method: "DELETE",
+        headers,
       });
 
       if (response.ok) {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getWhatsAppUrl } from "../../hooks/use-whatsapp-url";
+import { useAuth } from "@clerk/nextjs";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import {
@@ -44,6 +44,7 @@ export default function AdvancedPreview({
   onClose,
   onSendToLead,
 }: AdvancedPreviewProps) {
+  const { getToken } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [previewContent, setPreviewContent] = useState("");
@@ -67,11 +68,17 @@ export default function AdvancedPreview({
   const fetchLeads = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/leads`);
+      const token = await getToken();
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/leads?limit=100`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
       const result = await response.json();
 
-      if (result.success) {
-        setLeads(result.leads || []);
+      if (result.success || Array.isArray(result?.data)) {
+        setLeads(result.data || result.leads || []);
         // Auto-seleccionar el primer lead si existe
         if (result.leads && result.leads.length > 0) {
           setSelectedLead(result.leads[0]);
@@ -137,24 +144,31 @@ export default function AdvancedPreview({
     try {
       // Si tenemos templateId, usar el endpoint de preview del backend
       if (templateId) {
-        const response = await fetch(`${getWhatsAppUrl()}/templates/${templateId}/preview`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            variables: {
-              nombre: selectedLead.name || "Usuario",
-              telefono: selectedLead.phone,
-              email: selectedLead.email || "",
-              estado: selectedLead.status,
-              origen: selectedLead.source,
-              ...customVariables,
+        const token = await getToken();
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL || ""}/templates/${templateId}/preview`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
-          }),
-        });
+            body: JSON.stringify({
+              variables: {
+                nombre: selectedLead.name || "Usuario",
+                telefono: selectedLead.phone,
+                email: selectedLead.email || "",
+                estado: selectedLead.status,
+                origen: selectedLead.source,
+                ...customVariables,
+              },
+            }),
+          },
+        );
 
         const result = await response.json();
         if (result.success) {
-          setPreviewContent(result.data.previewContent);
+          setPreviewContent(result.data.rendered);
         } else {
           throw new Error("Failed to generate preview");
         }

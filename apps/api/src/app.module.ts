@@ -8,6 +8,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { LeadsModule } from './leads/leads.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { AuthModule } from './auth/auth.module';
+import { TemplatesModule } from './templates/templates.module';
 import { resolve } from 'path';
 
 @Module({
@@ -42,6 +43,7 @@ import { resolve } from 'path';
     PrismaModule,
     AuthModule,
     LeadsModule,
+    TemplatesModule,
     WhatsAppModule,
   ],
   controllers: [AppController],

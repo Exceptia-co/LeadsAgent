@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
 import QRCodeSVG from "react-qr-code";
@@ -73,6 +74,7 @@ const SESSION_STATUS_LABELS = {
 };
 
 export default function WhatsAppPage() {
+  const { getToken } = useAuth();
   const [activeTab, setActiveTab] = useState<
     "sessions" | "send" | "conversations" | "templates" | "proactive" | "messages"
   >("sessions");
@@ -221,7 +223,16 @@ export default function WhatsAppPage() {
   const loadTemplates = async () => {
     setDataLoading((prev) => ({ ...prev, templates: true }));
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/templates`);
+      const token = await getToken();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/templates?activeOnly=false`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        },
+      );
       const result = await response.json();
       if (result.success) {
         setTemplates(result.data || []);
