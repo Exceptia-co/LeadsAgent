@@ -78,7 +78,38 @@
 
 > Riesgos activos en producción descubiertos vía infraestructura real + auditoría claim-by-claim del código.
 
-#### T0.1 — Habilitar RLS en Supabase (con policies)
+#### T0.1 — Habilitar RLS en Supabase (con policies)  🟡 DECISIÓN PO: aceptar WARN permanente (opción C, 2026-04-17)
+
+**Decisión tomada:** el WARN del audit (A2 — "13 tablas con RLS off en `public`") se acepta como informativo permanente. La tarea NO se ejecuta en este ciclo de estabilización. Revisitar cuando el producto escale a multi-tenant real.
+
+**Justificación (por qué es aceptable ahora):**
+- El producto opera hoy con **1 usuario administrador** (el PO). No hay múltiples tenants, no hay aislamiento per-user que proteger.
+- Todos los clientes que acceden a la DB usan rol con bypass RLS:
+  - Prisma (API Nest + whatsapp-service) → connection string `postgres` / `service_role`
+  - Supabase JS SDK en rutas Next (`webhooks/clerk`, `admin/migrate-users`, `bulk-update-whatsapp`) → `SUPABASE_SERVICE_ROLE_KEY`
+  - Ningún cliente usa `anon` key ni Clerk JWT contra Supabase REST
+- La autorización de negocio vive hoy en la **capa de aplicación** (Clerk guards en NestJS, `requireClerkToken` en Next proxies).
+- Habilitar RLS sin policies no añadiría seguridad real hoy: los clientes existentes seguirían funcionando igual porque bypass, y nadie limitado intenta leer.
+
+**Riesgo residual aceptado:**
+- Si en el futuro se añaden clientes que usan rol limitado (anon Supabase client, Clerk JWT directo contra PostgREST) sin configurar policies, podrían acceder a datos que no deberían.
+- Mitigación: la revisión previa a añadir cualquiera de esos flujos debe incluir diseño de policies. El audit A2 sirve de recordatorio.
+
+**Cuándo reabrir la tarea (triggers):**
+1. Se suma segundo usuario al equipo → multi-tenant isolation empieza a tener sentido.
+2. Se decide exponer PostgREST (`supabase.from('table').select()`) desde el cliente.
+3. Se integra un JWT template Clerk → Supabase para queries cliente-side.
+4. Una auditoría externa marca RLS off como blocker.
+
+**Alternativa de implementación, para futuro (opción A del planning):** habilitar RLS en las 13 tablas con una policy uniforme `service_role_all` por tabla. Es idempotente, no rompe nada y deja preparada la ruta para multi-tenant. SQL pattern:
+
+```sql
+ALTER TABLE public.{table} ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "service_role_all" ON public.{table}
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+```
+
+**Contexto del audit:** el script `scripts/audit-infra.ts` reporta esto como WARN (no FAIL), por lo que no bloquea el gate CI. El scorecard permanece **15 pass / 1 warn / 0 fail / 0 skip** que es el estado limpio esperado.
 
 **Problema:** Row Level Security está deshabilitado en las **13 tablas** de `public` (verificado live 2026-04-17 vía `list_tables` y `pg_tables`).
 
@@ -745,4 +776,5 @@ Semana 6+ (Escalabilidad + Tests):
 | v5.3 | 2026-04-17 | **Fase 0 tercera ola (commit `59628bd` + migraciones Supabase).** Cerradas: **T1.3** (3 migraciones: `t1_3_whitelist_logs_lead_id_to_uuid` cambia `whatsapp_whitelist_logs.lead_id` de `varchar(255)` a `uuid` tras validar 113/113 UUID-shaped; `t1_3_drop_duplicate_indexes_proactive_messages` elimina `idx_proactive_messages_{created_at,lead_id,status}` dejando sólo los 4 índices canónicos; schema Prisma sincronizado) y **T1.4** (migración `t1_4_drop_legacy_campaigns_tables` hace `DROP TABLE IF EXISTS` explícito; audit A5 actualizado para aceptar cleanup migrations). Resultado `Infra Audit` local: **10 pass / 1 warn / 0 fail / 3 skip**. |
 | v5.4 | 2026-04-17 | **Fase 0 cuarta ola (firewall Hetzner).** Cerrada **T0.2** completa vía `hetzner_set_firewall_rules` sobre `whatsapp-firewall` (id 10443894). Reglas finales: **SSH (22) → `83.46.152.0/24`** (opción B del PRD, ISP del operador); **HTTP (80) → `0.0.0.0/0`** (redirect a HTTPS); **HTTPS (443) → `0.0.0.0/0`** (reverse proxy); puertos 3002 y 3003 eliminados. Plan de recuperación documentado: si la IP del operador cae fuera del /24, usar Hetzner Cloud Console Web (acceso out-of-band al VPS) para editar el firewall. Validación post-cambio: `https://api.cromgod.space/ → 200`, `https://cromgod.space/ → 200`. Resultado `Infra Audit` esperado en CI: **C1 + C2 PASS**, total 13 pass / 1 warn / 1 fail (solo B1 Postgres vulnerable pendiente → T0.8). |
 | v5.5 | 2026-04-17 | **Fase 0 quinta ola (Postgres upgrade).** Cerrada **T0.8** vía Supabase Dashboard: upgrade in-place de `supabase-postgres-17.4.1.069` → `17.6.1.104`. El proyecto pasó de `ACTIVE_HEALTHY` → `UPGRADING` → `ACTIVE_HEALTHY` con ~8 min de downtime real (dentro del máximo documentado "up to 1 hour"). Disk resized con el upgrade. **Irreversible** (no se puede volver a 17.4.x). Verificación post-upgrade: `get_advisors({type: "security"}).lints → []` (el advisor `vulnerable_postgres_version` desapareció); `https://api.cromgod.space/ → 200`; `https://cromgod.space/ → 200`; audit local 10 pass / 1 warn / 0 fail / 3 skip. Resultado `Infra Audit` esperado en CI: **15 pass / 1 warn / 0 fail / 0 skip**. El único item informativo restante es A2 (RLS off en 13 tablas, tracked bajo T0.1). |
-| v5.6 | 2026-04-17 | **Fase 0 sexta ola (decisiones + Clerk webhook).** Cerrada **T0.6**: el PO decidió mantener el repo público (justificación: comodidad con Vercel Hobby; Vercel soporta repos privados, pero se respeta la decisión). Cerrada **T0.5**: endpoint de webhook creado en Clerk Development instance (`ins_31WLEulvioak3keE58HPWDIQ2Gu`) apuntando a `https://cromgod.space/api/webhooks/clerk` con eventos `user.created`/`user.updated`/`user.deleted`; signing secret inyectado en Vercel env vars del project `prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6` como `CLERK_WEBHOOK_SECRET` con target `production,preview,development` (encrypted); redeploy del commit actual de main lanzado (`dpl_GSYsAQ6MBMnSTHYZjqw2g1zUeGde`). Fase 0 efectiva completada salvo T0.1 (RLS + policies) y T0.4-ter (HMAC webhook follow-up). | Hechos promovidos de "no verificable" a verificado: **13 tablas** en `public` (no 12); `rls_enabled: false` + `0 policies` confirmado en las 13; firewall `whatsapp-firewall` (id 10443894) con SSH/HTTP/HTTPS/3002/3003 todos `0.0.0.0/0` y `::/0`; IP pública `46.225.26.89`; server `whatsapp-service` corre **ambos servicios en la misma máquina**; Vercel project `dashboard` (`prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6`), Node 24.x, producción = commit `467e83c` (2026-04-02) con commits posteriores no promovidos; `githubRepoVisibility: "public"` confirmado; Postgres `17.4.1.069` con patches pendientes. T0.1 refinado: habilitar RLS con 0 policies rompería Prisma — diseñar policies primero. T0.2 refinado con las reglas exactas del firewall y path de reverse proxy. Contexto de infraestructura reescrito con IDs reales |
+| v5.6 | 2026-04-17 | **Fase 0 sexta ola (decisiones + Clerk webhook).** Cerrada **T0.6**: el PO decidió mantener el repo público (justificación: comodidad con Vercel Hobby; Vercel soporta repos privados, pero se respeta la decisión). Cerrada **T0.5**: endpoint de webhook creado en Clerk Development instance (`ins_31WLEulvioak3keE58HPWDIQ2Gu`) apuntando a `https://cromgod.space/api/webhooks/clerk` con eventos `user.created`/`user.updated`/`user.deleted`; signing secret inyectado en Vercel env vars del project `prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6` como `CLERK_WEBHOOK_SECRET` con target `production,preview,development` (encrypted); redeploy del commit actual de main lanzado (`dpl_GSYsAQ6MBMnSTHYZjqw2g1zUeGde`). Fase 0 efectiva completada salvo T0.1 (RLS + policies) y T0.4-ter (HMAC webhook follow-up). |
+| v5.7 | 2026-04-17 | **Fase 0 cierre (decisión T0.1).** El PO eligió la **opción C** para T0.1: aceptar el WARN de audit A2 como informativo permanente y no ejecutar la habilitación de RLS en este ciclo. Justificación: operación con 1 usuario administrador, todos los clientes de DB bypass RLS por diseño, la autorización de negocio vive en la capa de aplicación (Clerk guards + `requireClerkToken`). Triggers documentados para reabrir: segundo usuario, exposición de PostgREST, JWT Clerk→Supabase, auditoría externa. **Fase 0 efectivamente cerrada** — el único pendiente técnico es **T0.4-ter** (HMAC entre Nest y whatsapp-service, follow-up de endurecimiento, no crítico). Scorecard estable `Infra Audit`: **15 pass / 1 warn (A2 aceptado) / 0 fail / 0 skip**. | Hechos promovidos de "no verificable" a verificado: **13 tablas** en `public` (no 12); `rls_enabled: false` + `0 policies` confirmado en las 13; firewall `whatsapp-firewall` (id 10443894) con SSH/HTTP/HTTPS/3002/3003 todos `0.0.0.0/0` y `::/0`; IP pública `46.225.26.89`; server `whatsapp-service` corre **ambos servicios en la misma máquina**; Vercel project `dashboard` (`prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6`), Node 24.x, producción = commit `467e83c` (2026-04-02) con commits posteriores no promovidos; `githubRepoVisibility: "public"` confirmado; Postgres `17.4.1.069` con patches pendientes. T0.1 refinado: habilitar RLS con 0 policies rompería Prisma — diseñar policies primero. T0.2 refinado con las reglas exactas del firewall y path de reverse proxy. Contexto de infraestructura reescrito con IDs reales |
