@@ -429,30 +429,44 @@ Categoría `SECURITY`, nivel `WARN`, `facing: EXTERNAL`. Remediation: https://su
 
 > Dual-write confirmado con datos reales (17 en `messages` vs 38 en `whatsapp_conversations` — cifras infra).
 
-#### T1.1 — Unificar la persistencia de conversaciones WhatsApp
+#### T1.1 — Unificar la persistencia de conversaciones WhatsApp ⚠️ Phase A cerrada (v5.15); Phase B tracked como **T1.1-bis**
 
 **Problema:** Dual-write sin coordinación entre dos tablas con esquemas diferentes.
 
 **Decisión aplicada (D1):** Mantener `whatsapp_conversations` como read model de enriquecimiento IA (no como fuente canónica paralela), vinculada a `messages` con FK.
 
-**Estado actual (verificado):**
-- WhatsApp Service escribe en `whatsapp_conversations` (`DatabaseService.ts:345-439`).
-- API escribe en `messages` (`whatsapp.service.ts:105`).
-- Tabla `ai_training_interactions` (19 filas — cifra infra) no está en Prisma schema.
-- Tabla `migrations` legacy separada de `_prisma_migrations` (cifra infra).
+**Divergencia verificada live (2026-04-17):**
+- `messages`: 23 filas
+- `whatsapp_conversations`: 58 filas (antes v4 decía 17 vs 38 — la divergencia crece en cada mensaje no pareado)
+- Huérfanos: 35 filas en `whatsapp_conversations` sin equivalente en `messages`, resultado del cross-service dual-write (whatsapp-service escribe en `wc`, API Nest escribe en `messages` via webhook; cuando el webhook falla o el whitelist rechaza, `wc` queda poblado y `messages` no).
 
-**Cambios requeridos:**
-1. Agregar `messageId` (FK) en `WhatsAppConversation` → `Message`.
-2. Eliminar `messageText`/`responseText` duplicados de `whatsapp_conversations`.
-3. Migrar escritura del WhatsApp Service: primero `Message` vía Prisma, luego `WhatsAppConversation` con referencia.
-4. Actualizar `ContextEnricher` y `ConversationRepository` para JOIN con `messages`.
-5. Agregar modelo `AiTrainingInteraction` al schema Prisma.
-6. Limpiar tabla `migrations` legacy.
+**Scope real auditado:**
+- Writers a `whatsapp_conversations`: `DatabaseService.saveConversation()` (escritor principal, SQL directo) con call-sites en `WhatsAppService.ts:414`, `whatsapp-core/MessageHandler.ts:208,222,269,295`. Cada call es **una fila individual** con `messageText` XOR `responseText` según `isFromUser` — no una interacción pareada como decía el PRD v4.
+- Readers: `DatabaseService.getConversationHistory()` consumido por `ai-thinking/ContextEnricher.ts:90` y `ai-thinking/analysis/ContextEnricher.ts:88`.
+- `ai_training_interactions`: 9 columnas verificadas live (`user_message`, `ai_response`, `knowledge_base_ids_used text[]`, `success_score numeric`, `context_data jsonb`, `feedback_metrics jsonb`, timestamps).
+- `migrations` legacy: 2 filas de hotfixes de septiembre 2025 (`001_fix_whitelist_table_structure`, `002_fix_whitelist_logs_schema_final`), seguras para drop.
 
-**Criterio de aceptación:**
-- Mensaje entrante → 1 registro `messages` + 1 registro `whatsapp_conversations` con FK.
-- Sin duplicación de texto entre tablas.
-- Pipeline IA lee vía JOIN.
+**Phase A — No destructiva (v5.15) ✅:**
+1. **Migration Supabase `t1_1_phase_a_add_message_id_fk`**: `ALTER TABLE whatsapp_conversations ADD COLUMN message_id uuid NULL REFERENCES messages(id) ON DELETE SET NULL` + index `idx_whatsapp_conversations_message_id`. FK verificada post-apply (`whatsapp_conversations_message_id_fkey`).
+2. **Schema Prisma actualizado**:
+   - `WhatsAppConversation`: añadido `messageId String? @map("message_id") @db.Uuid` + relation `message Message?` + index.
+   - `Message`: añadida back-relation `whatsappConversations WhatsAppConversation[]`.
+   - **Nuevo modelo `AiTrainingInteraction`** con los 9 campos reflejados desde la tabla existente.
+3. `pnpm db:generate:win` aplicado (retry 3x por bloqueo `EPERM` de query-engine mientras NestJS dev estaba corriendo).
+4. Typecheck OK en `@leadcrm/api` y `@leadcrm/whatsapp-service`.
+
+**Phase B — T1.1-bis (pendiente, destructiva):**
+1. Unificar writers: refactor `DatabaseService.saveConversation` + los 5 call-sites para crear `Message` via Prisma primero, luego `whatsapp_conversations` con `message_id` — transacción atómica.
+2. Backfill `message_id` en las 35 filas huérfanas via match `(phone_number, message_text, created_at ±30s)` contra `messages`. Las que no matcheen → `message_id = NULL`.
+3. Migrar readers `ContextEnricher` a JOIN `whatsapp_conversations ← messages` vía Prisma relation.
+4. `ALTER TABLE whatsapp_conversations DROP COLUMN message_text, DROP COLUMN response_text` (destructivo — requiere que todos los readers ya usen JOIN).
+5. `DROP TABLE public.migrations` (bloqueado en Phase A por safety policy — requiere autorización explícita del PO).
+
+**Criterio de aceptación de T1.1 completo:**
+- Mensaje entrante → 1 registro `messages` + 1 registro `whatsapp_conversations` con FK no-null — **pendiente Phase B**.
+- Sin duplicación de texto entre tablas — **pendiente Phase B**.
+- Pipeline IA lee vía JOIN — **pendiente Phase B**.
+- Infraestructura para la unificación presente — **✅ Phase A**.
 
 ---
 
@@ -822,6 +836,7 @@ Semana 6+ (Escalabilidad + Tests):
 | v5.6 | 2026-04-17 | **Fase 0 sexta ola (decisiones + Clerk webhook).** Cerrada **T0.6**: el PO decidió mantener el repo público (justificación: comodidad con Vercel Hobby; Vercel soporta repos privados, pero se respeta la decisión). Cerrada **T0.5**: endpoint de webhook creado en Clerk Development instance (`ins_31WLEulvioak3keE58HPWDIQ2Gu`) apuntando a `https://cromgod.space/api/webhooks/clerk` con eventos `user.created`/`user.updated`/`user.deleted`; signing secret inyectado en Vercel env vars del project `prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6` como `CLERK_WEBHOOK_SECRET` con target `production,preview,development` (encrypted); redeploy del commit actual de main lanzado (`dpl_GSYsAQ6MBMnSTHYZjqw2g1zUeGde`). Fase 0 efectiva completada salvo T0.1 (RLS + policies) y T0.4-ter (HMAC webhook follow-up). |
 | v5.7 | 2026-04-17 | **Fase 0 cierre (decisión T0.1).** El PO eligió la **opción C** para T0.1: aceptar el WARN de audit A2 como informativo permanente y no ejecutar la habilitación de RLS en este ciclo. Justificación: operación con 1 usuario administrador, todos los clientes de DB bypass RLS por diseño, la autorización de negocio vive en la capa de aplicación (Clerk guards + `requireClerkToken`). Triggers documentados para reabrir: segundo usuario, exposición de PostgREST, JWT Clerk→Supabase, auditoría externa. **Fase 0 efectivamente cerrada** — el único pendiente técnico es **T0.4-ter** (HMAC entre Nest y whatsapp-service, follow-up de endurecimiento, no crítico). Scorecard estable `Infra Audit`: **15 pass / 1 warn (A2 aceptado) / 0 fail / 0 skip**. |
 | v5.8 | 2026-04-17 | **Fix post-T0.5 (GRANT service_role).** Al probar el webhook de Clerk end-to-end con Send Example, el handler `api/webhooks/clerk` devolvía 200 pero no insertaba en `public.users`. Diagnóstico: PostgREST con `SUPABASE_SERVICE_ROLE_KEY` (JWT con `role: service_role`) devolvía `HTTP 403 "permission denied for schema public"`. La causa: en proyectos Supabase nuevos, el rol `service_role` **no tiene por defecto** `GRANT` sobre el schema `public`; solo `postgres` tiene privileges en las tablas. Mientras Prisma (que se conecta con rol `postgres` via `DATABASE_URL`) funcionaba sin problema, el SDK Supabase JS usado en rutas Next se quedaba fuera. Fix aplicado con migration `grant_service_role_access_public_schema`: `GRANT USAGE ON SCHEMA public`, `GRANT SELECT/INSERT/UPDATE/DELETE/REFERENCES/TRIGGER/TRUNCATE ON ALL TABLES`, `GRANT USAGE/SELECT/UPDATE ON ALL SEQUENCES`, `GRANT EXECUTE ON ALL FUNCTIONS`, más `ALTER DEFAULT PRIVILEGES` para que nuevas tablas hereden los grants automáticamente. Post-fix, curl de prueba contra `/rest/v1/users` devuelve `HTTP 201` con la fila creada. |
+| v5.15 | 2026-04-17 | **T1.1 Phase A cerrada (FK + modelo AiTrainingInteraction).** Migration Supabase `t1_1_phase_a_add_message_id_fk` añade `whatsapp_conversations.message_id uuid NULL` + FK `ON DELETE SET NULL` + index. Schema Prisma: `WhatsAppConversation.messageId` con relation a `Message`; back-relation `whatsappConversations[]` en `Message`; nuevo modelo `AiTrainingInteraction` (9 campos reflejados de la tabla existente). `pnpm db:generate:win` con retry 3x por bloqueo EPERM mientras el server NestJS estaba arriba. Typecheck OK en api + whatsapp-service. Phase B (refactor writers/readers + backfill + DROP columnas legacy + DROP tabla `migrations`) tracked como T1.1-bis — el DROP de `public.migrations` fue bloqueado por safety policy y requiere autorización explícita. Divergencia al momento del fix: `messages=23` vs `whatsapp_conversations=58` (35 huérfanos). Hallazgo contra PRD v4: cada fila de `wc` es un mensaje individual (no una interacción pareada), porque los 5 call-sites de `saveConversation` siempre pasan `messageText` XOR `responseText` según `isFromUser`. |
 | v5.14 | 2026-04-17 | **T3.1 cerrada (eliminar Refactored + drift DDL).** Borrados 8 archivos muertos: `WhatsAppServiceRefactored.ts` + 7 módulos paralelos de `services/whatsapp/` (`SessionManager`, `ConnectionManager`, `ContactManager`, `EventHandler`, `MediaHandler`, `MessageProcessor`, `index.ts`). `WhatsAppStatsService.ts` y `RedisMonitoringService.ts` preservados (importados por la fachada). `WhatsAppService.ts` reescrito: colapsadas las 7 ramas `if (useRefactoredService) { ... } else { ... }` a la rama SimpleService que ya era la activa; toggle + campo `refactoredService` eliminados. `.env.example`: `USE_WHATSAPP_REFACTORED` eliminado con nota T3.1. DDL fix en `ConversationRepository.ts:23-48` (11 columnas camelCase → snake_case + indices) y `LeadRepository.ts:19-46` (`mood_score DECIMAL(3,2)`, `last_contact`, `assigned_to`, `whatsapp_authorized`, `TIMESTAMPTZ`, `tags JSONB`, enum status lowercase). Validación live: typecheck OK en los 3 paquetes; `/health → 200`; stress test T2.4 replay (201 leadIds → 429) sigue pasando tras el refactor — prueba que ni `whatsapp-core/` ni el path del Socket.IO T2.3 se rompieron. Follow-up: `USE_DATABASE_REPOSITORIES` y migración INSERT/SELECT de repositories queda bundled con T1.1. |
 | v5.13 | 2026-04-17 | **T1.2 cerrada (seed idempotente).** `packages/db/prisma/seed.ts` reescrito: campos reales del schema (`first_name`/`last_name`/`clerk_id`/`messageType`; eliminados `sentiment`/`confidence`/`aiAnalyzed`); enums Prisma en vez de strings; `user.upsert` por `clerk_id` (antes usaba `email` que no es @unique); `lead.upsert` por `phone`; `ai_knowledge_base` y `message_templates` con `createMany({ skipDuplicates: true })` condicional a `count() === 0`. Hallazgo extra auditado: el seed anterior hubiera fallado en runtime incluso corrigiendo los nombres, porque el `where: { email }` del upsert de users no hubiera encontrado el constraint unique. Validación live vía Supabase MCP: 1ª corrida crea 2 users + 3 knowledge; 2ª corrida idempotente (skip explícito). Totales tras seed: 2 users, 12 leads, 23 messages, 3 knowledge, 1 template. |
 | v5.12 | 2026-04-17 | **T2.4 cerrada parcial (rate limit por sesión WhatsApp).** Nuevo middleware `rateLimitBySession` en `apps/whatsapp-service/src/middleware/validation.ts` con in-memory `Map<sessionId, timestamps[]>`, ventana rodante 1h, cuota default 200 msgs/h configurable via `WHATSAPP_MAX_MSGS_PER_HOUR_PER_SESSION`. Fail-closed para bulk: batch se rechaza completo si no cabe. Conteo optimista: reserva slots al aceptar, no al confirmar envío (anti-ban). Throttle adaptativo vía `req.sessionThrottle.throttleFactor` (1/2/4 según uso >80% / >90%) multiplica el delay base de 2s en el loop de `/proactive-messages/bulk`. Aplicado a `POST /proactive-messages` y `POST /proactive-messages/bulk`. Bypass del `rateLimit` global IP cambiado de `NODE_ENV === 'development'` → `NODE_ENV === 'test'`. Validación con curl: batch de 201 leadIds devuelve 429 inmediato; burst de 5 pasa y burst siguiente de 196 en misma sesión devuelve 429 con `usage: 5` (persistencia del contador confirmada). Typecheck OK 3 paquetes. Pendiente follow-up: auth directo Nest↔whatsapp-service tracked bajo T0.4-ter. |
