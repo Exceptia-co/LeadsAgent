@@ -1,16 +1,16 @@
 # Informe de Estado Real — LeadsCRM
 
-**Fecha:** 2026-04-17 (v3 — auditoría claim-by-claim contra el código)
+**Fecha:** 2026-04-17 (v4 — auditoría claim-by-claim + verificación live contra Supabase / Hetzner / Vercel MCPs)
 **Branch analizado:** `develop`
-**Método:** Análisis estático del código fuente (sin ejecución) + revisión cruzada GPT-5.4 (v2) + auditoría claim-by-claim con citas `path:line` verificables (v3).
+**Método:** Análisis estático del código fuente (v2) + revisión cruzada GPT-5.4 (v3) + auditoría claim-by-claim con citas `path:line` verificables (v3) + verificación live de Supabase, Hetzner y Vercel vía MCPs el 2026-04-17 (v4).
 
-> En esta revisión se separa lo **verificable desde el repositorio** de lo que depende de infraestructura viva (Supabase, Hetzner, Vercel, Clerk, GitHub). Las claims de infra siguen marcadas y no se cuentan como confirmadas.
+> En esta revisión se combinan hechos **verificables desde el repositorio** con **hechos live de infra**. Lo que sigue siendo no verificable (`.env` no commiteado, estado de webhook Clerk) permanece marcado. Las cifras de filas en DB son un snapshot del 2026-04-17.
 
 ---
 
 ## 1. Resumen Ejecutivo
 
-LeadsCRM es un CRM con automatización de WhatsApp en estado de **MVP funcional pero con gaps significativos de seguridad e integración**. El monorepo tiene 4 apps y 4 packages compartidos. El flujo más sólido es el de gestión de leads (CRUD completo, frontend conectado a la API con autenticación Clerk). El servicio de WhatsApp tiene una arquitectura ambiciosa con pipeline de IA (OpenRouter/Gemini), gestión de sesiones QR, persistencia Redis y reconexión automática, pero su integración con la API NestJS es parcial — el `AutomationService` está definido pero **nunca inyectado ni invocado**. No existen campañas. El dashboard presenta UI para funcionalidades que sólo parcialmente tienen backend (templates existen; algunas tabs de settings son solo UI). La base de datos tiene 10 modelos funcionales con deuda técnica (seed desactualizado, índices duplicados, tipos inconsistentes, repositories con naming drift). Los tests son escasos en la API (1 spec boilerplate) y razonables solo en el módulo AI-thinking del servicio WhatsApp (8 archivos). El proyecto tiene código muerto, rutas duplicadas (public vs autenticadas), una migración modular en progreso con feature toggles, y **varias superficies de ataque críticas** sin mencionar en el análisis v2: `WhatsAppController` Nest sin guard, el whatsapp-service sin ninguna capa de auth, y duplicación de endpoints `/public/leads` en dos apps distintas.
+LeadsCRM es un CRM con automatización de WhatsApp en estado de **MVP funcional pero con gaps significativos de seguridad e integración**. El monorepo tiene 4 apps y 4 packages compartidos. El flujo más sólido es el de gestión de leads (CRUD completo, frontend conectado a la API con autenticación Clerk). El servicio de WhatsApp tiene una arquitectura ambiciosa con pipeline de IA (OpenRouter/Gemini), gestión de sesiones QR, persistencia Redis y reconexión automática, pero su integración con la API NestJS es parcial — el `AutomationService` está definido pero **nunca inyectado ni invocado**. No existen campañas hoy, pero la DB conserva huella histórica (migraciones `create_campaigns_table` y `create_campaign_leads_table` aplicadas en 2025-08-21 sin tablas reales). El dashboard presenta UI para funcionalidades que sólo parcialmente tienen backend. La base de datos tiene 10 modelos Prisma funcionales más 3 tablas operacionales extra (`_prisma_migrations`, `migrations` legacy vacía, `ai_training_interactions`), con deuda técnica verificada live: 3 pares de índices duplicados en `proactive_messages`, tipo incorrecto en `whatsapp_whitelist_logs.lead_id`, **RLS deshabilitado con 0 policies en las 13 tablas** y **Postgres con patches de seguridad pendientes** (advisor Supabase). Infraestructura: un único servidor Hetzner CX23 en Nuremberg con el firewall abierto 0.0.0.0/0 en 22/80/443/3002/3003 e IP pública `46.225.26.89`; Vercel despliega `dashboard` a `cromgod.space` pero la producción actual está detrás de commits recientes que nunca se promovieron. El proyecto tiene código muerto, rutas duplicadas (public vs autenticadas), una migración modular en progreso con feature toggles, y **varias superficies de ataque críticas** no mencionadas en el análisis v2: `WhatsAppController` Nest sin guard, whatsapp-service sin ninguna capa de auth, y duplicación de endpoints `/public/leads` en dos apps distintas.
 
 ---
 
@@ -34,17 +34,21 @@ LeadsCRM es un CRM con automatización de WhatsApp en estado de **MVP funcional 
 | `@leadcrm/config-eslint` | Config ESLint compartida | Activo |
 | `@leadcrm/config-ts` | Configs TypeScript base | Activo |
 
-### Integraciones Externas (verificables desde código)
+### Integraciones Externas
 
-| Servicio | Propósito | Evidencia |
-|----------|-----------|-----------|
-| **Clerk** | Autenticación JWT (dashboard + API parcial) | `apps/dashboard/middleware.ts`, `apps/api/src/auth/clerk-auth.guard.ts` |
-| **Supabase PostgreSQL** | Base de datos principal | `DATABASE_URL` en `.env.example` |
+Código + verificación live MCP (2026-04-17):
+
+| Servicio | Propósito | Evidencia código + estado live |
+|----------|-----------|-------------------------------|
+| **Clerk** | Autenticación JWT (dashboard + `LeadsController` de la API) | `apps/dashboard/middleware.ts`, `apps/api/src/auth/clerk-auth.guard.ts`; estado del webhook Clerk sigue no verificable desde fuera (Clerk MCP local solo expone SDK snippets) |
+| **Supabase PostgreSQL** | Base de datos principal | Proyecto `yxjzsargboxnuwnbuzax` (`CRMWhatsApp`), región `eu-west-3`, status `ACTIVE_HEALTHY`, versión `supabase-postgres-17.4.1.069` (advisor: `vulnerable_postgres_version` — patches pendientes) |
 | **Redis** (Docker local) | Cache de sesiones, QR, IA, pub/sub | `ioredis` en whatsapp-service |
 | **OpenRouter** | Proveedor IA primario | `apps/whatsapp-service/src/services/ai/providers/OpenRouterProvider.ts` |
 | **Google Gemini** | Proveedor IA fallback | `@google/generative-ai` en `providers/GeminiProvider.ts` |
 | **Socket.IO** | WebSocket dashboard ↔ WhatsApp | Namespace `/whatsapp-sessions` en `SocketService.ts` |
-| **Vercel** | Deploy del dashboard | `vercel.json` con rewrites a `api.cromgod.space` |
+| **Vercel** | Deploy del dashboard | Team `team_mP2bYgdUeXS5ArWzTHfw3RY5` (udeope's projects); project `dashboard` (`prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6`), Next.js, Node 24.x, dominio `cromgod.space`. Producción actual commit `467e83c` (2026-04-02). `project.live: false` en la última consulta — revisar pausado/alias |
+| **Hetzner** | Backend (API + WhatsApp service) | Server `118344573` llamado `whatsapp-service`, CX23 (2 vCPU, 4 GB, 40 GB SSD), Nuremberg `nbg1-dc3`, IP pública `46.225.26.89`. **Ambos servicios (API :3003 y WhatsApp :3002) viven en la misma máquina** |
+| **GitHub** | Repositorio | `Exceptia-co/LeadsAgent`, `githubRepoVisibility: "public"` (verificado desde metadata de deployment Vercel) |
 
 ---
 
@@ -76,7 +80,9 @@ LeadsCRM es un CRM con automatización de WhatsApp en estado de **MVP funcional 
 | **IA** | Cache de respuestas IA | ✅ Implementada | `CacheManager.ts` en `ai-thinking/` | Redis con TTL y tags por intent |
 | **IA** | Knowledge base retrieval | ✅ Implementada | `KnowledgeRetriever.ts`, modelo `ai_knowledge_base` | Busca por categoría/keywords activos |
 | **DB** | Schema 10 modelos Prisma | ✅ Implementada | `packages/db/prisma/schema.prisma:51-268` | User, Lead, Message, `ai_configuration`, `ai_knowledge_base`, MessageTemplate, ProactiveMessage, WhatsAppConversation, WhatsAppSession, WhatsAppWhitelistLog |
-| **DB** | Tabla fuera de Prisma | ⚠️ Riesgo | `ai_training_interactions` referenciada en `AILearningService.ts` pero sin modelo en `schema.prisma` | 19 filas (cifra infra, no verificable) |
+| **DB** | Tablas en `public` a nivel Supabase | ⚠️ Riesgo | Live MCP: **13 tablas** — 10 Prisma + `_prisma_migrations` (2 filas) + `migrations` legacy (0 filas, vacía) + `ai_training_interactions` (19 filas, fuera de Prisma) | Algunas tablas están desalineadas entre Prisma y supabase_migrations |
+| **DB** | Migraciones Supabase huérfanas | ⚠️ Bug | Live MCP historial (`supabase_migrations`): 12 migraciones, incluyendo `20250821100704_create_campaigns_table` y `20250821100720_create_campaign_leads_table` (2025-08-21) | Esas tablas **no existen hoy** — feature "Campañas" se creó y se removió sin migración reversa |
+| **DB** | Postgres outdated | ⚠️ Riesgo | Live MCP security advisor: `vulnerable_postgres_version` en `supabase-postgres-17.4.1.069` | Patches de seguridad disponibles, upgrade pendiente |
 | **Dashboard** | Panel principal con stats | ✅ Implementada | `app/dashboard/page.tsx` — `useLeadStats()` + `useLeads()` | Auto-refresh 2min/5min |
 | **Dashboard** | Página de leads | ✅ Implementada | `app/dashboard/leads/page.tsx` — tabla, modales, bulk select | CRUD completo consumiendo `/public/leads` |
 | **Dashboard** | Página WhatsApp | ✅ Implementada | `app/dashboard/whatsapp/page.tsx` — tabs: sessions, send, conversations | Conectado a whatsapp-service vía proxy catch-all |
@@ -121,10 +127,10 @@ LeadsCRM es un CRM con automatización de WhatsApp en estado de **MVP funcional 
 
 ### Base de Datos y Modelos Prisma
 
-**Estado: Funcional con deuda técnica.** **10 modelos Prisma** + 1 tabla fantasma (`ai_training_interactions`, no en `schema.prisma`) + 1 tabla legacy (`migrations`, separada de `_prisma_migrations` — cifra infra no verificable). Problemas confirmados:
+**Estado: Funcional con deuda técnica.** **10 modelos Prisma** (`schema.prisma:51-268`) + 1 tabla fantasma (`ai_training_interactions`, 19 filas, no en `schema.prisma`) + 1 tabla legacy vacía (`migrations`, 0 filas, separada de `_prisma_migrations` que tiene 2 filas) + historial de **12 migraciones Supabase** en `supabase_migrations`, incluidas 2 que crearon `campaigns` y `campaign_leads` (2025-08-21) — tablas que **no existen actualmente**. Advisor Supabase flagea `vulnerable_postgres_version` en `17.4.1.069`. Problemas confirmados:
 
-- **Índices duplicados en `ProactiveMessage`** (`schema.prisma:184-190`): 3 pares duplicados en `createdAt`, `leadId` y `status`.
-- **`WhatsAppWhitelistLog.leadId` es `VARCHAR(255)`** (`schema.prisma:253`) mientras `Lead.id` es `@db.Uuid`.
+- **Índices duplicados en `ProactiveMessage`** (`schema.prisma:184-190`, verificados en DB live vía `pg_indexes`): 3 pares duplicados en `createdAt` (`idx_proactive_created` + `idx_proactive_messages_created_at`), `leadId` (`idx_proactive_lead` + `idx_proactive_messages_lead_id`) y `status` (`idx_proactive_status` + `idx_proactive_messages_status`).
+- **`WhatsAppWhitelistLog.leadId` es `character varying(255)`** (`schema.prisma:253` y confirmado en `information_schema.columns` live) mientras `Lead.id` es `uuid`.
 - **Seed desactualizado** (`packages/db/prisma/seed.ts:17-19, 52-56`): usa campos `name`, `clerkId`, `type`, `sentiment`, `confidence`, `aiAnalyzed` que no existen en los modelos reales.
 - **Drift de naming en repositories**: `apps/whatsapp-service/src/services/db/ConversationRepository.ts:27-39` crea columnas en camelCase (`"sessionId"`, `"phoneNumber"`, ...) y `apps/whatsapp-service/src/services/db/LeadRepository.ts:28` define `"moodScore" INTEGER` cuando el schema Prisma usa snake_case con `@map` y `Decimal(3,2)`.
 - **Naming heterogéneo del schema**: 8 modelos PascalCase (`User`, `Lead`, `Message`, `MessageTemplate`, `ProactiveMessage`, `WhatsAppConversation`, `WhatsAppSession`, `WhatsAppWhitelistLog`) vs 2 modelos snake_case sin `@@map` (`ai_configuration`, `ai_knowledge_base`) — Prisma client expone ambos patrones.
@@ -187,8 +193,10 @@ LeadsCRM es un CRM con automatización de WhatsApp en estado de **MVP funcional 
 | Rutas debug con `SUPABASE_SERVICE_ROLE_KEY` sin auth | **Crítico** | `app/api/debug/real-clerk-migration/route.ts:13,73`, `test-migration/route.ts:23` |
 | Proxy catch-all `/api/whatsapp/*` sin auth | **Crítico** | `app/api/whatsapp/[...path]/route.ts:14-77` — reenvía cualquier request al whatsapp-service |
 | Proxies adicionales sin auth | **Alto** | `app/api/whatsapp/stats/route.ts`, `app/api/logs/whitelist/route.ts`, `app/api/stats/whitelist/route.ts` |
-| RLS deshabilitado en Supabase | **Crítico** (infra — no verificable desde código) | `rls_enabled: false` según reporte GPT-5.4 (v2) |
-| Firewall Hetzner abierto (3002/3003) | **Alto** (infra — no verificable) | Según reporte v2 |
+| RLS deshabilitado en Supabase | **Crítico** (verificado live MCP 2026-04-17) | `rls_enabled: false` en las **13 tablas** de `public`; **0 policies** en `pg_policies`. Habilitar RLS requiere crear policies, no basta `ALTER TABLE ENABLE RLS` |
+| Firewall Hetzner abierto | **Crítico** (verificado live MCP 2026-04-17) | `whatsapp-firewall` (id 10443894): SSH 22, HTTP 80, HTTPS 443, WhatsApp 3002, NestJS 3003 — todos `0.0.0.0/0` + `::/0`. IP pública expuesta: `46.225.26.89` |
+| Postgres con patches de seguridad pendientes | **Alto** (verificado live MCP 2026-04-17) | Advisor `vulnerable_postgres_version` en `supabase-postgres-17.4.1.069` |
+| Migraciones huérfanas `campaigns`/`campaign_leads` | **Medio** (verificado live MCP 2026-04-17) | `supabase_migrations` contiene `20250821100704_create_campaigns_table` y `20250821100720_create_campaign_leads_table` pero las tablas no existen en `public` hoy |
 | Dashboard depende de `/public/leads` | **Alto** | 12 ocurrencias en 7 archivos de `apps/dashboard/` (ver §7) — eliminarlos sin migrar rompe el frontend |
 | `AutomationService` no inyectado | **Alto** | `apps/api/src/whatsapp/whatsapp.module.ts:10` — providers no incluye `AutomationService` |
 | Templates/Bulk sin auth ni rate limit efectivo contra ban WhatsApp | **Alto** | Rate limit global 300/min por IP + delay 2s bulk; falta cuota horaria por sesión |
@@ -269,7 +277,7 @@ Además fuera del dashboard:
 
 ---
 
-## 9. Correcciones respecto al análisis v2
+## 9. Correcciones respecto al análisis v2/v3
 
 | Error en v2 | Corrección en v3 | Fuente de verificación |
 |-------------|-------------------|------------------------|
@@ -287,17 +295,73 @@ Además fuera del dashboard:
 | Omitía matcher roto `/api/webhook` singular | **Añadido.** `middleware.ts:9` — el webhook real es `/api/webhooks/clerk` | Lectura de `middleware.ts` |
 | "Templates sin validación" (absoluto) | **Matizado.** POST `/templates` valida name/category/content en `routes/index.ts:834`; PUT (`:872`) y DELETE (`:908`) sin validación | Lectura de `routes/index.ts` |
 | "Bulk sin rate limiting" (absoluto) | **Matizado.** Rate limit global por IP (`validation.ts:220-284`, 300/min, deshabilitado en dev) + delay 2s entre mensajes bulk (`routes/index.ts:1231`). Falta cuota por sesión y cuota horaria anti-ban | Lectura de ambos archivos |
+| "12 tablas en Supabase" | **Corregido v4.** Son **13 tablas** en `public`. La diferencia es `migrations` (legacy, vacía) + `_prisma_migrations` + `ai_training_interactions` | Supabase MCP `list_tables` |
+| "RLS deshabilitado" (no verificado) | **Verificado v4.** `rls_enabled: false` en 13/13 tablas; **0 policies** en `pg_policies` de `public` | Supabase MCP `execute_sql` |
+| Omitía Postgres outdated | **Nuevo v4.** Advisor `vulnerable_postgres_version` en `supabase-postgres-17.4.1.069` | Supabase MCP `get_advisors` |
+| Omitía migraciones huérfanas campaigns | **Nuevo v4.** `supabase_migrations` tiene `create_campaigns_table` + `create_campaign_leads_table` (2025-08-21) pero sin tablas correspondientes hoy | Supabase MCP `list_migrations` |
+| "Firewall abierto 3002/3003" (no verificado) | **Verificado v4.** `whatsapp-firewall` (id 10443894): 22/80/443/3002/3003 todos `0.0.0.0/0` y `::/0`. IP pública `46.225.26.89` | Hetzner MCP `get_firewall` |
+| "Producción activa en cromgod.space" (no verificado) | **Verificado v4** con matiz: dominio apunta a `dashboard` project; el deployment marcado como `target: production` es el commit `467e83c` (2026-04-02). Commits posteriores son previews | Vercel MCP `get_project` + `list_deployments` |
+| Repo público | **Verificado v4.** `githubRepoVisibility: "public"` en metadata de cada deployment | Vercel MCP `list_deployments` |
 
 ---
 
-## 10. Claims sujetas a verificación en infraestructura (no verificables desde código)
+## 10. Snapshot de infraestructura (verificado live — 2026-04-17)
 
-- "1 lead, 17 messages, 38 whatsapp_conversations, 24 sessions, 0 users" — estado de tablas Supabase
-- "rls_enabled: false en 12 tablas" — Supabase
-- "Hetzner CX23, puertos 3002/3003 abiertos a 0.0.0.0/0, SSH abierto" — Hetzner firewall
-- "Despliegue activo en cromgod.space" — Vercel
-- "CLERK_WEBHOOK_SECRET es placeholder" — `.env` no comiteado
-- "Repositorio `Exceptia-co/LeadsAgent` es público" — GitHub
-- "19 filas en ai_training_interactions" / "27 filas en WhatsAppWhitelistLog" / "12 tablas totales" — Supabase
-- "Tabla `migrations` legacy separada de `_prisma_migrations`" — Supabase
-- Conectividad real dashboard ↔ whatsapp-service en producción — infra
+Hechos antes marcados como "no verificables desde código" ahora verificados vía MCPs de Supabase, Hetzner y Vercel:
+
+### Supabase (`yxjzsargboxnuwnbuzax` / `CRMWhatsApp`, eu-west-3, ACTIVE_HEALTHY)
+
+| Tabla | `rls_enabled` | Filas |
+|-------|---------------|-------|
+| `leads` | false | 1 |
+| `messages` | false | 17 |
+| `whatsapp_conversations` | false | 38 |
+| `whatsapp_sessions` | false | 24 |
+| `whatsapp_whitelist_logs` | false | 27 |
+| `ai_training_interactions` (fuera de Prisma) | false | 19 |
+| `_prisma_migrations` | false | 2 |
+| `migrations` (legacy, vacía) | false | 0 |
+| `users` | false | 0 |
+| `ai_configuration` | false | 0 |
+| `ai_knowledge_base` | false | 0 |
+| `message_templates` | false | 0 |
+| `proactive_messages` | false | 0 |
+
+- **Total: 13 tablas en `public`** (no 12 como decía v3).
+- **`pg_policies` en public: 0 policies.**
+- Advisor security: `vulnerable_postgres_version` (categoría SECURITY, level WARN) en `supabase-postgres-17.4.1.069`.
+- Migraciones Supabase ejecutadas: 12, incluyendo `20250814_init_crm_core`, `add_idempotency_to_messages`, `create_enums`, `create_users_table`, `create_leads_table`, `create_campaigns_table` (2025-08-21), `create_messages_table`, `create_campaign_leads_table` (2025-08-21), `add_test_column_example`/`remove_test_column_example`, `check_supabase_connection`, `create_whatsapp_explicit_whitelist`. **Campaigns y campaign_leads no existen hoy pese a tener migración aplicada.**
+
+### Hetzner
+
+- Server `118344573` ("whatsapp-service"), CX23 (2 vCPU, 4 GB, 40 GB SSD), `running`, Nuremberg `nbg1-dc3`, creado 2026-01-26.
+- IP pública v4: `46.225.26.89`; IPv6: `2a01:4f8:1c19:c142::/64`.
+- Ubuntu 24.04, primary disk 40 GB, sin floating IPs ni placement group.
+- Firewall `whatsapp-firewall` (id 10443894) aplicado. Reglas `in`:
+
+| Descripción | Puerto | Protocolo | Source |
+|-------------|--------|-----------|--------|
+| SSH | 22 | tcp | `0.0.0.0/0`, `::/0` |
+| HTTP | 80 | tcp | `0.0.0.0/0`, `::/0` |
+| HTTPS | 443 | tcp | `0.0.0.0/0`, `::/0` |
+| WhatsApp Service | 3002 | tcp | `0.0.0.0/0`, `::/0` |
+| NestJS API | 3003 | tcp | `0.0.0.0/0`, `::/0` |
+
+- Sin reglas `out` configuradas en la respuesta.
+
+### Vercel
+
+- Team: `udeope's projects` (`team_mP2bYgdUeXS5ArWzTHfw3RY5`).
+- Proyectos: `dashboard` (`prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6`) + `final-project-qgxa` (legacy, creado 2021).
+- Dashboard framework: `nextjs`, Node `24.x`.
+- Dominios: `cromgod.space`, `dashboard-ten-phi-38.vercel.app`, `dashboard-udeopes-projects.vercel.app`, `dashboard-git-main-udeopes-projects.vercel.app`.
+- Producción actual: `dpl_An6EDeba5umLybggqLgeuenxXzx9` → commit `467e83c` (2026-04-02, "chore: sync production env vars, enable snapshots, and increase PM2 timeout").
+- Últimos commits en `develop` (`fe431e04`, `832c27d`, `33c7a35`) **no se han promovido a producción**; sus deployments son `target: null` (preview).
+- `project.live: false` en última consulta — estado curioso que merece investigación (¿pausado? ¿sin alias activo?).
+- Metadatos de deployments confirman `githubRepoVisibility: "public"`.
+
+### Aún no verificables desde MCPs disponibles
+
+- Valor real de `CLERK_WEBHOOK_SECRET` en Vercel env vars (el MCP Vercel local no expone env vars; el MCP Clerk local sólo ofrece SDK snippets).
+- Estado del webhook de Clerk (configurado o no).
+- Conectividad real dashboard ↔ whatsapp-service en producción (requiere tráfico).

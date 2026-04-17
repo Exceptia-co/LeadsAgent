@@ -1,27 +1,49 @@
 # PRD — Estabilización y Corrección de LeadsCRM
 
-**Fecha:** 2026-04-17 (v4 — auditoría claim-by-claim contra código)
+**Fecha:** 2026-04-17 (v5 — contexto de infra verificado live vía MCPs)
 **Branch base:** `develop`
-**Origen:** Análisis exhaustivo de código + infraestructura real (Supabase, Hetzner, Vercel, Clerk) + revisión cruzada GPT-5.4 (v3) + auditoría de verificación línea a línea contra `path:line` (v4).
+**Origen:** Análisis exhaustivo de código + infraestructura real (Supabase, Hetzner, Vercel, Clerk) + revisión cruzada GPT-5.4 (v3) + auditoría `path:line` (v4) + verificación live de Supabase / Hetzner / Vercel MCPs el 2026-04-17 (v5).
 **Objetivo:** Cerrar los gaps funcionales, resolver riesgos de seguridad, eliminar deuda técnica crítica y llevar el MVP a un estado coherente y desplegable.
 
-> **Novedad v4:** se añaden T0.4-bis, T0.4-ter y T0.7 tras detectar superficies de exposición no registradas en v3; se corrigen cifras ("14 ubicaciones" → 12 en 7 archivos; "6 tests" → 8; "1 consumer" → 2); se reescribe la cita del bug Socket.IO (`useSocket.ts:8` era incorrecto — el estado vive en `types/index.ts:145`); se matizan afirmaciones absolutas sobre validación y rate limiting.
+> **Novedad v5:**
+> - Se añade **T0.8** (upgrade de Postgres — advisor `vulnerable_postgres_version` activo).
+> - Se añade **T1.4** (limpiar migraciones huérfanas `create_campaigns_table` y `create_campaign_leads_table`).
+> - Se refina **T0.1** con el hallazgo verificado de **0 policies** en `pg_policies` (habilitar RLS sin policies bloquea a Prisma con service role — requiere diseñar policies antes).
+> - Se refina **T0.2** con las reglas de firewall exactas verificadas (`whatsapp-firewall` id 10443894, SSH/HTTP/HTTPS/3002/3003 todos a `0.0.0.0/0` + `::/0`, IP pública `46.225.26.89`).
+> - Contexto de infraestructura ahora lleva los IDs exactos de Supabase project, Hetzner server, Vercel project/team.
+>
+> **Novedad v4 (heredada):** T0.4-bis, T0.4-ter y T0.7; correcciones de cifras ("14 ubicaciones" → 12 en 7 archivos; "6 tests" → 8; "1 consumer" → 2); cita Socket.IO corregida; matices sobre validación y rate limiting.
 
 ---
 
-## Contexto de infraestructura
+## Contexto de infraestructura (verificado live — 2026-04-17)
 
-| Componente | Servicio | Región | Estado |
-|-----------|----------|--------|--------|
-| **Frontend** | Vercel (Next.js) | iad1 | `cromgod.space` — producción activa |
-| **Backend** | Hetzner CX23 (2 vCPU, 4 GB, 40 GB SSD) | nbg1 (Nuremberg) | Running — API :3003 + WhatsApp :3002 |
-| **Base de datos** | Supabase PostgreSQL 17.4 | eu-west-3 (París) | ACTIVE_HEALTHY — 12 tablas, RLS OFF |
-| **Cache** | Redis 7 (Docker en Hetzner) | nbg1 | Puerto 6381 |
-| **Auth** | Clerk | Cloud | JWT funcional en dashboard y `LeadsController`; `WhatsAppController` sin guard; webhook Clerk NO configurado |
-| **IA** | OpenRouter (primario) + Gemini (fallback) | Cloud | Integrado en whatsapp-service |
-| **Repo** | GitHub `Exceptia-co/LeadsAgent` | — | **Público** |
+| Componente | Servicio | IDs / estado verificado |
+|-----------|----------|--------------------------|
+| **Frontend** | Vercel (Next.js) | Team `team_mP2bYgdUeXS5ArWzTHfw3RY5` · Project `dashboard` (`prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6`), Node 24.x · dominio `cromgod.space` · producción actual = commit `467e83c` (2026-04-02); commits posteriores no promovidos a producción · `project.live: false` en última consulta (investigar) |
+| **Backend** | Hetzner CX23 (2 vCPU, 4 GB, 40 GB SSD) | Server `118344573` llamado `whatsapp-service`, Nuremberg `nbg1-dc3`, IP pública `46.225.26.89` · running · corre **API :3003 y WhatsApp :3002 en la misma máquina** |
+| **Firewall** | `whatsapp-firewall` (id 10443894) | Reglas `in`: 22/80/443/3002/3003 todos a `0.0.0.0/0` + `::/0`. Sin reglas `out` |
+| **Base de datos** | Supabase PostgreSQL `17.4.1.069` | Project `yxjzsargboxnuwnbuzax` (`CRMWhatsApp`), eu-west-3, `ACTIVE_HEALTHY` · **13 tablas en `public`** · **RLS OFF en 13/13** · **0 policies** en `pg_policies` · advisor security activo: `vulnerable_postgres_version` |
+| **Cache** | Redis 7 (Docker en Hetzner) | Puerto 6381 |
+| **Auth** | Clerk | JWT funcional en dashboard y `LeadsController`; `WhatsAppController` sin guard; webhook Clerk NO verificable desde MCPs actuales (secret en env Vercel, no expuesto) |
+| **IA** | OpenRouter (primario) + Gemini (fallback) | Integrado en whatsapp-service |
+| **Repo** | GitHub `Exceptia-co/LeadsAgent` | `githubRepoVisibility: "public"` (confirmado en metadata de deployments Vercel) |
 
-**Datos reales en producción:** 1 lead, 17 messages, 38 whatsapp_conversations, 24 sessions, 0 users (cifras de Supabase, verificables solo desde infra).
+**Datos reales en producción (Supabase MCP, 2026-04-17 — snapshot, cambia con tráfico):**
+
+| Tabla | Filas |
+|-------|-------|
+| `leads` | 1 |
+| `messages` | 17 |
+| `whatsapp_conversations` | 38 |
+| `whatsapp_sessions` | 24 |
+| `whatsapp_whitelist_logs` | 27 |
+| `ai_training_interactions` | 19 (fuera de Prisma) |
+| `_prisma_migrations` | 2 |
+| `users` | 0 |
+| `ai_configuration`, `ai_knowledge_base`, `message_templates`, `proactive_messages`, `migrations` (legacy) | 0 |
+
+**Migraciones Supabase aplicadas (12 en total)**, incluyendo las huérfanas **`20250821100704_create_campaigns_table`** y **`20250821100720_create_campaign_leads_table`** — las tablas no existen hoy (ver T1.4).
 
 ---
 
@@ -56,36 +78,63 @@
 
 > Riesgos activos en producción descubiertos vía infraestructura real + auditoría claim-by-claim del código.
 
-#### T0.1 — Habilitar RLS en Supabase
+#### T0.1 — Habilitar RLS en Supabase (con policies)
 
-**Problema:** Row Level Security está deshabilitado en las 12 tablas de producción.
+**Problema:** Row Level Security está deshabilitado en las **13 tablas** de `public` (verificado live 2026-04-17 vía `list_tables` y `pg_tables`).
 
-**Estado actual:**
-- Supabase MCP confirma: `rls_enabled: false` en todas las tablas
-- El acceso desde la API usa Prisma con connection string directo
+**Estado actual (verificado live):**
+- `rls_enabled: false` en las 13 tablas (`leads`, `messages`, `whatsapp_conversations`, `whatsapp_sessions`, `whatsapp_whitelist_logs`, `users`, `ai_configuration`, `ai_knowledge_base`, `message_templates`, `proactive_messages`, `ai_training_interactions`, `_prisma_migrations`, `migrations` legacy).
+- **`pg_policies` en `public` devuelve 0 filas** — no hay ninguna policy definida.
+- El acceso desde la API NestJS usa Prisma con connection string directo (rol `postgres` o `service_role`).
+- Algunas rutas Next (`app/api/debug/*`, `app/api/admin/migrate-users/route.ts:23`) usan `SUPABASE_SERVICE_ROLE_KEY` directamente vía cliente Supabase JS.
+
+**Trampa conocida:** habilitar RLS con `ALTER TABLE … ENABLE ROW LEVEL SECURITY` sin policies **bloquea a cualquier rol distinto de `service_role` / `postgres`**, incluyendo a Prisma si se conecta con rol limitado. Diseñar policies ANTES de activar RLS.
 
 **Cambios requeridos:**
-1. Habilitar RLS en todas las tablas de producción.
-2. Crear policies que permitan acceso desde el service role.
-3. Verificar que API y WhatsApp Service siguen funcionando.
+1. Inventariar qué roles acceden a cada tabla (Prisma vía DATABASE_URL, Supabase JS vía SERVICE_ROLE_KEY, PostgREST si aplica).
+2. Crear policies para cada tabla:
+   - Policy `service_role_all` o equivalente que permita todo al role de servicio.
+   - Si PostgREST se usa en algún momento futuro, policies `authenticated_select_own` ligadas a `clerk_id`.
+3. Habilitar RLS sólo después de las policies: `ALTER TABLE x ENABLE ROW LEVEL SECURITY`.
+4. Verificar que API y WhatsApp Service siguen funcionando tras el cambio (tests de humo sobre cada endpoint que toque DB).
+5. Ejecutar Supabase advisor `get_advisors({ type: "security" })` y confirmar que `rls_enabled_no_policy` no aparece.
 
 **Criterio de aceptación:**
-- `rls_enabled: true` en todas las tablas.
-- API y WhatsApp Service sin errores.
+- `rls_enabled: true` en las 13 tablas.
+- Cada tabla tiene al menos 1 policy efectiva.
+- API y WhatsApp Service sin errores 500 en los tests de humo.
 
 ---
 
 #### T0.2 — Restringir firewall de Hetzner
 
-**Problema:** Puertos 3002 y 3003 abiertos a `0.0.0.0/0`.
+**Problema (verificado live 2026-04-17):** el firewall `whatsapp-firewall` (id 10443894), aplicado al server `118344573` (IP `46.225.26.89`), tiene TODAS sus reglas `in` abiertas a `0.0.0.0/0` + `::/0`:
+
+| Descripción | Puerto | Source |
+|-------------|--------|--------|
+| SSH | 22 | `0.0.0.0/0`, `::/0` |
+| HTTP | 80 | `0.0.0.0/0`, `::/0` |
+| HTTPS | 443 | `0.0.0.0/0`, `::/0` |
+| WhatsApp Service | 3002 | `0.0.0.0/0`, `::/0` |
+| NestJS API | 3003 | `0.0.0.0/0`, `::/0` |
+
+No hay reglas `out` configuradas.
 
 **Cambios requeridos:**
-1. Instalar nginx/Caddy como reverse proxy con TLS. Cerrar puertos 3002 y 3003.
-2. Restringir SSH a IPs conocidas.
+1. Instalar nginx/Caddy en el servidor como reverse proxy con TLS (certificados Let's Encrypt para `api.cromgod.space`). Proxy pass:
+   - `/whatsapp/*` → `http://127.0.0.1:3002`
+   - `/leads/*`, `/public/*` (temporal hasta T0.3/T0.7) → `http://127.0.0.1:3003`
+2. Actualizar reglas de firewall Hetzner vía MCP `hetzner_set_firewall_rules` (id 10443894):
+   - **Cerrar** 3002 y 3003 completamente (remover reglas).
+   - Dejar **80/443** abiertos (requerido para el reverse proxy).
+   - **Restringir SSH (22)** a IPs conocidas (home/office del equipo, o bastion host).
+3. Verificar que dashboard + whatsapp-service siguen funcionando vía el proxy.
+4. Añadir rate-limit a nivel nginx/Caddy como capa extra (ya hay rate-limit en la app, pero reforzar).
 
 **Criterio de aceptación:**
-- Puertos 3002/3003 NO accesibles desde internet público.
-- Servicios accesibles vía HTTPS a través del proxy.
+- Puertos 3002/3003 NO accesibles desde internet público (test con `nmap` externo).
+- Servicios accesibles vía HTTPS a través del proxy en `api.cromgod.space`.
+- SSH solo responde a las IPs del allowlist.
 
 ---
 
@@ -282,6 +331,57 @@ Como el router se monta en `/` y `/api` (`src/index.ts:97-98`), cada endpoint re
 
 ---
 
+#### T0.9 — Estabilizar pipeline CI y añadir gate de auditoría (NUEVO v5)
+
+**Problema (verificado con `gh run list` el 2026-04-17):** los últimos **9 runs consecutivos de `CI/CD - LeadsCRM`** terminan en `failure`. Causa raíz: el step `Format Check` de `pnpm format:check` (prettier) encontraba 279 archivos sin formatear. Como los jobs posteriores declaran `needs: quality`, todos se cancelan en cascada (`build`, `test`, `security`, `performance` quedan `skipped`). El equipo aprende a ignorar el CI rojo, lo cual también invalida cualquier check futuro (incluido el de auditoría de esta PRD).
+
+**Estado actual (cambios de v5):**
+- Se creó `.prettierrc` (singleQuote en backend, doubleQuote en tsx/dashboard, printWidth 100, trailingComma all).
+- Se creó `.prettierignore` (excluye `docs/**`, `*.md` raíz, `node_modules`, `.next`, `.turbo`, lock files, sesiones WhatsApp).
+- Se ejecutó `pnpm format` → 243 archivos reformateados.
+- `pnpm format:check` → "All matched files use Prettier code style!".
+- `pnpm lint` → 5/5 éxitos (solo warnings pre-existentes, no errores).
+- Nuevo script `scripts/audit-infra.ts` + entry `audit:infra` en `package.json`.
+- Nuevo workflow `.github/workflows/audit-infra.yml` (`continue-on-error: true`, push/PR/cron semanal).
+
+**Cambios requeridos para cerrar la tarea:**
+1. Comitear el formateo masivo como un único commit `chore(format): apply prettier to code tree` (git blame queda limpio al tener un solo commit dedicado).
+2. Configurar en GitHub Actions → Repository secrets:
+   - `DATABASE_URL` — connection string de Supabase (Section A del audit).
+   - `SUPABASE_PAT` — Personal Access Token (Section B).
+   - `HCLOUD_TOKEN` — Hetzner Cloud API token (Section C).
+   - `VERCEL_TOKEN` — Vercel REST API token (Section D).
+3. Validar que el primer run post-push de `CI/CD - LeadsCRM` queda en verde end-to-end (quality → build → test → security → success).
+4. Tras cerrar Fase 0 (T0.1–T0.8), editar `.github/workflows/audit-infra.yml` → `continue-on-error: false` para convertirlo en required check en main/develop.
+5. Opcional: actualizar `ci.yml` para migrar Node 18 → 20/22 (Node 18 entra EOL en 2026-04-30) y añadir caché de Turborepo remote si el equipo tiene `TURBO_TOKEN`.
+
+**Criterio de aceptación:**
+- `CI/CD - LeadsCRM` en verde sobre el último commit de `develop` y `main`.
+- `Infra Audit` workflow ejecutándose en cada PR y devolviendo SKIP/PASS/WARN/FAIL según secrets configurados.
+- Artifact `audit-infra-report-${run_id}.txt` descargable desde cada run.
+
+---
+
+#### T0.8 — Aplicar patches de seguridad a Postgres (NUEVO v5)
+
+**Problema (verificado live 2026-04-17):** Supabase advisor de seguridad flagea `vulnerable_postgres_version` en `supabase-postgres-17.4.1.069`. Detalle del advisor:
+
+> We have detected that the current version of postgres, supabase-postgres-17.4.1.069, has outstanding security patches available. Upgrade your database to receive the latest security patches.
+
+Categoría `SECURITY`, nivel `WARN`, `facing: EXTERNAL`. Remediation: https://supabase.com/docs/guides/platform/upgrading
+
+**Cambios requeridos:**
+1. Programar ventana de mantenimiento (idealmente coordinado con T0.1 para evitar múltiples restarts).
+2. En Supabase Dashboard → Settings → Infrastructure → Upgrade Postgres.
+3. Verificar que Prisma client sigue funcionando tras upgrade (schema Prisma compatible con `17.x`).
+4. Re-ejecutar `get_advisors({ type: "security" })` y confirmar que `vulnerable_postgres_version` desaparece.
+
+**Criterio de aceptación:**
+- Advisor `vulnerable_postgres_version` ya no aparece.
+- API + WhatsApp Service operacionales tras upgrade.
+
+---
+
 ### FASE 1 — Integridad de datos (Crítica)
 
 > Dual-write confirmado con datos reales (17 en `messages` vs 38 en `whatsapp_conversations` — cifras infra).
@@ -342,7 +442,32 @@ Como el router se monta en `/` y `/api` (`src/index.ts:97-98`), cada endpoint re
 **Cambios requeridos:**
 1. Eliminar los 3 pares duplicados (mantener sólo el nombre consistente).
 2. Cambiar `leadId` a `@db.Uuid`.
-3. Migración sin pérdida (27 filas existentes — cifra infra).
+3. Migración sin pérdida (27 filas existentes — verificado live 2026-04-17 en `whatsapp_whitelist_logs`).
+
+---
+
+#### T1.4 — Limpiar migraciones Supabase huérfanas (NUEVO v5)
+
+**Problema (verificado live 2026-04-17):** `supabase_migrations` contiene dos migraciones aplicadas cuyas tablas objeto no existen hoy:
+
+- `20250821100704_create_campaigns_table` (2025-08-21)
+- `20250821100720_create_campaign_leads_table` (2025-08-21)
+
+Estas migraciones ejecutaron `CREATE TABLE campaigns` y `CREATE TABLE campaign_leads`, pero las tablas fueron `DROP`eadas sin migración reversa registrada. La búsqueda de "campaign" en el código devuelve 0 resultados, lo que confirma que el feature fue removido por completo en código pero el historial quedó desalineado con el schema real.
+
+**Riesgo:**
+- Confusión: futuras migraciones podrían asumir que `campaigns` existe.
+- Drift de schema: si se ejecuta `supabase db reset` o similar, el estado puede ser inconsistente con Prisma.
+
+**Cambios requeridos:**
+1. Investigar los commits que removieron las tablas `campaigns` y `campaign_leads`.
+2. Crear una migración explícita `20260417_drop_campaigns_legacy` que ejecute `DROP TABLE IF EXISTS campaigns` y `DROP TABLE IF EXISTS campaign_leads` (idempotente) y registre la intención.
+3. O bien, marcar las dos migraciones huérfanas como revertidas en `supabase_migrations`.
+4. Decidir la política del equipo: ¿`campaigns` es un feature aplazado que volverá? Si sí, documentar; si no, añadir `.gitignore`/comentario explicativo.
+
+**Criterio de aceptación:**
+- `supabase_migrations` refleja el estado real del schema.
+- No hay ambigüedad sobre si `campaigns` volverá o no.
 
 ---
 
@@ -548,8 +673,8 @@ Los AI endpoints consumen tokens de OpenRouter/Gemini; sin auth permiten exfiltr
 
 | Fase | Tareas | Prioridad | Justificación |
 |------|--------|-----------|---------------|
-| **0 — Seguridad** | T0.1, T0.2, T0.3, T0.4, T0.4-bis, T0.4-ter, T0.5, T0.6, T0.7 | **Urgente** | Rutas debug con service role key, proxy abierto, RLS off, firewall abierto, webhook roto, `WhatsAppController` Nest sin guard, whatsapp-service Express sin auth, duplicación `/public/leads` en dos apps |
-| **1 — Integridad de datos** | T1.1, T1.2, T1.3 | **Crítica** | Dual-write confirmado (17 vs 38 filas divergentes, cifras infra) |
+| **0 — Seguridad** | T0.1, T0.2, T0.3, T0.4, T0.4-bis, T0.4-ter, T0.5, T0.6, T0.7, T0.8, T0.9 | **Urgente** | Rutas debug con service role key, proxy abierto, RLS off con 0 policies, firewall abierto (22/80/443/3002/3003), webhook roto, `WhatsAppController` Nest sin guard, whatsapp-service Express sin auth, duplicación `/public/leads` en dos apps, Postgres con patches de seguridad pendientes, CI caído desde hace meses |
+| **1 — Integridad de datos** | T1.1, T1.2, T1.3, T1.4 | **Crítica** | Dual-write confirmado (17 vs 38 filas divergentes, verificado live), migraciones huérfanas `campaigns`/`campaign_leads` |
 | **2 — Cableado** | T2.1, T2.2, T2.3, T2.4 | **Alta** | Automatización muerta, templates/bulk sin auth, bug Socket.IO, rate limit insuficiente anti-ban |
 | **3 — Consolidación** | T3.1, T3.2 | **Media** | Reducir 3 implementaciones a 1, fix naming drift repos, eliminar `@leadcrm/ui` |
 | **4 — Escalabilidad** | T4.1, T4.2, T4.3 | **Media** | Preparar para crecimiento |
@@ -562,14 +687,16 @@ Los AI endpoints consumen tokens de OpenRouter/Gemini; sin auth permiten exfiltr
 ```
 Semana 1 (Seguridad — no rompe nada):
   T0.4 (eliminar debug + proteger proxies) → T0.4-bis (guard en WhatsAppController) →
-  T0.4-ter (auth en whatsapp-service) → T0.1 (RLS) → T0.2 (firewall)
+  T0.4-ter (auth en whatsapp-service) → T0.1 (diseñar policies + habilitar RLS) →
+  T0.8 (upgrade Postgres — ventana de mantenimiento) → T0.2 (firewall + reverse proxy)
 
 Semana 2 (Seguridad — migración cuidadosa):
   T0.3 (migrar dashboard /public → /leads AUTH, luego eliminar public) →
   T0.7 (eliminar /public/leads del whatsapp-service) → T0.5 (webhook Clerk)
 
 Semana 3 (Datos + Limpieza):
-  T1.3 (fix schema) → T1.2 (fix seed) → T3.1 (eliminar Refactored + fix naming repos)
+  T1.3 (fix schema índices + tipos) → T1.4 (limpiar migraciones huérfanas campaigns) →
+  T1.2 (fix seed) → T3.1 (eliminar Refactored + fix naming repos)
 
 Semana 4 (Unificación):
   T1.1 (unificar dual-write) → T2.3 (notificaciones sesión + fix Socket.IO)
@@ -600,3 +727,4 @@ Semana 6+ (Escalabilidad + Tests):
 | v2 | 2026-04-09 | Incorpora hallazgos de Supabase, Hetzner, Vercel, Clerk MCP. Agrega Fase 0 seguridad. Resuelve 5 decisiones arquitectónicas |
 | v3 | 2026-04-09 | **Revisión cruzada GPT-5.4.** Correcciones: templates y bulk messaging ya existen (no faltantes). Nueva T0.4 (rutas debug + proxy abierto). T0.3 requiere migración previa del dashboard. Fix bug Socket.IO en T2.3. Fix naming drift en T3.1. T2.2 y T2.4 reformuladas de "crear" a "proteger y normalizar" |
 | v4 | 2026-04-17 | **Auditoría claim-by-claim.** Tareas nuevas: T0.4-bis (guard en `WhatsAppController` Nest), T0.4-ter (auth en whatsapp-service Express), T0.7 (eliminar duplicación `/public/leads` del whatsapp-service). Correcciones: "14 ubicaciones" → 12 en 7 archivos; "6 tests ai-thinking" → 8; "1 consumer `@leadcrm/ui`" → 2 archivos (5 símbolos). Cita Socket.IO: `useSocket.ts:8` era incorrecto; el estado `AUTH_INVALID` vive en `types/index.ts:145`. Matices: POST `/templates` sí valida (PUT/DELETE no); rate limit global por IP existe + delay 2s bulk (falta cuota por sesión). Añadidos: proxies Next auxiliares sin auth (`api/whatsapp/stats`, `api/logs/whitelist`, `api/stats/whitelist`), matcher roto `/api/webhook` (singular), doble montaje router whatsapp-service (`/` y `/api`), rate limit deshabilitado en dev |
+| v5 | 2026-04-17 | **Verificación live vía MCPs (Supabase, Hetzner, Vercel).** Tareas nuevas: **T0.8** (upgrade Postgres — advisor `vulnerable_postgres_version` activo), **T0.9** (CI caído desde hace meses por `Format Check` — fixed con `.prettierrc`/`.prettierignore`/`pnpm format` + workflow nuevo `audit-infra.yml`), **T1.4** (limpiar migraciones Supabase huérfanas `create_campaigns_table` y `create_campaign_leads_table` del 2025-08-21 sin tablas correspondientes). Ejecutable nuevo `scripts/audit-infra.ts` + entry `pnpm run audit:infra` convierte cada criterio de aceptación en check automatizable. Hechos promovidos de "no verificable" a verificado: **13 tablas** en `public` (no 12); `rls_enabled: false` + `0 policies` confirmado en las 13; firewall `whatsapp-firewall` (id 10443894) con SSH/HTTP/HTTPS/3002/3003 todos `0.0.0.0/0` y `::/0`; IP pública `46.225.26.89`; server `whatsapp-service` corre **ambos servicios en la misma máquina**; Vercel project `dashboard` (`prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6`), Node 24.x, producción = commit `467e83c` (2026-04-02) con commits posteriores no promovidos; `githubRepoVisibility: "public"` confirmado; Postgres `17.4.1.069` con patches pendientes. T0.1 refinado: habilitar RLS con 0 policies rompería Prisma — diseñar policies primero. T0.2 refinado con las reglas exactas del firewall y path de reverse proxy. Contexto de infraestructura reescrito con IDs reales |

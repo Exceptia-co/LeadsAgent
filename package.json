@@ -32,7 +32,8 @@
     "setup": "pnpm install && pnpm db:generate",
     "rebuild": "pnpm clean:cache && pnpm install && pnpm db:generate && pnpm build:fast",
     "whatsapp:cleanup-chrome": "turbo run cleanup-chrome --filter=@leadcrm/whatsapp-service",
-    "whatsapp:cleanup-chrome-force": "turbo run cleanup-chrome-force --filter=@leadcrm/whatsapp-service"
+    "whatsapp:cleanup-chrome-force": "turbo run cleanup-chrome-force --filter=@leadcrm/whatsapp-service",
+    "audit:infra": "tsx scripts/audit-infra.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
