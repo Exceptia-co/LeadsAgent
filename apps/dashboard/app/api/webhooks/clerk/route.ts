@@ -79,24 +79,31 @@ export async function POST(req: Request) {
   const { type, data } = evt;
 
   try {
+    let debug: unknown = { type };
     switch (type) {
       case "user.created":
-        await handleUserCreated(data);
+        debug = await handleUserCreated(data);
         break;
       case "user.updated":
-        await handleUserUpdated(data);
+        debug = await handleUserUpdated(data);
         break;
       case "user.deleted":
-        await handleUserDeleted(data);
+        debug = await handleUserDeleted(data);
         break;
       default:
         console.log(`Unhandled webhook event type: ${type}`);
     }
 
-    return new Response("", { status: 200 });
+    return new Response(JSON.stringify({ ok: true, type, debug }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
   } catch (error) {
     console.error(`Error processing webhook event ${type}:`, error);
-    return new Response("Internal server error", { status: 500 });
+    return new Response(
+      JSON.stringify({ ok: false, type, error: error instanceof Error ? error.message : String(error) }),
+      { status: 500, headers: { "content-type": "application/json" } },
+    );
   }
 }
 
@@ -104,12 +111,19 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
   console.log("🔄 Creating user in Supabase:", {
     clerkId: data.id,
     email: data.email_addresses[0]?.email_address,
+    emailAddressesCount: data.email_addresses?.length ?? 0,
   });
 
   const primaryEmail = data.email_addresses[0]?.email_address;
   if (!primaryEmail) {
     console.error("No primary email found for user:", data.id);
-    return;
+    return {
+      step: "no_primary_email",
+      clerkId: data.id,
+      emailAddressesShape: Array.isArray(data.email_addresses)
+        ? { length: data.email_addresses.length, first: data.email_addresses[0] ?? null }
+        : "not_array",
+    };
   }
 
   const { data: user, error } = await getSupabase()
@@ -120,7 +134,7 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
       first_name: data.first_name,
       last_name: data.last_name,
       profile_image_url: data.image_url,
-      role: "user", // Rol por defecto
+      role: "user",
       is_active: true,
       settings: {
         notifications: {
@@ -140,10 +154,16 @@ async function handleUserCreated(data: ClerkWebhookEvent["data"]) {
 
   if (error) {
     console.error("Error creating user in Supabase:", error);
-    throw error;
+    return {
+      step: "insert_error",
+      clerkId: data.id,
+      email: primaryEmail,
+      error: { code: error.code, message: error.message, details: error.details, hint: error.hint },
+    };
   }
 
   console.log("✅ User created in Supabase:", user);
+  return { step: "inserted", clerkId: data.id, email: primaryEmail, id: user?.id ?? null };
 }
 
 async function handleUserUpdated(data: ClerkWebhookEvent["data"]) {
