@@ -71,16 +71,21 @@ export class LeadsController {
   @ApiQuery({ name: 'q', required: false, description: 'Search query' })
   @ApiQuery({ name: 'page', required: false, description: 'Page number' })
   @ApiQuery({ name: 'limit', required: false, description: 'Items per page' })
-  findAll(@Query() query: LeadsQueryDto, @CurrentUser() user: any) {
-    return this.leadsService.findAll(query, user.userId);
+  findAll(@Query() query: LeadsQueryDto) {
+    // Multi-tenant isolation by assignedTo is postponed until the users
+    // table is populated via the Clerk webhook (PRD T0.5). For now every
+    // authenticated user sees the full tenant, matching the prior
+    // PublicLeadsController behaviour.
+    return this.leadsService.findAll(query);
   }
 
   @Get('stats')
   @ApiOperation({ summary: 'Get leads statistics' })
   @ApiResponse({ status: 200, description: 'Return leads statistics.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  getStats(@CurrentUser() user: any) {
-    return this.leadsService.getStats(user.userId);
+  getStats() {
+    // See findAll: per-user filtering deferred until Clerk users sync is live.
+    return this.leadsService.getStats();
   }
 
   @Get(':id')
