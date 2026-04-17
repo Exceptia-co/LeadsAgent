@@ -296,13 +296,25 @@ Cualquier cliente con acceso de red al puerto 3002 puede invocar:
 
 ---
 
-#### T0.6 — Evaluar visibilidad del repositorio GitHub
+#### T0.6 — Evaluar visibilidad del repositorio GitHub  ✅ DECISIÓN TOMADA (2026-04-17): el repo permanece público
 
-**Problema:** Repo `Exceptia-co/LeadsAgent` es público.
+**Decisión del PO:** mantener `Exceptia-co/LeadsAgent` público. Justificación operativa: el equipo considera que esta es la opción más cómoda para el pipeline de despliegue en Vercel free plan (ver matices en la nota técnica).
 
-**Cambios requeridos:**
-1. Decisión del Product Owner: ¿privado o público?
-2. Si privado: verificar que Vercel mantiene acceso.
+**Nota técnica:** Vercel Hobby plan también permite deploys desde repos privados — no hay restricción de visibilidad desde hace años. La única restricción real del plan Hobby es "no uso comercial". Si en el futuro el PO quiere privar el repo, el deploy seguirá funcionando y sólo se requiere re-conectar la integración GitHub ↔ Vercel si se rompió el auth.
+
+**Consecuencias aceptadas (riesgos residuales):**
+- Código fuente visible públicamente incluyendo patrones de auth, schema Prisma, URLs de producción (`cromgod.space`).
+- Las credenciales reales siguen fuera del repo (`.env` en `.gitignore`), por lo que el riesgo es de inteligencia para ataques, no exposición directa.
+- Los IDs de proveedores (`prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6`, `yxjzsargboxnuwnbuzax`, firewall `10443894`, team Vercel `team_mP2bYgdUeXS5ArWzTHfw3RY5`) quedan públicos pero por sí solos no permiten acceso.
+
+**Mitigaciones ya aplicadas (no dependen de visibilidad):**
+- Rutas debug eliminadas (T0.4).
+- Proxies gated con Clerk (T0.4).
+- `WhatsAppController` con guard (T0.4-bis).
+- Firewall Hetzner restringido (T0.2).
+- Postgres actualizado (T0.8).
+
+**Revisión futura:** reevaluar esta decisión si (a) se expone información sensible en el codebase, (b) el plan de Vercel cambia, (c) el scope del producto crece comercialmente.
 
 ---
 
