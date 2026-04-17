@@ -21,30 +21,33 @@ export class ConversationRepository extends BaseRepository implements IConversat
    * Create conversations table if it doesn't exist
    */
   protected async createTablesIfNotExists(): Promise<void> {
+    // T3.1: DDL alineado con schema Prisma (snake_case). La tabla real es
+    // creada por Prisma; este `IF NOT EXISTS` queda como fallback defensivo
+    // y no debe divergir del schema canónico en packages/db/prisma.
     const createTableSQL = `
       CREATE TABLE IF NOT EXISTS whatsapp_conversations (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        "sessionId" VARCHAR(255) NOT NULL,
-        "phoneNumber" VARCHAR(50) NOT NULL,
-        "contactName" VARCHAR(255),
-        "messageText" TEXT,
-        "responseText" TEXT,
-        "messageType" VARCHAR(50) DEFAULT 'text',
+        session_id VARCHAR(255) NOT NULL,
+        phone_number VARCHAR(50) NOT NULL,
+        contact_name VARCHAR(255),
+        message_text TEXT,
+        response_text TEXT,
+        message_type VARCHAR(50) DEFAULT 'text',
         intent VARCHAR(100),
         sentiment VARCHAR(50),
-        "aiProvider" VARCHAR(100),
-        "tokensUsed" INTEGER DEFAULT 0,
-        "isFromUser" BOOLEAN NOT NULL DEFAULT true,
-        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        ai_provider VARCHAR(100),
+        tokens_used INTEGER DEFAULT 0,
+        is_from_user BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
       -- Create indexes for performance
-      CREATE INDEX IF NOT EXISTS idx_conversations_phone ON whatsapp_conversations ("phoneNumber");
-      CREATE INDEX IF NOT EXISTS idx_conversations_session ON whatsapp_conversations ("sessionId");
-      CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON whatsapp_conversations ("createdAt");
-      CREATE INDEX IF NOT EXISTS idx_conversations_is_from_user ON whatsapp_conversations ("isFromUser");
-      CREATE INDEX IF NOT EXISTS idx_conversations_message_search ON whatsapp_conversations USING gin(to_tsvector('english', "messageText"));
+      CREATE INDEX IF NOT EXISTS idx_conversations_phone ON whatsapp_conversations (phone_number);
+      CREATE INDEX IF NOT EXISTS idx_conversations_session ON whatsapp_conversations (session_id);
+      CREATE INDEX IF NOT EXISTS idx_conversations_created_at ON whatsapp_conversations (created_at);
+      CREATE INDEX IF NOT EXISTS idx_conversations_is_from_user ON whatsapp_conversations (is_from_user);
+      CREATE INDEX IF NOT EXISTS idx_conversations_message_search ON whatsapp_conversations USING gin(to_tsvector('english', message_text));
     `;
 
     try {

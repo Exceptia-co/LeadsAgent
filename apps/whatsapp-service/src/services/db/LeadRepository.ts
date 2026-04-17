@@ -17,27 +17,31 @@ export class LeadRepository extends BaseRepository implements ILeadRepository {
    * Create leads table if it doesn't exist
    */
   protected async createTablesIfNotExists(): Promise<void> {
+    // T3.1: DDL alineado con schema Prisma (snake_case). mood_score pasa de
+    // INTEGER [0..100] a DECIMAL(3,2) para coincidir con el schema canónico
+    // en packages/db/prisma. La tabla real la crea Prisma; este CREATE es
+    // defensivo.
     const createTableSQL = `
       CREATE TABLE IF NOT EXISTS leads (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         name VARCHAR(255),
         phone VARCHAR(50) UNIQUE NOT NULL,
         email VARCHAR(255),
-        tags TEXT[],
-        status VARCHAR(20) DEFAULT 'NUEVO' CHECK (status IN ('NUEVO', 'CONTACTADO', 'QUALIFIED', 'PERDIDO', 'GANADO')),
-        "moodScore" INTEGER CHECK ("moodScore" >= 0 AND "moodScore" <= 100),
-        "lastContact" TIMESTAMP,
-        "assignedTo" VARCHAR(255),
-        source VARCHAR(100) DEFAULT 'whatsapp',
-        "whatsappAuthorized" BOOLEAN DEFAULT false,
-        "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        tags JSONB DEFAULT '[]'::jsonb,
+        status VARCHAR(20) DEFAULT 'new' CHECK (status IN ('new', 'contacted', 'qualified', 'lost', 'won')),
+        mood_score DECIMAL(3,2),
+        last_contact TIMESTAMPTZ,
+        assigned_to VARCHAR(255),
+        source VARCHAR(255) DEFAULT 'whatsapp',
+        whatsapp_authorized BOOLEAN DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
 
       -- Create indexes for performance
       CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads (phone);
       CREATE INDEX IF NOT EXISTS idx_leads_status ON leads (status);
-      CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads ("createdAt");
+      CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads (created_at);
     `;
 
     try {

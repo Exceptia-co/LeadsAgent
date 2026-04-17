@@ -650,22 +650,39 @@ Estas migraciones ejecutaron `CREATE TABLE campaigns` y `CREATE TABLE campaign_l
 
 ### FASE 3 — Consolidación y limpieza (Media prioridad)
 
-#### T3.1 — Eliminar WhatsAppServiceRefactored y simplificar
+#### T3.1 — Eliminar WhatsAppServiceRefactored y simplificar ✅ cerrada (v5.14)
 
 **Decisión aplicada (D4):** Quedarse con Simple.
 
-**Cambios requeridos:**
-1. Eliminar `WhatsAppServiceRefactored` y componentes exclusivos.
-2. Simplificar fachada `WhatsAppService`.
-3. Eliminar toggles `USE_WHATSAPP_REFACTORED` y `USE_DATABASE_REPOSITORIES`.
-4. **Corregir drift camelCase vs snake_case** en:
-   - `apps/whatsapp-service/src/services/db/ConversationRepository.ts:27-39` — crea columnas `"sessionId"`, `"phoneNumber"`, `"messageText"`, `"responseText"`, `"messageType"`, `"isFromUser"`, `"createdAt"`, `"updatedAt"` en camelCase; el schema Prisma usa snake_case.
-   - `apps/whatsapp-service/src/services/db/LeadRepository.ts:28` — define `"moodScore" INTEGER`; el schema Prisma usa `mood_score Decimal(3,2)`.
+**Auditoría live al momento del fix:** exploración exhaustiva de `apps/whatsapp-service/src/services/` reveló que:
+- `WhatsAppServiceRefactored.ts` nunca se instanciaba (toggle `USE_WHATSAPP_REFACTORED` default `false`, `.env` sin el key).
+- Directorio `src/services/whatsapp/` tenía **7 archivos muertos** (`SessionManager`, `ConnectionManager`, `ContactManager`, `EventHandler`, `MediaHandler`, `MessageProcessor`, `index.ts`) paralelos a `whatsapp-core/`, pero **2 archivos vivos** (`WhatsAppStatsService`, `RedisMonitoringService`) importados por la fachada. Falsa dicotomía del PRD v3 — hay que borrar los 7 y preservar los 2.
+- `whatsapp-core/` (5 módulos: `AuthenticationManager`, `ConnectionManager`, `EventDispatcher`, `MessageHandler`, `SessionManager`) está **vivo** — es el stack del `WhatsAppServiceSimple`. `EventDispatcher.ts:192-219` es el emisor de `auth_failure` que consume `SocketService` tras el fix de T2.3; **NO tocado**.
+- Toggle `USE_DATABASE_REPOSITORIES` se conserva (out of scope en este paso) — los repositories en `services/db/*` siguen existiendo pero inactivos por default.
 
-**Criterio de aceptación:**
-- Una sola implementación activa.
-- Sin feature toggles de selección.
-- Nombres y tipos de columnas consistentes con schema Prisma.
+**Fix aplicado:**
+1. Borrados 8 archivos muertos: `WhatsAppServiceRefactored.ts` + 7 de `services/whatsapp/`.
+2. Fachada `WhatsAppService.ts` simplificada: eliminado el toggle `useRefactoredService`, el campo `refactoredService`, el import de `WhatsAppServiceRefactored`, y las 7 ramas `if (this.useRefactoredService && ...) { ... } else { ... }` (cada una colapsa en la rama `simpleService.*` que ya era la activa).
+3. `.env.example`: `USE_WHATSAPP_REFACTORED` eliminado del bloque de feature flags, con nota `T3.1` explicativa.
+4. **Fix drift DDL en repositories** (scope que pide el PRD explícitamente):
+   - `ConversationRepository.ts:23-48` → columnas en snake_case (`session_id`, `phone_number`, `contact_name`, `message_text`, `response_text`, `message_type`, `ai_provider`, `tokens_used`, `is_from_user`, `created_at`, `updated_at`) + indices actualizados.
+   - `LeadRepository.ts:19-46` → `mood_score DECIMAL(3,2)` (antes `"moodScore" INTEGER CHECK [0..100]`), `last_contact`, `assigned_to`, `whatsapp_authorized`, `created_at`/`updated_at` en `TIMESTAMPTZ`; `tags JSONB`; enum de status en lowercase (`new|contacted|...`) alineado con los `@map` del schema Prisma.
+   - Nota: los `CREATE TABLE IF NOT EXISTS` son defensivos — las tablas reales las crea Prisma; el fix alinea el fallback por si el toggle `USE_DATABASE_REPOSITORIES` algún día se activa.
+
+**Validación end-to-end:**
+- `pnpm --filter @leadcrm/{api,dashboard,whatsapp-service} typecheck` pasa limpio tras borrar 8 archivos y reescribir la fachada.
+- `curl http://localhost:3002/health → 200` — el servicio sigue arrancando con la fachada simplificada.
+- Re-ejecución del stress test T2.4: 201 leadIds → **429** `SESSION_RATE_LIMIT_EXCEEDED` intacto (confirma que la eliminación no rompió el rate limit por sesión).
+- Fix de T2.3 preservado: los handlers de `auth_failure` en `whatsapp-core/EventDispatcher.ts` quedan intactos y el `SocketService.ts:144-159` sigue mapeando a `AUTH_INVALID`.
+
+**Criterio de aceptación:** ✅
+- Una sola implementación activa (`WhatsAppServiceSimple`) — sí.
+- Sin feature toggle de selección de implementación WhatsApp — sí (eliminado `USE_WHATSAPP_REFACTORED`).
+- Nombres y tipos de columnas consistentes con schema Prisma — sí, en los DDLs citados por el PRD.
+
+**Follow-ups fuera de scope (seguirán tracked):**
+- Migrar los `INSERT`/`SELECT` de los repositories a snake_case (hoy sólo el DDL + indices están alineados). Se activará junto con T1.1 si el toggle se enciende.
+- Eliminación completa de `USE_DATABASE_REPOSITORIES` + directorio `services/db/*` — depende de la dirección que tome T1.1 (dual-write).
 
 ---
 
@@ -805,6 +822,7 @@ Semana 6+ (Escalabilidad + Tests):
 | v5.6 | 2026-04-17 | **Fase 0 sexta ola (decisiones + Clerk webhook).** Cerrada **T0.6**: el PO decidió mantener el repo público (justificación: comodidad con Vercel Hobby; Vercel soporta repos privados, pero se respeta la decisión). Cerrada **T0.5**: endpoint de webhook creado en Clerk Development instance (`ins_31WLEulvioak3keE58HPWDIQ2Gu`) apuntando a `https://cromgod.space/api/webhooks/clerk` con eventos `user.created`/`user.updated`/`user.deleted`; signing secret inyectado en Vercel env vars del project `prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6` como `CLERK_WEBHOOK_SECRET` con target `production,preview,development` (encrypted); redeploy del commit actual de main lanzado (`dpl_GSYsAQ6MBMnSTHYZjqw2g1zUeGde`). Fase 0 efectiva completada salvo T0.1 (RLS + policies) y T0.4-ter (HMAC webhook follow-up). |
 | v5.7 | 2026-04-17 | **Fase 0 cierre (decisión T0.1).** El PO eligió la **opción C** para T0.1: aceptar el WARN de audit A2 como informativo permanente y no ejecutar la habilitación de RLS en este ciclo. Justificación: operación con 1 usuario administrador, todos los clientes de DB bypass RLS por diseño, la autorización de negocio vive en la capa de aplicación (Clerk guards + `requireClerkToken`). Triggers documentados para reabrir: segundo usuario, exposición de PostgREST, JWT Clerk→Supabase, auditoría externa. **Fase 0 efectivamente cerrada** — el único pendiente técnico es **T0.4-ter** (HMAC entre Nest y whatsapp-service, follow-up de endurecimiento, no crítico). Scorecard estable `Infra Audit`: **15 pass / 1 warn (A2 aceptado) / 0 fail / 0 skip**. |
 | v5.8 | 2026-04-17 | **Fix post-T0.5 (GRANT service_role).** Al probar el webhook de Clerk end-to-end con Send Example, el handler `api/webhooks/clerk` devolvía 200 pero no insertaba en `public.users`. Diagnóstico: PostgREST con `SUPABASE_SERVICE_ROLE_KEY` (JWT con `role: service_role`) devolvía `HTTP 403 "permission denied for schema public"`. La causa: en proyectos Supabase nuevos, el rol `service_role` **no tiene por defecto** `GRANT` sobre el schema `public`; solo `postgres` tiene privileges en las tablas. Mientras Prisma (que se conecta con rol `postgres` via `DATABASE_URL`) funcionaba sin problema, el SDK Supabase JS usado en rutas Next se quedaba fuera. Fix aplicado con migration `grant_service_role_access_public_schema`: `GRANT USAGE ON SCHEMA public`, `GRANT SELECT/INSERT/UPDATE/DELETE/REFERENCES/TRIGGER/TRUNCATE ON ALL TABLES`, `GRANT USAGE/SELECT/UPDATE ON ALL SEQUENCES`, `GRANT EXECUTE ON ALL FUNCTIONS`, más `ALTER DEFAULT PRIVILEGES` para que nuevas tablas hereden los grants automáticamente. Post-fix, curl de prueba contra `/rest/v1/users` devuelve `HTTP 201` con la fila creada. |
+| v5.14 | 2026-04-17 | **T3.1 cerrada (eliminar Refactored + drift DDL).** Borrados 8 archivos muertos: `WhatsAppServiceRefactored.ts` + 7 módulos paralelos de `services/whatsapp/` (`SessionManager`, `ConnectionManager`, `ContactManager`, `EventHandler`, `MediaHandler`, `MessageProcessor`, `index.ts`). `WhatsAppStatsService.ts` y `RedisMonitoringService.ts` preservados (importados por la fachada). `WhatsAppService.ts` reescrito: colapsadas las 7 ramas `if (useRefactoredService) { ... } else { ... }` a la rama SimpleService que ya era la activa; toggle + campo `refactoredService` eliminados. `.env.example`: `USE_WHATSAPP_REFACTORED` eliminado con nota T3.1. DDL fix en `ConversationRepository.ts:23-48` (11 columnas camelCase → snake_case + indices) y `LeadRepository.ts:19-46` (`mood_score DECIMAL(3,2)`, `last_contact`, `assigned_to`, `whatsapp_authorized`, `TIMESTAMPTZ`, `tags JSONB`, enum status lowercase). Validación live: typecheck OK en los 3 paquetes; `/health → 200`; stress test T2.4 replay (201 leadIds → 429) sigue pasando tras el refactor — prueba que ni `whatsapp-core/` ni el path del Socket.IO T2.3 se rompieron. Follow-up: `USE_DATABASE_REPOSITORIES` y migración INSERT/SELECT de repositories queda bundled con T1.1. |
 | v5.13 | 2026-04-17 | **T1.2 cerrada (seed idempotente).** `packages/db/prisma/seed.ts` reescrito: campos reales del schema (`first_name`/`last_name`/`clerk_id`/`messageType`; eliminados `sentiment`/`confidence`/`aiAnalyzed`); enums Prisma en vez de strings; `user.upsert` por `clerk_id` (antes usaba `email` que no es @unique); `lead.upsert` por `phone`; `ai_knowledge_base` y `message_templates` con `createMany({ skipDuplicates: true })` condicional a `count() === 0`. Hallazgo extra auditado: el seed anterior hubiera fallado en runtime incluso corrigiendo los nombres, porque el `where: { email }` del upsert de users no hubiera encontrado el constraint unique. Validación live vía Supabase MCP: 1ª corrida crea 2 users + 3 knowledge; 2ª corrida idempotente (skip explícito). Totales tras seed: 2 users, 12 leads, 23 messages, 3 knowledge, 1 template. |
 | v5.12 | 2026-04-17 | **T2.4 cerrada parcial (rate limit por sesión WhatsApp).** Nuevo middleware `rateLimitBySession` en `apps/whatsapp-service/src/middleware/validation.ts` con in-memory `Map<sessionId, timestamps[]>`, ventana rodante 1h, cuota default 200 msgs/h configurable via `WHATSAPP_MAX_MSGS_PER_HOUR_PER_SESSION`. Fail-closed para bulk: batch se rechaza completo si no cabe. Conteo optimista: reserva slots al aceptar, no al confirmar envío (anti-ban). Throttle adaptativo vía `req.sessionThrottle.throttleFactor` (1/2/4 según uso >80% / >90%) multiplica el delay base de 2s en el loop de `/proactive-messages/bulk`. Aplicado a `POST /proactive-messages` y `POST /proactive-messages/bulk`. Bypass del `rateLimit` global IP cambiado de `NODE_ENV === 'development'` → `NODE_ENV === 'test'`. Validación con curl: batch de 201 leadIds devuelve 429 inmediato; burst de 5 pasa y burst siguiente de 196 en misma sesión devuelve 429 con `usage: 5` (persistencia del contador confirmada). Typecheck OK 3 paquetes. Pendiente follow-up: auth directo Nest↔whatsapp-service tracked bajo T0.4-ter. |
 | v5.11-bis | 2026-04-17 | **T2.2 post-audit browser.** Tras levantar front local y abrir `/dashboard/templates`, el `Network` tab reveló 5 consumers adicionales llamando a `:3002/templates` (`templates/page.tsx` CRUD x4, `messaging/page.tsx` CRUD x4, `whatsapp/page.tsx` list, `BulkSendMessageModal.tsx` list, `AdvancedPreview.tsx` preview+leads). Migrados al mismo patrón Bearer/Nest. El `TemplatesController` envuelve responses en `{ success, data }` para compat de shape; se añade alias `PUT /templates/:id` que delega en PATCH. `AdvancedPreview.tsx`: campo `previewContent` renombrado a `rendered` para alinearse con el servicio. Browser retest: 4 × `GET /templates?activeOnly=false → 200`, cero 404s contra `:3002`. |
