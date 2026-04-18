@@ -1313,9 +1313,10 @@ class DatabaseService {
     }
 
     try {
-      // Obtener conversaciones agrupadas por número de teléfono con el último mensaje.
-      // Tras T1.1-bis paso 4, el contenido canónico vive en messages.content
-      // vinculado por whatsapp_conversations.message_id.
+      // T4.3: el JOIN con `leads` ocurre dentro del CTE (antes se hacía con
+      // `getAllLeads()` + `find()` por cada fila = escaneo O(N*M)).
+      // T4.1: filtra leads soft-deleted.
+      // T1.1-bis paso 4: el contenido canónico vive en messages.content.
       const query = `
         WITH latest_messages AS (
           SELECT DISTINCT ON (wc.phone_number)
@@ -1341,47 +1342,50 @@ class DatabaseService {
         )
         SELECT
           lm.*,
-          COALESCE(uc.unread_count, 0) as unread_count
+          COALESCE(uc.unread_count, 0) as unread_count,
+          l.id as lead_id,
+          l.name as lead_name,
+          l.phone as lead_phone,
+          l.status as lead_status
         FROM latest_messages lm
         LEFT JOIN unread_counts uc ON lm.phone_number = uc.phone_number
+        LEFT JOIN leads l
+          ON l.deleted_at IS NULL
+          AND RIGHT(REGEXP_REPLACE(l.phone, '[^0-9]', '', 'g'), 10)
+            = RIGHT(REGEXP_REPLACE(lm.phone_number, '[^0-9]', '', 'g'), 10)
         ORDER BY lm.created_at DESC
         LIMIT $1 OFFSET $2;
       `;
 
       const result = await this.pool.query(query, [limit, offset]);
-      const leads = await this.getAllLeads();
 
-      // Mapear conversaciones con información de leads
-      const conversations = result.rows.map(row => {
-        // Buscar lead correspondiente
-        const lead = leads.find(l => {
-          if (!l.phone) return false;
-          const leadPhone = l.phone.replace(/[^0-9]/g, '');
-          const conversationPhone = row.phone_number.replace(/[^0-9]/g, '');
-          return leadPhone.slice(-10) === conversationPhone.slice(-10);
-        });
-
-        return {
-          id: `conv_${row.phone_number}`, // ID único para la conversación
-          leadId: lead?.id || null,
-          lead: lead || {
-            id: 'unknown',
-            name: row.contact_name || 'Desconocido',
-            phone: row.phone_number,
-            status: 'NUEVO',
-          },
-          lastMessage: {
-            id: `msg_${Date.now()}`,
-            content: row.last_message_content || '',
-            direction: row.is_from_user ? 'INBOUND' : 'OUTBOUND',
-            messageType: row.message_type || 'text',
-            status: 'delivered',
-            createdAt: row.created_at,
-          },
-          unreadCount: parseInt(row.unread_count) || 0,
-          updatedAt: row.updated_at,
-        };
-      });
+      const conversations = result.rows.map(row => ({
+        id: `conv_${row.phone_number}`,
+        leadId: row.lead_id || null,
+        lead: row.lead_id
+          ? {
+              id: row.lead_id,
+              name: row.lead_name,
+              phone: row.lead_phone,
+              status: row.lead_status,
+            }
+          : {
+              id: 'unknown',
+              name: row.contact_name || 'Desconocido',
+              phone: row.phone_number,
+              status: 'NUEVO',
+            },
+        lastMessage: {
+          id: `msg_${Date.now()}`,
+          content: row.last_message_content || '',
+          direction: row.is_from_user ? 'INBOUND' : 'OUTBOUND',
+          messageType: row.message_type || 'text',
+          status: 'delivered',
+          createdAt: row.created_at,
+        },
+        unreadCount: parseInt(row.unread_count) || 0,
+        updatedAt: row.updated_at,
+      }));
 
       logger.info(`✅ Obtenidas ${conversations.length} conversaciones de la base de datos`);
       return conversations;

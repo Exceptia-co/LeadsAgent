@@ -45,8 +45,13 @@ interface ConversationStats {
   averageTokens: number;
 }
 
+const PAGE_SIZE = 25;
+
 export default function WhatsAppConversations() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [stats, setStats] = useState<ConversationStats>({
     totalConversations: 0,
     uniqueContacts: 0,
@@ -57,28 +62,44 @@ export default function WhatsAppConversations() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchConversations();
+    fetchConversations(0, true);
     fetchStats();
   }, []);
 
-  const fetchConversations = async () => {
+  // T4.2: fetch paginado. `append=false` resetea la lista; `append=true`
+  // la extiende. Heurística hasMore: si el batch devuelto tiene el tamaño
+  // máximo pedido, asumimos que hay más páginas.
+  const fetchConversations = async (nextOffset: number, reset: boolean) => {
     try {
-      setIsLoading(true);
+      if (reset) {
+        setIsLoading(true);
+      } else {
+        setIsLoadingMore(true);
+      }
       setError(null);
-      const response = await fetch(`${getWhatsAppUrl()}/api/conversations`);
+      const url = `${getWhatsAppUrl()}/api/conversations?limit=${PAGE_SIZE}&offset=${nextOffset}`;
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error(`Error: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
-      setConversations(data || []);
+      const batch: Conversation[] = (await response.json()) || [];
+      setConversations((prev) => (reset ? batch : [...prev, ...batch]));
+      setOffset(nextOffset + batch.length);
+      setHasMore(batch.length === PAGE_SIZE);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error desconocido");
       console.error("Error fetching conversations:", err);
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
+  };
+
+  const loadMore = () => {
+    if (!hasMore || isLoadingMore) return;
+    fetchConversations(offset, false);
   };
 
   const fetchStats = async () => {
@@ -104,7 +125,9 @@ export default function WhatsAppConversations() {
   };
 
   const refreshData = () => {
-    fetchConversations();
+    setOffset(0);
+    setHasMore(true);
+    fetchConversations(0, true);
     fetchStats();
   };
 
@@ -237,8 +260,11 @@ export default function WhatsAppConversations() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {conversations.map((conversation) => (
-            <Card key={conversation.id} className="p-4 hover:bg-gray-50 transition-colors">
+          {conversations.map((conversation, idx) => (
+            <Card
+              key={`${conversation.id}-${idx}`}
+              className="p-4 hover:bg-gray-50 transition-colors"
+            >
               <div className="flex items-start justify-between">
                 <div className="flex items-start space-x-3 flex-1">
                   <div className="flex-shrink-0">
@@ -292,6 +318,24 @@ export default function WhatsAppConversations() {
               </div>
             </Card>
           ))}
+          {hasMore && (
+            <div className="flex justify-center pt-2">
+              <button
+                onClick={loadMore}
+                disabled={isLoadingMore}
+                className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isLoadingMore ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Cargando…
+                  </>
+                ) : (
+                  "Cargar más"
+                )}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
