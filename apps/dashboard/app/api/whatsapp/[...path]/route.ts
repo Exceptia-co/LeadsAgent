@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWhatsAppServiceUrl } from "../../../../lib/api-config";
 import { requireClerkToken } from "../../../../lib/auth/proxy-auth";
+import { signServiceRequest } from "../../../../lib/service-auth";
 
 // Force dynamic rendering for this route
 export const dynamic = "force-dynamic";
@@ -32,25 +33,37 @@ async function proxyRequest(request: NextRequest, path: string[], method: string
       targetUrl.searchParams.set(key, value);
     });
 
-    // Prepare fetch options
+    // Read raw body up-front so we can hash it exactly as the downstream
+    // verifier will. POST/PUT/PATCH forward it; GET/DELETE sign the empty
+    // string — the receiver does the same so the HMAC still matches.
+    let bodyString = "";
+    if (["POST", "PUT", "PATCH"].includes(method)) {
+      try {
+        bodyString = await request.text();
+      } catch {
+        bodyString = "";
+      }
+    }
+
+    const secret = process.env.WHATSAPP_SERVICE_HMAC_SECRET;
+    if (!secret) {
+      console.error("[WhatsApp Proxy] WHATSAPP_SERVICE_HMAC_SECRET is not configured");
+      return NextResponse.json(
+        { error: "Proxy misconfigured: missing service auth secret" },
+        { status: 500 },
+      );
+    }
+
+    const signedHeaders = signServiceRequest(bodyString, secret);
+
     const fetchOptions: RequestInit = {
       method,
       headers: {
         "Content-Type": "application/json",
+        ...signedHeaders,
       },
+      ...(bodyString ? { body: bodyString } : {}),
     };
-
-    // Forward body for POST/PUT/PATCH requests
-    if (["POST", "PUT", "PATCH"].includes(method)) {
-      try {
-        const body = await request.text();
-        if (body) {
-          fetchOptions.body = body;
-        }
-      } catch {
-        // No body to forward
-      }
-    }
 
     console.log(`[WhatsApp Proxy] ${method} ${targetUrl.toString()}`);
 

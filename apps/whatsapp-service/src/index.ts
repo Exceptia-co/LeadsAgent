@@ -49,6 +49,7 @@ async function bootstrap() {
 
     // Import middleware and routes dynamically for better error handling
     const { logRequest, rateLimit } = await import('./middleware/validation');
+    const { verifyServiceSignature } = await import('./middleware/auth');
     const routes = await import('./routes');
 
     logger.info('✅ Middleware and routes loaded');
@@ -80,12 +81,25 @@ async function bootstrap() {
       })
     );
 
-    app.use(express.json({ limit: '10mb' }));
+    // Capture the raw body buffer so verifyServiceSignature can rebuild the
+    // HMAC. express.json still parses normally for downstream middleware.
+    app.use(
+      express.json({
+        limit: '10mb',
+        verify: (req, _res, buf) => {
+          (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+        },
+      })
+    );
     app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
     // Custom middleware
     app.use(logRequest);
-    app.use(rateLimit); // Rate limiting middleware
+    app.use(rateLimit); // Rate limiting middleware (global IP)
+
+    // T0.4-ter: HMAC service-to-service auth. Applied before the routers
+    // (except for public liveness endpoints listed inside the middleware).
+    app.use(verifyServiceSignature);
 
     // Serve static files from public directory
     const publicPath = path.join(__dirname, 'public');
@@ -93,9 +107,9 @@ async function bootstrap() {
     app.use('/public', express.static(publicPath));
     app.use(express.static(publicPath)); // Also serve directly from root
 
-    // API routes
+    // T0.4-ter: routes mounted on a single path. The previous double mount
+    // (`/` + `/api`) duplicated the attack surface.
     app.use('/api', routes.default);
-    app.use('/', routes.default); // Also allow direct access
 
     // Error handling middleware
     app.use(

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhitelistService } from './whitelist.service';
+import { signServiceRequest } from './service-auth';
 import {
   LeadStatus,
   MessageType,
@@ -214,6 +215,18 @@ export class WhatsAppService {
     try {
       const whatsappServiceUrl =
         process.env.WHATSAPP_SERVICE_URL || 'http://localhost:3002';
+      const secret = process.env.WHATSAPP_SERVICE_HMAC_SECRET;
+      if (!secret) {
+        this.logger.error(
+          'WHATSAPP_SERVICE_HMAC_SECRET is not configured — cannot sign outbound request',
+        );
+        return false;
+      }
+
+      // T0.4-ter: firmar con HMAC el body exacto que enviamos para que
+      // verifyServiceSignature (whatsapp-service) pueda reconstruirlo.
+      const body = JSON.stringify({ to, message });
+      const signedHeaders = signServiceRequest(body, secret);
 
       const response = await fetch(
         `${whatsappServiceUrl}/api/sessions/${sessionId}/send`,
@@ -221,8 +234,9 @@ export class WhatsAppService {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...signedHeaders,
           },
-          body: JSON.stringify({ to, message }),
+          body,
         },
       );
 
