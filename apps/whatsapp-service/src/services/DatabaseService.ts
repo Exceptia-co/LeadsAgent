@@ -1,14 +1,8 @@
-import { Pool, PoolClient } from 'pg';
+import { Pool } from 'pg';
 import { PrismaClient, MessageDirection, MessageType } from '@leadcrm/db';
 import { logger } from '../utils/logger';
 import PhoneNumberService from './PhoneNumberService';
 import type { TrainingInteraction } from '../types';
-import type { ILeadRepository, IConversationRepository } from './db';
-import { RepositoryFactory } from './db';
-import type { KnowledgeBaseRepository } from './db/KnowledgeBaseRepository';
-import type { AIConfigRepository } from './db/AIConfigRepository';
-import type { TrainingRepository } from './db/TrainingRepository';
-import type { WhitelistLogRepository } from './db/WhitelistLogRepository';
 
 // Maps the free-form string messageType used across the whatsapp-service to
 // the Prisma MessageType enum. Falls back to TEXT for anything unknown (the
@@ -77,41 +71,13 @@ export interface Lead {
   updatedAt: Date;
 }
 
-/**
- * Database Service Facade
- *
- * Phase 2 of refactoring plan: Acts as a facade that delegates to either:
- * - Legacy implementation (direct SQL) when USE_DATABASE_REPOSITORIES=false
- * - Repository pattern when USE_DATABASE_REPOSITORIES=true
- *
- * This maintains full API compatibility while allowing gradual migration.
- */
 class DatabaseService {
   private pool: Pool | null = null;
   private prisma: PrismaClient | null = null;
-  private useRepositories: boolean;
-  private repositoryFactory: RepositoryFactory | null = null;
-  private leadRepository: ILeadRepository | null = null;
-  private conversationRepository: IConversationRepository | null = null;
-  private knowledgeBaseRepository: KnowledgeBaseRepository | null = null;
-  private aiConfigRepository: AIConfigRepository | null = null;
-  private trainingRepository: TrainingRepository | null = null;
-  private whitelistLogRepository: WhitelistLogRepository | null = null;
 
   constructor() {
-    // Feature toggle: USE_DATABASE_REPOSITORIES environment variable
-    this.useRepositories = process.env.USE_DATABASE_REPOSITORIES === 'true';
-
-    logger.info(
-      `🗄️ Database Service Architecture: ${this.useRepositories ? 'REPOSITORIES (v2.0)' : 'LEGACY (v1.0)'}`
-    );
-
     this.initializePool();
-    // Prisma client for unified writes (T1.1 Phase B) — shares DATABASE_URL
-    // via default env resolution.
     this.prisma = process.env.DATABASE_URL ? new PrismaClient() : null;
-
-    // Note: Repository initialization is async and will be called during initializeTable()
   }
 
   private initializePool(): void {
@@ -149,49 +115,11 @@ class DatabaseService {
     this.initializePool();
   }
 
-  // Initialize repository pattern (Phase 2 feature)
-  private async initializeRepositories(): Promise<void> {
-    if (!this.pool) {
-      logger.warn('Cannot initialize repositories without database pool');
-      return;
-    }
-
-    try {
-      logger.info('🏭 Initializing repository pattern...');
-
-      this.repositoryFactory = new RepositoryFactory(this.pool);
-      await this.repositoryFactory.initialize();
-
-      // Create repository instances
-      this.leadRepository = this.repositoryFactory.createLeadRepository();
-      this.conversationRepository = this.repositoryFactory.createConversationRepository();
-      this.knowledgeBaseRepository = this.repositoryFactory.createKnowledgeBaseRepository();
-      this.aiConfigRepository = this.repositoryFactory.createAIConfigRepository();
-      this.trainingRepository = this.repositoryFactory.createTrainingRepository();
-      this.whitelistLogRepository = this.repositoryFactory.createWhitelistLogRepository();
-
-      // Initialize repositories
-      await this.repositoryFactory.initializeAllRepositories();
-
-      logger.info('✅ Repository pattern initialized successfully');
-    } catch (error) {
-      logger.error('❌ Failed to initialize repositories:', error);
-      // Fallback to legacy mode
-      this.useRepositories = false;
-      logger.warn('🔄 Falling back to legacy database implementation');
-    }
-  }
-
   // Crear tabla si no existe
   public async initializeTable(): Promise<void> {
     if (!this.pool) {
       logger.warn('No hay conexión a base de datos disponible');
       return;
-    }
-
-    // Initialize repositories if using repository pattern
-    if (this.useRepositories && !this.repositoryFactory) {
-      await this.initializeRepositories();
     }
 
     // T1.1-bis paso 5: legacy MigrationService eliminado — Prisma
@@ -357,19 +285,6 @@ class DatabaseService {
   // Esto detiene la divergencia entre `messages` y `whatsapp_conversations`
   // para mensajes nuevos.
   public async saveConversation(data: ConversationData): Promise<string | null> {
-    // Phase 2: Repository pattern delegation
-    if (this.useRepositories && this.conversationRepository) {
-      try {
-        logger.debug('🏛️ Using ConversationRepository for saveConversation');
-        await this.conversationRepository.save(data);
-        // Return a placeholder ID since the repository pattern doesn't return the ID
-        return 'repo-generated-id';
-      } catch (error) {
-        logger.error('❌ Repository method failed, falling back to legacy:', error);
-        // Fallback to unified implementation below
-      }
-    }
-
     logger.info('🔍 [UNIFIED-WRITE] saveConversation called:', {
       sessionId: data.sessionId,
       phoneNumber: data.phoneNumber,
@@ -670,18 +585,6 @@ class DatabaseService {
 
   // Obtener todos los leads (con fallback a datos mockeados)
   public async getAllLeads(): Promise<Lead[]> {
-    // Phase 2: Repository pattern delegation
-    if (this.useRepositories && this.leadRepository) {
-      try {
-        logger.debug('🏛️ Using LeadRepository for getAllLeads');
-        return await this.leadRepository.findAll();
-      } catch (error) {
-        logger.error('❌ Repository method failed, falling back to legacy:', error);
-        // Fallback to legacy implementation below
-      }
-    }
-
-    // Legacy implementation
     // Intentar obtener leads de la base de datos real
     if (this.pool) {
       try {
@@ -1066,18 +969,6 @@ class DatabaseService {
     userAgent?: string;
     createdBy?: string;
   }): Promise<string | null> {
-    // Phase 2c: Delegate to repository if enabled
-    if (this.useRepositories && this.whitelistLogRepository) {
-      try {
-        logger.debug('🔄 Using WhitelistLogRepository');
-        return await this.whitelistLogRepository.logWhitelistDecision(data);
-      } catch (error) {
-        logger.warn('❌ Repository method failed, falling back to legacy:', error);
-        // Fallback to legacy implementation below
-      }
-    }
-
-    // Legacy implementation
     if (!this.pool) {
       logger.warn('No hay conexión a base de datos, log de whitelist no guardado');
       return null;
@@ -1140,18 +1031,6 @@ class DatabaseService {
       endDate?: Date;
     } = {}
   ): Promise<any[]> {
-    // Phase 2c: Delegate to repository if enabled
-    if (this.useRepositories && this.whitelistLogRepository) {
-      try {
-        logger.debug('🔄 Using WhitelistLogRepository');
-        return await this.whitelistLogRepository.getWhitelistLogs(options);
-      } catch (error) {
-        logger.warn('❌ Repository method failed, falling back to legacy:', error);
-        // Fallback to legacy implementation below
-      }
-    }
-
-    // Legacy implementation
     if (!this.pool) {
       return [];
     }
@@ -1609,18 +1488,6 @@ class DatabaseService {
 
   // Obtener knowledge base para contexto IA
   public async getKnowledgeBase(category?: string): Promise<any[]> {
-    // Phase 2: Delegate to repository if enabled
-    if (this.useRepositories && this.knowledgeBaseRepository) {
-      try {
-        logger.debug('🔄 Using KnowledgeBaseRepository');
-        return await this.knowledgeBaseRepository.getKnowledgeBase(category);
-      } catch (error) {
-        logger.warn('❌ Repository method failed, falling back to legacy:', error);
-        // Fallback to legacy implementation below
-      }
-    }
-
-    // Legacy implementation
     if (!this.pool) {
       return this.getDefaultKnowledgeBase();
     }
@@ -1628,7 +1495,7 @@ class DatabaseService {
     try {
       let query = `
         SELECT id, category, title, content, keywords, priority
-        FROM ai_knowledge_base 
+        FROM ai_knowledge_base
         WHERE is_active = true
       `;
 
@@ -1651,27 +1518,14 @@ class DatabaseService {
 
   // Obtener configuración IA
   public async getAIConfiguration(key: string): Promise<string | null> {
-    // Phase 2: Delegate to repository if enabled
-    if (this.useRepositories && this.aiConfigRepository) {
-      try {
-        logger.debug('🔄 Using AIConfigRepository');
-        const result = await this.aiConfigRepository.getAIConfiguration(key);
-        return result || this.getDefaultConfig(key);
-      } catch (error) {
-        logger.warn('❌ Repository method failed, falling back to legacy:', error);
-        // Fallback to legacy implementation below
-      }
-    }
-
-    // Legacy implementation
     if (!this.pool) {
       return this.getDefaultConfig(key);
     }
 
     try {
       const query = `
-        SELECT config_value 
-        FROM ai_configuration 
+        SELECT config_value
+        FROM ai_configuration
         WHERE config_key = $1
       `;
 
@@ -1689,18 +1543,6 @@ class DatabaseService {
     value: string,
     updatedBy?: string
   ): Promise<boolean> {
-    // Phase 2: Delegate to repository if enabled
-    if (this.useRepositories && this.aiConfigRepository) {
-      try {
-        logger.debug('🔄 Using AIConfigRepository');
-        return await this.aiConfigRepository.updateAIConfiguration(key, value, updatedBy);
-      } catch (error) {
-        logger.warn('❌ Repository method failed, falling back to legacy:', error);
-        // Fallback to legacy implementation below
-      }
-    }
-
-    // Legacy implementation
     if (!this.pool) {
       logger.info(`Mock update: ${key} = ${value.substring(0, 100)}...`);
       return true;
@@ -1728,18 +1570,6 @@ class DatabaseService {
 
   // Buscar en knowledge base por keywords con scoring inteligente
   public async searchKnowledgeBase(query: string): Promise<any[]> {
-    // Phase 2: Delegate to repository if enabled
-    if (this.useRepositories && this.knowledgeBaseRepository) {
-      try {
-        logger.debug('🔄 Using KnowledgeBaseRepository');
-        return await this.knowledgeBaseRepository.searchKnowledgeBase(query);
-      } catch (error) {
-        logger.warn('❌ Repository method failed, falling back to legacy:', error);
-        // Fallback to legacy implementation below
-      }
-    }
-
-    // Legacy implementation
     if (!this.pool) {
       return this.getDefaultKnowledgeBase()
         .filter(
@@ -2606,18 +2436,6 @@ class DatabaseService {
 
   // Guardar interacción de entrenamiento
   public async saveTrainingInteraction(interaction: TrainingInteraction): Promise<string | null> {
-    // Phase 2c: Delegate to repository if enabled
-    if (this.useRepositories && this.trainingRepository) {
-      try {
-        logger.debug('🔄 Using TrainingRepository');
-        return await this.trainingRepository.saveTrainingInteraction(interaction);
-      } catch (error) {
-        logger.warn('❌ Repository method failed, falling back to legacy:', error);
-        // Fallback to legacy implementation below
-      }
-    }
-
-    // Legacy implementation
     if (!this.pool) {
       logger.warn('No database connection available, training interaction not saved');
       return null;
@@ -2655,18 +2473,6 @@ class DatabaseService {
 
   // Obtener interacciones de entrenamiento
   public async getTrainingInteractions(limit: number = 500): Promise<TrainingInteraction[]> {
-    // Phase 2c: Delegate to repository if enabled
-    if (this.useRepositories && this.trainingRepository) {
-      try {
-        logger.debug('🔄 Using TrainingRepository');
-        return await this.trainingRepository.getTrainingInteractions({ limit });
-      } catch (error) {
-        logger.warn('❌ Repository method failed, falling back to legacy:', error);
-        // Fallback to legacy implementation below
-      }
-    }
-
-    // Legacy implementation
     if (!this.pool) {
       logger.warn('No database connection available, returning empty training interactions');
       return [];
