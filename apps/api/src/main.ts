@@ -2,12 +2,25 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import { json, urlencoded, type Request } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
 
   const isProduction = process.env.NODE_ENV === 'production';
+
+  // Capture rawBody so HmacAuthGuard can recompute the HMAC-SHA256 over the
+  // exact bytes Nest's built-in body parser would otherwise discard.
+  app.use(
+    json({
+      limit: '1mb',
+      verify: (req: Request & { rawBody?: Buffer }, _res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
+  app.use(urlencoded({ extended: true, limit: '1mb' }));
 
   // Security: Helmet middleware for HTTP headers
   app.use(

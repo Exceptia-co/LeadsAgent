@@ -4,6 +4,7 @@ import { logger } from '../../utils/logger';
 import advancedLogger from '../../utils/advancedLogger';
 import type { WhatsAppMessage, WebhookPayload } from '../../types';
 import redisClient, { REDIS_KEYS } from '../../config/redis';
+import { signServiceRequest } from '../../middleware/auth';
 
 /**
  * EventDispatcher - Handles all WhatsApp client events, webhooks, and event-driven operations
@@ -405,16 +406,27 @@ export class EventDispatcher {
       return;
     }
 
+    const secret = process.env.WHATSAPP_SERVICE_HMAC_SECRET;
+    if (!secret) {
+      logger.error(
+        '❌ Cannot send webhook: WHATSAPP_SERVICE_HMAC_SECRET is not configured'
+      );
+      return;
+    }
+
+    const body = JSON.stringify(payload);
+    const { timestamp, signature } = signServiceRequest(body, secret);
+
     try {
       const response = await fetch(this.webhookUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-WhatsApp-Service': 'true',
+          'x-service-timestamp': timestamp,
+          'x-service-signature': signature,
         },
-        body: JSON.stringify(payload),
-        // Add timeout to prevent hanging
-        signal: AbortSignal.timeout(5000), // 5 second timeout
+        body,
+        signal: AbortSignal.timeout(5000),
       });
 
       if (!response.ok) {
@@ -425,10 +437,9 @@ export class EventDispatcher {
       }
 
       logger.debug(`🚀 HTTP webhook sent successfully for event ${payload.event}`);
-    } catch (error: any) {
-      // Log warning instead of error to reduce noise, and include helpful context
+    } catch (error) {
       logger.warn(`⚠️ Webhook delivery failed for event ${payload.event}:`, {
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         webhookUrl: this.webhookUrl,
         suggestion: 'Check if the webhook endpoint exists and is accessible',
       });
@@ -488,6 +499,14 @@ export class EventDispatcher {
       return { success: false, error: 'No webhook URL configured' };
     }
 
+    const secret = process.env.WHATSAPP_SERVICE_HMAC_SECRET;
+    if (!secret) {
+      return {
+        success: false,
+        error: 'WHATSAPP_SERVICE_HMAC_SECRET is not configured',
+      };
+    }
+
     try {
       const testPayload = {
         event: 'webhook_test',
@@ -496,13 +515,17 @@ export class EventDispatcher {
         timestamp: new Date().toISOString(),
       };
 
+      const body = JSON.stringify(testPayload);
+      const { timestamp, signature } = signServiceRequest(body, secret);
+
       const response = await fetch(this.webhookUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-WhatsApp-Service': 'true',
+          'x-service-timestamp': timestamp,
+          'x-service-signature': signature,
         },
-        body: JSON.stringify(testPayload),
+        body,
         signal: AbortSignal.timeout(5000),
       });
 
@@ -514,8 +537,9 @@ export class EventDispatcher {
         logger.warn(`⚠️ ${error}`);
         return { success: false, error };
       }
-    } catch (error: any) {
-      const errorMessage = `Webhook test failed: ${error.message}`;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const errorMessage = `Webhook test failed: ${message}`;
       logger.error(`❌ ${errorMessage}`);
       return { success: false, error: errorMessage };
     }

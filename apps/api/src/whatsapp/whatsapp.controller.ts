@@ -3,7 +3,6 @@ import {
   Post,
   Get,
   Body,
-  Headers,
   Logger,
   BadRequestException,
   Query,
@@ -12,6 +11,7 @@ import {
 import { WhatsAppService } from './whatsapp.service';
 import { WhitelistService } from './whitelist.service';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
+import { HmacAuthGuard } from './hmac-auth.guard';
 
 interface SendMessageDto {
   sessionId: string;
@@ -42,18 +42,11 @@ export class WhatsAppController {
   ) {}
 
   @Post('webhook')
-  async handleWebhook(
-    @Body() payload: WebhookPayload,
-    @Headers('x-whatsapp-service') serviceHeader: string,
-  ) {
+  @UseGuards(HmacAuthGuard)
+  async handleWebhook(@Body() payload: WebhookPayload) {
     this.logger.log(
       `Webhook received: ${payload.event} for session ${payload.sessionId}`,
     );
-
-    // Validate that request comes from WhatsApp service
-    if (!serviceHeader) {
-      throw new BadRequestException('Missing WhatsApp service header');
-    }
 
     try {
       switch (payload.event) {
