@@ -476,41 +476,54 @@ class DatabaseService {
     }
   }
 
-  // Obtener historial de conversación por número de teléfono
+  // Obtener historial de conversación por número de teléfono.
+  //
+  // T1.1-bis paso 3 (reader migration): ahora usa Prisma con include del
+  // message vinculado. Prefiere message_text/response_text legacy si están
+  // poblados; si no, cae a message.content via el FK. Esto hace que el
+  // reader funcione antes y después de que el paso 4 dropee los campos
+  // duplicados.
   public async getConversationHistory(
     phoneNumber: string,
     limit: number = 50
   ): Promise<ConversationHistory[]> {
-    if (!this.pool) {
-      logger.warn('No hay conexión a base de datos');
+    if (!this.prisma) {
+      logger.warn('No hay Prisma client disponible');
       return [];
     }
 
-    const query = `
-      SELECT * FROM whatsapp_conversations 
-      WHERE phone_number = $1 
-      ORDER BY created_at DESC 
-      LIMIT $2;
-    `;
-
     try {
-      const result = await this.pool.query(query, [phoneNumber, limit]);
-      return result.rows.map(row => ({
-        id: row.id,
-        sessionId: row.session_id,
-        phoneNumber: row.phone_number,
-        contactName: row.contact_name,
-        messageText: row.message_text,
-        responseText: row.response_text,
-        messageType: row.message_type,
-        intent: row.intent,
-        sentiment: row.sentiment,
-        aiProvider: row.ai_provider,
-        tokensUsed: row.tokens_used || 0,
-        isFromUser: row.is_from_user,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
-      }));
+      const rows = await this.prisma.whatsAppConversation.findMany({
+        where: { phoneNumber },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        include: { message: { select: { content: true, direction: true } } },
+      });
+
+      return rows.map(row => {
+        const canonicalContent = row.message?.content ?? null;
+        const isFromUser = row.isFromUser ?? true;
+        return {
+          id: row.id,
+          sessionId: row.sessionId,
+          phoneNumber: row.phoneNumber,
+          contactName: row.contactName ?? undefined,
+          messageText: isFromUser
+            ? (row.messageText ?? canonicalContent ?? undefined)
+            : (row.messageText ?? undefined),
+          responseText: !isFromUser
+            ? (row.responseText ?? canonicalContent ?? undefined)
+            : (row.responseText ?? undefined),
+          messageType: row.messageType ?? 'text',
+          intent: row.intent ?? undefined,
+          sentiment: row.sentiment ?? undefined,
+          aiProvider: row.aiProvider ?? undefined,
+          tokensUsed: row.tokensUsed ?? 0,
+          isFromUser,
+          createdAt: row.createdAt ?? new Date(),
+          updatedAt: row.updatedAt ?? new Date(),
+        };
+      });
     } catch (error) {
       logger.error('Error obteniendo historial de conversación:', error);
       return [];
