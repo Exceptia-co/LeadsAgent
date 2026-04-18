@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { PrismaClient, MessageDirection, MessageType } from '@leadcrm/db';
+import { PrismaClient, MessageDirection, MessageType, Prisma } from '@leadcrm/db';
 import { logger } from '../utils/logger';
 import PhoneNumberService from './PhoneNumberService';
 import type { TrainingInteraction } from '../types';
@@ -361,12 +361,18 @@ class DatabaseService {
       });
 
       return result.conversationId;
-    } catch (error: any) {
+    } catch (error) {
+      const err = error as {
+        message?: string;
+        code?: string;
+        meta?: unknown;
+        stack?: string;
+      };
       logger.error('❌ [UNIFIED-WRITE] Error in Prisma transaction:', {
-        error: error.message,
-        code: error.code,
-        meta: error.meta,
-        stack: error.stack?.substring(0, 200) + '...',
+        error: err.message,
+        code: err.code,
+        meta: err.meta,
+        stack: err.stack?.substring(0, 200) + '...',
       });
       return null;
     }
@@ -867,10 +873,8 @@ class DatabaseService {
 
       logger.error('Failed to create lead - no rows returned');
       return null;
-    } catch (error: any) {
+    } catch (error) {
       logger.error('Error creating lead:', error);
-
-      // Re-throw the error so the caller can handle it (e.g., for duplicate phone detection)
       throw error;
     }
   }
@@ -2436,35 +2440,27 @@ class DatabaseService {
 
   // Guardar interacción de entrenamiento
   public async saveTrainingInteraction(interaction: TrainingInteraction): Promise<string | null> {
-    if (!this.pool) {
-      logger.warn('No database connection available, training interaction not saved');
+    if (!this.prisma) {
+      logger.warn('No Prisma client available, training interaction not saved');
       return null;
     }
 
     try {
-      const query = `
-        INSERT INTO ai_training_interactions (
-          user_message, ai_response, knowledge_base_ids_used, success_score,
-          context_data, feedback_metrics, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING id;
-      `;
+      const created = await this.prisma.aiTrainingInteraction.create({
+        data: {
+          userMessage: interaction.userMessage,
+          aiResponse: interaction.aiResponse,
+          knowledgeBaseIdsUsed: interaction.knowledgeBaseIdsUsed,
+          successScore: interaction.successScore,
+          contextData: interaction.contextData as Prisma.InputJsonValue,
+          feedbackMetrics: interaction.feedbackMetrics as Prisma.InputJsonValue,
+          createdAt: interaction.timestamp,
+        },
+        select: { id: true },
+      });
 
-      const values = [
-        interaction.userMessage,
-        interaction.aiResponse,
-        interaction.knowledgeBaseIdsUsed,
-        interaction.successScore,
-        JSON.stringify(interaction.contextData),
-        JSON.stringify(interaction.feedbackMetrics),
-        interaction.timestamp,
-      ];
-
-      const result = await this.pool.query(query, values);
-      const interactionId = result.rows[0]?.id;
-
-      logger.debug(`📊 Training interaction saved with ID: ${interactionId}`);
-      return interactionId;
+      logger.debug(`📊 Training interaction saved with ID: ${created.id}`);
+      return created.id;
     } catch (error) {
       logger.error('Error saving training interaction:', error);
       return null;
@@ -2473,32 +2469,26 @@ class DatabaseService {
 
   // Obtener interacciones de entrenamiento
   public async getTrainingInteractions(limit: number = 500): Promise<TrainingInteraction[]> {
-    if (!this.pool) {
-      logger.warn('No database connection available, returning empty training interactions');
+    if (!this.prisma) {
+      logger.warn('No Prisma client available, returning empty training interactions');
       return [];
     }
 
     try {
-      const query = `
-        SELECT 
-          id, user_message, ai_response, knowledge_base_ids_used,
-          success_score, context_data, feedback_metrics, created_at
-        FROM ai_training_interactions 
-        ORDER BY created_at DESC
-        LIMIT $1;
-      `;
+      const rows = await this.prisma.aiTrainingInteraction.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+      });
 
-      const result = await this.pool.query(query, [limit]);
-
-      return result.rows.map(row => ({
+      return rows.map(row => ({
         id: row.id,
-        userMessage: row.user_message,
-        aiResponse: row.ai_response,
-        knowledgeBaseIdsUsed: row.knowledge_base_ids_used || [],
-        successScore: parseFloat(row.success_score),
-        contextData: row.context_data,
-        feedbackMetrics: row.feedback_metrics,
-        timestamp: new Date(row.created_at),
+        userMessage: row.userMessage,
+        aiResponse: row.aiResponse,
+        knowledgeBaseIdsUsed: row.knowledgeBaseIdsUsed,
+        successScore: row.successScore ? Number(row.successScore) : 0,
+        contextData: row.contextData as TrainingInteraction['contextData'],
+        feedbackMetrics: row.feedbackMetrics as TrainingInteraction['feedbackMetrics'],
+        timestamp: row.createdAt ?? new Date(),
       }));
     } catch (error) {
       logger.error('Error getting training interactions:', error);

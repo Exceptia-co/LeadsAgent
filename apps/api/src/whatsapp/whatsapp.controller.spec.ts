@@ -1,14 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
 import { WhatsAppController } from './whatsapp.controller';
 import { WhatsAppService } from './whatsapp.service';
 import { WhitelistService } from './whitelist.service';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
+import { HmacAuthGuard } from './hmac-auth.guard';
 
-// T5.2 — unit tests for the Nest webhook controller. Focuses on the
-// boundary behaviour: the header guard and the event dispatch table. The
-// handler methods themselves (handleIncomingMessage / handleSession*) are
-// mocked — they are unit-tested at the service level, not here.
+// T5.2 — unit tests for the Nest webhook controller. Focuses on the event
+// dispatch table. Both guards (Clerk on management endpoints, HMAC on the
+// webhook) are overridden to always pass — they are covered by their own
+// unit tests and by the runtime integration tests.
 
 describe('WhatsAppController', () => {
   let controller: WhatsAppController;
@@ -31,6 +31,8 @@ describe('WhatsAppController', () => {
     })
       .overrideGuard(ClerkAuthGuard)
       .useValue({ canActivate: () => true })
+      .overrideGuard(HmacAuthGuard)
+      .useValue({ canActivate: () => true })
       .compile();
 
     controller = module.get<WhatsAppController>(WhatsAppController);
@@ -47,18 +49,8 @@ describe('WhatsAppController', () => {
       timestamp: new Date().toISOString(),
     };
 
-    it('rejects requests without the x-whatsapp-service header', async () => {
-      await expect(controller.handleWebhook(basePayload, '')).rejects.toThrow(
-        BadRequestException,
-      );
-      expect(whatsAppService.handleIncomingMessage).not.toHaveBeenCalled();
-    });
-
     it('dispatches "message" events to handleIncomingMessage', async () => {
-      const result = await controller.handleWebhook(
-        basePayload,
-        'whatsapp-service',
-      );
+      const result = await controller.handleWebhook(basePayload);
 
       expect(whatsAppService.handleIncomingMessage).toHaveBeenCalledWith(
         'session-1',
@@ -71,10 +63,10 @@ describe('WhatsAppController', () => {
     });
 
     it('dispatches "authenticated" events to handleSessionAuthenticated', async () => {
-      await controller.handleWebhook(
-        { ...basePayload, event: 'authenticated' },
-        'whatsapp-service',
-      );
+      await controller.handleWebhook({
+        ...basePayload,
+        event: 'authenticated',
+      });
 
       expect(whatsAppService.handleSessionAuthenticated).toHaveBeenCalledWith(
         'session-1',
@@ -83,10 +75,10 @@ describe('WhatsAppController', () => {
     });
 
     it('dispatches "disconnected" events to handleSessionDisconnected', async () => {
-      await controller.handleWebhook(
-        { ...basePayload, event: 'disconnected' },
-        'whatsapp-service',
-      );
+      await controller.handleWebhook({
+        ...basePayload,
+        event: 'disconnected',
+      });
 
       expect(whatsAppService.handleSessionDisconnected).toHaveBeenCalledWith(
         'session-1',
@@ -95,14 +87,11 @@ describe('WhatsAppController', () => {
     });
 
     it('dispatches "status_change" events to handleStatusChange (T2.3 plumbing)', async () => {
-      await controller.handleWebhook(
-        {
-          ...basePayload,
-          event: 'status_change',
-          data: { status: 'auth_failure' },
-        },
-        'whatsapp-service',
-      );
+      await controller.handleWebhook({
+        ...basePayload,
+        event: 'status_change',
+        data: { status: 'auth_failure' },
+      });
 
       expect(whatsAppService.handleStatusChange).toHaveBeenCalledWith(
         'session-1',
@@ -113,10 +102,11 @@ describe('WhatsAppController', () => {
     });
 
     it('returns success on "qr_updated" without invoking any service method', async () => {
-      const result = await controller.handleWebhook(
-        { ...basePayload, event: 'qr_updated', data: { qrCode: 'abc' } },
-        'whatsapp-service',
-      );
+      const result = await controller.handleWebhook({
+        ...basePayload,
+        event: 'qr_updated',
+        data: { qrCode: 'abc' },
+      });
 
       expect(whatsAppService.handleIncomingMessage).not.toHaveBeenCalled();
       expect(whatsAppService.handleSessionAuthenticated).not.toHaveBeenCalled();
