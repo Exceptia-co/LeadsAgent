@@ -1,12 +1,10 @@
 import Redis from 'ioredis';
 import { logger } from '../utils/logger';
 
-// Configuración de Redis
-const redisConfig = {
-  host: process.env['REDIS_HOST'] || 'localhost',
-  port: parseInt(process.env['REDIS_PORT'] || '6381'),
-  password: process.env['REDIS_PASSWORD'] || undefined,
-  db: parseInt(process.env['REDIS_DB'] || '0'),
+// Accept either a single REDIS_URL (standard) or a split host/port/password/db.
+// URL wins when present — matches the production convention on the VPS and
+// keeps dev (docker-compose) on 6381 via the split env vars.
+const sharedRedisOptions = {
   retryDelayOnFailover: 100,
   maxRetriesPerRequest: 3,
   lazyConnect: true,
@@ -14,20 +12,29 @@ const redisConfig = {
   commandTimeout: 5000,
 };
 
+function buildRedisClient(): Redis {
+  const redisUrl = process.env['REDIS_URL'];
+  if (redisUrl) {
+    return new Redis(redisUrl, sharedRedisOptions);
+  }
+  return new Redis({
+    host: process.env['REDIS_HOST'] || 'localhost',
+    port: parseInt(process.env['REDIS_PORT'] || '6379'),
+    password: process.env['REDIS_PASSWORD'] || undefined,
+    db: parseInt(process.env['REDIS_DB'] || '0'),
+    ...sharedRedisOptions,
+  });
+}
+
 class RedisClient {
   private client: Redis;
   private subscriber: Redis;
   private publisher: Redis;
 
   constructor() {
-    // Cliente principal
-    this.client = new Redis(redisConfig);
-
-    // Cliente para suscripciones
-    this.subscriber = new Redis(redisConfig);
-
-    // Cliente para publicaciones
-    this.publisher = new Redis(redisConfig);
+    this.client = buildRedisClient();
+    this.subscriber = buildRedisClient();
+    this.publisher = buildRedisClient();
 
     this.setupEventHandlers();
   }
