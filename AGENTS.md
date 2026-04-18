@@ -39,14 +39,16 @@ Quality: pnpm lint | lint:fix | typecheck | format | clean:cache | rebuild
 ## Monorepo Structure
 
 ```
-apps/dashboard/     # Next.js frontend (port 3000)
-apps/api/           # NestJS backend (port 3003)
-apps/docs/          # Documentation site (port 3003)
-apps/whatsapp-service/  # WhatsApp integration (port 3002)
-packages/db/        # Prisma schema + client (PostgreSQL)
-packages/ui/        # Shared React components (shadcn/ui)
-packages/config-*/  # Shared ESLint/TypeScript configs
+apps/dashboard/           # Next.js frontend (port 3001)
+apps/api/                 # NestJS backend (port 3003)
+apps/docs/                # Documentation site (port 3004)
+apps/whatsapp-service/    # WhatsApp integration (port 3002)
+packages/db/              # Prisma schema + client (PostgreSQL)
+packages/config-eslint/   # Shared ESLint config
+packages/config-ts/       # Shared TypeScript config
 ```
+
+Note: `packages/ui` was removed in T3.2 — the two components actually used (Alert, Toggle) now live in `apps/dashboard/components/ui/`. Dashboards consume their own `ui/` folder, not a shared package.
 
 ## Code Style & Architecture
 
@@ -58,7 +60,7 @@ packages/config-*/  # Shared ESLint/TypeScript configs
 
 **Imports & Dependencies:**
 
-- Use workspace packages: `@leadcrm/db`, `@leadcrm/ui`, `@leadcrm/config-*`
+- Use workspace packages: `@leadcrm/db`, `@leadcrm/config-eslint`, `@leadcrm/config-ts`
 - Check existing packages before adding new dependencies
 - Absolute imports preferred over relative imports
 
@@ -78,41 +80,47 @@ packages/config-*/  # Shared ESLint/TypeScript configs
 
 ## Database Schema (PostgreSQL)
 
-**Key Models:** User (Clerk integration), Lead, Message, Campaign, CampaignLead  
-**Features:** UUID PKs, native arrays (tags[]), enums in Spanish, auto timestamps  
-**Relations:** Messages → Lead (direct, no Conversation table), Campaign ←→ Lead (many-to-many)
+**Key Models:** User (Clerk integration), Lead, Message, WhatsAppConversation, WhatsAppSession, WhatsAppWhitelistLog, MessageTemplate, ProactiveMessage, AiTrainingInteraction, ai_knowledge_base, ai_configuration
+**Features:** UUID PKs, tags as JSON, enums in Spanish (LeadStatus, MessageDirection, MessageStatus, MessageType), auto timestamps, soft delete (`deletedAt`) on Lead and Message
+**Relations:** Message → Lead (nullable FK, ON DELETE SET NULL), WhatsAppConversation → Message (nullable FK, ON DELETE SET NULL) — the dual-write between `messages` and `whatsapp_conversations` is unified via this FK (T1.1-bis)
+**No Campaign model:** the `create_campaigns_table` / `create_campaign_leads_table` migrations were applied historically but the tables were dropped in T1.4. Do not reintroduce unless the feature is designed from scratch.
 
 ## Security & Environment
 
 **Environment Variables (Required):**
 
 ```bash
-DATABASE_URL="postgresql://..."        # Supabase PostgreSQL
-DIRECT_URL="postgresql://..."          # Direct connection
-CLERK_SECRET_KEY="sk_test_..."         # Authentication
+DATABASE_URL="postgresql://..."        # Supabase PostgreSQL (pooler)
+DIRECT_URL="postgresql://..."          # Supabase direct (migrations)
+CLERK_SECRET_KEY="sk_test_..."         # API server-side
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
-OPENAI_API_KEY="sk-..."               # AI services (optional)
+CLERK_WEBHOOK_SECRET="whsec_..."       # Signed Clerk → /api/webhooks/clerk
+WHATSAPP_SERVICE_HMAC_SECRET="<64-hex>" # Shared HMAC across dashboard, API Nest, whatsapp-service. Without it the service returns 500 to every signed request.
+OPENROUTER_API_KEY="sk-or-..."         # AI primary
+GEMINI_API_KEY="..."                   # AI fallback
 ```
 
 **Security Rules:**
 
-- NEVER commit secrets/keys - use .env files only
-- All API endpoints except webhooks require Clerk JWT authentication
-- Use class-validator for input validation, sanitize user inputs
-- Enable Row Level Security (RLS) in Supabase for production
+- NEVER commit secrets/keys — use `.env` files only (all `.env*` are in `.gitignore` except `.env.example`).
+- All Nest controllers are gated by `@UseGuards(ClerkAuthGuard)` except the webhook endpoints (`/whatsapp/webhook` and `/api/webhooks/clerk`).
+- Server-to-server traffic to the whatsapp-service is gated by HMAC-SHA256 (`x-service-signature` + `x-service-timestamp`, 5-min replay window). Helpers at `apps/dashboard/lib/service-auth.ts` and `apps/api/src/whatsapp/service-auth.ts`; verifier at `apps/whatsapp-service/src/middleware/auth.ts`.
+- Use class-validator for input validation (every Nest DTO).
+- **RLS in Supabase is intentionally off** (13/13 tables, 0 policies). Option C of PRD T0.1 — operation is single-admin and every DB client uses a role that bypasses RLS. Re-open if a second user appears, PostgREST is exposed, or a Clerk↔Supabase JWT bridge is introduced.
 
 ## API Endpoints
 
-**Auth:** Clerk JWT required except `/api/webhooks/*`  
-**Format:** Standard `{ success, data, error }` responses  
-**Key Routes:** `/api/leads` (CRUD), `/api/ai/suggest`, `/api/webhooks/whatsapp`
+**Auth:** Clerk JWT required everywhere except `/api/webhooks/*` (which carry their own signing).
+**Format:** Standard `{ success, data, error }` responses.
+**Key Routes:** `/api/leads` (CRUD + soft delete), `/api/templates` (CRUD + preview), `/api/whatsapp/webhook`, `/api/webhooks/clerk`.
+**Proxy to whatsapp-service:** the dashboard never calls `localhost:3002` directly — every request goes through `apps/dashboard/app/api/whatsapp/[...path]/route.ts`, which `requireClerkToken` + signs HMAC before forwarding. WebSocket (Socket.IO) is the only channel that bypasses the proxy — it uses `getWhatsAppSocketUrl()` directly.
 
 ## Testing Strategy
 
-**Unit Tests:** Jest with `*.spec.ts` (backend) and `*.test.tsx` (frontend)  
-**Integration:** Supertest for API endpoints in `/test/` directories  
-**Coverage:** Minimum 80% for critical business logic  
-**Commands:** `pnpm test:watch` for development, `pnpm test:coverage` for coverage
+**Unit Tests:** Jest with `*.spec.ts` (backend) and `*.test.tsx` (frontend).
+**What exists today:** 10 tests `leads.service.spec.ts`, 6 tests `whatsapp.controller.spec.ts` (Nest guard overridden via `overrideGuard(ClerkAuthGuard)`), 6 tests `apps/whatsapp-service/src/middleware/auth.spec.ts` (HMAC round-trip + replay window + tamper detection), 8 tests in `apps/whatsapp-service/src/services/ai-thinking/__tests__/`, 1 integration spec.
+**Commands:** `pnpm test:watch` for development, `pnpm test:coverage` for coverage.
+**Coverage target:** no enforced minimum yet; aspirational 80% on critical business logic.
 
 ## Git & Development Workflow
 
