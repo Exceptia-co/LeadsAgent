@@ -1,4 +1,5 @@
 import { Pool, PoolClient } from 'pg';
+import { PrismaClient, MessageDirection, MessageType } from '@leadcrm/db';
 import { logger } from '../utils/logger';
 import PhoneNumberService from './PhoneNumberService';
 import type { TrainingInteraction } from '../types';
@@ -9,6 +10,25 @@ import type { KnowledgeBaseRepository } from './db/KnowledgeBaseRepository';
 import type { AIConfigRepository } from './db/AIConfigRepository';
 import type { TrainingRepository } from './db/TrainingRepository';
 import type { WhitelistLogRepository } from './db/WhitelistLogRepository';
+
+// Maps the free-form string messageType used across the whatsapp-service to
+// the Prisma MessageType enum. Falls back to TEXT for anything unknown (the
+// schema treats messageType as optional with TEXT default).
+function toPrismaMessageType(value?: string): MessageType {
+  switch ((value ?? 'text').toLowerCase()) {
+    case 'image':
+      return MessageType.IMAGE;
+    case 'audio':
+      return MessageType.AUDIO;
+    case 'video':
+      return MessageType.VIDEO;
+    case 'document':
+    case 'doc':
+      return MessageType.DOCUMENT;
+    default:
+      return MessageType.TEXT;
+  }
+}
 
 // Re-export types for backward compatibility (will be removed after full migration)
 export interface ConversationData {
@@ -69,6 +89,7 @@ export interface Lead {
  */
 class DatabaseService {
   private pool: Pool | null = null;
+  private prisma: PrismaClient | null = null;
   private useRepositories: boolean;
   private repositoryFactory: RepositoryFactory | null = null;
   private leadRepository: ILeadRepository | null = null;
@@ -87,6 +108,9 @@ class DatabaseService {
     );
 
     this.initializePool();
+    // Prisma client for unified writes (T1.1 Phase B) — shares DATABASE_URL
+    // via default env resolution.
+    this.prisma = process.env.DATABASE_URL ? new PrismaClient() : null;
 
     // Note: Repository initialization is async and will be called during initializeTable()
   }
@@ -342,6 +366,13 @@ class DatabaseService {
   }
 
   // Guardar conversación
+  //
+  // T1.1-bis paso 1 (unified writer): crea la fila canónica en `messages`
+  // y la vincula a `whatsapp_conversations.message_id` en una transacción
+  // atómica Prisma. Si el teléfono resuelve a un lead existente, ambas
+  // filas quedan vinculadas al mismo leadId; si no, ambas con leadId=null.
+  // Esto detiene la divergencia entre `messages` y `whatsapp_conversations`
+  // para mensajes nuevos.
   public async saveConversation(data: ConversationData): Promise<string | null> {
     // Phase 2: Repository pattern delegation
     if (this.useRepositories && this.conversationRepository) {
@@ -352,13 +383,11 @@ class DatabaseService {
         return 'repo-generated-id';
       } catch (error) {
         logger.error('❌ Repository method failed, falling back to legacy:', error);
-        // Fallback to legacy implementation below
+        // Fallback to unified implementation below
       }
     }
 
-    // Legacy implementation
-    // LOG DETALLADO: Estado inicial
-    logger.info('🔍 [DIAGNOSTIC] saveConversation called with data:', {
+    logger.info('🔍 [UNIFIED-WRITE] saveConversation called:', {
       sessionId: data.sessionId,
       phoneNumber: data.phoneNumber,
       messageText: data.messageText ? data.messageText.substring(0, 50) + '...' : null,
@@ -366,74 +395,83 @@ class DatabaseService {
       isFromUser: data.isFromUser,
     });
 
-    // LOG DETALLADO: Estado de la conexión
-    if (!this.pool) {
-      logger.error('❌ [DIAGNOSTIC] No database connection available!');
-      logger.error('❌ [DIAGNOSTIC] DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
+    if (!this.prisma) {
+      logger.error('❌ [UNIFIED-WRITE] No Prisma client available!');
+      logger.error(
+        '❌ [UNIFIED-WRITE] DATABASE_URL:',
+        process.env.DATABASE_URL ? 'SET' : 'NOT SET'
+      );
       return null;
     }
 
-    logger.info('✅ [DIAGNOSTIC] Database pool connection available');
-
-    const query = `
-      INSERT INTO whatsapp_conversations (
-        session_id, phone_number, contact_name, message_text, response_text,
-        intent, sentiment, ai_provider, tokens_used, is_from_user
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING id;
-    `;
-
-    const values = [
-      data.sessionId,
-      data.phoneNumber,
-      data.contactName || null,
-      data.messageText || null,
-      data.responseText || null,
-      data.intent || null,
-      data.sentiment || null,
-      data.aiProvider || null,
-      data.tokensUsed || 0,
-      data.isFromUser !== undefined ? data.isFromUser : true,
-    ];
-
-    // LOG DETALLADO: Valores que se van a insertar
-    logger.info('📝 [DIAGNOSTIC] Query values prepared:', {
-      sessionId: values[0],
-      phoneNumber: values[1],
-      contactName: values[2],
-      intent: values[5],
-      isFromUser: values[9],
-    });
+    const isFromUser = data.isFromUser !== false;
+    // In the legacy shape, messageText is the user message (INBOUND) and
+    // responseText is the AI reply (OUTBOUND). Callers pass XOR one of
+    // them depending on isFromUser. Canonical `messages.content` takes
+    // whichever is present; skip silently if both are empty.
+    const canonicalContent = (isFromUser ? data.messageText : data.responseText) ?? null;
+    if (!canonicalContent) {
+      logger.warn(
+        '⚠️ [UNIFIED-WRITE] saveConversation called without canonical content — skipping message row'
+      );
+      return null;
+    }
 
     try {
-      logger.info('🔄 [DIAGNOSTIC] Executing database query...');
-      const result = await this.pool.query(query, values);
-
-      const conversationId = result.rows[0]?.id;
-
-      logger.info('✅ [DIAGNOSTIC] Query executed successfully!', {
-        conversationId,
-        rowsAffected: result.rowCount,
-        returningId: result.rows[0]?.id,
+      const normalizedPhone = data.phoneNumber.replace(/^\+/, '');
+      const lead = await this.prisma.lead.findUnique({
+        where: { phone: normalizedPhone },
+        select: { id: true },
       });
 
-      logger.info('💾 Conversación guardada correctamente:', {
-        id: conversationId,
+      const result = await this.prisma.$transaction(async tx => {
+        const message = await tx.message.create({
+          data: {
+            leadId: lead?.id ?? null,
+            content: canonicalContent,
+            direction: isFromUser ? MessageDirection.INBOUND : MessageDirection.OUTBOUND,
+            messageType: toPrismaMessageType(data.messageType),
+            sessionId: data.sessionId,
+          },
+        });
+
+        const conversation = await tx.whatsAppConversation.create({
+          data: {
+            leadId: lead?.id ?? null,
+            messageId: message.id,
+            sessionId: data.sessionId,
+            phoneNumber: data.phoneNumber,
+            contactName: data.contactName ?? null,
+            messageText: data.messageText ?? null,
+            responseText: data.responseText ?? null,
+            messageType: data.messageType ?? 'text',
+            intent: data.intent ?? null,
+            sentiment: data.sentiment ?? null,
+            aiProvider: data.aiProvider ?? null,
+            tokensUsed: data.tokensUsed ?? 0,
+            isFromUser,
+          },
+        });
+
+        return { conversationId: conversation.id, messageId: message.id };
+      });
+
+      logger.info('💾 [UNIFIED-WRITE] Message + Conversation created:', {
+        conversationId: result.conversationId,
+        messageId: result.messageId,
         phoneNumber: data.phoneNumber,
         sessionId: data.sessionId,
+        leadId: lead?.id ?? null,
       });
 
-      return conversationId;
+      return result.conversationId;
     } catch (error: any) {
-      logger.error('❌ [DIAGNOSTIC] Error executing database query:', {
+      logger.error('❌ [UNIFIED-WRITE] Error in Prisma transaction:', {
         error: error.message,
         code: error.code,
-        detail: error.detail,
-        hint: error.hint,
-        position: error.position,
+        meta: error.meta,
         stack: error.stack?.substring(0, 200) + '...',
       });
-      logger.error('❌ Error guardando conversación (legacy):', error);
       return null;
     }
   }
