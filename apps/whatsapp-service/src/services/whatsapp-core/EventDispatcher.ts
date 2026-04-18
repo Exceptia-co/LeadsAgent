@@ -408,9 +408,7 @@ export class EventDispatcher {
 
     const secret = process.env.WHATSAPP_SERVICE_HMAC_SECRET;
     if (!secret) {
-      logger.error(
-        '❌ Cannot send webhook: WHATSAPP_SERVICE_HMAC_SECRET is not configured'
-      );
+      logger.error('❌ Cannot send webhook: WHATSAPP_SERVICE_HMAC_SECRET is not configured');
       return;
     }
 

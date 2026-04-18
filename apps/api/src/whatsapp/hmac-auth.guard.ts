@@ -32,9 +32,9 @@ export class HmacAuthGuard implements CanActivate {
       return true;
     }
 
-    const req = context.switchToHttp().getRequest<
-      Request & { rawBody?: Buffer }
-    >();
+    const req = context
+      .switchToHttp()
+      .getRequest<Request & { rawBody?: Buffer }>();
 
     const secret = process.env.WHATSAPP_SERVICE_HMAC_SECRET;
     if (!secret) {
