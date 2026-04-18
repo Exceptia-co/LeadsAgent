@@ -20,8 +20,7 @@ const toggleVariants = cva(
 );
 
 interface ToggleProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof toggleVariants> {
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof toggleVariants> {
   checked?: boolean;
   onCheckedChange?: (checked: boolean) => void;
 }

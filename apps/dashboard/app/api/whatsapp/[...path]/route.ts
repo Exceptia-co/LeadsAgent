@@ -30,9 +30,7 @@ async function proxyRequest(request: NextRequest, path: string[], method: string
     // `/api/whatsapp/sessions` become `sessions` here and must be forwarded
     // to `${whatsAppUrl}/api/sessions`. If the caller already includes
     // `api/…` (e.g. `/api/whatsapp/api/conversations`), we don't double it.
-    const normalisedPath = pathString.startsWith("api/")
-      ? pathString
-      : `api/${pathString}`;
+    const normalisedPath = pathString.startsWith("api/") ? pathString : `api/${pathString}`;
     const targetUrl = new URL(`${whatsAppUrl}/${normalisedPath}`);
 
     // Forward query parameters

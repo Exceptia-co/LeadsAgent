@@ -34,7 +34,9 @@ describe('WhatsAppController', () => {
       .compile();
 
     controller = module.get<WhatsAppController>(WhatsAppController);
-    whatsAppService = module.get(WhatsAppService) as jest.Mocked<WhatsAppService>;
+    whatsAppService = module.get(
+      WhatsAppService,
+    ) as jest.Mocked<WhatsAppService>;
   });
 
   describe('handleWebhook', () => {
@@ -53,13 +55,19 @@ describe('WhatsAppController', () => {
     });
 
     it('dispatches "message" events to handleIncomingMessage', async () => {
-      const result = await controller.handleWebhook(basePayload, 'whatsapp-service');
+      const result = await controller.handleWebhook(
+        basePayload,
+        'whatsapp-service',
+      );
 
       expect(whatsAppService.handleIncomingMessage).toHaveBeenCalledWith(
         'session-1',
         { body: 'hello' },
       );
-      expect(result).toEqual({ success: true, message: 'Webhook processed successfully' });
+      expect(result).toEqual({
+        success: true,
+        message: 'Webhook processed successfully',
+      });
     });
 
     it('dispatches "authenticated" events to handleSessionAuthenticated', async () => {
@@ -88,13 +96,20 @@ describe('WhatsAppController', () => {
 
     it('dispatches "status_change" events to handleStatusChange (T2.3 plumbing)', async () => {
       await controller.handleWebhook(
-        { ...basePayload, event: 'status_change', data: { status: 'auth_failure' } },
+        {
+          ...basePayload,
+          event: 'status_change',
+          data: { status: 'auth_failure' },
+        },
         'whatsapp-service',
       );
 
-      expect(whatsAppService.handleStatusChange).toHaveBeenCalledWith('session-1', {
-        status: 'auth_failure',
-      });
+      expect(whatsAppService.handleStatusChange).toHaveBeenCalledWith(
+        'session-1',
+        {
+          status: 'auth_failure',
+        },
+      );
     });
 
     it('returns success on "qr_updated" without invoking any service method', async () => {
@@ -107,7 +122,10 @@ describe('WhatsAppController', () => {
       expect(whatsAppService.handleSessionAuthenticated).not.toHaveBeenCalled();
       expect(whatsAppService.handleSessionDisconnected).not.toHaveBeenCalled();
       expect(whatsAppService.handleStatusChange).not.toHaveBeenCalled();
-      expect(result).toEqual({ success: true, message: 'Webhook processed successfully' });
+      expect(result).toEqual({
+        success: true,
+        message: 'Webhook processed successfully',
+      });
     });
   });
 });

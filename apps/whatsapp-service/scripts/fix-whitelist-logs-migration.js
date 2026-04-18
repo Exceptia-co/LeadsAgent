@@ -21,14 +21,16 @@ async function runMigration() {
     `;
 
     const columnCheck = await pool.query(checkColumnQuery);
-    
+
     if (columnCheck.rows.length === 0) {
       console.log('❌ Table whatsapp_whitelist_logs or column lead_id not found');
       return;
     }
 
     const currentColumn = columnCheck.rows[0];
-    console.log(`📋 Current lead_id column: ${currentColumn.data_type} ${currentColumn.character_maximum_length ? `(${currentColumn.character_maximum_length})` : ''}`);
+    console.log(
+      `📋 Current lead_id column: ${currentColumn.data_type} ${currentColumn.character_maximum_length ? `(${currentColumn.character_maximum_length})` : ''}`
+    );
 
     if (currentColumn.data_type === 'uuid') {
       console.log('✅ Column lead_id is already UUID type - no migration needed');
@@ -38,7 +40,7 @@ async function runMigration() {
     // If it's VARCHAR, we need to convert it to UUID
     if (currentColumn.data_type === 'character varying') {
       console.log('🔄 Converting lead_id from VARCHAR to UUID...');
-      
+
       // Step 1: Add a temporary column
       await pool.query(`
         ALTER TABLE whatsapp_whitelist_logs 
@@ -89,11 +91,12 @@ async function runMigration() {
 
     console.log('\n📋 Final table structure:');
     tableStructure.rows.forEach(col => {
-      console.log(`  ${col.column_name}: ${col.data_type}${col.is_nullable === 'YES' ? ' (nullable)' : ' (not null)'}`);
+      console.log(
+        `  ${col.column_name}: ${col.data_type}${col.is_nullable === 'YES' ? ' (nullable)' : ' (not null)'}`
+      );
     });
 
     console.log('\n🎉 Migration completed successfully!');
-
   } catch (error) {
     console.error('❌ Migration failed:', error);
     throw error;
@@ -109,7 +112,7 @@ if (require.main === module) {
       console.log('✅ Migration script finished');
       process.exit(0);
     })
-    .catch((error) => {
+    .catch(error => {
       console.error('💥 Migration script failed:', error);
       process.exit(1);
     });

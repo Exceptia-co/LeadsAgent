@@ -63,15 +63,12 @@ export default function ProactiveMessageSender({
     setLoading(true);
     try {
       const token = await getToken();
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || ""}/leads?limit=200`,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/leads?limit=200`, {
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-      );
+      });
       const result = await response.json();
       setLeads(result?.data ?? result?.leads ?? []);
     } catch (error) {

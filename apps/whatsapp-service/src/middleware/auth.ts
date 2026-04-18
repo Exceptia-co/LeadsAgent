@@ -38,11 +38,7 @@ export function signServiceRequest(
   return { timestamp, signature: `${SIGNATURE_PREFIX}${hex}` };
 }
 
-export function verifyServiceSignature(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void {
+export function verifyServiceSignature(req: Request, res: Response, next: NextFunction): void {
   try {
     // Skip auth entirely in automated tests so the suite does not need a secret.
     if (process.env.NODE_ENV === 'test') {

@@ -11,7 +11,10 @@ export interface SignedHeaders {
   'x-service-signature': string;
 }
 
-export function signServiceRequest(body: string, secret: string): SignedHeaders {
+export function signServiceRequest(
+  body: string,
+  secret: string,
+): SignedHeaders {
   const timestamp = Date.now().toString();
   const payload = `${timestamp}.${body}`;
   const hex = createHmac('sha256', secret).update(payload).digest('hex');

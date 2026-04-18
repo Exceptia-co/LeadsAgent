@@ -1,11 +1,12 @@
 const { Pool } = require('pg');
 
 const migrationName = '002_fix_whitelist_logs_schema_final';
-const migrationDescription = 'Final fix for whatsapp_whitelist_logs schema inconsistencies - standardize on decision column';
+const migrationDescription =
+  'Final fix for whatsapp_whitelist_logs schema inconsistencies - standardize on decision column';
 
 async function up(pool) {
   console.log(`🔄 Running migration: ${migrationName}`);
-  
+
   try {
     // Check if table exists first
     const tableExists = await pool.query(`
@@ -15,7 +16,7 @@ async function up(pool) {
         AND table_name = 'whatsapp_whitelist_logs'
       );
     `);
-    
+
     if (!tableExists.rows[0].exists) {
       console.log('🆕 Creating whatsapp_whitelist_logs table with correct schema...');
       await pool.query(`
@@ -54,14 +55,14 @@ async function up(pool) {
       // Step 2: Handle the action/decision column mess
       if (columnNames.includes('action') && columnNames.includes('decision')) {
         console.log('🔄 Both action and decision columns exist - consolidating...');
-        
+
         // Copy action data to decision if decision is null
         await pool.query(`
           UPDATE whatsapp_whitelist_logs 
           SET decision = action 
           WHERE decision IS NULL AND action IS NOT NULL;
         `);
-        
+
         // Make decision NOT NULL if it's currently nullable
         const decisionColumn = currentColumns.rows.find(col => col.column_name === 'decision');
         if (decisionColumn && decisionColumn.is_nullable === 'YES') {
@@ -71,14 +72,13 @@ async function up(pool) {
             ALTER COLUMN decision SET NOT NULL;
           `);
         }
-        
+
         // Drop the action column
         console.log('🗑️ Dropping redundant action column...');
         await pool.query(`
           ALTER TABLE whatsapp_whitelist_logs 
           DROP COLUMN action;
         `);
-        
       } else if (columnNames.includes('action') && !columnNames.includes('decision')) {
         console.log('🔄 Renaming action column to decision...');
         await pool.query(`
@@ -101,7 +101,7 @@ async function up(pool) {
         { name: 'message_preview', type: 'TEXT', nullable: true },
         { name: 'ai_provider', type: 'VARCHAR(50)', nullable: true },
         { name: 'ip_address', type: 'VARCHAR(45)', nullable: true },
-        { name: 'user_agent', type: 'TEXT', nullable: true }
+        { name: 'user_agent', type: 'TEXT', nullable: true },
       ];
 
       for (const col of requiredColumns) {
@@ -154,7 +154,7 @@ async function up(pool) {
       'CREATE INDEX IF NOT EXISTS idx_whitelist_logs_decision ON whatsapp_whitelist_logs(decision);',
       'CREATE INDEX IF NOT EXISTS idx_whitelist_logs_created ON whatsapp_whitelist_logs(created_at);',
       'CREATE INDEX IF NOT EXISTS idx_whitelist_logs_session ON whatsapp_whitelist_logs(session_id);',
-      'CREATE INDEX IF NOT EXISTS idx_whitelist_logs_lead_id ON whatsapp_whitelist_logs(lead_id);'
+      'CREATE INDEX IF NOT EXISTS idx_whitelist_logs_lead_id ON whatsapp_whitelist_logs(lead_id);',
     ];
 
     console.log('📊 Creating indexes...');
@@ -178,7 +178,7 @@ async function up(pool) {
     });
 
     console.log(`✅ Migration ${migrationName} completed successfully`);
-    
+
     // Test the schema by inserting a test record
     console.log('🧪 Testing schema with a test insert...');
     try {
@@ -186,19 +186,18 @@ async function up(pool) {
         INSERT INTO whatsapp_whitelist_logs (phone_number, decision, reason, created_by) 
         VALUES ('test-number', 'BLOCKED', 'Migration test', 'migration-script');
       `);
-      
+
       // Delete the test record
       await pool.query(`
         DELETE FROM whatsapp_whitelist_logs 
         WHERE phone_number = 'test-number' AND created_by = 'migration-script';
       `);
-      
+
       console.log('✅ Schema test passed - ready for use!');
     } catch (testError) {
       console.error('❌ Schema test failed:', testError.message);
       throw testError;
     }
-
   } catch (error) {
     console.error(`❌ Migration ${migrationName} failed:`, error);
     throw error;
@@ -207,16 +206,15 @@ async function up(pool) {
 
 async function down(pool) {
   console.log(`🔄 Reverting migration: ${migrationName}`);
-  
+
   try {
     // This is a complex migration that standardizes the schema
     // Rolling back would require knowing the exact previous state
     console.warn('⚠️ This migration cannot be automatically reverted');
     console.warn('⚠️ Manual database restore from backup may be required');
-    
+
     // Optionally, we could rename decision back to action if needed:
     // await pool.query(`ALTER TABLE whatsapp_whitelist_logs RENAME COLUMN decision TO action;`);
-    
   } catch (error) {
     console.error(`❌ Failed to revert migration ${migrationName}:`, error);
     throw error;
@@ -227,5 +225,5 @@ module.exports = {
   name: migrationName,
   description: migrationDescription,
   up,
-  down
+  down,
 };
