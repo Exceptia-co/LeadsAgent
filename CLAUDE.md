@@ -73,9 +73,10 @@ apps/
 
 packages/
 ├── db/                    # Prisma schema & client
-├── ui/                    # Shared React components
 └── config-*/              # Shared ESLint/TypeScript configs
 ```
+
+Note: `packages/ui` was removed in T3.2 — absorbed into `apps/dashboard/components/ui/` (Alert, Toggle). No new dependency on a shared UI package.
 
 **Data Flow:**
 
@@ -94,7 +95,7 @@ WhatsApp <-> WhatsApp Service <-> NestJS API <-> PostgreSQL
 
 ### Workspace Packages
 
-Use workspace imports: `@leadcrm/db`, `@leadcrm/ui`, `@leadcrm/config-eslint`, `@leadcrm/config-ts`
+Use workspace imports: `@leadcrm/db`, `@leadcrm/config-eslint`, `@leadcrm/config-ts` (`@leadcrm/ui` was removed in T3.2).
 
 ## Database Schema
 
@@ -116,10 +117,11 @@ Use workspace imports: `@leadcrm/db`, `@leadcrm/ui`, `@leadcrm/config-eslint`, `
 
 ### NestJS API
 
-- Module-based: AuthModule, LeadsModule, WhatsAppModule, PrismaModule
-- Guards: ClerkAuthGuard for protected routes
+- Module-based: AuthModule, LeadsModule, TemplatesModule (new, T2.2), WhatsAppModule, PrismaModule
+- Guards: `ClerkAuthGuard` at the class level on every sensitive controller
 - Decorators: `@CurrentUser()` for user context injection
 - Response format: `{ success: boolean, data?: any, error?: string }`
+- Outbound calls from API → whatsapp-service use `signServiceRequest()` (HMAC-SHA256 with `x-service-timestamp` + `x-service-signature`) — see `apps/api/src/whatsapp/service-auth.ts` and `WhatsAppService.sendMessage`
 
 ### WhatsApp Service Path Aliases
 
@@ -140,22 +142,35 @@ Use workspace imports: `@leadcrm/db`, `@leadcrm/ui`, `@leadcrm/config-eslint`, `
 - Backend tests: `*.spec.ts`
 - Frontend tests: `*.test.tsx`
 
-## Active Refactoring
+## State of the Project
 
-Branch `refactor/whatsapp-service` contains ongoing AIThinkingService modularization:
+The stabilization PRD (`PRD-ESTABILIZACION.md`, v5.23) closed on 2026-04-18. All five phases + T0.4-ter are complete:
 
-- Extracting 1,686-line monolith into focused modules
-- New structure in `src/services/ai-thinking/`
-- Components: CacheManager, IntentAnalyzer, ContextEnricher, ComplexityAnalyzer, KnowledgeRetriever, ResponseGenerator, StrategySelector, DecisionEngine
-- See `refactor/plan.md` for full details
+- **Phase 0 — Security**: HMAC server-to-server auth, Clerk guards on every Nest controller, firewall Hetzner restricted (SSH /24, ports 3002/3003 closed), Postgres 17.6 upgrade.
+- **Phase 1 — Integrity**: dual-write unified (`whatsapp_conversations.message_id` FK + transactional writer + JOIN reader + backfill + drop of duplicate columns).
+- **Phase 2 — Wiring**: Socket.IO `auth_failure → AUTH_INVALID` fixed, Templates moved to Nest, rate limit per WhatsApp session (200/h).
+- **Phase 3 — Cleanup**: `WhatsAppServiceRefactored` + `@leadcrm/ui` removed (~−4,350 lines net).
+- **Phase 4 — Scalability**: soft delete, pagination, N+1 in `getConversations` eliminated via SQL JOIN.
+- **Phase 5 — Testing**: 22+ Jest unit tests across API + whatsapp-service.
+
+`ANALISIS-ESTADO-PROYECTO.md` v5 is the canonical snapshot of the post-stabilization state.
+
+The AIThinkingService modularization (formerly in branch `refactor/whatsapp-service`) is **complete** — the module lives at `apps/whatsapp-service/src/services/ai-thinking/` with CacheManager, IntentAnalyzer, ContextEnricher, ComplexityAnalyzer, KnowledgeRetriever, ResponseGenerator, StrategySelector, DecisionEngine. Integration with the rest of the service is via `AIThinkingModuleFactory`.
 
 ## Environment Variables
 
 Environment files:
 
-- `.env` → Development (Supabase + Docker Redis)
-- `.env.production` → Production (Supabase + Hetzner)
-- `.env.example` → Template (committed to repo)
+- `.env` → Development (root, Supabase + Docker Redis)
+- `apps/dashboard/.env.local` → Next.js reads this; must contain `NEXT_PUBLIC_API_URL`, `CLERK_*`, and `WHATSAPP_SERVICE_HMAC_SECRET`
+- `apps/*/.env` → per-service overrides in production (on the Hetzner VPS: `/opt/leadcrm/apps/whatsapp-service/.env` and `/opt/leadcrm/apps/api/.env`)
+- `.env.production` → production defaults (Supabase + Hetzner)
+- `.env.example` → template (committed to repo)
+
+**Critical env vars that, if missing, break the HMAC chain:**
+
+- `WHATSAPP_SERVICE_HMAC_SECRET` (64 hex chars) — must be the **same** in Vercel (dashboard), on the Hetzner VPS (both apps' `.env`), and in every developer's local `.env`. Without it the whatsapp-service returns `500 "service auth misconfigured"` on signed requests, and the proxy in Next returns `500 "Proxy misconfigured: missing service auth secret"`.
+- `CLERK_WEBHOOK_SECRET` — required only by the dashboard's `/api/webhooks/clerk` route handler.
 
 **Service Ports:**
 | Service | Port | URL |
