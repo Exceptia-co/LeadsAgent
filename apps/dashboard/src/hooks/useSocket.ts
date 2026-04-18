@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { io, Socket } from "socket.io-client";
-import { getWhatsAppUrl } from "../../hooks/use-whatsapp-url";
+import { getWhatsAppSocketUrl } from "../../hooks/use-whatsapp-url";
 
 export interface WhatsAppSession {
   id: string;
@@ -119,17 +119,17 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
       const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
 
       if (isLocal) {
-        return getWhatsAppUrl(); // WhatsApp service port
+        return getWhatsAppSocketUrl(); // WhatsApp service port
       }
 
       // For production without NEXT_PUBLIC_WEBSOCKET_URL:
       // WebSocket requires SSL when page is HTTPS
       // The WhatsApp API proxy handles HTTP requests but not WebSocket
       // Return the WhatsApp URL for graceful fallback (will fail but error handled)
-      return getWhatsAppUrl();
+      return getWhatsAppSocketUrl();
     }
 
-    return getWhatsAppUrl(); // Default fallback
+    return getWhatsAppSocketUrl(); // Default fallback
   }, []);
 
   const handleConnectionEstablished = useCallback((data: any) => {

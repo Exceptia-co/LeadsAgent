@@ -274,11 +274,18 @@ export default function WhatsAppPage() {
   const loadLeads = async () => {
     setDataLoading((prev) => ({ ...prev, leads: true }));
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/leads`);
+      const token = await getToken();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/leads?limit=200`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        },
+      );
       const result = await response.json();
-      if (result.success) {
-        setLeads(result.leads || result.data || []);
-      }
+      setLeads(result?.data ?? result?.leads ?? []);
     } catch (error) {
       console.error("Error loading leads:", error);
       showToast({

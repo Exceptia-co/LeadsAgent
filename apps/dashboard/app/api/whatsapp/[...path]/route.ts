@@ -25,8 +25,15 @@ async function proxyRequest(request: NextRequest, path: string[], method: string
     const pathString = path.join("/");
     const whatsAppUrl = getWhatsAppServiceUrl();
 
-    // Build the target URL
-    const targetUrl = new URL(`${whatsAppUrl}/${pathString}`);
+    // T0.4-ter: the whatsapp-service mounts its router only under /api
+    // after dropping the duplicate `/` mount. Incoming proxy paths like
+    // `/api/whatsapp/sessions` become `sessions` here and must be forwarded
+    // to `${whatsAppUrl}/api/sessions`. If the caller already includes
+    // `api/…` (e.g. `/api/whatsapp/api/conversations`), we don't double it.
+    const normalisedPath = pathString.startsWith("api/")
+      ? pathString
+      : `api/${pathString}`;
+    const targetUrl = new URL(`${whatsAppUrl}/${normalisedPath}`);
 
     // Forward query parameters
     request.nextUrl.searchParams.forEach((value, key) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getWhatsAppUrl } from "../../hooks/use-whatsapp-url";
+import { useAuth } from "@clerk/nextjs";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Search, Send, User } from "lucide-react";
@@ -33,6 +33,7 @@ export default function ProactiveMessageSender({
   onSendMessage,
   selectedTemplate,
 }: ProactiveMessageSenderProps) {
+  const { getToken } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -61,12 +62,18 @@ export default function ProactiveMessageSender({
   const fetchLeads = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/leads`);
+      const token = await getToken();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/leads?limit=200`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        },
+      );
       const result = await response.json();
-
-      if (result.success) {
-        setLeads(result.leads || result.data);
-      }
+      setLeads(result?.data ?? result?.leads ?? []);
     } catch (error) {
       console.error("Error fetching leads:", error);
     } finally {

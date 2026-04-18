@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { getWhatsAppUrl } from "../../../hooks/use-whatsapp-url";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
@@ -55,6 +56,7 @@ interface ProactiveMessage {
 }
 
 export default function ProactivePage() {
+  const { getToken } = useAuth();
   const { templates } = useTemplates();
   const { validateSessionForSending } = useWhatsApp();
   const { showToast } = useToast();
@@ -116,17 +118,24 @@ export default function ProactivePage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch leads
-      const leadsResponse = await fetch(`${getWhatsAppUrl()}/leads`);
+      const token = await getToken();
+      const authHeaders: HeadersInit = {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      // Leads → Nest API (el whatsapp-service ya no expone /leads tras T0.7)
+      const leadsResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/leads?limit=200`,
+        { headers: authHeaders },
+      );
       const leadsResult = await leadsResponse.json();
 
-      // Fetch proactive messages
+      // Proactive messages → whatsapp-service vía proxy firmado
       const messagesResponse = await fetch(`${getWhatsAppUrl()}/proactive-messages`);
       const messagesResult = await messagesResponse.json();
 
-      if (leadsResult.success) {
-        setLeads(leadsResult.leads || leadsResult.data);
-      }
+      setLeads(leadsResult?.data ?? leadsResult?.leads ?? []);
 
       if (messagesResult.success) {
         setProactiveMessages(messagesResult.data);
