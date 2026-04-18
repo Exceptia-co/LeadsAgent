@@ -3,7 +3,6 @@ import { PrismaClient, MessageDirection, MessageType } from '@leadcrm/db';
 import { logger } from '../utils/logger';
 import PhoneNumberService from './PhoneNumberService';
 import type { TrainingInteraction } from '../types';
-import MigrationService from './MigrationService';
 import type { ILeadRepository, IConversationRepository } from './db';
 import { RepositoryFactory } from './db';
 import type { KnowledgeBaseRepository } from './db/KnowledgeBaseRepository';
@@ -183,23 +182,6 @@ class DatabaseService {
     }
   }
 
-  // Ejecutar migraciones automáticamente
-  private async runMigrations(): Promise<void> {
-    if (!this.pool) {
-      logger.warn('No hay conexión a base de datos disponible para migraciones');
-      return;
-    }
-
-    try {
-      const migrationService = new MigrationService(this.pool);
-      await migrationService.runMigrations();
-      logger.info('✅ Migraciones ejecutadas correctamente');
-    } catch (error) {
-      logger.error('❌ Error ejecutando migraciones:', error);
-      throw error; // Re-throw para que falle la inicialización si hay problemas críticos
-    }
-  }
-
   // Crear tabla si no existe
   public async initializeTable(): Promise<void> {
     if (!this.pool) {
@@ -212,26 +194,27 @@ class DatabaseService {
       await this.initializeRepositories();
     }
 
-    // Ejecutar migraciones automáticamente
-    await this.runMigrations();
+    // T1.1-bis paso 5: legacy MigrationService eliminado — Prisma
+    // (`_prisma_migrations`) es la única fuente de migraciones.
 
     const createTablesQuery = `
-      -- Tabla de conversaciones de WhatsApp
+      -- Tabla de conversaciones de WhatsApp (DDL alineado con schema Prisma
+      -- tras T1.1-bis paso 4). message_text/response_text fueron eliminados;
+      -- el contenido canónico vive en messages.content vinculado por message_id.
       CREATE TABLE IF NOT EXISTS whatsapp_conversations (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         session_id VARCHAR(255) NOT NULL,
         phone_number VARCHAR(50) NOT NULL,
         contact_name VARCHAR(255),
-        message_text TEXT,
-        response_text TEXT,
         message_type VARCHAR(50) DEFAULT 'text',
         intent VARCHAR(100),
         sentiment VARCHAR(50),
         ai_provider VARCHAR(50),
         tokens_used INTEGER DEFAULT 0,
         is_from_user BOOLEAN DEFAULT true,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
 
       -- Tabla de logs de decisiones de whitelist
@@ -442,8 +425,6 @@ class DatabaseService {
             sessionId: data.sessionId,
             phoneNumber: data.phoneNumber,
             contactName: data.contactName ?? null,
-            messageText: data.messageText ?? null,
-            responseText: data.responseText ?? null,
             messageType: data.messageType ?? 'text',
             intent: data.intent ?? null,
             sentiment: data.sentiment ?? null,
@@ -501,19 +482,15 @@ class DatabaseService {
       });
 
       return rows.map(row => {
-        const canonicalContent = row.message?.content ?? null;
+        const canonicalContent = row.message?.content ?? undefined;
         const isFromUser = row.isFromUser ?? true;
         return {
           id: row.id,
           sessionId: row.sessionId,
           phoneNumber: row.phoneNumber,
           contactName: row.contactName ?? undefined,
-          messageText: isFromUser
-            ? (row.messageText ?? canonicalContent ?? undefined)
-            : (row.messageText ?? undefined),
-          responseText: !isFromUser
-            ? (row.responseText ?? canonicalContent ?? undefined)
-            : (row.responseText ?? undefined),
+          messageText: isFromUser ? canonicalContent : undefined,
+          responseText: !isFromUser ? canonicalContent : undefined,
           messageType: row.messageType ?? 'text',
           intent: row.intent ?? undefined,
           sentiment: row.sentiment ?? undefined,
@@ -540,33 +517,27 @@ class DatabaseService {
       return [];
     }
 
-    const query = `
-      SELECT message_text, response_text, is_from_user, created_at
-      FROM whatsapp_conversations 
-      WHERE phone_number = $1 AND session_id = $2
-      ORDER BY created_at ASC 
-      LIMIT $3;
-    `;
+    if (!this.prisma) {
+      return [];
+    }
 
     try {
-      const result = await this.pool.query(query, [phoneNumber, sessionId, limit]);
-      const context: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-
-      result.rows.forEach(row => {
-        if (row.message_text && row.is_from_user) {
-          context.push({
-            role: 'user',
-            content: row.message_text,
-          });
-        }
-        if (row.response_text && !row.is_from_user) {
-          context.push({
-            role: 'assistant',
-            content: row.response_text,
-          });
-        }
+      const rows = await this.prisma.whatsAppConversation.findMany({
+        where: { phoneNumber, sessionId },
+        orderBy: { createdAt: 'asc' },
+        take: limit,
+        include: { message: { select: { content: true } } },
       });
 
+      const context: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+      for (const row of rows) {
+        const content = row.message?.content;
+        if (!content) continue;
+        context.push({
+          role: row.isFromUser ? 'user' : 'assistant',
+          content,
+        });
+      }
       return context;
     } catch (error) {
       logger.error('Error obteniendo contexto reciente:', error);
@@ -629,41 +600,44 @@ class DatabaseService {
       return [];
     }
 
-    let query = `
-      SELECT * FROM whatsapp_conversations 
-      WHERE (message_text ILIKE $1 OR response_text ILIKE $1 OR contact_name ILIKE $1)
-    `;
-
-    const values: any[] = [`%${searchTerm}%`];
-
-    if (sessionId) {
-      query += ' AND session_id = $2';
-      values.push(sessionId);
-      query += ' ORDER BY created_at DESC LIMIT $3';
-      values.push(limit);
-    } else {
-      query += ' ORDER BY created_at DESC LIMIT $2';
-      values.push(limit);
+    if (!this.prisma) {
+      return [];
     }
 
     try {
-      const result = await this.pool.query(query, values);
-      return result.rows.map(row => ({
-        id: row.id,
-        sessionId: row.session_id,
-        phoneNumber: row.phone_number,
-        contactName: row.contact_name,
-        messageText: row.message_text,
-        responseText: row.response_text,
-        messageType: row.message_type,
-        intent: row.intent,
-        sentiment: row.sentiment,
-        aiProvider: row.ai_provider,
-        tokensUsed: row.tokens_used || 0,
-        isFromUser: row.is_from_user,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
-      }));
+      const rows = await this.prisma.whatsAppConversation.findMany({
+        where: {
+          ...(sessionId ? { sessionId } : {}),
+          OR: [
+            { contactName: { contains: searchTerm, mode: 'insensitive' } },
+            { message: { content: { contains: searchTerm, mode: 'insensitive' } } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        include: { message: { select: { content: true, direction: true } } },
+      });
+
+      return rows.map(row => {
+        const canonicalContent = row.message?.content ?? undefined;
+        const isFromUser = row.isFromUser ?? true;
+        return {
+          id: row.id,
+          sessionId: row.sessionId,
+          phoneNumber: row.phoneNumber,
+          contactName: row.contactName ?? undefined,
+          messageText: isFromUser ? canonicalContent : undefined,
+          responseText: !isFromUser ? canonicalContent : undefined,
+          messageType: row.messageType ?? 'text',
+          intent: row.intent ?? undefined,
+          sentiment: row.sentiment ?? undefined,
+          aiProvider: row.aiProvider ?? undefined,
+          tokensUsed: row.tokensUsed ?? 0,
+          isFromUser,
+          createdAt: row.createdAt ?? new Date(),
+          updatedAt: row.updatedAt ?? new Date(),
+        };
+      });
     } catch (error) {
       logger.error('Error buscando conversaciones:', error);
       return [];
@@ -1039,45 +1013,39 @@ class DatabaseService {
     sessionId?: string,
     limit: number = 50
   ): Promise<ConversationHistory[]> {
-    if (!this.pool) {
-      logger.warn('No hay conexión a base de datos');
+    if (!this.prisma) {
+      logger.warn('No hay Prisma client disponible');
       return [];
     }
 
-    let query = `
-      SELECT * FROM whatsapp_conversations
-    `;
-
-    const values: any[] = [];
-
-    if (sessionId) {
-      query += ' WHERE session_id = $1';
-      values.push(sessionId);
-      query += ' ORDER BY created_at DESC LIMIT $2';
-      values.push(limit);
-    } else {
-      query += ' ORDER BY created_at DESC LIMIT $1';
-      values.push(limit);
-    }
-
     try {
-      const result = await this.pool.query(query, values);
-      return result.rows.map(row => ({
-        id: row.id,
-        sessionId: row.session_id,
-        phoneNumber: row.phone_number,
-        contactName: row.contact_name,
-        messageText: row.message_text,
-        responseText: row.response_text,
-        messageType: row.message_type,
-        intent: row.intent,
-        sentiment: row.sentiment,
-        aiProvider: row.ai_provider,
-        tokensUsed: row.tokens_used || 0,
-        isFromUser: row.is_from_user,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
-      }));
+      const rows = await this.prisma.whatsAppConversation.findMany({
+        where: sessionId ? { sessionId } : {},
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        include: { message: { select: { content: true, direction: true } } },
+      });
+
+      return rows.map(row => {
+        const canonicalContent = row.message?.content ?? undefined;
+        const isFromUser = row.isFromUser ?? true;
+        return {
+          id: row.id,
+          sessionId: row.sessionId,
+          phoneNumber: row.phoneNumber,
+          contactName: row.contactName ?? undefined,
+          messageText: isFromUser ? canonicalContent : undefined,
+          responseText: !isFromUser ? canonicalContent : undefined,
+          messageType: row.messageType ?? 'text',
+          intent: row.intent ?? undefined,
+          sentiment: row.sentiment ?? undefined,
+          aiProvider: row.aiProvider ?? undefined,
+          tokensUsed: row.tokensUsed ?? 0,
+          isFromUser,
+          createdAt: row.createdAt ?? new Date(),
+          updatedAt: row.updatedAt ?? new Date(),
+        };
+      });
     } catch (error) {
       logger.error('Error obteniendo conversaciones recientes:', error);
       return [];
@@ -1345,30 +1313,33 @@ class DatabaseService {
     }
 
     try {
-      // Obtener conversaciones agrupadas por número de teléfono con el último mensaje
+      // Obtener conversaciones agrupadas por número de teléfono con el último mensaje.
+      // Tras T1.1-bis paso 4, el contenido canónico vive en messages.content
+      // vinculado por whatsapp_conversations.message_id.
       const query = `
         WITH latest_messages AS (
-          SELECT DISTINCT ON (phone_number) 
-            phone_number,
-            session_id,
-            contact_name,
-            COALESCE(message_text, response_text) as last_message_content,
-            message_type,
-            is_from_user,
-            created_at,
-            updated_at
-          FROM whatsapp_conversations 
-          ORDER BY phone_number, created_at DESC
+          SELECT DISTINCT ON (wc.phone_number)
+            wc.phone_number,
+            wc.session_id,
+            wc.contact_name,
+            m.content as last_message_content,
+            wc.message_type,
+            wc.is_from_user,
+            wc.created_at,
+            wc.updated_at
+          FROM whatsapp_conversations wc
+          LEFT JOIN messages m ON m.id = wc.message_id
+          ORDER BY wc.phone_number, wc.created_at DESC
         ),
         unread_counts AS (
-          SELECT 
+          SELECT
             phone_number,
             COUNT(*) as unread_count
-          FROM whatsapp_conversations 
+          FROM whatsapp_conversations
           WHERE is_from_user = true
           GROUP BY phone_number
         )
-        SELECT 
+        SELECT
           lm.*,
           COALESCE(uc.unread_count, 0) as unread_count
         FROM latest_messages lm
@@ -1476,15 +1447,16 @@ class DatabaseService {
         };
       }
 
-      // Obtener mensajes de la base de datos
+      // Obtener mensajes de la base de datos (JOIN con messages tras T1.1-bis paso 4).
       const query = `
-        SELECT 
-          id, session_id, phone_number, contact_name,
-          message_text, response_text, message_type,
-          is_from_user, created_at, updated_at
-        FROM whatsapp_conversations 
-        WHERE phone_number = $1 
-        ORDER BY created_at ASC
+        SELECT
+          wc.id, wc.session_id, wc.phone_number, wc.contact_name,
+          m.content AS message_content,
+          wc.message_type, wc.is_from_user, wc.created_at, wc.updated_at
+        FROM whatsapp_conversations wc
+        LEFT JOIN messages m ON m.id = wc.message_id
+        WHERE wc.phone_number = $1
+        ORDER BY wc.created_at ASC
         LIMIT $2 OFFSET $3;
       `;
 
@@ -1493,7 +1465,7 @@ class DatabaseService {
       // Convertir mensajes al formato esperado
       const messages = result.rows.map(row => ({
         id: row.id,
-        content: row.message_text || row.response_text || '',
+        content: row.message_content || '',
         direction: row.is_from_user ? 'INBOUND' : 'OUTBOUND',
         messageType: row.message_type || 'text',
         status: 'delivered',

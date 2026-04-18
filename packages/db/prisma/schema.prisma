@@ -196,8 +196,6 @@ model WhatsAppConversation {
   sessionId     String    @map("session_id") @db.VarChar(255)
   phoneNumber   String    @map("phone_number") @db.VarChar(50)
   contactName   String?   @map("contact_name") @db.VarChar(255)
-  messageText   String?   @map("message_text") @db.Text
-  responseText  String?   @map("response_text") @db.Text
   messageType   String?   @default("text") @map("message_type") @db.VarChar(50)
   intent        String?   @db.VarChar(255)
   sentiment     String?   @db.VarChar(100)
