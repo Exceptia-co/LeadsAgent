@@ -82,6 +82,7 @@ model Lead {
   moodScore            Decimal?                 @map("mood_score") @db.Decimal(3, 2)
   lastContact          DateTime?                @map("last_contact") @db.Timestamptz(6)
   assignedTo           String?                  @map("assigned_to") @db.VarChar(255)
+  deletedAt            DateTime?                @map("deleted_at") @db.Timestamptz(6)
   createdAt            DateTime?                @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime?                @default(now()) @map("updated_at") @db.Timestamptz(6)
   messages             Message[]
@@ -91,6 +92,7 @@ model Lead {
   @@index([createdAt], map: "idx_leads_created_at")
   @@index([phone], map: "idx_leads_phone")
   @@index([status], map: "idx_leads_status")
+  @@index([deletedAt], map: "idx_leads_deleted_at")
   @@map("leads")
 }
 
@@ -104,14 +106,16 @@ model Message {
   sessionId             String?                @map("session_id") @db.VarChar(255)
   whatsappMessageId     String?                @map("whatsapp_message_id") @db.VarChar(255)
   metadata              Json?                  @default("{}")
+  deletedAt             DateTime?              @map("deleted_at") @db.Timestamptz(6)
   createdAt             DateTime?              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime?              @default(now()) @map("updated_at") @db.Timestamptz(6)
-  lead                  Lead?                  @relation(fields: [leadId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  lead                  Lead?                  @relation(fields: [leadId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   whatsappConversations WhatsAppConversation[]
 
   @@index([createdAt], map: "idx_messages_created_at")
   @@index([direction], map: "idx_messages_direction")
   @@index([leadId], map: "idx_messages_lead_id")
+  @@index([deletedAt], map: "idx_messages_deleted_at")
   @@map("messages")
 }
 
@@ -179,7 +183,7 @@ model ProactiveMessage {
   createdBy     String?          @map("created_by") @db.VarChar(255)
   createdAt     DateTime?        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime?        @default(now()) @map("updated_at") @db.Timestamptz(6)
-  lead          Lead?            @relation(fields: [leadId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  lead          Lead?            @relation(fields: [leadId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   template      MessageTemplate? @relation(fields: [templateId], references: [id], onUpdate: NoAction)
 
   @@index([createdAt], map: "idx_proactive_created")
@@ -208,7 +212,7 @@ model WhatsAppConversation {
   createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime? @default(now()) @map("updated_at") @db.Timestamptz(6)
   aiProvider    String?   @default("gemini") @map("ai_provider") @db.VarChar(50)
-  lead          Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  lead          Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   message       Message?  @relation(fields: [messageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([createdAt], map: "idx_whatsapp_created")
