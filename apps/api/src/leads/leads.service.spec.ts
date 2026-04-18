@@ -69,9 +69,9 @@ describe('LeadsService', () => {
     it('throws when the phone already exists', async () => {
       prisma.lead.findUnique.mockResolvedValue({ id: 'existing' });
 
-      await expect(service.create({ phone: '+34600112233' } as any)).rejects.toThrow(
-        /Ya existe un lead/i,
-      );
+      await expect(
+        service.create({ phone: '+34600112233' } as any),
+      ).rejects.toThrow(/Ya existe un lead/i);
       expect(prisma.lead.create).not.toHaveBeenCalled();
     });
   });
@@ -94,7 +94,12 @@ describe('LeadsService', () => {
       prisma.lead.findMany.mockResolvedValue([]);
       prisma.lead.count.mockResolvedValue(0);
 
-      await service.findAll({ page: 1, limit: 25, q: 'juan', status: LeadStatus.QUALIFIED } as any);
+      await service.findAll({
+        page: 1,
+        limit: 25,
+        q: 'juan',
+        status: LeadStatus.QUALIFIED,
+      } as any);
 
       const args = prisma.lead.findMany.mock.calls[0][0];
       expect(args.where.deletedAt).toBeNull();
@@ -147,7 +152,9 @@ describe('LeadsService', () => {
 
       await service.getStats();
 
-      const callArgs = prisma.lead.count.mock.calls.map(call => call[0]?.where ?? {});
+      const callArgs = prisma.lead.count.mock.calls.map(
+        (call) => call[0]?.where ?? {},
+      );
       for (const where of callArgs) {
         expect(where.deletedAt).toBeNull();
       }

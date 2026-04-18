@@ -1,4 +1,10 @@
-import { PrismaClient, LeadStatus, MessageDirection, MessageType, MessageStatus } from '@prisma/client';
+import {
+  PrismaClient,
+  LeadStatus,
+  MessageDirection,
+  MessageType,
+  MessageStatus,
+} from '@prisma/client';
 import dotenv from 'dotenv';
 
 // Load environment variables from root .env
@@ -224,13 +230,15 @@ async function main() {
   }
 
   // ---------- Resumen final ----------
-  const [totalUsers, totalLeads, totalMessages, totalKnowledge, totalTemplates] = await Promise.all([
-    prisma.user.count(),
-    prisma.lead.count(),
-    prisma.message.count(),
-    prisma.ai_knowledge_base.count(),
-    prisma.messageTemplate.count(),
-  ]);
+  const [totalUsers, totalLeads, totalMessages, totalKnowledge, totalTemplates] = await Promise.all(
+    [
+      prisma.user.count(),
+      prisma.lead.count(),
+      prisma.message.count(),
+      prisma.ai_knowledge_base.count(),
+      prisma.messageTemplate.count(),
+    ],
+  );
 
   console.log('📊 Database seeded successfully!');
   console.log(`   - ${totalUsers} users`);

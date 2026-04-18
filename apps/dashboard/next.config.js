@@ -8,19 +8,19 @@ const nextConfig = {
   },
 
   // Handle Clerk packages for Edge Runtime compatibility
-  serverExternalPackages: ["@clerk/backend", "@clerk/shared"],
+  serverExternalPackages: ['@clerk/backend', '@clerk/shared'],
 
   poweredByHeader: false,
-  
+
   // Configuración de TypeScript
   typescript: {
     ignoreBuildErrors: false,
   },
-  
+
   eslint: {
     ignoreDuringBuilds: true,
   },
-  
+
   // Rewrite API routes to backend server (TEMPORARILY DISABLED FOR TESTING)
   // async rewrites() {
   //   return [

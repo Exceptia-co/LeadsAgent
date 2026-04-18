@@ -5,7 +5,7 @@ const migrationDescription = 'Fix and standardize whatsapp_whitelist_logs table 
 
 async function up(pool) {
   console.log(`🔄 Running migration: ${migrationName}`);
-  
+
   try {
     // Check if table exists first
     const tableExists = await pool.query(`
@@ -15,7 +15,7 @@ async function up(pool) {
         AND table_name = 'whatsapp_whitelist_logs'
       );
     `);
-    
+
     if (!tableExists.rows[0].exists) {
       console.log('ℹ️  Table whatsapp_whitelist_logs does not exist yet, skipping migration');
       console.log('✅ Migration will be handled by table creation process');
@@ -42,7 +42,7 @@ async function up(pool) {
       { name: 'message_preview', type: 'TEXT', nullable: true },
       { name: 'ai_provider', type: 'VARCHAR(50)', nullable: true },
       { name: 'ip_address', type: 'VARCHAR(45)', nullable: true },
-      { name: 'user_agent', type: 'TEXT', nullable: true }
+      { name: 'user_agent', type: 'TEXT', nullable: true },
     ];
 
     for (const col of requiredColumns) {
@@ -59,7 +59,7 @@ async function up(pool) {
     // Step 3: Clean up the lead_id_temp column if it exists
     if (columnNames.includes('lead_id_temp')) {
       console.log('🧹 Cleaning up lead_id_temp column...');
-      
+
       // If both columns exist, copy data if needed and drop temp
       if (columnNames.includes('lead_id')) {
         await pool.query(`
@@ -67,7 +67,7 @@ async function up(pool) {
           SET lead_id = lead_id_temp 
           WHERE lead_id IS NULL AND lead_id_temp IS NOT NULL;
         `);
-        
+
         await pool.query(`
           ALTER TABLE whatsapp_whitelist_logs 
           DROP COLUMN lead_id_temp;
@@ -113,7 +113,7 @@ async function up(pool) {
       'CREATE INDEX IF NOT EXISTS idx_whitelist_logs_decision ON whatsapp_whitelist_logs(decision);',
       'CREATE INDEX IF NOT EXISTS idx_whitelist_logs_created ON whatsapp_whitelist_logs(created_at);',
       'CREATE INDEX IF NOT EXISTS idx_whitelist_logs_session ON whatsapp_whitelist_logs(session_id);',
-      'CREATE INDEX IF NOT EXISTS idx_whitelist_logs_lead_id ON whatsapp_whitelist_logs(lead_id);'
+      'CREATE INDEX IF NOT EXISTS idx_whitelist_logs_lead_id ON whatsapp_whitelist_logs(lead_id);',
     ];
 
     for (const indexSQL of indexes) {
@@ -129,9 +129,11 @@ async function up(pool) {
 
 async function down(pool) {
   console.log(`🔄 Reverting migration: ${migrationName}`);
-  
+
   try {
-    console.warn('⚠️ This migration makes structural changes that cannot be automatically reverted');
+    console.warn(
+      '⚠️ This migration makes structural changes that cannot be automatically reverted'
+    );
     console.warn('⚠️ Manual intervention may be required to restore the original table structure');
   } catch (error) {
     console.error(`❌ Failed to revert migration ${migrationName}:`, error);
@@ -143,5 +145,5 @@ module.exports = {
   name: migrationName,
   description: migrationDescription,
   up,
-  down
+  down,
 };

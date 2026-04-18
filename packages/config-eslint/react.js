@@ -1,13 +1,13 @@
 module.exports = {
-  extends: ["./index.js"],
-  plugins: ["react"],
+  extends: ['./index.js'],
+  plugins: ['react'],
   settings: {
     react: {
-      version: "detect",
+      version: 'detect',
     },
   },
   rules: {
-    "react/prop-types": "off",
-    "react/react-in-jsx-scope": "off",
+    'react/prop-types': 'off',
+    'react/react-in-jsx-scope': 'off',
   },
 };

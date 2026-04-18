@@ -56,10 +56,7 @@ describe('verifyServiceSignature', () => {
 
   it('lets requests through when the signature is valid', () => {
     const body = JSON.stringify({ hello: 'world' });
-    const { timestamp: ts, signature: sig } = signServiceRequest(
-      body,
-      SECRET
-    );
+    const { timestamp: ts, signature: sig } = signServiceRequest(body, SECRET);
     const { req, res, next, statusSpy } = buildReqRes({
       headers: { 'x-service-timestamp': ts, 'x-service-signature': sig },
       rawBody: body,
@@ -85,10 +82,7 @@ describe('verifyServiceSignature', () => {
   it('rejects with 401 when the body has been tampered with', () => {
     const originalBody = JSON.stringify({ hello: 'world' });
     const tamperedBody = JSON.stringify({ hello: 'mundo' });
-    const { timestamp: ts, signature: sig } = signServiceRequest(
-      originalBody,
-      SECRET
-    );
+    const { timestamp: ts, signature: sig } = signServiceRequest(originalBody, SECRET);
     const { req, res, next, statusSpy } = buildReqRes({
       headers: { 'x-service-timestamp': ts, 'x-service-signature': sig },
       rawBody: tamperedBody,
