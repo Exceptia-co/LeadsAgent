@@ -86,15 +86,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             <div className="flex-shrink-0 mt-0.5">{getIcon(toast.type)}</div>
             <div className="ml-3 flex-1">
               {toast.title && (
-                <p
-                  className={`text-sm font-semibold ${getTextColor(toast.type)}`}
-                >
-                  {toast.title}
-                </p>
+                <p className={`text-sm font-semibold ${getTextColor(toast.type)}`}>{toast.title}</p>
               )}
-              <p
-                className={`text-sm ${getTextColor(toast.type)} ${toast.title ? "mt-1" : ""}`}
-              >
+              <p className={`text-sm ${getTextColor(toast.type)} ${toast.title ? "mt-1" : ""}`}>
                 {toast.message}
               </p>
             </div>

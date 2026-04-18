@@ -15,16 +15,7 @@ import { AddLeadModal } from "../../../components/AddLeadModal";
 import { EditLeadModal } from "../../../components/EditLeadModal";
 import { DeleteConfirmDialog } from "../../../components/DeleteConfirmDialog";
 import { SortableTableHeader } from "../../../components/ui/SortableTableHeader";
-import {
-  Users,
-  Search,
-  Plus,
-  Filter,
-  Edit2,
-  Trash2,
-  Eye,
-  X,
-} from "lucide-react";
+import { Users, Search, Plus, Filter, Edit2, Trash2, Eye, X } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { useToast } from "../../../components/ui/toast";
 import { useDebounce } from "../../../hooks/use-debounce";
@@ -55,13 +46,12 @@ export default function LeadsPage() {
   const debouncedSearchTerm = useDebounce(searchTerm, 500);
 
   // Use debounced search term for API call
-  const { leads, pagination, isLoading, isError, refetch, isRefreshing } =
-    useLeads(
-      currentPage,
-      20,
-      debouncedSearchTerm,
-      // NOTE: Ordenamiento se maneja client-side por ahora, no pasamos parámetros de sortBy/sortOrder
-    );
+  const { leads, pagination, isLoading, isError, refetch, isRefreshing } = useLeads(
+    currentPage,
+    20,
+    debouncedSearchTerm,
+    // NOTE: Ordenamiento se maneja client-side por ahora, no pasamos parámetros de sortBy/sortOrder
+  );
 
   const { getToken } = useAuth();
   const { showToast } = useToast();
@@ -86,9 +76,7 @@ export default function LeadsPage() {
     if (leads.length > 0) {
       const currentSelectedIds = new Set(selectedLeads);
       const currentLeadIds = leads.map((lead) => lead.id);
-      const validSelectedIds = selectedLeads.filter((id) =>
-        currentLeadIds.includes(id),
-      );
+      const validSelectedIds = selectedLeads.filter((id) => currentLeadIds.includes(id));
 
       if (validSelectedIds.length !== selectedLeads.length) {
         setSelectedLeads(validSelectedIds);
@@ -96,8 +84,7 @@ export default function LeadsPage() {
 
       // Update isAllSelected based on current page leads
       const allCurrentLeadsSelected =
-        currentLeadIds.length > 0 &&
-        currentLeadIds.every((id) => currentSelectedIds.has(id));
+        currentLeadIds.length > 0 && currentLeadIds.every((id) => currentSelectedIds.has(id));
       setIsAllSelected(allCurrentLeadsSelected);
     } else {
       setIsAllSelected(false);
@@ -110,12 +97,7 @@ export default function LeadsPage() {
     setIsSearching(searchTerm !== debouncedSearchTerm);
 
     // If we just finished searching and should maintain focus, refocus the input
-    if (
-      wasSearching &&
-      !isSearching &&
-      shouldMaintainFocus &&
-      searchInputRef.current
-    ) {
+    if (wasSearching && !isSearching && shouldMaintainFocus && searchInputRef.current) {
       searchInputRef.current.focus();
       setShouldMaintainFocus(false);
     }
@@ -206,9 +188,7 @@ export default function LeadsPage() {
       });
     } else {
       const currentPageLeadIds = new Set(sortedLeads.map((lead) => lead.id));
-      setSelectedLeads((prev) =>
-        prev.filter((id) => !currentPageLeadIds.has(id)),
-      );
+      setSelectedLeads((prev) => prev.filter((id) => !currentPageLeadIds.has(id)));
     }
   };
 
@@ -227,8 +207,7 @@ export default function LeadsPage() {
 
     setIsBulkUpdating(true);
     try {
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
-      const response = await fetch(`${API_BASE_URL}/public/leads/bulk-update-whatsapp`, {
+      const response = await fetch(`/api/leads/bulk-update-whatsapp`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -246,10 +225,7 @@ export default function LeadsPage() {
       if (response.ok) {
         const result = await response.json();
         console.log("✅ Success result:", result);
-        success(
-          result.message ||
-            `${selectedLeads.length} leads actualizados exitosamente`,
-        );
+        success(result.message || `${selectedLeads.length} leads actualizados exitosamente`);
         setSelectedLeads([]); // Clear selection
         refetch(); // Refresh the leads list
       } else {
@@ -281,15 +257,10 @@ export default function LeadsPage() {
       }
     } catch (error) {
       console.error("💥 Network/unexpected error:", error);
-      if (
-        error instanceof TypeError &&
-        error.message.includes("Failed to fetch")
-      ) {
+      if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
         showError("Error de conexión: No se pudo conectar con el servidor");
       } else if (error instanceof SyntaxError) {
-        showError(
-          "Error de respuesta: El servidor devolvió una respuesta inválida",
-        );
+        showError("Error de respuesta: El servidor devolvió una respuesta inválida");
       } else {
         showError("Error inesperado al actualizar los leads");
       }
@@ -317,8 +288,7 @@ export default function LeadsPage() {
         <h1 className="text-2xl font-bold text-gray-900">Gestión de Leads</h1>
         <div className="bg-red-50 border border-red-200 rounded-md p-4">
           <p className="text-red-800">
-            Error al cargar los leads. Verifica que el servidor backend esté
-            funcionando.
+            Error al cargar los leads. Verifica que el servidor backend esté funcionando.
           </p>
           <button
             onClick={() => refetch()}
@@ -448,8 +418,7 @@ export default function LeadsPage() {
         {/* Active search indicator */}
         {debouncedSearchTerm && (
           <div className="mt-3 text-sm text-gray-600">
-            Mostrando resultados para:{" "}
-            <span className="font-medium">"{debouncedSearchTerm}"</span>
+            Mostrando resultados para: <span className="font-medium">"{debouncedSearchTerm}"</span>
           </div>
         )}
       </Card>
@@ -458,9 +427,7 @@ export default function LeadsPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="p-4">
           <div className="text-center">
-            <p className="text-2xl font-bold text-gray-900">
-              {pagination?.total || 0}
-            </p>
+            <p className="text-2xl font-bold text-gray-900">{pagination?.total || 0}</p>
             <p className="text-sm text-gray-500">Total Leads</p>
           </div>
         </Card>
@@ -496,14 +463,10 @@ export default function LeadsPage() {
           <div className="bg-white rounded-full shadow-2xl border border-gray-200 px-6 py-4 flex items-center space-x-4 animate-in slide-in-from-bottom-2 fade-in duration-300">
             <div className="flex items-center space-x-2 text-gray-700">
               <div className="flex items-center justify-center w-6 h-6 bg-green-100 rounded-full">
-                <span className="text-xs font-bold text-green-600">
-                  {selectedLeads.length}
-                </span>
+                <span className="text-xs font-bold text-green-600">{selectedLeads.length}</span>
               </div>
               <span className="text-sm font-medium">
-                {selectedLeads.length === 1
-                  ? "lead seleccionado"
-                  : "leads seleccionados"}
+                {selectedLeads.length === 1 ? "lead seleccionado" : "leads seleccionados"}
               </span>
             </div>
 
@@ -519,11 +482,7 @@ export default function LeadsPage() {
                 {isBulkUpdating ? (
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                 ) : (
-                  <svg
-                    className="w-4 h-4 mr-2"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
+                  <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                     <path
                       fillRule="evenodd"
                       d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
@@ -543,11 +502,7 @@ export default function LeadsPage() {
                 {isBulkUpdating ? (
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                 ) : (
-                  <svg
-                    className="w-4 h-4 mr-2"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
+                  <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                     <path
                       fillRule="evenodd"
                       d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
@@ -563,12 +518,7 @@ export default function LeadsPage() {
                 className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-all duration-200"
                 title="Limpiar selección"
               >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -683,9 +633,7 @@ export default function LeadsPage() {
                         <input
                           type="checkbox"
                           checked={selectedLeads.includes(lead.id)}
-                          onChange={(e) =>
-                            handleLeadSelect(lead.id, e.target.checked)
-                          }
+                          onChange={(e) => handleLeadSelect(lead.id, e.target.checked)}
                           className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded flex-shrink-0"
                           title="Seleccionar para operación masiva"
                         />
@@ -703,9 +651,7 @@ export default function LeadsPage() {
                                 clipRule="evenodd"
                               />
                             </svg>
-                            <span className="whitespace-nowrap">
-                              Autorizado
-                            </span>
+                            <span className="whitespace-nowrap">Autorizado</span>
                           </div>
                         ) : (
                           <div className="flex items-center px-2 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
@@ -720,9 +666,7 @@ export default function LeadsPage() {
                                 clipRule="evenodd"
                               />
                             </svg>
-                            <span className="whitespace-nowrap">
-                              No autorizado
-                            </span>
+                            <span className="whitespace-nowrap">No autorizado</span>
                           </div>
                         )}
                       </div>
@@ -789,8 +733,8 @@ export default function LeadsPage() {
           <div className="px-6 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
             <div className="text-sm text-gray-700">
               Mostrando {(pagination.page - 1) * pagination.limit + 1} a{" "}
-              {Math.min(pagination.page * pagination.limit, pagination.total)}{" "}
-              de {pagination.total} resultados
+              {Math.min(pagination.page * pagination.limit, pagination.total)} de {pagination.total}{" "}
+              resultados
             </div>
             <div className="flex items-center space-x-2">
               <button
@@ -804,11 +748,7 @@ export default function LeadsPage() {
                 Página {pagination.page} de {pagination.totalPages}
               </span>
               <button
-                onClick={() =>
-                  setCurrentPage(
-                    Math.min(pagination.totalPages, currentPage + 1),
-                  )
-                }
+                onClick={() => setCurrentPage(Math.min(pagination.totalPages, currentPage + 1))}
                 disabled={!pagination.hasNext}
                 className="px-3 py-1 border border-gray-300 rounded-md text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >

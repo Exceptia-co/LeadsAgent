@@ -169,7 +169,9 @@ export class OpenRouterProvider implements IAIProvider {
         this.status.lastHealthCheck = new Date();
 
         if (attempt > 0) {
-          logger.info(`✅ OpenRouter response succeeded on retry ${attempt} in ${processingTime}ms`);
+          logger.info(
+            `✅ OpenRouter response succeeded on retry ${attempt} in ${processingTime}ms`
+          );
         } else {
           logger.debug(`✅ OpenRouter response generated in ${processingTime}ms`);
         }
@@ -219,7 +221,11 @@ export class OpenRouterProvider implements IAIProvider {
    */
   private isRetryableError(error: any): boolean {
     // Network/timeout errors are retryable
-    if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT' || error.code === 'ECONNABORTED') {
+    if (
+      error.code === 'ECONNRESET' ||
+      error.code === 'ETIMEDOUT' ||
+      error.code === 'ECONNABORTED'
+    ) {
       return true;
     }
     // HTTP status-based retryable errors (429, 5xx)

@@ -17,8 +17,7 @@ export default function TemplateManager({
   onUseTemplate,
   onTemplatesChange,
 }: TemplateManagerProps) {
-  const { templates, loading, createTemplate, updateTemplate, deleteTemplate } =
-    useTemplates();
+  const { templates, loading, createTemplate, updateTemplate, deleteTemplate } = useTemplates();
   const { showToast } = useToast();
 
   // Helper functions for different toast types
@@ -44,8 +43,7 @@ export default function TemplateManager({
       const matchesSearch =
         template.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
         template.content.toLowerCase().includes(templateSearch.toLowerCase());
-      const matchesCategory =
-        categoryFilter === "all" || template.category === categoryFilter;
+      const matchesCategory = categoryFilter === "all" || template.category === categoryFilter;
       return matchesSearch && matchesCategory && template.isActive !== false;
     });
     setFilteredTemplates(filtered);
@@ -85,10 +83,7 @@ export default function TemplateManager({
 
     const result = await deleteTemplate(id);
     if (result) {
-      success(
-        "Template eliminado",
-        "El template ha sido eliminado exitosamente",
-      );
+      success("Template eliminado", "El template ha sido eliminado exitosamente");
       // Notify parent about templates change
       if (onTemplatesChange) {
         onTemplatesChange();
@@ -117,9 +112,7 @@ export default function TemplateManager({
     }
   };
 
-  const categories = Array.from(
-    new Set(templates.map((t) => t.category)),
-  ).filter(Boolean);
+  const categories = Array.from(new Set(templates.map((t) => t.category))).filter(Boolean);
 
   if (loading) {
     return (
@@ -193,9 +186,7 @@ export default function TemplateManager({
       {filteredTemplates.length === 0 && (
         <Card className="p-12 text-center">
           <FileText className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            No hay templates
-          </h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No hay templates</h3>
           <p className="text-gray-500 mb-4">
             {templateSearch || categoryFilter !== "all"
               ? "No se encontraron templates con los filtros aplicados."

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getWhatsAppUrl } from "../../hooks/use-whatsapp-url";
+import { useAuth } from "@clerk/nextjs";
 import { Card } from "../ui/card";
 import { Badge } from "../ui/badge";
 import { Search, Send, User } from "lucide-react";
@@ -33,6 +33,7 @@ export default function ProactiveMessageSender({
   onSendMessage,
   selectedTemplate,
 }: ProactiveMessageSenderProps) {
+  const { getToken } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -61,12 +62,18 @@ export default function ProactiveMessageSender({
   const fetchLeads = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/leads`);
+      const token = await getToken();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/leads?limit=200`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        },
+      );
       const result = await response.json();
-
-      if (result.success) {
-        setLeads(result.leads || result.data);
-      }
+      setLeads(result?.data ?? result?.leads ?? []);
     } catch (error) {
       console.error("Error fetching leads:", error);
     } finally {
@@ -102,9 +109,7 @@ export default function ProactiveMessageSender({
   if (loading) {
     return (
       <div className="space-y-6">
-        <h2 className="text-xl font-semibold text-gray-900">
-          Mensajes Proactivos
-        </h2>
+        <h2 className="text-xl font-semibold text-gray-900">Mensajes Proactivos</h2>
         <div className="animate-pulse space-y-4">
           {[...Array(3)].map((_, i) => (
             <div key={i} className="h-32 bg-gray-200 rounded-lg"></div>
@@ -136,13 +141,9 @@ export default function ProactiveMessageSender({
           <Card key={lead.id} className="p-4 hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between mb-3">
               <div>
-                <h3 className="font-medium text-gray-900">
-                  {lead.name || "Sin nombre"}
-                </h3>
+                <h3 className="font-medium text-gray-900">{lead.name || "Sin nombre"}</h3>
                 <p className="text-sm text-gray-600">{lead.phone}</p>
-                {lead.email && (
-                  <p className="text-xs text-gray-500">{lead.email}</p>
-                )}
+                {lead.email && <p className="text-xs text-gray-500">{lead.email}</p>}
               </div>
               <Badge variant="outline" className="text-xs">
                 {lead.status}
@@ -163,9 +164,7 @@ export default function ProactiveMessageSender({
       {filteredLeads.length === 0 && (
         <Card className="p-12 text-center">
           <User className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            No hay leads disponibles
-          </h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No hay leads disponibles</h3>
           <p className="text-gray-500">
             {searchTerm
               ? "No se encontraron leads con los criterios de búsqueda."

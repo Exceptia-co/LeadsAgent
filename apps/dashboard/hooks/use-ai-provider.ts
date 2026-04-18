@@ -1,11 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import {
-  AIStatus,
-  AIProvider,
-  AITestRequest,
-  AITestResponse,
-  AITestHistory,
-} from "../types/ai";
+import { AIStatus, AIProvider, AITestRequest, AITestResponse, AITestHistory } from "../types/ai";
 import { getWhatsAppUrl } from "./use-whatsapp-url";
 
 const WHATSAPP_SERVICE_BASE_URL = getWhatsAppUrl();
@@ -37,14 +31,11 @@ export function useAIProvider() {
           providers: {
             openrouter: {
               configured: data.data.openrouter || false,
-              active:
-                (data.data.currentProvider || data.data.current) ===
-                "openrouter",
+              active: (data.data.currentProvider || data.data.current) === "openrouter",
             },
             gemini: {
               configured: data.data.gemini || false,
-              active:
-                (data.data.currentProvider || data.data.current) === "gemini",
+              active: (data.data.currentProvider || data.data.current) === "gemini",
             },
           },
           totalRequests: data.data.totalRequests || 0,
@@ -65,9 +56,7 @@ export function useAIProvider() {
         });
       }
     } catch (err) {
-      setError(
-        "WhatsApp service no disponible. Verifica que esté ejecutándose en puerto 3002.",
-      );
+      setError("WhatsApp service no disponible. Verifica que esté ejecutándose en puerto 3002.");
       console.error("Error fetching AI status:", err);
       // Set fallback data when service is completely unavailable
       setStatus({
@@ -159,8 +148,7 @@ export function useAIProvider() {
             id: Date.now().toString(),
             message: request.message,
             response: "",
-            provider:
-              request.provider || status?.currentProvider || "openrouter",
+            provider: request.provider || status?.currentProvider || "openrouter",
             model: "unknown",
             tokens: 0,
             responseTime: 0,

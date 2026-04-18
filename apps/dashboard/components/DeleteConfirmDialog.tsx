@@ -36,16 +36,13 @@ export function DeleteConfirmDialog({
               </AlertDialog.Title>
               <AlertDialog.Description className="mt-2 text-sm text-gray-600">
                 ¿Estás seguro de que quieres eliminar el lead{" "}
-                <span className="font-semibold">
-                  {leadName || "Sin nombre"}
-                </span>{" "}
-                con el número <span className="font-semibold">{leadPhone}</span>
-                ?
+                <span className="font-semibold">{leadName || "Sin nombre"}</span> con el número{" "}
+                <span className="font-semibold">{leadPhone}</span>?
               </AlertDialog.Description>
               <div className="mt-3 bg-yellow-50 border border-yellow-200 rounded-md p-3">
                 <p className="text-sm text-yellow-800">
-                  Esta acción no se puede deshacer. Se eliminarán
-                  permanentemente todos los datos asociados a este lead.
+                  Esta acción no se puede deshacer. Se eliminarán permanentemente todos los datos
+                  asociados a este lead.
                 </p>
               </div>
             </div>

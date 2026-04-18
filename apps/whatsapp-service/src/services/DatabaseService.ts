@@ -1,14 +1,33 @@
 import { Pool, PoolClient } from 'pg';
+import { PrismaClient, MessageDirection, MessageType } from '@leadcrm/db';
 import { logger } from '../utils/logger';
 import PhoneNumberService from './PhoneNumberService';
 import type { TrainingInteraction } from '../types';
-import MigrationService from './MigrationService';
 import type { ILeadRepository, IConversationRepository } from './db';
 import { RepositoryFactory } from './db';
 import type { KnowledgeBaseRepository } from './db/KnowledgeBaseRepository';
 import type { AIConfigRepository } from './db/AIConfigRepository';
 import type { TrainingRepository } from './db/TrainingRepository';
 import type { WhitelistLogRepository } from './db/WhitelistLogRepository';
+
+// Maps the free-form string messageType used across the whatsapp-service to
+// the Prisma MessageType enum. Falls back to TEXT for anything unknown (the
+// schema treats messageType as optional with TEXT default).
+function toPrismaMessageType(value?: string): MessageType {
+  switch ((value ?? 'text').toLowerCase()) {
+    case 'image':
+      return MessageType.IMAGE;
+    case 'audio':
+      return MessageType.AUDIO;
+    case 'video':
+      return MessageType.VIDEO;
+    case 'document':
+    case 'doc':
+      return MessageType.DOCUMENT;
+    default:
+      return MessageType.TEXT;
+  }
+}
 
 // Re-export types for backward compatibility (will be removed after full migration)
 export interface ConversationData {
@@ -69,6 +88,7 @@ export interface Lead {
  */
 class DatabaseService {
   private pool: Pool | null = null;
+  private prisma: PrismaClient | null = null;
   private useRepositories: boolean;
   private repositoryFactory: RepositoryFactory | null = null;
   private leadRepository: ILeadRepository | null = null;
@@ -87,6 +107,9 @@ class DatabaseService {
     );
 
     this.initializePool();
+    // Prisma client for unified writes (T1.1 Phase B) — shares DATABASE_URL
+    // via default env resolution.
+    this.prisma = process.env.DATABASE_URL ? new PrismaClient() : null;
 
     // Note: Repository initialization is async and will be called during initializeTable()
   }
@@ -159,23 +182,6 @@ class DatabaseService {
     }
   }
 
-  // Ejecutar migraciones automáticamente
-  private async runMigrations(): Promise<void> {
-    if (!this.pool) {
-      logger.warn('No hay conexión a base de datos disponible para migraciones');
-      return;
-    }
-
-    try {
-      const migrationService = new MigrationService(this.pool);
-      await migrationService.runMigrations();
-      logger.info('✅ Migraciones ejecutadas correctamente');
-    } catch (error) {
-      logger.error('❌ Error ejecutando migraciones:', error);
-      throw error; // Re-throw para que falle la inicialización si hay problemas críticos
-    }
-  }
-
   // Crear tabla si no existe
   public async initializeTable(): Promise<void> {
     if (!this.pool) {
@@ -188,26 +194,27 @@ class DatabaseService {
       await this.initializeRepositories();
     }
 
-    // Ejecutar migraciones automáticamente
-    await this.runMigrations();
+    // T1.1-bis paso 5: legacy MigrationService eliminado — Prisma
+    // (`_prisma_migrations`) es la única fuente de migraciones.
 
     const createTablesQuery = `
-      -- Tabla de conversaciones de WhatsApp
+      -- Tabla de conversaciones de WhatsApp (DDL alineado con schema Prisma
+      -- tras T1.1-bis paso 4). message_text/response_text fueron eliminados;
+      -- el contenido canónico vive en messages.content vinculado por message_id.
       CREATE TABLE IF NOT EXISTS whatsapp_conversations (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         session_id VARCHAR(255) NOT NULL,
         phone_number VARCHAR(50) NOT NULL,
         contact_name VARCHAR(255),
-        message_text TEXT,
-        response_text TEXT,
         message_type VARCHAR(50) DEFAULT 'text',
         intent VARCHAR(100),
         sentiment VARCHAR(50),
         ai_provider VARCHAR(50),
         tokens_used INTEGER DEFAULT 0,
         is_from_user BOOLEAN DEFAULT true,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        message_id UUID REFERENCES messages(id) ON DELETE SET NULL,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
       );
 
       -- Tabla de logs de decisiones de whitelist
@@ -342,6 +349,13 @@ class DatabaseService {
   }
 
   // Guardar conversación
+  //
+  // T1.1-bis paso 1 (unified writer): crea la fila canónica en `messages`
+  // y la vincula a `whatsapp_conversations.message_id` en una transacción
+  // atómica Prisma. Si el teléfono resuelve a un lead existente, ambas
+  // filas quedan vinculadas al mismo leadId; si no, ambas con leadId=null.
+  // Esto detiene la divergencia entre `messages` y `whatsapp_conversations`
+  // para mensajes nuevos.
   public async saveConversation(data: ConversationData): Promise<string | null> {
     // Phase 2: Repository pattern delegation
     if (this.useRepositories && this.conversationRepository) {
@@ -352,13 +366,11 @@ class DatabaseService {
         return 'repo-generated-id';
       } catch (error) {
         logger.error('❌ Repository method failed, falling back to legacy:', error);
-        // Fallback to legacy implementation below
+        // Fallback to unified implementation below
       }
     }
 
-    // Legacy implementation
-    // LOG DETALLADO: Estado inicial
-    logger.info('🔍 [DIAGNOSTIC] saveConversation called with data:', {
+    logger.info('🔍 [UNIFIED-WRITE] saveConversation called:', {
       sessionId: data.sessionId,
       phoneNumber: data.phoneNumber,
       messageText: data.messageText ? data.messageText.substring(0, 50) + '...' : null,
@@ -366,113 +378,129 @@ class DatabaseService {
       isFromUser: data.isFromUser,
     });
 
-    // LOG DETALLADO: Estado de la conexión
-    if (!this.pool) {
-      logger.error('❌ [DIAGNOSTIC] No database connection available!');
-      logger.error('❌ [DIAGNOSTIC] DATABASE_URL:', process.env.DATABASE_URL ? 'SET' : 'NOT SET');
+    if (!this.prisma) {
+      logger.error('❌ [UNIFIED-WRITE] No Prisma client available!');
+      logger.error(
+        '❌ [UNIFIED-WRITE] DATABASE_URL:',
+        process.env.DATABASE_URL ? 'SET' : 'NOT SET'
+      );
       return null;
     }
 
-    logger.info('✅ [DIAGNOSTIC] Database pool connection available');
-
-    const query = `
-      INSERT INTO whatsapp_conversations (
-        session_id, phone_number, contact_name, message_text, response_text,
-        intent, sentiment, ai_provider, tokens_used, is_from_user
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING id;
-    `;
-
-    const values = [
-      data.sessionId,
-      data.phoneNumber,
-      data.contactName || null,
-      data.messageText || null,
-      data.responseText || null,
-      data.intent || null,
-      data.sentiment || null,
-      data.aiProvider || null,
-      data.tokensUsed || 0,
-      data.isFromUser !== undefined ? data.isFromUser : true,
-    ];
-
-    // LOG DETALLADO: Valores que se van a insertar
-    logger.info('📝 [DIAGNOSTIC] Query values prepared:', {
-      sessionId: values[0],
-      phoneNumber: values[1],
-      contactName: values[2],
-      intent: values[5],
-      isFromUser: values[9],
-    });
+    const isFromUser = data.isFromUser !== false;
+    // In the legacy shape, messageText is the user message (INBOUND) and
+    // responseText is the AI reply (OUTBOUND). Callers pass XOR one of
+    // them depending on isFromUser. Canonical `messages.content` takes
+    // whichever is present; skip silently if both are empty.
+    const canonicalContent = (isFromUser ? data.messageText : data.responseText) ?? null;
+    if (!canonicalContent) {
+      logger.warn(
+        '⚠️ [UNIFIED-WRITE] saveConversation called without canonical content — skipping message row'
+      );
+      return null;
+    }
 
     try {
-      logger.info('🔄 [DIAGNOSTIC] Executing database query...');
-      const result = await this.pool.query(query, values);
-
-      const conversationId = result.rows[0]?.id;
-
-      logger.info('✅ [DIAGNOSTIC] Query executed successfully!', {
-        conversationId,
-        rowsAffected: result.rowCount,
-        returningId: result.rows[0]?.id,
+      const normalizedPhone = data.phoneNumber.replace(/^\+/, '');
+      const lead = await this.prisma.lead.findUnique({
+        where: { phone: normalizedPhone },
+        select: { id: true },
       });
 
-      logger.info('💾 Conversación guardada correctamente:', {
-        id: conversationId,
+      const result = await this.prisma.$transaction(async tx => {
+        const message = await tx.message.create({
+          data: {
+            leadId: lead?.id ?? null,
+            content: canonicalContent,
+            direction: isFromUser ? MessageDirection.INBOUND : MessageDirection.OUTBOUND,
+            messageType: toPrismaMessageType(data.messageType),
+            sessionId: data.sessionId,
+          },
+        });
+
+        const conversation = await tx.whatsAppConversation.create({
+          data: {
+            leadId: lead?.id ?? null,
+            messageId: message.id,
+            sessionId: data.sessionId,
+            phoneNumber: data.phoneNumber,
+            contactName: data.contactName ?? null,
+            messageType: data.messageType ?? 'text',
+            intent: data.intent ?? null,
+            sentiment: data.sentiment ?? null,
+            aiProvider: data.aiProvider ?? null,
+            tokensUsed: data.tokensUsed ?? 0,
+            isFromUser,
+          },
+        });
+
+        return { conversationId: conversation.id, messageId: message.id };
+      });
+
+      logger.info('💾 [UNIFIED-WRITE] Message + Conversation created:', {
+        conversationId: result.conversationId,
+        messageId: result.messageId,
         phoneNumber: data.phoneNumber,
         sessionId: data.sessionId,
+        leadId: lead?.id ?? null,
       });
 
-      return conversationId;
+      return result.conversationId;
     } catch (error: any) {
-      logger.error('❌ [DIAGNOSTIC] Error executing database query:', {
+      logger.error('❌ [UNIFIED-WRITE] Error in Prisma transaction:', {
         error: error.message,
         code: error.code,
-        detail: error.detail,
-        hint: error.hint,
-        position: error.position,
+        meta: error.meta,
         stack: error.stack?.substring(0, 200) + '...',
       });
-      logger.error('❌ Error guardando conversación (legacy):', error);
       return null;
     }
   }
 
-  // Obtener historial de conversación por número de teléfono
+  // Obtener historial de conversación por número de teléfono.
+  //
+  // T1.1-bis paso 3 (reader migration): ahora usa Prisma con include del
+  // message vinculado. Prefiere message_text/response_text legacy si están
+  // poblados; si no, cae a message.content via el FK. Esto hace que el
+  // reader funcione antes y después de que el paso 4 dropee los campos
+  // duplicados.
   public async getConversationHistory(
     phoneNumber: string,
     limit: number = 50
   ): Promise<ConversationHistory[]> {
-    if (!this.pool) {
-      logger.warn('No hay conexión a base de datos');
+    if (!this.prisma) {
+      logger.warn('No hay Prisma client disponible');
       return [];
     }
 
-    const query = `
-      SELECT * FROM whatsapp_conversations 
-      WHERE phone_number = $1 
-      ORDER BY created_at DESC 
-      LIMIT $2;
-    `;
-
     try {
-      const result = await this.pool.query(query, [phoneNumber, limit]);
-      return result.rows.map(row => ({
-        id: row.id,
-        sessionId: row.session_id,
-        phoneNumber: row.phone_number,
-        contactName: row.contact_name,
-        messageText: row.message_text,
-        responseText: row.response_text,
-        messageType: row.message_type,
-        intent: row.intent,
-        sentiment: row.sentiment,
-        aiProvider: row.ai_provider,
-        tokensUsed: row.tokens_used || 0,
-        isFromUser: row.is_from_user,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
-      }));
+      const rows = await this.prisma.whatsAppConversation.findMany({
+        where: { phoneNumber },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        include: { message: { select: { content: true, direction: true } } },
+      });
+
+      return rows.map(row => {
+        const canonicalContent = row.message?.content ?? undefined;
+        const isFromUser = row.isFromUser ?? true;
+        return {
+          id: row.id,
+          sessionId: row.sessionId,
+          phoneNumber: row.phoneNumber,
+          contactName: row.contactName ?? undefined,
+          messageText: isFromUser ? canonicalContent : undefined,
+          responseText: !isFromUser ? canonicalContent : undefined,
+          messageType: row.messageType ?? 'text',
+          intent: row.intent ?? undefined,
+          sentiment: row.sentiment ?? undefined,
+          aiProvider: row.aiProvider ?? undefined,
+          tokensUsed: row.tokensUsed ?? 0,
+          isFromUser,
+          createdAt: row.createdAt ?? new Date(),
+          updatedAt: row.updatedAt ?? new Date(),
+        };
+      });
     } catch (error) {
       logger.error('Error obteniendo historial de conversación:', error);
       return [];
@@ -489,33 +517,27 @@ class DatabaseService {
       return [];
     }
 
-    const query = `
-      SELECT message_text, response_text, is_from_user, created_at
-      FROM whatsapp_conversations 
-      WHERE phone_number = $1 AND session_id = $2
-      ORDER BY created_at ASC 
-      LIMIT $3;
-    `;
+    if (!this.prisma) {
+      return [];
+    }
 
     try {
-      const result = await this.pool.query(query, [phoneNumber, sessionId, limit]);
-      const context: Array<{ role: 'user' | 'assistant'; content: string }> = [];
-
-      result.rows.forEach(row => {
-        if (row.message_text && row.is_from_user) {
-          context.push({
-            role: 'user',
-            content: row.message_text,
-          });
-        }
-        if (row.response_text && !row.is_from_user) {
-          context.push({
-            role: 'assistant',
-            content: row.response_text,
-          });
-        }
+      const rows = await this.prisma.whatsAppConversation.findMany({
+        where: { phoneNumber, sessionId },
+        orderBy: { createdAt: 'asc' },
+        take: limit,
+        include: { message: { select: { content: true } } },
       });
 
+      const context: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+      for (const row of rows) {
+        const content = row.message?.content;
+        if (!content) continue;
+        context.push({
+          role: row.isFromUser ? 'user' : 'assistant',
+          content,
+        });
+      }
       return context;
     } catch (error) {
       logger.error('Error obteniendo contexto reciente:', error);
@@ -578,41 +600,44 @@ class DatabaseService {
       return [];
     }
 
-    let query = `
-      SELECT * FROM whatsapp_conversations 
-      WHERE (message_text ILIKE $1 OR response_text ILIKE $1 OR contact_name ILIKE $1)
-    `;
-
-    const values: any[] = [`%${searchTerm}%`];
-
-    if (sessionId) {
-      query += ' AND session_id = $2';
-      values.push(sessionId);
-      query += ' ORDER BY created_at DESC LIMIT $3';
-      values.push(limit);
-    } else {
-      query += ' ORDER BY created_at DESC LIMIT $2';
-      values.push(limit);
+    if (!this.prisma) {
+      return [];
     }
 
     try {
-      const result = await this.pool.query(query, values);
-      return result.rows.map(row => ({
-        id: row.id,
-        sessionId: row.session_id,
-        phoneNumber: row.phone_number,
-        contactName: row.contact_name,
-        messageText: row.message_text,
-        responseText: row.response_text,
-        messageType: row.message_type,
-        intent: row.intent,
-        sentiment: row.sentiment,
-        aiProvider: row.ai_provider,
-        tokensUsed: row.tokens_used || 0,
-        isFromUser: row.is_from_user,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
-      }));
+      const rows = await this.prisma.whatsAppConversation.findMany({
+        where: {
+          ...(sessionId ? { sessionId } : {}),
+          OR: [
+            { contactName: { contains: searchTerm, mode: 'insensitive' } },
+            { message: { content: { contains: searchTerm, mode: 'insensitive' } } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        include: { message: { select: { content: true, direction: true } } },
+      });
+
+      return rows.map(row => {
+        const canonicalContent = row.message?.content ?? undefined;
+        const isFromUser = row.isFromUser ?? true;
+        return {
+          id: row.id,
+          sessionId: row.sessionId,
+          phoneNumber: row.phoneNumber,
+          contactName: row.contactName ?? undefined,
+          messageText: isFromUser ? canonicalContent : undefined,
+          responseText: !isFromUser ? canonicalContent : undefined,
+          messageType: row.messageType ?? 'text',
+          intent: row.intent ?? undefined,
+          sentiment: row.sentiment ?? undefined,
+          aiProvider: row.aiProvider ?? undefined,
+          tokensUsed: row.tokensUsed ?? 0,
+          isFromUser,
+          createdAt: row.createdAt ?? new Date(),
+          updatedAt: row.updatedAt ?? new Date(),
+        };
+      });
     } catch (error) {
       logger.error('Error buscando conversaciones:', error);
       return [];
@@ -988,45 +1013,39 @@ class DatabaseService {
     sessionId?: string,
     limit: number = 50
   ): Promise<ConversationHistory[]> {
-    if (!this.pool) {
-      logger.warn('No hay conexión a base de datos');
+    if (!this.prisma) {
+      logger.warn('No hay Prisma client disponible');
       return [];
     }
 
-    let query = `
-      SELECT * FROM whatsapp_conversations
-    `;
-
-    const values: any[] = [];
-
-    if (sessionId) {
-      query += ' WHERE session_id = $1';
-      values.push(sessionId);
-      query += ' ORDER BY created_at DESC LIMIT $2';
-      values.push(limit);
-    } else {
-      query += ' ORDER BY created_at DESC LIMIT $1';
-      values.push(limit);
-    }
-
     try {
-      const result = await this.pool.query(query, values);
-      return result.rows.map(row => ({
-        id: row.id,
-        sessionId: row.session_id,
-        phoneNumber: row.phone_number,
-        contactName: row.contact_name,
-        messageText: row.message_text,
-        responseText: row.response_text,
-        messageType: row.message_type,
-        intent: row.intent,
-        sentiment: row.sentiment,
-        aiProvider: row.ai_provider,
-        tokensUsed: row.tokens_used || 0,
-        isFromUser: row.is_from_user,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
-      }));
+      const rows = await this.prisma.whatsAppConversation.findMany({
+        where: sessionId ? { sessionId } : {},
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+        include: { message: { select: { content: true, direction: true } } },
+      });
+
+      return rows.map(row => {
+        const canonicalContent = row.message?.content ?? undefined;
+        const isFromUser = row.isFromUser ?? true;
+        return {
+          id: row.id,
+          sessionId: row.sessionId,
+          phoneNumber: row.phoneNumber,
+          contactName: row.contactName ?? undefined,
+          messageText: isFromUser ? canonicalContent : undefined,
+          responseText: !isFromUser ? canonicalContent : undefined,
+          messageType: row.messageType ?? 'text',
+          intent: row.intent ?? undefined,
+          sentiment: row.sentiment ?? undefined,
+          aiProvider: row.aiProvider ?? undefined,
+          tokensUsed: row.tokensUsed ?? 0,
+          isFromUser,
+          createdAt: row.createdAt ?? new Date(),
+          updatedAt: row.updatedAt ?? new Date(),
+        };
+      });
     } catch (error) {
       logger.error('Error obteniendo conversaciones recientes:', error);
       return [];
@@ -1294,72 +1313,79 @@ class DatabaseService {
     }
 
     try {
-      // Obtener conversaciones agrupadas por número de teléfono con el último mensaje
+      // T4.3: el JOIN con `leads` ocurre dentro del CTE (antes se hacía con
+      // `getAllLeads()` + `find()` por cada fila = escaneo O(N*M)).
+      // T4.1: filtra leads soft-deleted.
+      // T1.1-bis paso 4: el contenido canónico vive en messages.content.
       const query = `
         WITH latest_messages AS (
-          SELECT DISTINCT ON (phone_number) 
-            phone_number,
-            session_id,
-            contact_name,
-            COALESCE(message_text, response_text) as last_message_content,
-            message_type,
-            is_from_user,
-            created_at,
-            updated_at
-          FROM whatsapp_conversations 
-          ORDER BY phone_number, created_at DESC
+          SELECT DISTINCT ON (wc.phone_number)
+            wc.phone_number,
+            wc.session_id,
+            wc.contact_name,
+            m.content as last_message_content,
+            wc.message_type,
+            wc.is_from_user,
+            wc.created_at,
+            wc.updated_at
+          FROM whatsapp_conversations wc
+          LEFT JOIN messages m ON m.id = wc.message_id
+          ORDER BY wc.phone_number, wc.created_at DESC
         ),
         unread_counts AS (
-          SELECT 
+          SELECT
             phone_number,
             COUNT(*) as unread_count
-          FROM whatsapp_conversations 
+          FROM whatsapp_conversations
           WHERE is_from_user = true
           GROUP BY phone_number
         )
-        SELECT 
+        SELECT
           lm.*,
-          COALESCE(uc.unread_count, 0) as unread_count
+          COALESCE(uc.unread_count, 0) as unread_count,
+          l.id as lead_id,
+          l.name as lead_name,
+          l.phone as lead_phone,
+          l.status as lead_status
         FROM latest_messages lm
         LEFT JOIN unread_counts uc ON lm.phone_number = uc.phone_number
+        LEFT JOIN leads l
+          ON l.deleted_at IS NULL
+          AND RIGHT(REGEXP_REPLACE(l.phone, '[^0-9]', '', 'g'), 10)
+            = RIGHT(REGEXP_REPLACE(lm.phone_number, '[^0-9]', '', 'g'), 10)
         ORDER BY lm.created_at DESC
         LIMIT $1 OFFSET $2;
       `;
 
       const result = await this.pool.query(query, [limit, offset]);
-      const leads = await this.getAllLeads();
 
-      // Mapear conversaciones con información de leads
-      const conversations = result.rows.map(row => {
-        // Buscar lead correspondiente
-        const lead = leads.find(l => {
-          if (!l.phone) return false;
-          const leadPhone = l.phone.replace(/[^0-9]/g, '');
-          const conversationPhone = row.phone_number.replace(/[^0-9]/g, '');
-          return leadPhone.slice(-10) === conversationPhone.slice(-10);
-        });
-
-        return {
-          id: `conv_${row.phone_number}`, // ID único para la conversación
-          leadId: lead?.id || null,
-          lead: lead || {
-            id: 'unknown',
-            name: row.contact_name || 'Desconocido',
-            phone: row.phone_number,
-            status: 'NUEVO',
-          },
-          lastMessage: {
-            id: `msg_${Date.now()}`,
-            content: row.last_message_content || '',
-            direction: row.is_from_user ? 'INBOUND' : 'OUTBOUND',
-            messageType: row.message_type || 'text',
-            status: 'delivered',
-            createdAt: row.created_at,
-          },
-          unreadCount: parseInt(row.unread_count) || 0,
-          updatedAt: row.updated_at,
-        };
-      });
+      const conversations = result.rows.map(row => ({
+        id: `conv_${row.phone_number}`,
+        leadId: row.lead_id || null,
+        lead: row.lead_id
+          ? {
+              id: row.lead_id,
+              name: row.lead_name,
+              phone: row.lead_phone,
+              status: row.lead_status,
+            }
+          : {
+              id: 'unknown',
+              name: row.contact_name || 'Desconocido',
+              phone: row.phone_number,
+              status: 'NUEVO',
+            },
+        lastMessage: {
+          id: `msg_${Date.now()}`,
+          content: row.last_message_content || '',
+          direction: row.is_from_user ? 'INBOUND' : 'OUTBOUND',
+          messageType: row.message_type || 'text',
+          status: 'delivered',
+          createdAt: row.created_at,
+        },
+        unreadCount: parseInt(row.unread_count) || 0,
+        updatedAt: row.updated_at,
+      }));
 
       logger.info(`✅ Obtenidas ${conversations.length} conversaciones de la base de datos`);
       return conversations;
@@ -1425,15 +1451,16 @@ class DatabaseService {
         };
       }
 
-      // Obtener mensajes de la base de datos
+      // Obtener mensajes de la base de datos (JOIN con messages tras T1.1-bis paso 4).
       const query = `
-        SELECT 
-          id, session_id, phone_number, contact_name,
-          message_text, response_text, message_type,
-          is_from_user, created_at, updated_at
-        FROM whatsapp_conversations 
-        WHERE phone_number = $1 
-        ORDER BY created_at ASC
+        SELECT
+          wc.id, wc.session_id, wc.phone_number, wc.contact_name,
+          m.content AS message_content,
+          wc.message_type, wc.is_from_user, wc.created_at, wc.updated_at
+        FROM whatsapp_conversations wc
+        LEFT JOIN messages m ON m.id = wc.message_id
+        WHERE wc.phone_number = $1
+        ORDER BY wc.created_at ASC
         LIMIT $2 OFFSET $3;
       `;
 
@@ -1442,7 +1469,7 @@ class DatabaseService {
       // Convertir mensajes al formato esperado
       const messages = result.rows.map(row => ({
         id: row.id,
-        content: row.message_text || row.response_text || '',
+        content: row.message_content || '',
         direction: row.is_from_user ? 'INBOUND' : 'OUTBOUND',
         messageType: row.message_type || 'text',
         status: 'delivered',

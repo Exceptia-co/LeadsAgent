@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { getWhatsAppUrl } from "../../../hooks/use-whatsapp-url";
+import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
 import {
@@ -32,7 +32,17 @@ interface Template {
   createdAt: string;
 }
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
 export default function TemplatesPage() {
+  const { getToken } = useAuth();
+  const authHeaders = useCallback(async (): Promise<HeadersInit> => {
+    const token = await getToken();
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  }, [getToken]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -42,8 +52,7 @@ export default function TemplatesPage() {
     template: Template;
     variables: { [key: string]: string };
   } | null>(null);
-  const [showAdvancedPreview, setShowAdvancedPreview] =
-    useState<Template | null>(null);
+  const [showAdvancedPreview, setShowAdvancedPreview] = useState<Template | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Formulario para template
@@ -72,7 +81,8 @@ export default function TemplatesPage() {
   const fetchTemplates = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/templates`);
+      const headers = await authHeaders();
+      const response = await fetch(`${API_BASE_URL}/templates?activeOnly=false`, { headers });
       const result = await response.json();
 
       if (result.success) {
@@ -119,9 +129,10 @@ export default function TemplatesPage() {
         .map((v) => v.trim())
         .filter((v) => v);
 
-      const response = await fetch(`${getWhatsAppUrl()}/templates`, {
+      const headers = await authHeaders();
+      const response = await fetch(`${API_BASE_URL}/templates`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           name: formData.name,
           category: formData.category,
@@ -152,21 +163,19 @@ export default function TemplatesPage() {
         .map((v) => v.trim())
         .filter((v) => v);
 
-      const response = await fetch(
-        `${getWhatsAppUrl()}/templates/${editingTemplate.id}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: formData.name,
-            category: formData.category,
-            subject: formData.subject,
-            content: formData.content,
-            variables,
-            isActive: formData.isActive,
-          }),
-        },
-      );
+      const headers = await authHeaders();
+      const response = await fetch(`${API_BASE_URL}/templates/${editingTemplate.id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({
+          name: formData.name,
+          category: formData.category,
+          subject: formData.subject,
+          content: formData.content,
+          variables,
+          isActive: formData.isActive,
+        }),
+      });
 
       if (response.ok) {
         await fetchTemplates();
@@ -179,12 +188,13 @@ export default function TemplatesPage() {
   };
 
   const handleDeleteTemplate = async (id: string) => {
-    if (!confirm("¿Estás seguro de que quieres eliminar este template?"))
-      return;
+    if (!confirm("¿Estás seguro de que quieres eliminar este template?")) return;
 
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/templates/${id}`, {
+      const headers = await authHeaders();
+      const response = await fetch(`${API_BASE_URL}/templates/${id}`, {
         method: "DELETE",
+        headers,
       });
 
       if (response.ok) {
@@ -222,17 +232,14 @@ export default function TemplatesPage() {
     const matchesSearch =
       template.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       template.content.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory =
-      selectedCategory === "all" || template.category === selectedCategory;
+    const matchesCategory = selectedCategory === "all" || template.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
 
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Templates de Mensajes
-        </h1>
+        <h1 className="text-2xl font-bold text-gray-900">Templates de Mensajes</h1>
         <div className="animate-pulse grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
             <Card key={i} className="p-6">
@@ -250,9 +257,7 @@ export default function TemplatesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Templates de Mensajes
-          </h1>
+          <h1 className="text-2xl font-bold text-gray-900">Templates de Mensajes</h1>
           <p className="text-gray-500">
             Gestiona plantillas para mensajes proactivos y automatizados
           </p>
@@ -301,24 +306,15 @@ export default function TemplatesPage() {
       {/* Templates Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredTemplates.map((template) => (
-          <Card
-            key={template.id}
-            className="p-6 hover:shadow-lg transition-shadow"
-          >
+          <Card key={template.id} className="p-6 hover:shadow-lg transition-shadow">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h3 className="font-semibold text-gray-900 mb-1">
-                  {template.name}
-                </h3>
+                <h3 className="font-semibold text-gray-900 mb-1">{template.name}</h3>
                 <div className="flex items-center space-x-2">
                   <Badge variant="outline" className="text-xs">
-                    {categories.find((c) => c.id === template.category)
-                      ?.label || template.category}
+                    {categories.find((c) => c.id === template.category)?.label || template.category}
                   </Badge>
-                  <Badge
-                    variant={template.isActive ? "success" : "secondary"}
-                    className="text-xs"
-                  >
+                  <Badge variant={template.isActive ? "success" : "secondary"} className="text-xs">
                     {template.isActive ? "Activo" : "Inactivo"}
                   </Badge>
                 </div>
@@ -378,9 +374,7 @@ export default function TemplatesPage() {
       {filteredTemplates.length === 0 && (
         <Card className="p-12 text-center">
           <MessageSquare className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">
-            No hay templates
-          </h3>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No hay templates</h3>
           <p className="text-gray-500 mb-4">
             {searchTerm || selectedCategory !== "all"
               ? "No se encontraron templates con los filtros aplicados."
@@ -532,10 +526,7 @@ export default function TemplatesPage() {
                           setTimeout(() => {
                             textarea.focus();
                             const newPosition = start + variable.length;
-                            textarea.setSelectionRange(
-                              newPosition,
-                              newPosition,
-                            );
+                            textarea.setSelectionRange(newPosition, newPosition);
                           }, 0);
                         }
                       }}
@@ -549,21 +540,15 @@ export default function TemplatesPage() {
                   </label>
                   <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-lg border min-h-[40px]">
                     {(() => {
-                      const matches =
-                        formData.content.match(/\{\{([^}]+)\}\}/g);
+                      const matches = formData.content.match(/\{\{([^}]+)\}\}/g);
                       const variables = matches
-                        ? Array.from(
-                            new Set(
-                              matches.map((match) => match.slice(2, -2).trim()),
-                            ),
-                          )
+                        ? Array.from(new Set(matches.map((match) => match.slice(2, -2).trim())))
                         : [];
 
                       if (variables.length === 0) {
                         return (
                           <span className="text-sm text-gray-500 italic">
-                            Las variables se detectarán automáticamente mientras
-                            escribes
+                            Las variables se detectarán automáticamente mientras escribes
                           </span>
                         );
                       }
@@ -579,8 +564,7 @@ export default function TemplatesPage() {
                     })()}
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
-                    💡 Las variables se reemplazarán automáticamente con datos
-                    reales del lead
+                    💡 Las variables se reemplazarán automáticamente con datos reales del lead
                   </p>
                 </div>
 
@@ -634,9 +618,7 @@ export default function TemplatesPage() {
                   </button>
 
                   <button
-                    onClick={
-                      isCreating ? handleCreateTemplate : handleUpdateTemplate
-                    }
+                    onClick={isCreating ? handleCreateTemplate : handleUpdateTemplate}
                     disabled={!formData.name || !formData.content}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                   >
@@ -667,15 +649,9 @@ export default function TemplatesPage() {
 
               <div className="space-y-4">
                 <div>
-                  <h3 className="font-medium text-gray-900">
-                    {previewTemplate.template.name}
-                  </h3>
+                  <h3 className="font-medium text-gray-900">{previewTemplate.template.name}</h3>
                   <Badge variant="outline" className="text-xs mt-1">
-                    {
-                      categories.find(
-                        (c) => c.id === previewTemplate.template.category,
-                      )?.label
-                    }
+                    {categories.find((c) => c.id === previewTemplate.template.category)?.label}
                   </Badge>
                 </div>
 
@@ -687,16 +663,10 @@ export default function TemplatesPage() {
 
                 {previewTemplate.template.variables.length > 0 && (
                   <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">
-                      Variables disponibles:
-                    </p>
+                    <p className="text-sm font-medium text-gray-700 mb-2">Variables disponibles:</p>
                     <div className="flex flex-wrap gap-2">
                       {previewTemplate.template.variables.map((variable) => (
-                        <Badge
-                          key={variable}
-                          variant="secondary"
-                          className="text-xs"
-                        >
+                        <Badge key={variable} variant="secondary" className="text-xs">
                           {`{{${variable}}}`}
                         </Badge>
                       ))}

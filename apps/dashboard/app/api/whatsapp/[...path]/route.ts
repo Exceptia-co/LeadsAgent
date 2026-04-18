@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWhatsAppServiceUrl } from "../../../../lib/api-config";
+import { requireClerkToken } from "../../../../lib/auth/proxy-auth";
+import { signServiceRequest } from "../../../../lib/service-auth";
 
 // Force dynamic rendering for this route
 export const dynamic = "force-dynamic";
@@ -9,44 +11,66 @@ export const runtime = "nodejs";
  * Catch-all proxy for WhatsApp service
  * Routes all requests from /api/whatsapp/* to the WhatsApp service
  * This avoids Mixed Content issues by proxying HTTP through HTTPS
+ *
+ * Gated by Clerk session. The whatsapp-service itself does not (yet) validate
+ * the forwarded token — the auth here is the public-internet gate until the
+ * service grows its own middleware (see PRD T0.4-ter).
  */
 
-async function proxyRequest(
-  request: NextRequest,
-  path: string[],
-  method: string,
-) {
+async function proxyRequest(request: NextRequest, path: string[], method: string) {
+  const gate = await requireClerkToken();
+  if (gate instanceof NextResponse) return gate;
+
   try {
     const pathString = path.join("/");
     const whatsAppUrl = getWhatsAppServiceUrl();
 
-    // Build the target URL
-    const targetUrl = new URL(`${whatsAppUrl}/${pathString}`);
+    // T0.4-ter: the whatsapp-service mounts its router only under /api
+    // after dropping the duplicate `/` mount. Incoming proxy paths like
+    // `/api/whatsapp/sessions` become `sessions` here and must be forwarded
+    // to `${whatsAppUrl}/api/sessions`. If the caller already includes
+    // `api/…` (e.g. `/api/whatsapp/api/conversations`), we don't double it.
+    const normalisedPath = pathString.startsWith("api/")
+      ? pathString
+      : `api/${pathString}`;
+    const targetUrl = new URL(`${whatsAppUrl}/${normalisedPath}`);
 
     // Forward query parameters
     request.nextUrl.searchParams.forEach((value, key) => {
       targetUrl.searchParams.set(key, value);
     });
 
-    // Prepare fetch options
+    // Read raw body up-front so we can hash it exactly as the downstream
+    // verifier will. POST/PUT/PATCH forward it; GET/DELETE sign the empty
+    // string — the receiver does the same so the HMAC still matches.
+    let bodyString = "";
+    if (["POST", "PUT", "PATCH"].includes(method)) {
+      try {
+        bodyString = await request.text();
+      } catch {
+        bodyString = "";
+      }
+    }
+
+    const secret = process.env.WHATSAPP_SERVICE_HMAC_SECRET;
+    if (!secret) {
+      console.error("[WhatsApp Proxy] WHATSAPP_SERVICE_HMAC_SECRET is not configured");
+      return NextResponse.json(
+        { error: "Proxy misconfigured: missing service auth secret" },
+        { status: 500 },
+      );
+    }
+
+    const signedHeaders = signServiceRequest(bodyString, secret);
+
     const fetchOptions: RequestInit = {
       method,
       headers: {
         "Content-Type": "application/json",
+        ...signedHeaders,
       },
+      ...(bodyString ? { body: bodyString } : {}),
     };
-
-    // Forward body for POST/PUT/PATCH requests
-    if (["POST", "PUT", "PATCH"].includes(method)) {
-      try {
-        const body = await request.text();
-        if (body) {
-          fetchOptions.body = body;
-        }
-      } catch {
-        // No body to forward
-      }
-    }
 
     console.log(`[WhatsApp Proxy] ${method} ${targetUrl.toString()}`);
 

@@ -35,14 +35,8 @@ export function MovingBorder({
     }
   });
 
-  const x = useTransform(
-    progress,
-    (val) => pathRef.current?.getPointAtLength(val).x ?? 0,
-  );
-  const y = useTransform(
-    progress,
-    (val) => pathRef.current?.getPointAtLength(val).y ?? 0,
-  );
+  const x = useTransform(progress, (val) => pathRef.current?.getPointAtLength(val).x ?? 0);
+  const y = useTransform(progress, (val) => pathRef.current?.getPointAtLength(val).y ?? 0);
 
   const transform = useMotionTemplate`translateX(${x}px) translateY(${y}px) translateX(-50%) translateY(-50%)`;
 
@@ -110,10 +104,7 @@ export function Button({
       }}
       {...otherProps}
     >
-      <div
-        className="absolute inset-0"
-        style={{ borderRadius: `calc(${borderRadius} * 0.96)` }}
-      >
+      <div className="absolute inset-0" style={{ borderRadius: `calc(${borderRadius} * 0.96)` }}>
         <MovingBorder duration={duration} rx="30%" ry="30%">
           <div
             className={cn(

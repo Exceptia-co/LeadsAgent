@@ -102,14 +102,10 @@ export function useWhatsAppApi() {
           if (!response.ok) {
             // Don't retry on client errors (4xx)
             if (response.status >= 400 && response.status < 500) {
-              throw new Error(
-                `API Error: ${response.statusText} (${response.status})`,
-              );
+              throw new Error(`API Error: ${response.statusText} (${response.status})`);
             }
             // Retry on server errors (5xx)
-            throw new Error(
-              `Server Error: ${response.statusText} (${response.status})`,
-            );
+            throw new Error(`Server Error: ${response.statusText} (${response.status})`);
           }
 
           const data = await response.json();
@@ -121,14 +117,12 @@ export function useWhatsAppApi() {
 
           return data;
         } catch (err) {
-          lastError =
-            err instanceof Error ? err : new Error("Unknown error occurred");
+          lastError = err instanceof Error ? err : new Error("Unknown error occurred");
 
           // Don't retry on client errors or if this is the last attempt
           if (
             attempt === retries ||
-            (lastError.message.includes("API Error") &&
-              lastError.message.includes("4"))
+            (lastError.message.includes("API Error") && lastError.message.includes("4"))
           ) {
             break;
           }
@@ -157,9 +151,7 @@ export function useWhatsAppApi() {
   const getConversations = useCallback(
     async (limit = 50, offset = 0): Promise<Conversation[]> => {
       try {
-        return await makeApiCall(
-          `/conversations?limit=${limit}&offset=${offset}`,
-        );
+        return await makeApiCall(`/conversations?limit=${limit}&offset=${offset}`);
       } catch (error) {
         console.error("Error loading conversations:", error);
         // Return empty array as fallback
@@ -170,11 +162,7 @@ export function useWhatsAppApi() {
   );
 
   const getConversationMessages = useCallback(
-    async (
-      conversationId: string,
-      limit = 50,
-      offset = 0,
-    ): Promise<ConversationWithMessages> => {
+    async (conversationId: string, limit = 50, offset = 0): Promise<ConversationWithMessages> => {
       try {
         return await makeApiCall(
           `/conversations/${conversationId}/messages?limit=${limit}&offset=${offset}`,
@@ -207,17 +195,14 @@ export function useWhatsAppApi() {
       type: "text" | "image" | "document" | "audio" | "video" = "text",
     ): Promise<boolean> => {
       try {
-        const result = (await makeApiCall(
-          `/conversations/${conversationId}/send`,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              sessionId,
-              message,
-              type,
-            }),
-          },
-        )) as { success?: boolean };
+        const result = (await makeApiCall(`/conversations/${conversationId}/send`, {
+          method: "POST",
+          body: JSON.stringify({
+            sessionId,
+            message,
+            type,
+          }),
+        })) as { success?: boolean };
         return result.success || false;
       } catch (error) {
         console.error("Error sending message:", error);
@@ -235,18 +220,15 @@ export function useWhatsAppApi() {
       message: string,
       type: "text" | "image" | "document" | "audio" | "video" = "text",
     ): Promise<boolean> => {
-      const result = await makeApiCall<{ success?: boolean }>(
-        "/whatsapp/send",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            sessionId,
-            phone,
-            message,
-            type,
-          }),
-        },
-      );
+      const result = await makeApiCall<{ success?: boolean }>("/whatsapp/send", {
+        method: "POST",
+        body: JSON.stringify({
+          sessionId,
+          phone,
+          message,
+          type,
+        }),
+      });
       return result.success || false;
     },
     [makeApiCall],

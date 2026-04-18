@@ -98,11 +98,15 @@ export class SessionManager {
 
       // Layer 3: Sync to Redis for fast dashboard access (non-blocking)
       try {
-        await redisClient.setObject(`${REDIS_KEYS.SESSION_STATUS}${sessionId}`, {
-          status,
-          connectedNumber: data?.connectedNumber,
-          lastSeen: new Date().toISOString(),
-        }, 3600); // 1h TTL
+        await redisClient.setObject(
+          `${REDIS_KEYS.SESSION_STATUS}${sessionId}`,
+          {
+            status,
+            connectedNumber: data?.connectedNumber,
+            lastSeen: new Date().toISOString(),
+          },
+          3600
+        ); // 1h TTL
       } catch (redisError) {
         logger.warn(`Redis status sync failed for ${sessionId}:`, redisError);
       }

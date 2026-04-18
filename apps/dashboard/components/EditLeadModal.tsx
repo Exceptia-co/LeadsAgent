@@ -32,12 +32,7 @@ interface FormErrors {
   general?: string;
 }
 
-export function EditLeadModal({
-  isOpen,
-  onClose,
-  onSuccess,
-  lead,
-}: EditLeadModalProps) {
+export function EditLeadModal({ isOpen, onClose, onSuccess, lead }: EditLeadModalProps) {
   const { getToken } = useAuth();
   const [formData, setFormData] = useState<FormData>({
     name: "",
@@ -134,7 +129,7 @@ export function EditLeadModal({
 
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       };
 
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
@@ -148,19 +143,14 @@ export function EditLeadModal({
         const errorData = await response.json();
 
         // Manejar específicamente el error de duplicado
-        if (
-          response.status === 400 &&
-          errorData.message?.includes("Ya existe un lead")
-        ) {
+        if (response.status === 400 && errorData.message?.includes("Ya existe un lead")) {
           setErrors({
             phone: "Ya existe un lead con este número de teléfono",
           });
           return;
         }
 
-        throw new Error(
-          errorData.message || errorData.error || "Error al actualizar el lead",
-        );
+        throw new Error(errorData.message || errorData.error || "Error al actualizar el lead");
       }
 
       onSuccess();
@@ -171,19 +161,13 @@ export function EditLeadModal({
       console.error("API URL:", process.env.NEXT_PUBLIC_API_URL);
 
       // Si es un error de duplicado específico
-      if (
-        error instanceof Error &&
-        error.message.includes("Ya existe un lead")
-      ) {
+      if (error instanceof Error && error.message.includes("Ya existe un lead")) {
         setErrors({
           phone: error.message,
         });
       } else {
         setErrors({
-          general:
-            error instanceof Error
-              ? error.message
-              : "Error al actualizar el lead",
+          general: error instanceof Error ? error.message : "Error al actualizar el lead",
         });
       }
     } finally {
@@ -207,9 +191,7 @@ export function EditLeadModal({
         <Dialog.Overlay className="fixed inset-0 bg-black/50 z-50" />
         <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-lg w-full max-w-md p-6 z-50">
           <div className="flex items-center justify-between mb-2">
-            <Dialog.Title className="text-xl font-semibold text-gray-900">
-              Editar Lead
-            </Dialog.Title>
+            <Dialog.Title className="text-xl font-semibold text-gray-900">Editar Lead</Dialog.Title>
             <Dialog.Close asChild>
               <button
                 className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -234,10 +216,7 @@ export function EditLeadModal({
 
             {/* Name Field */}
             <div>
-              <Label.Root
-                htmlFor="name"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
+              <Label.Root htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
                 Nombre
               </Label.Root>
               <input
@@ -251,17 +230,12 @@ export function EditLeadModal({
                 placeholder="Nombre del lead"
                 disabled={isLoading}
               />
-              {errors.name && (
-                <p className="text-red-600 text-xs mt-1">{errors.name}</p>
-              )}
+              {errors.name && <p className="text-red-600 text-xs mt-1">{errors.name}</p>}
             </div>
 
             {/* Phone Field */}
             <div>
-              <Label.Root
-                htmlFor="phone"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
+              <Label.Root htmlFor="phone" className="block text-sm font-medium text-gray-700 mb-1">
                 Teléfono *
               </Label.Root>
               <input
@@ -276,17 +250,12 @@ export function EditLeadModal({
                 disabled={isLoading}
                 required
               />
-              {errors.phone && (
-                <p className="text-red-600 text-xs mt-1">{errors.phone}</p>
-              )}
+              {errors.phone && <p className="text-red-600 text-xs mt-1">{errors.phone}</p>}
             </div>
 
             {/* Email Field */}
             <div>
-              <Label.Root
-                htmlFor="email"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
+              <Label.Root htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
                 Email
               </Label.Root>
               <input
@@ -300,9 +269,7 @@ export function EditLeadModal({
                 placeholder="email@ejemplo.com"
                 disabled={isLoading}
               />
-              {errors.email && (
-                <p className="text-red-600 text-xs mt-1">{errors.email}</p>
-              )}
+              {errors.email && <p className="text-red-600 text-xs mt-1">{errors.email}</p>}
             </div>
 
             {/* Status Field */}
@@ -312,9 +279,7 @@ export function EditLeadModal({
               </Label.Root>
               <Select.Root
                 value={formData.status}
-                onValueChange={(value) =>
-                  handleInputChange("status", value as LeadStatus)
-                }
+                onValueChange={(value) => handleInputChange("status", value as LeadStatus)}
               >
                 <Select.Trigger className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white text-left flex items-center justify-between">
                   <Select.Value>{STATUS_LABELS[formData.status]}</Select.Value>
@@ -340,10 +305,7 @@ export function EditLeadModal({
 
             {/* Source Field */}
             <div>
-              <Label.Root
-                htmlFor="source"
-                className="block text-sm font-medium text-gray-700 mb-1"
-              >
+              <Label.Root htmlFor="source" className="block text-sm font-medium text-gray-700 mb-1">
                 Fuente
               </Label.Root>
               <input

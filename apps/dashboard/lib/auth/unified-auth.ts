@@ -125,9 +125,7 @@ export async function getUnifiedUser(): Promise<UnifiedUser | null> {
  * Crea un usuario en Supabase basado en los datos de Clerk
  * Esto es útil cuando un usuario se autentica por primera vez
  */
-async function createUserFromClerk(
-  clerkId: string,
-): Promise<UnifiedUser | null> {
+async function createUserFromClerk(clerkId: string): Promise<UnifiedUser | null> {
   try {
     // Nota: En un escenario real, aquí harías una llamada a la API de Clerk
     // para obtener los datos del usuario. Por ahora, creamos un usuario básico
@@ -200,17 +198,11 @@ export async function requireAuth(): Promise<UnifiedUser> {
 /**
  * Middleware para verificar permisos de rol
  */
-export async function requireRole(
-  allowedRoles: string[],
-): Promise<UnifiedUser> {
+export async function requireRole(allowedRoles: string[]): Promise<UnifiedUser> {
   const user = await requireAuth();
 
   if (!allowedRoles.includes(user.role)) {
-    throw new UnifiedAuthError(
-      "Insufficient permissions",
-      "INSUFFICIENT_PERMISSIONS",
-      403,
-    );
+    throw new UnifiedAuthError("Insufficient permissions", "INSUFFICIENT_PERMISSIONS", 403);
   }
 
   return user;

@@ -6,7 +6,7 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
   "/sign-up(.*)",
-  "/api/webhook",
+  "/api/webhooks/(.*)",
   "/api/public/(.*)", // Todas las rutas API públicas
   "/test-clerk", // Ruta de debugging
 ]);
@@ -45,8 +45,5 @@ export default clerkMiddleware(async (auth, request) => {
 export const config = {
   matcher: ["/((?!.+\\.[\\w]+$|_next).*)", "/", "/(api|trpc)(.*)"],
   // Allow Clerk packages that use dynamic imports
-  unstable_allowDynamic: [
-    "/node_modules/@clerk/**",
-    "/node_modules/.pnpm/@clerk*/**",
-  ],
+  unstable_allowDynamic: ["/node_modules/@clerk/**", "/node_modules/.pnpm/@clerk*/**"],
 };

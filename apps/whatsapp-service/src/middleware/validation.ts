@@ -223,8 +223,8 @@ const RATE_LIMIT_MAX_REQUESTS = 300; // 300 requests per minute (más permisivo 
 
 export function rateLimit(req: Request, res: Response, next: NextFunction): void {
   try {
-    // Deshabilitar rate limiting en desarrollo
-    if (process.env.NODE_ENV === 'development') {
+    // Bypass solo en tests automáticos (antes: development). Ver PRD T2.4.
+    if (process.env.NODE_ENV === 'test') {
       next();
       return;
     }
@@ -279,6 +279,114 @@ export function rateLimit(req: Request, res: Response, next: NextFunction): void
   } catch (error) {
     logger.error('Error in rateLimit middleware:', error);
     // Don't block request on rate limit error
+    next();
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Rate limiting POR SESIÓN WhatsApp (T2.4)
+//
+// Distinto del rateLimit general: aquel limita requests/minuto por IP. Este
+// limita MENSAJES/hora por sessionId (cuenta WhatsApp) para prevenir bans,
+// que son el riesgo real del bulk proactive messaging.
+//
+// Ventana rodante de 1h. Cuenta "optimista": reserva slots al aceptar el
+// request, no al confirmar envío (un retry de un fallido también puede
+// disparar el ban, así que contar el intento es lo correcto anti-ban).
+// Para bulk, reserva `leadIds.length` slots de una vez y rechaza el batch
+// completo si no entra (fail-closed — el cliente puede reintentar con menos
+// leads).
+// -----------------------------------------------------------------------------
+
+const sessionRateLimitStore = new Map<string, number[]>();
+const SESSION_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hora
+const SESSION_RATE_LIMIT_MAX_DEFAULT = 200; // cuenta nueva → conservador
+
+function getSessionQuota(): number {
+  const envValue = process.env.WHATSAPP_MAX_MSGS_PER_HOUR_PER_SESSION;
+  const parsed = envValue ? parseInt(envValue, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : SESSION_RATE_LIMIT_MAX_DEFAULT;
+}
+
+function pruneOldTimestamps(timestamps: number[], now: number): number[] {
+  const cutoff = now - SESSION_RATE_LIMIT_WINDOW_MS;
+  return timestamps.filter(t => t > cutoff);
+}
+
+export interface SessionThrottleContext {
+  sessionId: string;
+  usageBefore: number;
+  usageAfter: number;
+  quota: number;
+  throttleFactor: 1 | 2 | 4;
+}
+
+export function rateLimitBySession(req: Request, res: Response, next: NextFunction): void {
+  try {
+    if (process.env.NODE_ENV === 'test') {
+      next();
+      return;
+    }
+
+    const body = req.body ?? {};
+    const sessionId: string = body.sessionId || 'default-session';
+    const batchSize: number = Array.isArray(body.leadIds) ? body.leadIds.length : 1;
+
+    if (batchSize <= 0) {
+      next();
+      return;
+    }
+
+    const quota = getSessionQuota();
+    const now = Date.now();
+    const current = pruneOldTimestamps(sessionRateLimitStore.get(sessionId) ?? [], now);
+
+    if (current.length + batchSize > quota) {
+      const oldestInWindow = current[0] ?? now;
+      const retryAfter = Math.max(
+        1,
+        Math.ceil((oldestInWindow + SESSION_RATE_LIMIT_WINDOW_MS - now) / 1000)
+      );
+      logger.warn(
+        `🚦 Session rate limit exceeded for ${sessionId}: ${current.length}/${quota} used, batch ${batchSize}`
+      );
+      res.status(429).json({
+        success: false,
+        error: `Cuota de ${quota} mensajes/hora alcanzada para la sesión "${sessionId}". Usadas ${current.length}, intento de ${batchSize}.`,
+        code: 'SESSION_RATE_LIMIT_EXCEEDED',
+        retryAfter,
+        data: {
+          sessionId,
+          quotaPerHour: quota,
+          usage: current.length,
+          attemptedBatch: batchSize,
+        },
+      });
+      return;
+    }
+
+    // Reservar slots (timestamps ligeramente espaciados para ordering)
+    const reserved = [...current];
+    for (let i = 0; i < batchSize; i++) {
+      reserved.push(now + i);
+    }
+    sessionRateLimitStore.set(sessionId, reserved);
+
+    const usageRatio = reserved.length / quota;
+    const throttleFactor: SessionThrottleContext['throttleFactor'] =
+      usageRatio > 0.9 ? 4 : usageRatio > 0.8 ? 2 : 1;
+
+    (req as Request & { sessionThrottle?: SessionThrottleContext }).sessionThrottle = {
+      sessionId,
+      usageBefore: current.length,
+      usageAfter: reserved.length,
+      quota,
+      throttleFactor,
+    };
+
+    next();
+  } catch (error) {
+    logger.error('Error in rateLimitBySession middleware:', error);
     next();
   }
 }

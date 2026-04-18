@@ -1,13 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, createContext, useContext } from "react";
-import {
-  CheckCircle2,
-  AlertCircle,
-  X,
-  Info,
-  AlertTriangle,
-} from "lucide-react";
+import { CheckCircle2, AlertCircle, X, Info, AlertTriangle } from "lucide-react";
 
 type ToastType = "success" | "error" | "warning" | "info";
 
@@ -136,9 +130,7 @@ function ToastItem({ toast, onRemove }: ToastItemProps) {
             <div className="ml-3 flex-1">
               <p className="text-sm font-medium break-words">{toast.title}</p>
               {toast.description && (
-                <p className="mt-1 text-sm opacity-90 break-words">
-                  {toast.description}
-                </p>
+                <p className="mt-1 text-sm opacity-90 break-words">{toast.description}</p>
               )}
             </div>
             <div className="ml-4 flex-shrink-0 flex">

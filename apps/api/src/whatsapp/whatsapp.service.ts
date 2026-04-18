@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhitelistService } from './whitelist.service';
+import { signServiceRequest } from './service-auth';
 import {
   LeadStatus,
   MessageType,
@@ -142,19 +143,67 @@ export class WhatsAppService {
     data: any,
   ): Promise<void> {
     this.logger.log(`Session ${sessionId} authenticated successfully`);
-    // TODO: Update session status in database
-    // TODO: Notify dashboard via WebSocket/SSE
+    try {
+      await this.prisma.whatsAppSession.update({
+        where: { sessionId },
+        data: {
+          status: 'authenticated',
+          lastSeen: new Date(),
+          lastError: null,
+          connectedNumber: data?.number ?? undefined,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to persist authenticated status for ${sessionId}`,
+        error,
+      );
+    }
   }
 
   async handleSessionDisconnected(sessionId: string, data: any): Promise<void> {
-    this.logger.log(`Session ${sessionId} disconnected: ${data.reason}`);
-    // TODO: Update session status in database
-    // TODO: Notify dashboard
+    this.logger.log(`Session ${sessionId} disconnected: ${data?.reason}`);
+    try {
+      await this.prisma.whatsAppSession.update({
+        where: { sessionId },
+        data: {
+          status: data?.authInvalidated ? 'auth_failure' : 'disconnected',
+          lastSeen: new Date(),
+          lastError: data?.reason ?? null,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to persist disconnected status for ${sessionId}`,
+        error,
+      );
+    }
   }
 
   async handleStatusChange(sessionId: string, data: any): Promise<void> {
     this.logger.log(`Session ${sessionId} status changed:`, data);
-    // TODO: Update session status in database
+    const nextStatus: string | undefined = data?.status;
+    if (!nextStatus) {
+      return;
+    }
+    try {
+      await this.prisma.whatsAppSession.update({
+        where: { sessionId },
+        data: {
+          status: nextStatus,
+          lastSeen: new Date(),
+          lastError:
+            nextStatus === 'auth_failure'
+              ? (data?.message ?? data?.reason ?? 'auth_failure')
+              : null,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to persist status change for ${sessionId}`,
+        error,
+      );
+    }
   }
 
   // Method to send message through WhatsApp service
@@ -166,6 +215,18 @@ export class WhatsAppService {
     try {
       const whatsappServiceUrl =
         process.env.WHATSAPP_SERVICE_URL || 'http://localhost:3002';
+      const secret = process.env.WHATSAPP_SERVICE_HMAC_SECRET;
+      if (!secret) {
+        this.logger.error(
+          'WHATSAPP_SERVICE_HMAC_SECRET is not configured — cannot sign outbound request',
+        );
+        return false;
+      }
+
+      // T0.4-ter: firmar con HMAC el body exacto que enviamos para que
+      // verifyServiceSignature (whatsapp-service) pueda reconstruirlo.
+      const body = JSON.stringify({ to, message });
+      const signedHeaders = signServiceRequest(body, secret);
 
       const response = await fetch(
         `${whatsappServiceUrl}/api/sessions/${sessionId}/send`,
@@ -173,8 +234,9 @@ export class WhatsAppService {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            ...signedHeaders,
           },
-          body: JSON.stringify({ to, message }),
+          body,
         },
       );
 

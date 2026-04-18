@@ -54,9 +54,7 @@ export function useAIStats() {
   // Get WhatsApp authorization statistics
   const fetchWhatsAppAuthStats = useCallback(async () => {
     try {
-      const response = await fetch(
-        `${WHATSAPP_SERVICE_BASE_URL}/stats/whatsapp-auth`,
-      );
+      const response = await fetch(`${WHATSAPP_SERVICE_BASE_URL}/stats/whatsapp-auth`);
       const data = await response.json();
 
       if (data.success) {
@@ -73,11 +71,7 @@ export function useAIStats() {
 
   // Get whitelist statistics
   const fetchWhitelistStats = useCallback(
-    async (filters?: {
-      sessionId?: string;
-      startDate?: Date;
-      endDate?: Date;
-    }) => {
+    async (filters?: { sessionId?: string; startDate?: Date; endDate?: Date }) => {
       try {
         const url = new URL(`${WHATSAPP_SERVICE_BASE_URL}/stats/whitelist`);
         if (filters?.sessionId) {
@@ -112,10 +106,8 @@ export function useAIStats() {
     if (!stats) return { total: 0, breakdown: { openrouter: 0, gemini: 0 } };
 
     // Rough cost estimation based on tokens
-    const openrouterCost =
-      stats.providerBreakdown.openrouter * stats.averageTokens * 0.00002; // ~$0.02 per 1K tokens
-    const geminiCost =
-      stats.providerBreakdown.gemini * stats.averageTokens * 0.00001; // ~$0.01 per 1K tokens (free tier considered)
+    const openrouterCost = stats.providerBreakdown.openrouter * stats.averageTokens * 0.00002; // ~$0.02 per 1K tokens
+    const geminiCost = stats.providerBreakdown.gemini * stats.averageTokens * 0.00001; // ~$0.01 per 1K tokens (free tier considered)
 
     return {
       total: openrouterCost + geminiCost,

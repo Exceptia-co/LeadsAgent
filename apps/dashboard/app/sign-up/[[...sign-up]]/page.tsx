@@ -48,12 +48,9 @@ export default function SignUpPage() {
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-500/10 border border-green-500/20 mb-4">
                 <Lock className="w-8 h-8 text-green-500" />
               </div>
-              <h1 className="text-2xl font-bold text-white mb-2">
-                Acceso Beta Privado
-              </h1>
+              <h1 className="text-2xl font-bold text-white mb-2">Acceso Beta Privado</h1>
               <p className="text-gray-400 text-sm">
-                LeadsCRM esta en beta cerrada. Ingresa tu codigo de invitacion
-                para continuar.
+                LeadsCRM esta en beta cerrada. Ingresa tu codigo de invitacion para continuar.
               </p>
             </div>
 
@@ -68,10 +65,7 @@ export default function SignUpPage() {
             {/* Form */}
             <form onSubmit={handleCodeSubmit} className="space-y-4">
               <div>
-                <label
-                  htmlFor="code"
-                  className="block text-sm font-medium text-gray-300 mb-2"
-                >
+                <label htmlFor="code" className="block text-sm font-medium text-gray-300 mb-2">
                   Codigo de invitacion
                 </label>
                 <input
@@ -165,8 +159,7 @@ export default function SignUpPage() {
             fallbackRedirectUrl="/dashboard"
             appearance={{
               elements: {
-                formButtonPrimary:
-                  "bg-green-600 hover:bg-green-700 text-sm normal-case",
+                formButtonPrimary: "bg-green-600 hover:bg-green-700 text-sm normal-case",
                 card: "shadow-lg",
                 headerTitle: "text-gray-900",
                 headerSubtitle: "text-gray-600",

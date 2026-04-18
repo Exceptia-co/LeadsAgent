@@ -20,7 +20,10 @@ import redisClient, { REDIS_KEYS } from '../../config/redis';
  */
 export class EventDispatcher {
   private webhookUrl: string | undefined;
-  private sessionListeners: Map<string, Array<{ event: string; handler: (...args: any[]) => any }>> = new Map();
+  private sessionListeners: Map<
+    string,
+    Array<{ event: string; handler: (...args: any[]) => any }>
+  > = new Map();
   private sessionTimeouts: Map<string, NodeJS.Timeout[]> = new Map();
 
   constructor(webhookUrl?: string) {
@@ -157,14 +160,20 @@ export class EventDispatcher {
 
       // Safety timeout: if ready doesn't arrive within 90s after authenticated, log warning
       const authReadyTimeout = setTimeout(() => {
-        logger.warn(`[DIAG] Session ${sessionId}: READY event NOT received 90s after AUTHENTICATED. Client info: ${client.info ? 'has info' : 'no info'}`);
-        logger.warn(`[DIAG] Session ${sessionId}: This likely means attachEventListeners() in whatsapp-web.js is stuck waiting for window.Store`);
+        logger.warn(
+          `[DIAG] Session ${sessionId}: READY event NOT received 90s after AUTHENTICATED. Client info: ${client.info ? 'has info' : 'no info'}`
+        );
+        logger.warn(
+          `[DIAG] Session ${sessionId}: This likely means attachEventListeners() in whatsapp-web.js is stuck waiting for window.Store`
+        );
       }, 90000);
       timeouts.push(authReadyTimeout);
 
       client.once('ready', () => {
         clearTimeout(authReadyTimeout);
-        logger.info(`[DIAG] Session ${sessionId}: READY arrived after AUTHENTICATED (safety timeout cleared)`);
+        logger.info(
+          `[DIAG] Session ${sessionId}: READY arrived after AUTHENTICATED (safety timeout cleared)`
+        );
       });
 
       // Get client info to send webhook
@@ -213,7 +222,9 @@ export class EventDispatcher {
     const onDisconnected = async (reason: string) => {
       // Skip if session is being intentionally destroyed (prevents race condition)
       if (isSessionDestroying?.(sessionId)) {
-        logger.debug(`Ignoring disconnected event for ${sessionId} — intentional destroy in progress`);
+        logger.debug(
+          `Ignoring disconnected event for ${sessionId} — intentional destroy in progress`
+        );
         return;
       }
 
@@ -246,7 +257,9 @@ export class EventDispatcher {
     const onChangeState = async (state: string) => {
       // Skip if session is being intentionally destroyed
       if (isSessionDestroying?.(sessionId)) {
-        logger.debug(`Ignoring change_state event for ${sessionId} — intentional destroy in progress`);
+        logger.debug(
+          `Ignoring change_state event for ${sessionId} — intentional destroy in progress`
+        );
         return;
       }
 
@@ -297,7 +310,9 @@ export class EventDispatcher {
 
     // Message event
     const onMessage = async (message: Message) => {
-      logger.info(`[DIAG] MESSAGE event fired for session ${sessionId} from=${message.from} body=${message.body?.substring(0, 50)}`);
+      logger.info(
+        `[DIAG] MESSAGE event fired for session ${sessionId} from=${message.from} body=${message.body?.substring(0, 50)}`
+      );
       try {
         // Throttled health check update — avoids DB/Redis writes on every message
         const now = Date.now();

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { getWhatsAppUrl } from "../../hooks/use-whatsapp-url";
+import { useAuth } from "@clerk/nextjs";
 import { X, Send, Users, AlertTriangle, RefreshCw } from "lucide-react";
 import { Template } from "../templates/TemplateCard";
 import { Lead } from "./ProactiveMessageSender";
@@ -27,9 +27,8 @@ export default function BulkSendMessageModal({
   templates,
   selectedTemplate,
 }: BulkSendMessageModalProps) {
-  const [currentTemplate, setCurrentTemplate] = useState<Template | null>(
-    selectedTemplate || null,
-  );
+  const { getToken } = useAuth();
+  const [currentTemplate, setCurrentTemplate] = useState<Template | null>(selectedTemplate || null);
   const [customMessage, setCustomMessage] = useState("");
   const [previewContent, setPreviewContent] = useState("");
   const [sending, setSending] = useState(false);
@@ -57,10 +56,7 @@ export default function BulkSendMessageModal({
   // Click fuera del modal para cerrarlo
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        modalRef.current &&
-        !modalRef.current.contains(event.target as Node)
-      ) {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
         onClose();
       }
     };
@@ -100,7 +96,16 @@ export default function BulkSendMessageModal({
   const handleRefreshTemplates = async () => {
     setRefreshingTemplates(true);
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/templates`);
+      const token = await getToken();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/templates?activeOnly=false`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        },
+      );
       const result = await response.json();
       if (result.success) {
         setLocalTemplates(result.data || []);
@@ -153,26 +158,19 @@ export default function BulkSendMessageModal({
                 </p>
               </div>
             </div>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600"
-            >
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
               <X className="h-6 w-6" />
             </button>
           </div>
 
           {/* Selected Leads Preview */}
           <div className="mb-6">
-            <h3 className="text-sm font-medium text-gray-700 mb-3">
-              Leads Seleccionados
-            </h3>
+            <h3 className="text-sm font-medium text-gray-700 mb-3">Leads Seleccionados</h3>
             <div className="bg-gray-50 rounded-lg p-4 max-h-32 overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {selectedLeads.slice(0, 10).map((lead) => (
                   <div key={lead.id} className="text-sm">
-                    <span className="font-medium">
-                      {lead.name || "Sin nombre"}
-                    </span>
+                    <span className="font-medium">{lead.name || "Sin nombre"}</span>
                     <span className="text-gray-500 ml-2">{lead.phone}</span>
                   </div>
                 ))}
@@ -197,18 +195,14 @@ export default function BulkSendMessageModal({
                   className="flex items-center space-x-1 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border transition-colors disabled:opacity-50"
                   title="Refrescar templates"
                 >
-                  <RefreshCw
-                    className={`h-3 w-3 ${refreshingTemplates ? "animate-spin" : ""}`}
-                  />
+                  <RefreshCw className={`h-3 w-3 ${refreshingTemplates ? "animate-spin" : ""}`} />
                   <span>Refrescar</span>
                 </button>
               </div>
               <select
                 value={currentTemplate?.id || ""}
                 onChange={(e) => {
-                  const template = localTemplates.find(
-                    (t) => t.id === e.target.value,
-                  );
+                  const template = localTemplates.find((t) => t.id === e.target.value);
                   setCurrentTemplate(template || null);
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
@@ -255,14 +249,11 @@ export default function BulkSendMessageModal({
               <div className="flex">
                 <AlertTriangle className="h-5 w-5 text-amber-400 mt-0.5" />
                 <div className="ml-3">
-                  <h3 className="text-sm font-medium text-amber-800">
-                    Envío Masivo
-                  </h3>
+                  <h3 className="text-sm font-medium text-amber-800">Envío Masivo</h3>
                   <div className="mt-2 text-sm text-amber-700">
                     <p>
-                      Se enviará el mismo mensaje a todos los leads
-                      seleccionados. Las variables personales (nombre, teléfono,
-                      email) se completarán automáticamente para cada
+                      Se enviará el mismo mensaje a todos los leads seleccionados. Las variables
+                      personales (nombre, teléfono, email) se completarán automáticamente para cada
                       destinatario.
                     </p>
                   </div>

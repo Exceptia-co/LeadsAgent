@@ -54,6 +54,8 @@ export class LeadsService {
     const skip = (page - 1) * limit;
 
     const where = {
+      // T4.1: soft delete — excluir leads marcados como deleted.
+      deletedAt: null,
       ...(assignedUserId && { assignedTo: assignedUserId }),
       ...(q && {
         OR: [
@@ -102,9 +104,13 @@ export class LeadsService {
   }
 
   async findOne(id: string) {
-    const lead = await this.prisma.lead.findUniqueOrThrow({
-      where: { id },
+    // T4.1: soft delete — treat a soft-deleted lead as not found.
+    const lead = await this.prisma.lead.findFirst({
+      where: { id, deletedAt: null },
     });
+    if (!lead) {
+      throw new Error('Lead not found');
+    }
 
     // Transform data to match frontend expectations
     return {
@@ -133,13 +139,22 @@ export class LeadsService {
   }
 
   async remove(id: string) {
-    return this.prisma.lead.delete({
+    // T4.1: soft delete — marcar `deleted_at` en vez de eliminar la fila.
+    // Las tablas relacionadas (messages, proactive_messages,
+    // whatsapp_conversations) tienen FK ON DELETE SET NULL, pero al usar
+    // soft delete los registros relacionados conservan su lead_id intacto.
+    return this.prisma.lead.update({
       where: { id },
+      data: { deletedAt: new Date() },
     });
   }
 
   async getStats(assignedUserId?: string) {
-    const where = assignedUserId ? { assignedTo: assignedUserId } : {};
+    // T4.1: soft delete — las estadísticas excluyen leads soft-deleted.
+    const where = {
+      deletedAt: null,
+      ...(assignedUserId ? { assignedTo: assignedUserId } : {}),
+    };
 
     const [
       total,

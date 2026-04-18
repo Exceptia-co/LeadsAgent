@@ -1,11 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { io, Socket } from "socket.io-client";
-import { getWhatsAppUrl } from "../../hooks/use-whatsapp-url";
+import { getWhatsAppSocketUrl } from "../../hooks/use-whatsapp-url";
 
 export interface WhatsAppSession {
   id: string;
   name: string;
-  status: "CONNECTED" | "CONNECTING" | "DISCONNECTED" | "QR_PENDING";
+  status: "CONNECTED" | "CONNECTING" | "DISCONNECTED" | "AUTH_INVALID" | "QR_PENDING" | "QR_READY";
   phoneNumber?: string;
   qrCode?: string;
   lastActivity?: string;
@@ -19,10 +19,7 @@ export interface SocketEvents {
     message: string;
   }) => void;
 
-  "sessions:current_state": (data: {
-    sessions: WhatsAppSession[];
-    timestamp: string;
-  }) => void;
+  "sessions:current_state": (data: { sessions: WhatsAppSession[]; timestamp: string }) => void;
 
   "session:status_changed": (data: {
     sessionId: string;
@@ -33,11 +30,7 @@ export interface SocketEvents {
     metadata?: any;
   }) => void;
 
-  "session:qr_updated": (data: {
-    sessionId: string;
-    qrCode: string;
-    timestamp: string;
-  }) => void;
+  "session:qr_updated": (data: { sessionId: string; qrCode: string; timestamp: string }) => void;
 
   "session:connected": (data: {
     sessionId: string;
@@ -126,17 +119,17 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
       const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
 
       if (isLocal) {
-        return getWhatsAppUrl(); // WhatsApp service port
+        return getWhatsAppSocketUrl(); // WhatsApp service port
       }
 
       // For production without NEXT_PUBLIC_WEBSOCKET_URL:
       // WebSocket requires SSL when page is HTTPS
       // The WhatsApp API proxy handles HTTP requests but not WebSocket
       // Return the WhatsApp URL for graceful fallback (will fail but error handled)
-      return getWhatsAppUrl();
+      return getWhatsAppSocketUrl();
     }
 
-    return getWhatsAppUrl(); // Default fallback
+    return getWhatsAppSocketUrl(); // Default fallback
   }, []);
 
   const handleConnectionEstablished = useCallback((data: any) => {
@@ -287,21 +280,15 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
     [],
   );
 
-  const handleError = useCallback(
-    (data: { message: string; timestamp: string }) => {
-      console.error("❌ Socket error:", data);
-      setError(data.message);
-    },
-    [],
-  );
+  const handleError = useCallback((data: { message: string; timestamp: string }) => {
+    console.error("❌ Socket error:", data);
+    setError(data.message);
+  }, []);
 
-  const handleServerShutdown = useCallback(
-    (data: { message: string; timestamp: string }) => {
-      console.warn("🔄 Server shutdown:", data);
-      setError("Server is restarting, reconnecting automatically...");
-    },
-    [],
-  );
+  const handleServerShutdown = useCallback((data: { message: string; timestamp: string }) => {
+    console.warn("🔄 Server shutdown:", data);
+    setError("Server is restarting, reconnecting automatically...");
+  }, []);
 
   const connect = useCallback(() => {
     if (socketRef.current?.connected) {
@@ -437,27 +424,21 @@ export const useSocket = (options: UseSocketOptions = {}): UseSocketReturn => {
     }
   }, []);
 
-  const on = useCallback(
-    <T extends SocketEventName>(event: T, handler: SocketEvents[T]) => {
-      if (socketRef.current) {
-        socketRef.current.on(event, handler as any);
-      }
-    },
-    [],
-  );
+  const on = useCallback(<T extends SocketEventName>(event: T, handler: SocketEvents[T]) => {
+    if (socketRef.current) {
+      socketRef.current.on(event, handler as any);
+    }
+  }, []);
 
-  const off = useCallback(
-    (event: SocketEventName, handler?: (...args: any[]) => void) => {
-      if (socketRef.current) {
-        if (handler) {
-          socketRef.current.off(event, handler);
-        } else {
-          socketRef.current.off(event);
-        }
+  const off = useCallback((event: SocketEventName, handler?: (...args: any[]) => void) => {
+    if (socketRef.current) {
+      if (handler) {
+        socketRef.current.off(event, handler);
+      } else {
+        socketRef.current.off(event);
       }
-    },
-    [],
-  );
+    }
+  }, []);
 
   const getCurrentState = useCallback(() => {
     emit("sessions:get_current_state");

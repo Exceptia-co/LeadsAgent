@@ -32,11 +32,7 @@ const navigation = [
   { name: "Configuracion", href: "/dashboard/settings", icon: Settings },
 ];
 
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
   const { isLoaded, isSignedIn, user } = useUser();
@@ -62,12 +58,8 @@ export default function DashboardLayout({
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
             <Shield className="h-8 w-8 text-red-500" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900">
-            Acceso no autorizado
-          </h2>
-          <p className="mt-2 text-gray-600">
-            Por favor, inicia sesion para acceder al dashboard.
-          </p>
+          <h2 className="text-xl font-bold text-gray-900">Acceso no autorizado</h2>
+          <p className="mt-2 text-gray-600">Por favor, inicia sesion para acceder al dashboard.</p>
           <Link
             href="/sign-in"
             className="mt-6 inline-flex items-center justify-center h-10 px-6 rounded-full bg-green-500 text-white font-medium transition-all hover:bg-green-600 hover:shadow-lg hover:shadow-green-500/25"
@@ -88,9 +80,7 @@ export default function DashboardLayout({
             <div
               className={cn(
                 "fixed inset-0 z-50 lg:hidden transition-opacity duration-300",
-                sidebarOpen
-                  ? "opacity-100 pointer-events-auto"
-                  : "opacity-0 pointer-events-none",
+                sidebarOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
               )}
             >
               <div
@@ -108,9 +98,7 @@ export default function DashboardLayout({
                     <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">
                       <MessageSquare className="h-5 w-5 text-white" />
                     </div>
-                    <span className="text-lg font-bold text-gray-900">
-                      LeadsCRM
-                    </span>
+                    <span className="text-lg font-bold text-gray-900">LeadsCRM</span>
                   </Link>
                   <button
                     type="button"
@@ -162,13 +150,9 @@ export default function DashboardLayout({
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
-                        {user?.firstName ||
-                          user?.emailAddresses?.[0]?.emailAddress ||
-                          "Usuario"}
+                        {user?.firstName || user?.emailAddresses?.[0]?.emailAddress || "Usuario"}
                       </p>
-                      <p className="text-xs text-gray-500 truncate">
-                        Ver perfil
-                      </p>
+                      <p className="text-xs text-gray-500 truncate">Ver perfil</p>
                     </div>
                   </div>
                 </div>
@@ -183,9 +167,7 @@ export default function DashboardLayout({
                     <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">
                       <MessageSquare className="h-5 w-5 text-white" />
                     </div>
-                    <span className="text-lg font-bold text-gray-900">
-                      LeadsCRM
-                    </span>
+                    <span className="text-lg font-bold text-gray-900">LeadsCRM</span>
                   </Link>
                 </div>
                 <nav className="flex-1 px-3 py-4 space-y-1">
@@ -229,9 +211,7 @@ export default function DashboardLayout({
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
-                        {user?.firstName ||
-                          user?.emailAddresses?.[0]?.emailAddress ||
-                          "Usuario"}
+                        {user?.firstName || user?.emailAddresses?.[0]?.emailAddress || "Usuario"}
                       </p>
                       <p className="text-xs text-gray-500">Ver perfil</p>
                     </div>
@@ -256,9 +236,7 @@ export default function DashboardLayout({
                     <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">
                       <MessageSquare className="h-4 w-4 text-white" />
                     </div>
-                    <span className="text-lg font-bold text-gray-900">
-                      LeadsCRM
-                    </span>
+                    <span className="text-lg font-bold text-gray-900">LeadsCRM</span>
                   </Link>
                   <UserButton
                     appearance={{

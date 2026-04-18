@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { getWhatsAppUrl } from "../../../hooks/use-whatsapp-url";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
@@ -55,6 +56,7 @@ interface ProactiveMessage {
 }
 
 export default function ProactivePage() {
+  const { getToken } = useAuth();
   const { templates } = useTemplates();
   const { validateSessionForSending } = useWhatsApp();
   const { showToast } = useToast();
@@ -73,9 +75,7 @@ export default function ProactivePage() {
   };
 
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [proactiveMessages, setProactiveMessages] = useState<
-    ProactiveMessage[]
-  >([]);
+  const [proactiveMessages, setProactiveMessages] = useState<ProactiveMessage[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
 
   // Estados del componente
@@ -87,9 +87,7 @@ export default function ProactivePage() {
   // Modal de envío
   const [showSendModal, setShowSendModal] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(
-    null,
-  );
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [customMessage, setCustomMessage] = useState("");
   const [previewContent, setPreviewContent] = useState("");
   const [variables, setVariables] = useState<{ [key: string]: string }>({});
@@ -120,19 +118,24 @@ export default function ProactivePage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch leads
-      const leadsResponse = await fetch(`${getWhatsAppUrl()}/leads`);
+      const token = await getToken();
+      const authHeaders: HeadersInit = {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      // Leads → Nest API (el whatsapp-service ya no expone /leads tras T0.7)
+      const leadsResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || ""}/leads?limit=200`,
+        { headers: authHeaders },
+      );
       const leadsResult = await leadsResponse.json();
 
-      // Fetch proactive messages
-      const messagesResponse = await fetch(
-        `${getWhatsAppUrl()}/proactive-messages`,
-      );
+      // Proactive messages → whatsapp-service vía proxy firmado
+      const messagesResponse = await fetch(`${getWhatsAppUrl()}/proactive-messages`);
       const messagesResult = await messagesResponse.json();
 
-      if (leadsResult.success) {
-        setLeads(leadsResult.leads || leadsResult.data);
-      }
+      setLeads(leadsResult?.data ?? leadsResult?.leads ?? []);
 
       if (messagesResult.success) {
         setProactiveMessages(messagesResult.data);
@@ -232,15 +235,9 @@ export default function ProactivePage() {
         // Switch to history tab to see the sent message
         setActiveTab("history");
 
-        success(
-          "¡Mensaje enviado!",
-          `Mensaje enviado exitosamente a ${selectedLead.name}`,
-        );
+        success("¡Mensaje enviado!", `Mensaje enviado exitosamente a ${selectedLead.name}`);
       } else {
-        showError(
-          "Error al enviar mensaje",
-          result.error || "Error desconocido",
-        );
+        showError("Error al enviar mensaje", result.error || "Error desconocido");
       }
     } catch (error) {
       console.error("Error sending message:", error);
@@ -314,9 +311,7 @@ export default function ProactivePage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Mensajes Proactivos
-        </h1>
+        <h1 className="text-2xl font-bold text-gray-900">Mensajes Proactivos</h1>
         <div className="animate-pulse">
           <div className="h-64 bg-gray-200 rounded-lg"></div>
         </div>
@@ -329,9 +324,7 @@ export default function ProactivePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Mensajes Proactivos
-          </h1>
+          <h1 className="text-2xl font-bold text-gray-900">Mensajes Proactivos</h1>
           <p className="text-gray-500">
             Inicia conversaciones con tus leads usando templates personalizados
           </p>
@@ -387,19 +380,12 @@ export default function ProactivePage() {
           {/* Leads List */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredLeads.map((lead) => (
-              <Card
-                key={lead.id}
-                className="p-4 hover:shadow-md transition-shadow"
-              >
+              <Card key={lead.id} className="p-4 hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <h3 className="font-medium text-gray-900">
-                      {lead.name || "Sin nombre"}
-                    </h3>
+                    <h3 className="font-medium text-gray-900">{lead.name || "Sin nombre"}</h3>
                     <p className="text-sm text-gray-600">{lead.phone}</p>
-                    {lead.email && (
-                      <p className="text-xs text-gray-500">{lead.email}</p>
-                    )}
+                    {lead.email && <p className="text-xs text-gray-500">{lead.email}</p>}
                   </div>
                   <Badge variant="outline" className="text-xs">
                     {lead.status}
@@ -420,9 +406,7 @@ export default function ProactivePage() {
           {filteredLeads.length === 0 && (
             <Card className="p-12 text-center">
               <User className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                No hay leads disponibles
-              </h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No hay leads disponibles</h3>
               <p className="text-gray-500">
                 {searchTerm
                   ? "No se encontraron leads con los criterios de búsqueda."
@@ -470,23 +454,16 @@ export default function ProactivePage() {
                         <h3 className="font-medium text-gray-900">
                           {lead?.name || "Lead desconocido"}
                         </h3>
-                        <p className="text-sm text-gray-600">
-                          {message.phoneNumber}
-                        </p>
+                        <p className="text-sm text-gray-600">{message.phoneNumber}</p>
                         {message.templateName && (
-                          <p className="text-xs text-green-600">
-                            Template: {message.templateName}
-                          </p>
+                          <p className="text-xs text-green-600">Template: {message.templateName}</p>
                         )}
                       </div>
                     </div>
 
                     <div className="flex items-center space-x-2">
                       {getStatusIcon(message.status)}
-                      <Badge
-                        variant={getStatusVariant(message.status) as any}
-                        className="text-xs"
-                      >
+                      <Badge variant={getStatusVariant(message.status) as any} className="text-xs">
                         {getStatusLabel(message.status)}
                       </Badge>
                     </div>
@@ -499,22 +476,15 @@ export default function ProactivePage() {
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-gray-500">
-                    <span>
-                      Creado:{" "}
-                      {new Date(message.createdAt).toLocaleString("es-ES")}
-                    </span>
+                    <span>Creado: {new Date(message.createdAt).toLocaleString("es-ES")}</span>
 
                     {message.sentAt && (
-                      <span>
-                        Enviado:{" "}
-                        {new Date(message.sentAt).toLocaleString("es-ES")}
-                      </span>
+                      <span>Enviado: {new Date(message.sentAt).toLocaleString("es-ES")}</span>
                     )}
 
                     {message.deliveredAt && (
                       <span>
-                        Entregado:{" "}
-                        {new Date(message.deliveredAt).toLocaleString("es-ES")}
+                        Entregado: {new Date(message.deliveredAt).toLocaleString("es-ES")}
                       </span>
                     )}
                   </div>
@@ -532,9 +502,7 @@ export default function ProactivePage() {
           {filteredMessages.length === 0 && (
             <Card className="p-12 text-center">
               <MessageSquare className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                No hay mensajes
-              </h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No hay mensajes</h3>
               <p className="text-gray-500">
                 {statusFilter !== "all"
                   ? `No hay mensajes con estado "${getStatusLabel(statusFilter)}".`
@@ -551,9 +519,7 @@ export default function ProactivePage() {
           <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold">
-                  Enviar mensaje a {selectedLead.name}
-                </h2>
+                <h2 className="text-xl font-semibold">Enviar mensaje a {selectedLead.name}</h2>
                 <button
                   onClick={() => setShowSendModal(false)}
                   className="text-gray-400 hover:text-gray-600"
@@ -571,16 +537,12 @@ export default function ProactivePage() {
                   <select
                     value={selectedTemplate?.id || ""}
                     onChange={(e) => {
-                      const template = templates.find(
-                        (t) => t.id === e.target.value,
-                      );
+                      const template = templates.find((t) => t.id === e.target.value);
                       setSelectedTemplate(template || null);
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                   >
-                    <option value="">
-                      Sin template - Mensaje personalizado
-                    </option>
+                    <option value="">Sin template - Mensaje personalizado</option>
                     {templates.map((template) => (
                       <option key={template.id} value={template.id}>
                         {template.name}
@@ -638,9 +600,7 @@ export default function ProactivePage() {
                 {/* Preview */}
                 {(selectedTemplate || customMessage) && (
                   <div>
-                    <h3 className="text-sm font-medium text-gray-700 mb-2">
-                      Vista Previa
-                    </h3>
+                    <h3 className="text-sm font-medium text-gray-700 mb-2">Vista Previa</h3>
                     <div className="bg-gray-50 p-4 rounded-lg border">
                       <pre className="whitespace-pre-wrap text-sm text-gray-700">
                         {selectedTemplate ? previewContent : customMessage}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useAuth } from "@clerk/nextjs";
 import { getWhatsAppUrl } from "../../../hooks/use-whatsapp-url";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
@@ -58,24 +59,28 @@ interface ProactiveMessage {
   createdAt: string;
 }
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
 export default function MessagingPage() {
+  const { getToken } = useAuth();
+  const authHeaders = useCallback(async (): Promise<HeadersInit> => {
+    const token = await getToken();
+    return {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  }, [getToken]);
   // Data states
   const [leads, setLeads] = useState<Lead[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [proactiveMessages, setProactiveMessages] = useState<
-    ProactiveMessage[]
-  >([]);
+  const [proactiveMessages, setProactiveMessages] = useState<ProactiveMessage[]>([]);
   const [filteredLeads, setFilteredLeads] = useState<Lead[]>([]);
   const [filteredTemplates, setFilteredTemplates] = useState<Template[]>([]);
 
   // Main UI states
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"templates" | "proactive">(
-    "templates",
-  );
-  const [proactiveSubTab, setProactiveSubTab] = useState<"send" | "history">(
-    "send",
-  );
+  const [activeTab, setActiveTab] = useState<"templates" | "proactive">("templates");
+  const [proactiveSubTab, setProactiveSubTab] = useState<"send" | "history">("send");
 
   // Search and filters
   const [searchTerm, setSearchTerm] = useState("");
@@ -101,9 +106,7 @@ export default function MessagingPage() {
   // Proactive message modal states
   const [showSendModal, setShowSendModal] = useState(false);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
-  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(
-    null,
-  );
+  const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [customMessage, setCustomMessage] = useState("");
   const [previewContent, setPreviewContent] = useState("");
   const [variables, setVariables] = useState<{ [key: string]: string }>({});
@@ -131,8 +134,7 @@ export default function MessagingPage() {
       const matchesSearch =
         template.name.toLowerCase().includes(templateSearch.toLowerCase()) ||
         template.content.toLowerCase().includes(templateSearch.toLowerCase());
-      const matchesCategory =
-        categoryFilter === "all" || template.category === categoryFilter;
+      const matchesCategory = categoryFilter === "all" || template.category === categoryFilter;
       return matchesSearch && matchesCategory && template.isActive !== false;
     });
     setFilteredTemplates(filtered);
@@ -153,9 +155,10 @@ export default function MessagingPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const headers = await authHeaders();
       const [leadsRes, templatesRes, messagesRes] = await Promise.all([
-        fetch(`${getWhatsAppUrl()}/leads`),
-        fetch(`${getWhatsAppUrl()}/templates`),
+        fetch(`${API_BASE_URL}/leads?limit=100`, { headers }),
+        fetch(`${API_BASE_URL}/templates?activeOnly=false`, { headers }),
         fetch(`${getWhatsAppUrl()}/proactive-messages`),
       ]);
 
@@ -227,9 +230,7 @@ export default function MessagingPage() {
     const matches = content.match(/\{\{([^}]+)\}\}/g);
     if (!matches) return [];
 
-    return Array.from(
-      new Set(matches.map((match) => match.slice(2, -2).trim())),
-    );
+    return Array.from(new Set(matches.map((match) => match.slice(2, -2).trim())));
   };
 
   const handleSaveTemplate = async () => {
@@ -241,14 +242,15 @@ export default function MessagingPage() {
       };
 
       const url = editingTemplate
-        ? `${getWhatsAppUrl()}/templates/${editingTemplate.id}`
-        : `${getWhatsAppUrl()}/templates`;
+        ? `${API_BASE_URL}/templates/${editingTemplate.id}`
+        : `${API_BASE_URL}/templates`;
 
-      const method = editingTemplate ? "PUT" : "POST";
+      const method = editingTemplate ? "PATCH" : "POST";
+      const headers = await authHeaders();
 
       const response = await fetch(url, {
         method,
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(templateData),
       });
 
@@ -259,9 +261,7 @@ export default function MessagingPage() {
         resetTemplateForm();
         fetchData();
         alert(
-          editingTemplate
-            ? "Template actualizado exitosamente!"
-            : "Template creado exitosamente!",
+          editingTemplate ? "Template actualizado exitosamente!" : "Template creado exitosamente!",
         );
       } else {
         alert("Error: " + result.error);
@@ -276,8 +276,10 @@ export default function MessagingPage() {
     if (!confirm("¿Estás seguro de eliminar este template?")) return;
 
     try {
-      const response = await fetch(`${getWhatsAppUrl()}/templates/${id}`, {
+      const headers = await authHeaders();
+      const response = await fetch(`${API_BASE_URL}/templates/${id}`, {
         method: "DELETE",
+        headers,
       });
 
       const result = await response.json();
@@ -385,9 +387,7 @@ export default function MessagingPage() {
     setSelectedTemplate(template);
   };
 
-  const categories = Array.from(
-    new Set(templates.map((t) => t.category)),
-  ).filter(Boolean);
+  const categories = Array.from(new Set(templates.map((t) => t.category))).filter(Boolean);
   const filteredMessages = proactiveMessages.filter((message) => {
     if (statusFilter === "all") return true;
     return message.status === statusFilter;
@@ -396,9 +396,7 @@ export default function MessagingPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-2xl font-bold text-gray-900">
-          Sistema de Mensajería
-        </h1>
+        <h1 className="text-2xl font-bold text-gray-900">Sistema de Mensajería</h1>
         <div className="animate-pulse">
           <div className="h-64 bg-gray-200 rounded-lg"></div>
         </div>
@@ -411,9 +409,7 @@ export default function MessagingPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Sistema de Mensajería
-          </h1>
+          <h1 className="text-2xl font-bold text-gray-900">Sistema de Mensajería</h1>
           <p className="text-gray-500">
             Gestiona templates y envía mensajes proactivos a tus leads
           </p>
@@ -492,23 +488,16 @@ export default function MessagingPage() {
           {/* Templates Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredTemplates.map((template) => (
-              <Card
-                key={template.id}
-                className="p-4 hover:shadow-md transition-shadow"
-              >
+              <Card key={template.id} className="p-4 hover:shadow-md transition-shadow">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex-1">
-                    <h3 className="font-medium text-gray-900 mb-1">
-                      {template.name}
-                    </h3>
+                    <h3 className="font-medium text-gray-900 mb-1">{template.name}</h3>
                     <div className="flex items-center space-x-2 mb-2">
                       <Badge variant="outline" className="text-xs">
                         {template.category}
                       </Badge>
                       {template.usageCount !== undefined && (
-                        <span className="text-xs text-gray-500">
-                          {template.usageCount} usos
-                        </span>
+                        <span className="text-xs text-gray-500">{template.usageCount} usos</span>
                       )}
                     </div>
                   </div>
@@ -571,9 +560,7 @@ export default function MessagingPage() {
           {filteredTemplates.length === 0 && (
             <Card className="p-12 text-center">
               <FileText className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                No hay templates
-              </h3>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No hay templates</h3>
               <p className="text-gray-500 mb-4">
                 {templateSearch || categoryFilter !== "all"
                   ? "No se encontraron templates con los filtros aplicados."
@@ -641,19 +628,12 @@ export default function MessagingPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredLeads.map((lead) => (
-                  <Card
-                    key={lead.id}
-                    className="p-4 hover:shadow-md transition-shadow"
-                  >
+                  <Card key={lead.id} className="p-4 hover:shadow-md transition-shadow">
                     <div className="flex items-start justify-between mb-3">
                       <div>
-                        <h3 className="font-medium text-gray-900">
-                          {lead.name || "Sin nombre"}
-                        </h3>
+                        <h3 className="font-medium text-gray-900">{lead.name || "Sin nombre"}</h3>
                         <p className="text-sm text-gray-600">{lead.phone}</p>
-                        {lead.email && (
-                          <p className="text-xs text-gray-500">{lead.email}</p>
-                        )}
+                        {lead.email && <p className="text-xs text-gray-500">{lead.email}</p>}
                       </div>
                       <Badge variant="outline" className="text-xs">
                         {lead.status}
@@ -722,9 +702,7 @@ export default function MessagingPage() {
                             <h3 className="font-medium text-gray-900">
                               {lead?.name || "Lead desconocido"}
                             </h3>
-                            <p className="text-sm text-gray-600">
-                              {message.phoneNumber}
-                            </p>
+                            <p className="text-sm text-gray-600">{message.phoneNumber}</p>
                             {message.templateName && (
                               <p className="text-xs text-green-600">
                                 Template: {message.templateName}
@@ -776,16 +754,10 @@ export default function MessagingPage() {
                       </div>
 
                       <div className="flex items-center justify-between text-xs text-gray-500">
-                        <span>
-                          Creado:{" "}
-                          {new Date(message.createdAt).toLocaleString("es-ES")}
-                        </span>
+                        <span>Creado: {new Date(message.createdAt).toLocaleString("es-ES")}</span>
 
                         {message.sentAt && (
-                          <span>
-                            Enviado:{" "}
-                            {new Date(message.sentAt).toLocaleString("es-ES")}
-                          </span>
+                          <span>Enviado: {new Date(message.sentAt).toLocaleString("es-ES")}</span>
                         )}
                       </div>
 
@@ -802,9 +774,7 @@ export default function MessagingPage() {
               {filteredMessages.length === 0 && (
                 <Card className="p-12 text-center">
                   <MessageSquare className="mx-auto h-12 w-12 text-gray-300 mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    No hay mensajes
-                  </h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">No hay mensajes</h3>
                   <p className="text-gray-500">
                     {statusFilter !== "all"
                       ? "No hay mensajes con el estado seleccionado."
@@ -904,16 +874,14 @@ export default function MessagingPage() {
                         Variables detectadas:
                       </h3>
                       <div className="flex flex-wrap gap-2">
-                        {extractVariables(templateForm.content).map(
-                          (variable) => (
-                            <span
-                              key={variable}
-                              className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800"
-                            >
-                              {`{{${variable}}}`}
-                            </span>
-                          ),
-                        )}
+                        {extractVariables(templateForm.content).map((variable) => (
+                          <span
+                            key={variable}
+                            className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800"
+                          >
+                            {`{{${variable}}}`}
+                          </span>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -921,9 +889,7 @@ export default function MessagingPage() {
 
                 {/* Preview */}
                 <div className="space-y-4">
-                  <h3 className="text-sm font-medium text-gray-700">
-                    Vista Previa
-                  </h3>
+                  <h3 className="text-sm font-medium text-gray-700">Vista Previa</h3>
 
                   {/* Variable inputs for preview */}
                   {extractVariables(templateForm.content).length > 0 && (
@@ -932,24 +898,22 @@ export default function MessagingPage() {
                         Valores para vista previa:
                       </h4>
                       <div className="space-y-2">
-                        {extractVariables(templateForm.content).map(
-                          (variable) => (
-                            <div key={variable}>
-                              <input
-                                type="text"
-                                placeholder={`Valor para {{${variable}}}`}
-                                value={templateVariables[variable] || ""}
-                                onChange={(e) =>
-                                  setTemplateVariables((prev) => ({
-                                    ...prev,
-                                    [variable]: e.target.value,
-                                  }))
-                                }
-                                className="w-full px-3 py-1 border border-gray-300 rounded text-sm"
-                              />
-                            </div>
-                          ),
-                        )}
+                        {extractVariables(templateForm.content).map((variable) => (
+                          <div key={variable}>
+                            <input
+                              type="text"
+                              placeholder={`Valor para {{${variable}}}`}
+                              value={templateVariables[variable] || ""}
+                              onChange={(e) =>
+                                setTemplateVariables((prev) => ({
+                                  ...prev,
+                                  [variable]: e.target.value,
+                                }))
+                              }
+                              className="w-full px-3 py-1 border border-gray-300 rounded text-sm"
+                            />
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -974,11 +938,7 @@ export default function MessagingPage() {
 
                 <button
                   onClick={handleSaveTemplate}
-                  disabled={
-                    !templateForm.name ||
-                    !templateForm.category ||
-                    !templateForm.content
-                  }
+                  disabled={!templateForm.name || !templateForm.category || !templateForm.content}
                   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {editingTemplate ? "Actualizar" : "Crear"} Template
@@ -995,9 +955,7 @@ export default function MessagingPage() {
           <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold">
-                  Enviar mensaje a {selectedLead.name}
-                </h2>
+                <h2 className="text-xl font-semibold">Enviar mensaje a {selectedLead.name}</h2>
                 <button
                   onClick={() => setShowSendModal(false)}
                   className="text-gray-400 hover:text-gray-600"
@@ -1014,16 +972,12 @@ export default function MessagingPage() {
                   <select
                     value={selectedTemplate?.id || ""}
                     onChange={(e) => {
-                      const template = templates.find(
-                        (t) => t.id === e.target.value,
-                      );
+                      const template = templates.find((t) => t.id === e.target.value);
                       setSelectedTemplate(template || null);
                     }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                   >
-                    <option value="">
-                      Sin template - Mensaje personalizado
-                    </option>
+                    <option value="">Sin template - Mensaje personalizado</option>
                     {templates.map((template) => (
                       <option key={template.id} value={template.id}>
                         {template.name}
@@ -1078,9 +1032,7 @@ export default function MessagingPage() {
 
                 {(selectedTemplate || customMessage) && (
                   <div>
-                    <h3 className="text-sm font-medium text-gray-700 mb-2">
-                      Vista Previa
-                    </h3>
+                    <h3 className="text-sm font-medium text-gray-700 mb-2">Vista Previa</h3>
                     <div className="bg-gray-50 p-4 rounded-lg border">
                       <pre className="whitespace-pre-wrap text-sm text-gray-700">
                         {selectedTemplate ? previewContent : customMessage}

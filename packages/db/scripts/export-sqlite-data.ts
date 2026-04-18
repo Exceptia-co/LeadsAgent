@@ -7,22 +7,22 @@
  * a archivos JSON para facilitar la migración a PostgreSQL.
  */
 
-import { PrismaClient } from "@prisma/client";
-import * as fs from "fs";
-import * as path from "path";
+import { PrismaClient } from '@prisma/client';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const prisma = new PrismaClient({
   datasources: {
     db: {
-      url: "file:./prisma/dev.db",
+      url: 'file:./prisma/dev.db',
     },
   },
 });
 
-const BACKUP_DIR = path.join(__dirname, "..", "data-backup");
+const BACKUP_DIR = path.join(__dirname, '..', 'data-backup');
 
 async function exportData() {
-  console.log("🔄 Iniciando exportación de datos SQLite...");
+  console.log('🔄 Iniciando exportación de datos SQLite...');
 
   try {
     // Asegurar que el directorio de backup existe
@@ -31,20 +31,17 @@ async function exportData() {
     }
 
     // Exportar usuarios
-    console.log("📤 Exportando usuarios...");
+    console.log('📤 Exportando usuarios...');
     const users = await prisma.user.findMany({
       include: {
         leads: true,
       },
     });
-    fs.writeFileSync(
-      path.join(BACKUP_DIR, "users.json"),
-      JSON.stringify(users, null, 2),
-    );
+    fs.writeFileSync(path.join(BACKUP_DIR, 'users.json'), JSON.stringify(users, null, 2));
     console.log(`✅ ${users.length} usuarios exportados`);
 
     // Exportar leads
-    console.log("📤 Exportando leads...");
+    console.log('📤 Exportando leads...');
     const leads = await prisma.lead.findMany({
       include: {
         user: true,
@@ -55,14 +52,11 @@ async function exportData() {
         },
       },
     });
-    fs.writeFileSync(
-      path.join(BACKUP_DIR, "leads.json"),
-      JSON.stringify(leads, null, 2),
-    );
+    fs.writeFileSync(path.join(BACKUP_DIR, 'leads.json'), JSON.stringify(leads, null, 2));
     console.log(`✅ ${leads.length} leads exportados`);
 
     // Exportar conversaciones
-    console.log("📤 Exportando conversaciones...");
+    console.log('📤 Exportando conversaciones...');
     const conversations = await prisma.conversation.findMany({
       include: {
         lead: true,
@@ -70,13 +64,13 @@ async function exportData() {
       },
     });
     fs.writeFileSync(
-      path.join(BACKUP_DIR, "conversations.json"),
+      path.join(BACKUP_DIR, 'conversations.json'),
       JSON.stringify(conversations, null, 2),
     );
     console.log(`✅ ${conversations.length} conversaciones exportadas`);
 
     // Exportar mensajes
-    console.log("📤 Exportando mensajes...");
+    console.log('📤 Exportando mensajes...');
     const messages = await prisma.message.findMany({
       include: {
         conversation: {
@@ -86,13 +80,10 @@ async function exportData() {
         },
       },
       orderBy: {
-        createdAt: "asc",
+        createdAt: 'asc',
       },
     });
-    fs.writeFileSync(
-      path.join(BACKUP_DIR, "messages.json"),
-      JSON.stringify(messages, null, 2),
-    );
+    fs.writeFileSync(path.join(BACKUP_DIR, 'messages.json'), JSON.stringify(messages, null, 2));
     console.log(`✅ ${messages.length} mensajes exportados`);
 
     // Crear resumen de exportación
@@ -104,31 +95,23 @@ async function exportData() {
         conversations: conversations.length,
         messages: messages.length,
       },
-      files: [
-        "users.json",
-        "conversations.json",
-        "leads.json",
-        "messages.json",
-      ],
+      files: ['users.json', 'conversations.json', 'leads.json', 'messages.json'],
       database: {
-        source: "SQLite (dev.db)",
-        backupFile: "dev.db.backup",
+        source: 'SQLite (dev.db)',
+        backupFile: 'dev.db.backup',
       },
     };
 
     fs.writeFileSync(
-      path.join(BACKUP_DIR, "export-summary.json"),
+      path.join(BACKUP_DIR, 'export-summary.json'),
       JSON.stringify(exportSummary, null, 2),
     );
 
-    console.log("🎉 Exportación completada exitosamente!");
+    console.log('🎉 Exportación completada exitosamente!');
     console.log(`📁 Archivos guardados en: ${BACKUP_DIR}`);
-    console.log(
-      "📊 Resumen:",
-      JSON.stringify(exportSummary.totalRecords, null, 2),
-    );
+    console.log('📊 Resumen:', JSON.stringify(exportSummary.totalRecords, null, 2));
   } catch (error) {
-    console.error("❌ Error durante la exportación:", error);
+    console.error('❌ Error durante la exportación:', error);
     process.exit(1);
   } finally {
     await prisma.$disconnect();

@@ -137,11 +137,7 @@ export class UserService {
 
       if (error) {
         console.error("Error creating user:", error);
-        throw new UnifiedAuthError(
-          "Failed to create user",
-          "USER_CREATE_ERROR",
-          500,
-        );
+        throw new UnifiedAuthError("Failed to create user", "USER_CREATE_ERROR", 500);
       }
 
       console.log("✅ User created successfully:", {
@@ -154,11 +150,7 @@ export class UserService {
       if (error instanceof UnifiedAuthError) {
         throw error;
       }
-      throw new UnifiedAuthError(
-        "Failed to create user",
-        "USER_CREATE_ERROR",
-        500,
-      );
+      throw new UnifiedAuthError("Failed to create user", "USER_CREATE_ERROR", 500);
     }
   }
 
@@ -176,17 +168,13 @@ export class UserService {
 
       // Solo actualizar campos que se proporcionaron
       if (updateData.email !== undefined) updates.email = updateData.email;
-      if (updateData.firstName !== undefined)
-        updates.first_name = updateData.firstName;
-      if (updateData.lastName !== undefined)
-        updates.last_name = updateData.lastName;
+      if (updateData.firstName !== undefined) updates.first_name = updateData.firstName;
+      if (updateData.lastName !== undefined) updates.last_name = updateData.lastName;
       if (updateData.profileImageUrl !== undefined)
         updates.profile_image_url = updateData.profileImageUrl;
       if (updateData.role !== undefined) updates.role = updateData.role;
-      if (updateData.isActive !== undefined)
-        updates.is_active = updateData.isActive;
-      if (updateData.settings !== undefined)
-        updates.settings = updateData.settings;
+      if (updateData.isActive !== undefined) updates.is_active = updateData.isActive;
+      if (updateData.settings !== undefined) updates.settings = updateData.settings;
 
       const { data: updatedUser, error } = await getSupabase()
         .from("users")
@@ -197,11 +185,7 @@ export class UserService {
 
       if (error) {
         console.error("Error updating user:", error);
-        throw new UnifiedAuthError(
-          "Failed to update user",
-          "USER_UPDATE_ERROR",
-          500,
-        );
+        throw new UnifiedAuthError("Failed to update user", "USER_UPDATE_ERROR", 500);
       }
 
       console.log("✅ User updated successfully:", {
@@ -214,11 +198,7 @@ export class UserService {
       if (error instanceof UnifiedAuthError) {
         throw error;
       }
-      throw new UnifiedAuthError(
-        "Failed to update user",
-        "USER_UPDATE_ERROR",
-        500,
-      );
+      throw new UnifiedAuthError("Failed to update user", "USER_UPDATE_ERROR", 500);
     }
   }
 
@@ -251,17 +231,9 @@ export class UserService {
   /**
    * Obtiene usuarios con filtros y paginación
    */
-  static async getUsers(
-    filters: UserFilters = {},
-    pagination: PaginationOptions = {},
-  ) {
+  static async getUsers(filters: UserFilters = {}, pagination: PaginationOptions = {}) {
     try {
-      const {
-        page = 1,
-        limit = 20,
-        orderBy = "created_at",
-        orderDirection = "desc",
-      } = pagination;
+      const { page = 1, limit = 20, orderBy = "created_at", orderDirection = "desc" } = pagination;
 
       let query = getSupabase().from("users").select("*", { count: "exact" });
 
@@ -288,21 +260,14 @@ export class UserService {
         data: users,
         error,
         count,
-      } = await query
-        .order(orderBy, { ascending: orderDirection === "asc" })
-        .range(from, to);
+      } = await query.order(orderBy, { ascending: orderDirection === "asc" }).range(from, to);
 
       if (error) {
         console.error("Error getting users:", error);
-        throw new UnifiedAuthError(
-          "Failed to get users",
-          "USERS_FETCH_ERROR",
-          500,
-        );
+        throw new UnifiedAuthError("Failed to get users", "USERS_FETCH_ERROR", 500);
       }
 
-      const unifiedUsers =
-        users?.map((user) => this.mapToUnifiedUser(user)) || [];
+      const unifiedUsers = users?.map((user) => this.mapToUnifiedUser(user)) || [];
 
       return {
         users: unifiedUsers,
@@ -320,11 +285,7 @@ export class UserService {
       if (error instanceof UnifiedAuthError) {
         throw error;
       }
-      throw new UnifiedAuthError(
-        "Failed to get users",
-        "USERS_FETCH_ERROR",
-        500,
-      );
+      throw new UnifiedAuthError("Failed to get users", "USERS_FETCH_ERROR", 500);
     }
   }
 
@@ -366,11 +327,7 @@ export class UserService {
       };
     } catch (error) {
       console.error("Error getting users stats:", error);
-      throw new UnifiedAuthError(
-        "Failed to get users statistics",
-        "STATS_FETCH_ERROR",
-        500,
-      );
+      throw new UnifiedAuthError("Failed to get users statistics", "STATS_FETCH_ERROR", 500);
     }
   }
 

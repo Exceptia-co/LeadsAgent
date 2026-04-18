@@ -76,9 +76,7 @@ export default function TemplateModal({
     const matches = content.match(/\{\{([^}]+)\}\}/g);
     if (!matches) return [];
 
-    return Array.from(
-      new Set(matches.map((match) => match.slice(2, -2).trim())),
-    );
+    return Array.from(new Set(matches.map((match) => match.slice(2, -2).trim())));
   };
 
   const generateTemplatePreview = () => {
@@ -100,9 +98,7 @@ export default function TemplateModal({
       const currentContent = templateForm.content;
 
       const newContent =
-        currentContent.substring(0, start) +
-        variable +
-        currentContent.substring(end);
+        currentContent.substring(0, start) + variable + currentContent.substring(end);
 
       setTemplateForm((prev) => ({ ...prev, content: newContent }));
 
@@ -118,8 +114,7 @@ export default function TemplateModal({
   };
 
   const handleSave = async () => {
-    if (!templateForm.name || !templateForm.category || !templateForm.content)
-      return;
+    if (!templateForm.name || !templateForm.category || !templateForm.content) return;
 
     setSaving(true);
     try {
@@ -161,10 +156,7 @@ export default function TemplateModal({
                 <Sparkles className="h-4 w-4 mr-1" />
                 Asistencia IA
               </button>
-              <button
-                onClick={onClose}
-                className="text-gray-400 hover:text-gray-600"
-              >
+              <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
                 <X className="h-6 w-6" />
               </button>
             </div>
@@ -192,9 +184,7 @@ export default function TemplateModal({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Categoría
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Categoría</label>
                 <select
                   value={templateForm.category}
                   onChange={(e) =>
@@ -217,9 +207,7 @@ export default function TemplateModal({
 
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Contenido
-                  </label>
+                  <label className="block text-sm font-medium text-gray-700">Contenido</label>
                   <div className="flex items-center space-x-2">
                     <button
                       type="button"
@@ -247,10 +235,7 @@ export default function TemplateModal({
                 {/* Variable Picker Compact */}
                 {showVariablePicker && (
                   <div className="mt-3">
-                    <VariablePicker
-                      compact={true}
-                      onVariableSelect={handleVariableInsert}
-                    />
+                    <VariablePicker compact={true} onVariableSelect={handleVariableInsert} />
                   </div>
                 )}
               </div>
@@ -258,9 +243,7 @@ export default function TemplateModal({
               {/* Variables detected */}
               {extractVariables(templateForm.content).length > 0 && (
                 <div>
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">
-                    Variables detectadas:
-                  </h3>
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">Variables detectadas:</h3>
                   <div className="flex flex-wrap gap-2">
                     {extractVariables(templateForm.content).map((variable) => (
                       <span
@@ -278,9 +261,7 @@ export default function TemplateModal({
             {/* Variables Panel & Preview */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium text-gray-700">
-                  Variables y Vista Previa
-                </h3>
+                <h3 className="text-sm font-medium text-gray-700">Variables y Vista Previa</h3>
                 <Eye className="h-4 w-4 text-gray-400" />
               </div>
 
@@ -293,17 +274,13 @@ export default function TemplateModal({
                 />
               </div>
 
-              <h4 className="text-sm font-medium text-gray-700 border-t pt-4">
-                Vista Previa
-              </h4>
+              <h4 className="text-sm font-medium text-gray-700 border-t pt-4">Vista Previa</h4>
 
               {/* Variable inputs for preview */}
               {extractVariables(templateForm.content).length > 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-xs font-medium text-gray-600">
-                      Vista previa con datos:
-                    </h4>
+                    <h4 className="text-xs font-medium text-gray-600">Vista previa con datos:</h4>
                     <div className="flex space-x-1">
                       <button
                         onClick={() => {
@@ -324,13 +301,11 @@ export default function TemplateModal({
                                 : new Date().getHours() < 18
                                   ? "Buenas tardes"
                                   : "Buenas noches",
-                            fecha_actual: new Date().toLocaleDateString(
-                              "es-ES",
-                            ),
-                            hora_actual: new Date().toLocaleTimeString(
-                              "es-ES",
-                              { hour: "2-digit", minute: "2-digit" },
-                            ),
+                            fecha_actual: new Date().toLocaleDateString("es-ES"),
+                            hora_actual: new Date().toLocaleTimeString("es-ES", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            }),
                             dia_semana: new Date().toLocaleDateString("es-ES", {
                               weekday: "long",
                             }),
@@ -356,10 +331,7 @@ export default function TemplateModal({
                   </div>
                   <div className="space-y-2 max-h-32 overflow-y-auto">
                     {extractVariables(templateForm.content).map((variable) => (
-                      <div
-                        key={variable}
-                        className="flex items-center space-x-2"
-                      >
+                      <div key={variable} className="flex items-center space-x-2">
                         <label className="text-xs text-gray-500 w-16 flex-shrink-0">
                           {variable}:
                         </label>
@@ -383,9 +355,7 @@ export default function TemplateModal({
 
               <div className="bg-gray-50 p-4 rounded-lg border min-h-[150px]">
                 <pre className="whitespace-pre-wrap text-sm text-gray-700">
-                  {templatePreview ||
-                    templateForm.content ||
-                    "La vista previa aparecerá aquí..."}
+                  {templatePreview || templateForm.content || "La vista previa aparecerá aquí..."}
                 </pre>
               </div>
             </div>
@@ -402,19 +372,11 @@ export default function TemplateModal({
             <button
               onClick={handleSave}
               disabled={
-                saving ||
-                !templateForm.name ||
-                !templateForm.category ||
-                !templateForm.content
+                saving || !templateForm.name || !templateForm.category || !templateForm.content
               }
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {saving
-                ? "Guardando..."
-                : editingTemplate
-                  ? "Actualizar"
-                  : "Crear"}{" "}
-              Template
+              {saving ? "Guardando..." : editingTemplate ? "Actualizar" : "Crear"} Template
             </button>
           </div>
         </div>

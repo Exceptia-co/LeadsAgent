@@ -33,8 +33,7 @@ export function Skeleton({
 
   const style: React.CSSProperties = {};
   if (width) style.width = typeof width === "number" ? `${width}px` : width;
-  if (height)
-    style.height = typeof height === "number" ? `${height}px` : height;
+  if (height) style.height = typeof height === "number" ? `${height}px` : height;
 
   return (
     <div
@@ -91,24 +90,11 @@ export function SkeletonCard({ className = "" }: { className?: string }) {
 }
 
 export function SkeletonBadge({ className = "" }: { className?: string }) {
-  return (
-    <Skeleton
-      variant="text"
-      width={24}
-      height={20}
-      className={`rounded-full ${className}`}
-    />
-  );
+  return <Skeleton variant="text" width={24} height={20} className={`rounded-full ${className}`} />;
 }
 
 export function SkeletonButton({ className = "" }: { className?: string }) {
-  return (
-    <Skeleton
-      variant="rectangular"
-      height="2.5rem"
-      className={`rounded-md ${className}`}
-    />
-  );
+  return <Skeleton variant="rectangular" height="2.5rem" className={`rounded-md ${className}`} />;
 }
 
 export function SkeletonAvatar({
@@ -118,14 +104,7 @@ export function SkeletonAvatar({
   size?: number;
   className?: string;
 }) {
-  return (
-    <Skeleton
-      variant="circular"
-      width={size}
-      height={size}
-      className={className}
-    />
-  );
+  return <Skeleton variant="circular" width={size} height={size} className={className} />;
 }
 
 // Complex skeleton for the WhatsApp page tabs
@@ -141,17 +120,8 @@ export function SkeletonTabs({
       <nav className="-mb-px flex space-x-8">
         {Array.from({ length: tabCount }).map((_, index) => (
           <div key={index} className="flex items-center py-2 px-1">
-            <Skeleton
-              variant="circular"
-              width={16}
-              height={16}
-              className="mr-2"
-            />
-            <Skeleton
-              height="1rem"
-              width={Math.random() * 40 + 60}
-              className="mr-2"
-            />
+            <Skeleton variant="circular" width={16} height={16} className="mr-2" />
+            <Skeleton height="1rem" width={Math.random() * 40 + 60} className="mr-2" />
             <SkeletonBadge />
           </div>
         ))}
@@ -169,9 +139,7 @@ export function SkeletonSessionGrid({
   className?: string;
 }) {
   return (
-    <div
-      className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 ${className}`}
-    >
+    <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 ${className}`}>
       {Array.from({ length: count }).map((_, index) => (
         <SkeletonCard key={index} />
       ))}

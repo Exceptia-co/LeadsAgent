@@ -1,5 +1,4 @@
 import WhatsAppServiceSimple from './WhatsAppServiceSimple';
-import { WhatsAppServiceRefactored } from './WhatsAppServiceRefactored';
 import { cacheService } from './cacheService';
 import { redisClient, REDIS_CHANNELS } from '../config/redis';
 import { logger } from '../utils/logger';
@@ -38,34 +37,21 @@ interface AIResponseWithCache {
 /**
  * Unified WhatsApp Service Facade
  *
- * Phase 1 of refactoring plan: Acts as a facade that delegates to either:
- * - Legacy service (WhatsAppServiceSimple) when USE_WHATSAPP_REFACTORED=false
- * - Refactored service (WhatsAppServiceRefactored) when USE_WHATSAPP_REFACTORED=true
- *
- * This maintains full API compatibility while allowing gradual migration.
+ * Wraps WhatsAppServiceSimple with Redis-backed caching, stats, rate limiting,
+ * and Socket.IO event propagation. The former Refactored branch (guarded by
+ * USE_WHATSAPP_REFACTORED) was removed in T3.1 after D4 resolved to keep the
+ * Simple implementation.
  */
 class WhatsAppService {
   private isRedisConnected: boolean = false;
-  private useRefactoredService: boolean;
   private simpleService: typeof WhatsAppServiceSimple;
-  private refactoredService: WhatsAppServiceRefactored | null = null;
   private statsService: WhatsAppStatsService;
   private redisMonitoring: RedisMonitoringService;
 
   constructor() {
-    // Feature toggle: USE_WHATSAPP_REFACTORED environment variable
-    this.useRefactoredService = process.env.USE_WHATSAPP_REFACTORED === 'true';
+    logger.info('🏗️ WhatsApp Service Architecture: SIMPLE (unique implementation)');
 
-    logger.info(
-      `🏗️ WhatsApp Service Architecture: ${this.useRefactoredService ? 'REFACTORED (v2.0)' : 'LEGACY (v1.0)'}`
-    );
-
-    // Initialize appropriate service implementation
     this.simpleService = WhatsAppServiceSimple;
-    if (this.useRefactoredService) {
-      this.refactoredService = new WhatsAppServiceRefactored();
-    }
-
     this.statsService = new WhatsAppStatsService(redisClient);
     this.redisMonitoring = new RedisMonitoringService(redisClient);
     this.initialize();
@@ -75,86 +61,36 @@ class WhatsAppService {
     await this.checkRedisConnection();
     await this.statsService.loadStatsFromRedis();
 
-    // Initialize the selected service implementation
-    if (this.useRefactoredService && this.refactoredService) {
-      logger.info('🚀 Initializing refactored service implementation...');
-      await this.refactoredService.initialize();
-    } else {
-      logger.info('🚀 Initializing legacy service implementation...');
-      await this.simpleService.initialize();
-    }
+    logger.info('🚀 Initializing WhatsApp service implementation...');
+    await this.simpleService.initialize();
   }
 
   // =============================================================================
-  // CORE WHATSAPP FUNCTIONALITY - Delegated to appropriate service
+  // CORE WHATSAPP FUNCTIONALITY - Delegated to SimpleService
   // =============================================================================
 
-  /**
-   * Create a new WhatsApp session
-   */
   async createSession(sessionId: string): Promise<WhatsAppSession> {
-    if (this.useRefactoredService && this.refactoredService) {
-      return await this.refactoredService.createSession(sessionId);
-    } else {
-      return await this.simpleService.createSession(sessionId);
-    }
+    return this.simpleService.createSession(sessionId);
   }
 
-  /**
-   * Get session status
-   */
   async getSessionStatus(sessionId: string): Promise<WhatsAppSession | null> {
-    if (this.useRefactoredService && this.refactoredService) {
-      return await this.refactoredService.getSessionStatus(sessionId);
-    } else {
-      return await this.simpleService.getSessionStatus(sessionId);
-    }
+    return this.simpleService.getSessionStatus(sessionId);
   }
 
-  /**
-   * Get all sessions
-   */
   async getAllSessions(): Promise<WhatsAppSession[]> {
-    if (this.useRefactoredService && this.refactoredService) {
-      return await this.refactoredService.getAllSessions();
-    } else {
-      return await this.simpleService.getAllSessions();
-    }
+    return this.simpleService.getAllSessions();
   }
 
-  /**
-   * Destroy a session
-   */
   async destroySession(sessionId: string): Promise<void> {
-    if (this.useRefactoredService && this.refactoredService) {
-      await this.refactoredService.destroySession(sessionId);
-    } else {
-      await this.simpleService.destroySession(sessionId);
-    }
+    await this.simpleService.destroySession(sessionId);
   }
 
-  /**
-   * Get session (for backward compatibility)
-   */
   getSession(sessionId: string): WhatsAppSession | null {
-    if (this.useRefactoredService && this.refactoredService) {
-      // The refactored service doesn't have sync getSession, so we need to adapt
-      return this.simpleService.getSession(sessionId);
-    } else {
-      return this.simpleService.getSession(sessionId);
-    }
+    return this.simpleService.getSession(sessionId);
   }
 
-  /**
-   * Force disconnect session
-   */
   async forceDisconnectSession(sessionId: string): Promise<void> {
-    if (this.useRefactoredService && this.refactoredService) {
-      // For now, delegate to simple service until this method is added to refactored
-      await this.simpleService.forceDisconnectSession(sessionId);
-    } else {
-      await this.simpleService.forceDisconnectSession(sessionId);
-    }
+    await this.simpleService.forceDisconnectSession(sessionId);
   }
 
   // =============================================================================
@@ -194,20 +130,14 @@ class WhatsAppService {
       }
     }
 
-    // Delegate to appropriate service implementation
-    let result: SendMessageResponse;
-    if (this.useRefactoredService && this.refactoredService) {
-      result = await this.refactoredService.sendMessage(sessionId, to, message);
-    } else {
-      result = await this.simpleService.sendMessage(sessionId, to, message);
-    }
+    const result = await this.simpleService.sendMessage(sessionId, to, message);
 
     if (result.success && this.isRedisConnected) {
       await RedisUtils.safePublish(redisClient, REDIS_CHANNELS.MESSAGE_EVENTS, {
         event: 'message_sent',
         sessionId,
-        to: to,
-        message: message,
+        to,
+        message,
         timestamp: WhatsAppUtils.getTimestamp(),
         success: true,
       });
@@ -347,11 +277,7 @@ class WhatsAppService {
     status: string,
     additionalData?: any
   ): Promise<void> {
-    // Get session using appropriate service
-    const session =
-      this.useRefactoredService && this.refactoredService
-        ? this.simpleService.getSession(sessionId) // For now, use simple service for sync access
-        : this.simpleService.getSession(sessionId);
+    const session = this.simpleService.getSession(sessionId);
 
     if (session) {
       session.status = status as any;
@@ -530,12 +456,7 @@ class WhatsAppService {
 
     this.redisMonitoring.destroy();
 
-    // Shutdown appropriate service implementation
-    if (this.useRefactoredService && this.refactoredService) {
-      await this.refactoredService.shutdown();
-    } else {
-      await this.simpleService.shutdown();
-    }
+    await this.simpleService.shutdown();
 
     logger.info('✅ WhatsApp Service shutdown completed');
   }

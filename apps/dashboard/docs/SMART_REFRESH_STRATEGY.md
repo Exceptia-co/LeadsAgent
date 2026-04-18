@@ -35,17 +35,17 @@ El sistema ajusta automáticamente los intervalos según la actividad:
 
 ```typescript
 // Estadísticas - Actualización cada 2 minutos (críticas)
-useLeadStats({ priority: "important" });
+useLeadStats({ priority: 'important' });
 
 // Lista de leads - Actualización cada 5 minutos
-useLeads(1, 5, { priority: "standard" });
+useLeads(1, 5, { priority: 'standard' });
 ```
 
 #### Páginas de Detalle
 
 ```typescript
 // Solo refresh manual en páginas de detalle
-useLeadDetails(id, { priority: "manual" });
+useLeadDetails(id, { priority: 'manual' });
 ```
 
 ## 📈 Beneficios de Rendimiento

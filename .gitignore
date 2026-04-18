@@ -115,3 +115,6 @@ acli.exe
 #AI
 .opencode/
 tmpclaude-*
+
+# MCP config (contains API tokens)
+.mcp.json

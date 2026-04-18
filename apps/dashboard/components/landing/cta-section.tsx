@@ -4,11 +4,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 
-const benefits = [
-  "Sin tarjeta de credito",
-  "Configuracion en 5 minutos",
-  "Soporte incluido",
-];
+const benefits = ["Sin tarjeta de credito", "Configuracion en 5 minutos", "Soporte incluido"];
 
 export function CTASection() {
   return (
@@ -36,8 +32,8 @@ export function CTASection() {
           </h2>
 
           <p className="text-neutral-400 text-lg mb-8 max-w-2xl mx-auto">
-            Unete a cientos de negocios que ya usan LeadsCRM para automatizar su
-            WhatsApp y cerrar mas ventas.
+            Unete a cientos de negocios que ya usan LeadsCRM para automatizar su WhatsApp y cerrar
+            mas ventas.
           </p>
 
           {/* Benefits */}
@@ -49,10 +45,7 @@ export function CTASection() {
             className="flex flex-wrap justify-center gap-6 mb-10"
           >
             {benefits.map((benefit) => (
-              <div
-                key={benefit}
-                className="flex items-center gap-2 text-neutral-300"
-              >
+              <div key={benefit} className="flex items-center gap-2 text-neutral-300">
                 <CheckCircle2 className="h-5 w-5 text-green-500" />
                 <span>{benefit}</span>
               </div>
@@ -83,9 +76,8 @@ export function CTASection() {
             viewport={{ once: true }}
             className="mt-8 text-sm text-neutral-500"
           >
-            Mas de{" "}
-            <span className="text-green-400 font-semibold">500+ leads</span>{" "}
-            gestionados este mes
+            Mas de <span className="text-green-400 font-semibold">500+ leads</span> gestionados este
+            mes
           </motion.p>
         </motion.div>
       </div>

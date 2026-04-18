@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
-import { Toggle } from "@leadcrm/ui";
-import { Alert, AlertTitle, AlertDescription } from "@leadcrm/ui";
+import { Toggle } from "../../../components/ui/toggle";
+import { Alert, AlertTitle, AlertDescription } from "../../../components/ui/alert";
 import { useSettings } from "../../../hooks/use-settings";
 import { useUser } from "@clerk/nextjs";
 import {
@@ -36,14 +36,7 @@ import {
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<
-    | "general"
-    | "api-keys"
-    | "whatsapp"
-    | "database"
-    | "notifications"
-    | "mcp"
-    | "system"
-    | "backup"
+    "general" | "api-keys" | "whatsapp" | "database" | "notifications" | "mcp" | "system" | "backup"
   >("general");
   const { user } = useUser();
 
@@ -118,9 +111,7 @@ export default function SettingsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Configuración</h1>
-          <p className="text-gray-500">
-            Administra la configuración del sistema y servicios
-          </p>
+          <p className="text-gray-500">Administra la configuración del sistema y servicios</p>
         </div>
         <div className="flex items-center space-x-2">
           {error && (
@@ -178,20 +169,12 @@ export default function SettingsPage() {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nombre
-                </label>
-                <div className="text-sm text-gray-900">
-                  {user?.fullName || "Usuario"}
-                </div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                <div className="text-sm text-gray-900">{user?.fullName || "Usuario"}</div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email
-                </label>
-                <div className="text-sm text-gray-900">
-                  {user?.emailAddresses[0]?.emailAddress}
-                </div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <div className="text-sm text-gray-900">{user?.emailAddresses[0]?.emailAddress}</div>
               </div>
             </div>
           </Card>
@@ -204,12 +187,8 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <label className="text-sm font-medium text-gray-900">
-                    Tema
-                  </label>
-                  <p className="text-xs text-gray-500">
-                    Apariencia de la aplicación
-                  </p>
+                  <label className="text-sm font-medium text-gray-900">Tema</label>
+                  <p className="text-xs text-gray-500">Apariencia de la aplicación</p>
                 </div>
                 <select
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -228,9 +207,7 @@ export default function SettingsPage() {
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <label className="text-sm font-medium text-gray-900">
-                    Idioma
-                  </label>
+                  <label className="text-sm font-medium text-gray-900">Idioma</label>
                   <p className="text-xs text-gray-500">Idioma de la interfaz</p>
                 </div>
                 <select
@@ -249,12 +226,8 @@ export default function SettingsPage() {
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <label className="text-sm font-medium text-gray-900">
-                    Zona Horaria
-                  </label>
-                  <p className="text-xs text-gray-500">
-                    Formato de fechas y horas
-                  </p>
+                  <label className="text-sm font-medium text-gray-900">Zona Horaria</label>
+                  <p className="text-xs text-gray-500">Formato de fechas y horas</p>
                 </div>
                 <select
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
@@ -282,12 +255,8 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <label className="text-sm font-medium text-gray-900">
-                    Modo Debug
-                  </label>
-                  <p className="text-xs text-gray-500">
-                    Mostrar información de depuración
-                  </p>
+                  <label className="text-sm font-medium text-gray-900">Modo Debug</label>
+                  <p className="text-xs text-gray-500">Mostrar información de depuración</p>
                 </div>
                 <Toggle
                   checked={generalSettings.debugMode}
@@ -301,12 +270,8 @@ export default function SettingsPage() {
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <label className="text-sm font-medium text-gray-900">
-                    Analíticas
-                  </label>
-                  <p className="text-xs text-gray-500">
-                    Recopilar datos de uso anónimos
-                  </p>
+                  <label className="text-sm font-medium text-gray-900">Analíticas</label>
+                  <p className="text-xs text-gray-500">Recopilar datos de uso anónimos</p>
                 </div>
                 <Toggle
                   checked={generalSettings.analyticsEnabled}
@@ -329,8 +294,8 @@ export default function SettingsPage() {
             <Key className="h-4 w-4" />
             <AlertTitle>Información Importante</AlertTitle>
             <AlertDescription>
-              Las claves API se almacenan de forma segura. Solo se muestran los
-              primeros y últimos caracteres por seguridad.
+              Las claves API se almacenan de forma segura. Solo se muestran los primeros y últimos
+              caracteres por seguridad.
             </AlertDescription>
           </Alert>
 
@@ -340,18 +305,12 @@ export default function SettingsPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center space-x-2 mb-2">
-                      <h3 className="text-lg font-medium text-gray-900">
-                        {apiKey.name}
-                      </h3>
-                      <Badge
-                        variant={apiKey.configured ? "success" : "secondary"}
-                      >
+                      <h3 className="text-lg font-medium text-gray-900">{apiKey.name}</h3>
+                      <Badge variant={apiKey.configured ? "success" : "secondary"}>
                         {apiKey.configured ? "Configurado" : "Sin configurar"}
                       </Badge>
                     </div>
-                    <p className="text-sm text-gray-500 mb-3">
-                      {apiKey.description}
-                    </p>
+                    <p className="text-sm text-gray-500 mb-3">{apiKey.description}</p>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
@@ -360,9 +319,7 @@ export default function SettingsPage() {
                         </label>
                         <input
                           type="password"
-                          value={
-                            apiKey.configured ? maskApiKey(apiKey.key) : ""
-                          }
+                          value={apiKey.configured ? maskApiKey(apiKey.key) : ""}
                           placeholder="Ingresa tu clave API..."
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm"
                           onChange={(e) => {
@@ -387,24 +344,17 @@ export default function SettingsPage() {
                           {apiKey.configured ? (
                             <>
                               <CheckCircle2 className="h-4 w-4 text-green-500" />
-                              <span className="text-sm text-green-700">
-                                Activo
-                              </span>
+                              <span className="text-sm text-green-700">Activo</span>
                               {apiKey.lastUsed && (
                                 <span className="text-xs text-gray-500">
-                                  • Usado:{" "}
-                                  {new Date(
-                                    apiKey.lastUsed,
-                                  ).toLocaleDateString()}
+                                  • Usado: {new Date(apiKey.lastUsed).toLocaleDateString()}
                                 </span>
                               )}
                             </>
                           ) : (
                             <>
                               <XCircle className="h-4 w-4 text-gray-400" />
-                              <span className="text-sm text-gray-500">
-                                No configurado
-                              </span>
+                              <span className="text-sm text-gray-500">No configurado</span>
                             </>
                           )}
                         </div>
@@ -441,9 +391,7 @@ export default function SettingsPage() {
                       <AlertTriangle className="h-5 w-5 text-yellow-500" />
                     )}
                     <div>
-                      <p className="font-medium text-gray-900">
-                        {service.service}
-                      </p>
+                      <p className="font-medium text-gray-900">{service.service}</p>
                       <p className="text-sm text-gray-500">{service.details}</p>
                     </div>
                   </div>
@@ -456,9 +404,7 @@ export default function SettingsPage() {
                           : "Error"}
                     </Badge>
                     {service.version && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        v{service.version}
-                      </p>
+                      <p className="text-xs text-gray-500 mt-1">v{service.version}</p>
                     )}
                   </div>
                 </div>
@@ -534,37 +480,25 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Host</span>
-                    <span className="text-sm text-gray-900">
-                      {databaseStatus.host}
-                    </span>
+                    <span className="text-sm text-gray-900">{databaseStatus.host}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Base de Datos</span>
-                    <span className="text-sm text-gray-900">
-                      {databaseStatus.database}
-                    </span>
+                    <span className="text-sm text-gray-900">{databaseStatus.database}</span>
                   </div>
                 </div>
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Tablas</span>
-                    <span className="text-sm text-gray-900">
-                      {databaseStatus.tablesCount}
-                    </span>
+                    <span className="text-sm text-gray-900">{databaseStatus.tablesCount}</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-gray-600">Tamaño</span>
-                    <span className="text-sm text-gray-900">
-                      {databaseStatus.size}
-                    </span>
+                    <span className="text-sm text-gray-900">{databaseStatus.size}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">
-                      Tiempo de Respuesta
-                    </span>
-                    <span className="text-sm text-gray-900">
-                      {databaseStatus.responseTime}ms
-                    </span>
+                    <span className="text-sm text-gray-600">Tiempo de Respuesta</span>
+                    <span className="text-sm text-gray-900">{databaseStatus.responseTime}ms</span>
                   </div>
                 </div>
               </div>
@@ -588,8 +522,8 @@ export default function SettingsPage() {
             <Plug className="h-4 w-4" />
             <AlertTitle>Servidores MCP (Model Context Protocol)</AlertTitle>
             <AlertDescription>
-              Estos servidores proporcionan contexto y herramientas adicionales
-              para los asistentes de IA.
+              Estos servidores proporcionan contexto y herramientas adicionales para los asistentes
+              de IA.
             </AlertDescription>
           </Alert>
 
@@ -599,9 +533,7 @@ export default function SettingsPage() {
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-center space-x-2 mb-2">
-                      <h3 className="text-lg font-medium text-gray-900">
-                        {server.name}
-                      </h3>
+                      <h3 className="text-lg font-medium text-gray-900">{server.name}</h3>
                       <Badge className={getStatusColor(server.status)}>
                         {server.status === "connected"
                           ? "Conectado"
@@ -610,34 +542,24 @@ export default function SettingsPage() {
                             : "Error"}
                       </Badge>
                     </div>
-                    <p className="text-sm text-gray-500 mb-3">
-                      {server.description}
-                    </p>
+                    <p className="text-sm text-gray-500 mb-3">{server.description}</p>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                       <div>
                         <span className="text-gray-600">Tipo:</span>
-                        <span className="ml-2 text-gray-900 capitalize">
-                          {server.type}
-                        </span>
+                        <span className="ml-2 text-gray-900 capitalize">{server.type}</span>
                       </div>
                       {server.version && (
                         <div>
                           <span className="text-gray-600">Versión:</span>
-                          <span className="ml-2 text-gray-900">
-                            v{server.version}
-                          </span>
+                          <span className="ml-2 text-gray-900">v{server.version}</span>
                         </div>
                       )}
                       {server.lastActivity && (
                         <div>
-                          <span className="text-gray-600">
-                            Última actividad:
-                          </span>
+                          <span className="text-gray-600">Última actividad:</span>
                           <span className="ml-2 text-gray-900">
-                            {new Date(server.lastActivity).toLocaleString(
-                              "es-ES",
-                            )}
+                            {new Date(server.lastActivity).toLocaleString("es-ES")}
                           </span>
                         </div>
                       )}

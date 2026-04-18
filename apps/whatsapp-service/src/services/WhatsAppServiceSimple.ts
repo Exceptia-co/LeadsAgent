@@ -99,9 +99,12 @@ class WhatsAppServiceSimple {
     // Schedule periodic snapshots for ready sessions
     if (SnapshotService.isEnabled()) {
       const intervalHours = parseInt(process.env.SNAPSHOT_INTERVAL_HOURS || '4', 10);
-      this.snapshotIntervalId = setInterval(async () => {
-        await this.runPeriodicSnapshots();
-      }, intervalHours * 60 * 60 * 1000);
+      this.snapshotIntervalId = setInterval(
+        async () => {
+          await this.runPeriodicSnapshots();
+        },
+        intervalHours * 60 * 60 * 1000
+      );
       logger.info(`Periodic snapshots scheduled every ${intervalHours} hours`);
     }
 
@@ -117,16 +120,19 @@ class WhatsAppServiceSimple {
       // Acquire lock to prevent double initialization (Redis primary, in-memory fallback)
       try {
         const lockKey = `${REDIS_KEYS.SESSION_LOCK}${sessionId}`;
-        const redisLock = await redisClient.getClient().set(
-          lockKey, process.pid.toString(), 'EX', 300, 'NX'
-        );
+        const redisLock = await redisClient
+          .getClient()
+          .set(lockKey, process.pid.toString(), 'EX', 300, 'NX');
         if (!redisLock) {
           throw new Error(`Session ${sessionId} is already being initialized (lock exists)`);
         }
       } catch (lockError: any) {
         if (lockError.message?.includes('already being initialized')) throw lockError;
         // Redis unavailable — use in-memory lock as fallback
-        logger.warn(`Redis lock unavailable for ${sessionId}, using in-memory lock:`, lockError.message);
+        logger.warn(
+          `Redis lock unavailable for ${sessionId}, using in-memory lock:`,
+          lockError.message
+        );
         if (this.sessionInitLocks.has(sessionId)) {
           throw new Error(`Session ${sessionId} is already being initialized (in-memory lock)`);
         }
@@ -206,7 +212,9 @@ class WhatsAppServiceSimple {
       this.sessionInitLocks.delete(sessionId);
       try {
         await redisClient.del(`${REDIS_KEYS.SESSION_LOCK}${sessionId}`);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
       logger.error(`Error creating session ${sessionId}:`, error);
       throw error;
     }
@@ -287,7 +295,9 @@ class WhatsAppServiceSimple {
       this.sessionInitLocks.delete(sessionId);
       try {
         await redisClient.del(`${REDIS_KEYS.SESSION_LOCK}${sessionId}`);
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
 
       logger.info(`✅ Session ${sessionId} destroyed completely with modular architecture`);
     } catch (error) {
@@ -520,7 +530,9 @@ class WhatsAppServiceSimple {
             },
             timestamp: new Date().toISOString(),
           });
-        } catch { /* ignore socket errors */ }
+        } catch {
+          /* ignore socket errors */
+        }
       }
     } catch (error) {
       logger.error(`Snapshot trigger failed for session ${sessionId}:`, error);
@@ -550,7 +562,9 @@ class WhatsAppServiceSimple {
       logger.warn(`Error clearing snapshot for ${sessionId}:`, err);
     }
 
-    logger.info(`✅ Auth invalidation cleanup done for ${sessionId} — reconnect will require fresh QR`);
+    logger.info(
+      `✅ Auth invalidation cleanup done for ${sessionId} — reconnect will require fresh QR`
+    );
   }
 
   /**
@@ -581,7 +595,9 @@ class WhatsAppServiceSimple {
   /**
    * Force backup a specific session (called from REST API)
    */
-  async forceBackup(sessionId: string): Promise<{ success: boolean; sizeBytes?: number; error?: string }> {
+  async forceBackup(
+    sessionId: string
+  ): Promise<{ success: boolean; sizeBytes?: number; error?: string }> {
     if (!SnapshotService.isEnabled()) {
       return { success: false, error: 'Snapshots are disabled' };
     }
@@ -635,7 +651,9 @@ class WhatsAppServiceSimple {
           data: { restoredAt: new Date().toISOString() },
           timestamp: new Date().toISOString(),
         });
-      } catch { /* ignore socket errors */ }
+      } catch {
+        /* ignore socket errors */
+      }
 
       return { success: true };
     } catch (error) {
@@ -689,11 +707,13 @@ class WhatsAppServiceSimple {
       if (hb) {
         heartbeatAge = Date.now() - parseInt(hb, 10);
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     // Check if auth was invalidated (unpaired from phone or auth_failure)
-    const authInvalidated = session?.metadata?.authInvalidated === true
-      || session?.status === 'auth_failure';
+    const authInvalidated =
+      session?.metadata?.authInvalidated === true || session?.status === 'auth_failure';
 
     return {
       status: session?.status || 'unknown',

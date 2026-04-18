@@ -1,12 +1,6 @@
 "use client";
 
-import React, {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-  useCallback,
-} from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { useToast } from "../components/ui/toast";
 import { getWhatsAppUrl } from "../hooks/use-whatsapp-url";
 
@@ -14,12 +8,7 @@ export interface WhatsAppSession {
   id: string;
   name?: string;
   phoneNumber?: string;
-  status:
-    | "DISCONNECTED"
-    | "CONNECTING"
-    | "CONNECTED"
-    | "QR_PENDING"
-    | "QR_READY";
+  status: "DISCONNECTED" | "CONNECTING" | "CONNECTED" | "QR_PENDING" | "QR_READY";
   qrCode?: string;
   lastActivity?: string;
   createdAt?: string;
@@ -46,9 +35,7 @@ interface WhatsAppContextType {
   refreshSessions: () => void;
 }
 
-const WhatsAppContext = createContext<WhatsAppContextType | undefined>(
-  undefined,
-);
+const WhatsAppContext = createContext<WhatsAppContextType | undefined>(undefined);
 
 export const useWhatsApp = () => {
   const context = useContext(WhatsAppContext);
@@ -125,28 +112,21 @@ export function WhatsAppProvider({ children }: { children: React.ReactNode }) {
   const deleteSession = useCallback(
     async (sessionId: string): Promise<boolean> => {
       try {
-        const response = await fetch(
-          `${getWhatsAppUrl()}/sessions/${sessionId}`,
-          {
-            method: "DELETE",
-          },
-        );
+        const response = await fetch(`${getWhatsAppUrl()}/sessions/${sessionId}`, {
+          method: "DELETE",
+        });
 
         const result = await response.json();
 
         if (result.success) {
-          setSessions((prev) =>
-            prev.filter((session) => session.id !== sessionId),
-          );
+          setSessions((prev) => prev.filter((session) => session.id !== sessionId));
           return true;
         } else {
           throw new Error(result.error || "Error al eliminar sesión");
         }
       } catch (err) {
         console.error("Error deleting session:", err);
-        setError(
-          err instanceof Error ? err.message : "Error al eliminar sesión",
-        );
+        setError(err instanceof Error ? err.message : "Error al eliminar sesión");
         showError(
           "Error al eliminar sesión",
           err instanceof Error ? err.message : "Error desconocido",
@@ -185,8 +165,7 @@ export function WhatsAppProvider({ children }: { children: React.ReactNode }) {
           if (!targetSession) {
             return {
               isValid: false,
-              error:
-                "No hay sesiones WhatsApp disponibles. Crea y conecta una sesión primero.",
+              error: "No hay sesiones WhatsApp disponibles. Crea y conecta una sesión primero.",
             };
           }
         }
@@ -203,16 +182,14 @@ export function WhatsAppProvider({ children }: { children: React.ReactNode }) {
             return {
               isValid: false,
               session: targetSession,
-              error:
-                "La sesión está conectándose. Espera a que se establezca la conexión.",
+              error: "La sesión está conectándose. Espera a que se establezca la conexión.",
             };
 
           case "QR_PENDING":
             return {
               isValid: false,
               session: targetSession,
-              error:
-                "Escanea el código QR para completar la conexión WhatsApp.",
+              error: "Escanea el código QR para completar la conexión WhatsApp.",
             };
 
           case "DISCONNECTED":
@@ -239,9 +216,7 @@ export function WhatsAppProvider({ children }: { children: React.ReactNode }) {
     return sessions.filter((s) => s.status === "CONNECTED");
   }, [sessions]);
 
-  const getBestSessionForSending = useCallback(():
-    | WhatsAppSession
-    | undefined => {
+  const getBestSessionForSending = useCallback((): WhatsAppSession | undefined => {
     const connectedSessions = getActiveSessions();
     if (connectedSessions.length > 0) {
       // Return the first connected session

@@ -62,12 +62,8 @@ export function SortableTableHeader({
       aria-label={getSortAriaLabel()}
       title={getSortAriaLabel()}
     >
-      <span className="text-xs font-medium uppercase tracking-wider">
-        {label}
-      </span>
-      <span
-        className={`ml-1 transition-colors ${isActive ? "text-gray-700" : "text-gray-400"}`}
-      >
+      <span className="text-xs font-medium uppercase tracking-wider">{label}</span>
+      <span className={`ml-1 transition-colors ${isActive ? "text-gray-700" : "text-gray-400"}`}>
         {getSortIcon()}
       </span>
     </button>

@@ -50,9 +50,7 @@ export function useUnifiedUser(): UseUnifiedUserReturn {
         setUnifiedUser(userData.user);
       } catch (err) {
         console.error("Error fetching unified user:", err);
-        setError(
-          err instanceof Error ? err.message : "Failed to load user data",
-        );
+        setError(err instanceof Error ? err.message : "Failed to load user data");
         setUnifiedUser(null);
       } finally {
         setIsLoading(false);
@@ -62,9 +60,7 @@ export function useUnifiedUser(): UseUnifiedUserReturn {
     fetchUnifiedUser();
   }, [clerkLoaded, isSignedIn, clerkUser?.id]);
 
-  const updateSettings = async (
-    settings: Record<string, unknown>,
-  ): Promise<boolean> => {
+  const updateSettings = async (settings: Record<string, unknown>): Promise<boolean> => {
     if (!unifiedUser) return false;
 
     try {
@@ -258,9 +254,7 @@ export function useUserManagement() {
 
       // Actualizar el estado local
       setUsers((prev) =>
-        prev.map((user) =>
-          user.supabaseId === userId ? { ...user, role } : user,
-        ),
+        prev.map((user) => (user.supabaseId === userId ? { ...user, role } : user)),
       );
 
       return true;
@@ -289,9 +283,7 @@ export function useUserManagement() {
 
       // Actualizar el estado local
       setUsers((prev) =>
-        prev.map((user) =>
-          user.supabaseId === userId ? { ...user, isActive: false } : user,
-        ),
+        prev.map((user) => (user.supabaseId === userId ? { ...user, isActive: false } : user)),
       );
 
       return true;

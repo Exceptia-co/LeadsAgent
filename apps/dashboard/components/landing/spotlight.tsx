@@ -4,13 +4,7 @@ import { cn } from "@/lib/utils";
 import { useMotionValue, motion, useMotionTemplate } from "framer-motion";
 import React from "react";
 
-export const Spotlight = ({
-  className,
-  fill,
-}: {
-  className?: string;
-  fill?: string;
-}) => {
+export const Spotlight = ({ className, fill }: { className?: string; fill?: string }) => {
   return (
     <svg
       className={cn(
@@ -43,16 +37,8 @@ export const Spotlight = ({
           colorInterpolationFilters="sRGB"
         >
           <feFlood floodOpacity="0" result="BackgroundImageFix" />
-          <feBlend
-            mode="normal"
-            in="SourceGraphic"
-            in2="BackgroundImageFix"
-            result="shape"
-          />
-          <feGaussianBlur
-            stdDeviation="151"
-            result="effect1_foregroundBlur_1065_8"
-          />
+          <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
+          <feGaussianBlur stdDeviation="151" result="effect1_foregroundBlur_1065_8" />
         </filter>
       </defs>
     </svg>
@@ -71,11 +57,7 @@ export const HeroHighlight = ({
   let mouseX = useMotionValue(0);
   let mouseY = useMotionValue(0);
 
-  function handleMouseMove({
-    currentTarget,
-    clientX,
-    clientY,
-  }: React.MouseEvent<HTMLDivElement>) {
+  function handleMouseMove({ currentTarget, clientX, clientY }: React.MouseEvent<HTMLDivElement>) {
     if (!currentTarget) return;
     let { left, top } = currentTarget.getBoundingClientRect();
     mouseX.set(clientX - left);

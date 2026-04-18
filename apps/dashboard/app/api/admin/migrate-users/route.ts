@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import {
-  requireRole,
-  UnifiedAuthError,
-} from "../../../../lib/auth/unified-auth";
+import { requireRole, UnifiedAuthError } from "../../../../lib/auth/unified-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -70,10 +67,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
 

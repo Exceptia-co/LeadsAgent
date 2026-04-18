@@ -57,7 +57,9 @@ export class SnapshotService {
       if (tarBuffer.length > SESSION_CONSTANTS.MAX_SNAPSHOT_SIZE_BYTES) {
         const sizeMB = (tarBuffer.length / 1024 / 1024).toFixed(2);
         const limitMB = (SESSION_CONSTANTS.MAX_SNAPSHOT_SIZE_BYTES / 1024 / 1024).toFixed(0);
-        logger.warn(`Snapshot for session ${sessionId} exceeds size limit: ${sizeMB}MB > ${limitMB}MB. Skipping.`);
+        logger.warn(
+          `Snapshot for session ${sessionId} exceeds size limit: ${sizeMB}MB > ${limitMB}MB. Skipping.`
+        );
         return null;
       }
 
@@ -189,25 +191,33 @@ export class SnapshotService {
     const parentDir = path.dirname(sessionAuthPath);
     const dirName = path.basename(sessionAuthPath);
 
-    await tar.create(
-      {
-        gzip: true,
-        cwd: parentDir,
-        portable: true,
-        // Write to a buffer via onWriteEntry
-      },
-      [dirName]
-    ).pipe({
-      write(chunk: Buffer) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-        return true;
-      },
-      end() {},
-      on() { return this; },
-      once() { return this; },
-      emit() { return false; },
-      // Satisfy the minimal writable interface
-    } as any);
+    await tar
+      .create(
+        {
+          gzip: true,
+          cwd: parentDir,
+          portable: true,
+          // Write to a buffer via onWriteEntry
+        },
+        [dirName]
+      )
+      .pipe({
+        write(chunk: Buffer) {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+          return true;
+        },
+        end() {},
+        on() {
+          return this;
+        },
+        once() {
+          return this;
+        },
+        emit() {
+          return false;
+        },
+        // Satisfy the minimal writable interface
+      } as any);
 
     // tar.create returns a readable stream when no file option is given
     // Let's use a different approach with a temp file for reliability

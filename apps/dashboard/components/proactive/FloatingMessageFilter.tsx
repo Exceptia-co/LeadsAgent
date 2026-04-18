@@ -87,16 +87,12 @@ export default function FloatingMessageFilter({
           </div>
           <span
             className={`text-sm font-medium whitespace-nowrap transition-all duration-300 ${
-              isChanging
-                ? "opacity-70 transform scale-95"
-                : "opacity-100 transform scale-100"
+              isChanging ? "opacity-70 transform scale-95" : "opacity-100 transform scale-100"
             }`}
           >
             {hasActiveFilter ? (
               <>
-                <span className="text-green-600 font-semibold">
-                  {filteredCount}
-                </span>
+                <span className="text-green-600 font-semibold">{filteredCount}</span>
                 <span className="text-gray-500"> de {totalMessages}</span>
               </>
             ) : (

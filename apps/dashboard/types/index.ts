@@ -13,12 +13,7 @@ export interface Lead {
   conversation?: Conversation | null;
 }
 
-export type LeadStatus =
-  | "NUEVO"
-  | "CONTACTADO"
-  | "QUALIFIED"
-  | "GANADO"
-  | "PERDIDO";
+export type LeadStatus = "NUEVO" | "CONTACTADO" | "QUALIFIED" | "GANADO" | "PERDIDO";
 
 export interface Conversation {
   id: string;
@@ -140,13 +135,7 @@ export interface BulkUpdateWhatsAppData {
 export interface WhatsAppSession {
   id: string;
   name?: string;
-  status:
-    | "DISCONNECTED"
-    | "AUTH_INVALID"
-    | "CONNECTING"
-    | "CONNECTED"
-    | "QR_READY"
-    | "QR_PENDING";
+  status: "DISCONNECTED" | "AUTH_INVALID" | "CONNECTING" | "CONNECTED" | "QR_READY" | "QR_PENDING";
   qr?: string;
   phoneNumber?: string;
   createdAt: string;

@@ -82,6 +82,7 @@ model Lead {
   moodScore            Decimal?                 @map("mood_score") @db.Decimal(3, 2)
   lastContact          DateTime?                @map("last_contact") @db.Timestamptz(6)
   assignedTo           String?                  @map("assigned_to") @db.VarChar(255)
+  deletedAt            DateTime?                @map("deleted_at") @db.Timestamptz(6)
   createdAt            DateTime?                @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt            DateTime?                @default(now()) @map("updated_at") @db.Timestamptz(6)
   messages             Message[]
@@ -91,26 +92,30 @@ model Lead {
   @@index([createdAt], map: "idx_leads_created_at")
   @@index([phone], map: "idx_leads_phone")
   @@index([status], map: "idx_leads_status")
+  @@index([deletedAt], map: "idx_leads_deleted_at")
   @@map("leads")
 }
 
 model Message {
-  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  leadId            String?           @map("lead_id") @db.Uuid
-  content           String
-  direction         MessageDirection  @map("direction")
-  messageType       MessageType?      @default(TEXT) @map("message_type")
-  status            MessageStatus?    @default(PENDING) @map("status")
-  sessionId         String?           @map("session_id") @db.VarChar(255)
-  whatsappMessageId String?           @map("whatsapp_message_id") @db.VarChar(255)
-  metadata          Json?             @default("{}")
-  createdAt         DateTime?         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime?         @default(now()) @map("updated_at") @db.Timestamptz(6)
-  lead              Lead?             @relation(fields: [leadId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  leadId                String?                @map("lead_id") @db.Uuid
+  content               String
+  direction             MessageDirection       @map("direction")
+  messageType           MessageType?           @default(TEXT) @map("message_type")
+  status                MessageStatus?         @default(PENDING) @map("status")
+  sessionId             String?                @map("session_id") @db.VarChar(255)
+  whatsappMessageId     String?                @map("whatsapp_message_id") @db.VarChar(255)
+  metadata              Json?                  @default("{}")
+  deletedAt             DateTime?              @map("deleted_at") @db.Timestamptz(6)
+  createdAt             DateTime?              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime?              @default(now()) @map("updated_at") @db.Timestamptz(6)
+  lead                  Lead?                  @relation(fields: [leadId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  whatsappConversations WhatsAppConversation[]
 
   @@index([createdAt], map: "idx_messages_created_at")
   @@index([direction], map: "idx_messages_direction")
   @@index([leadId], map: "idx_messages_lead_id")
+  @@index([deletedAt], map: "idx_messages_deleted_at")
   @@map("messages")
 }
 
@@ -178,14 +183,11 @@ model ProactiveMessage {
   createdBy     String?          @map("created_by") @db.VarChar(255)
   createdAt     DateTime?        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime?        @default(now()) @map("updated_at") @db.Timestamptz(6)
-  lead          Lead?            @relation(fields: [leadId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  lead          Lead?            @relation(fields: [leadId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   template      MessageTemplate? @relation(fields: [templateId], references: [id], onUpdate: NoAction)
 
   @@index([createdAt], map: "idx_proactive_created")
   @@index([leadId], map: "idx_proactive_lead")
-  @@index([createdAt], map: "idx_proactive_messages_created_at")
-  @@index([leadId], map: "idx_proactive_messages_lead_id")
-  @@index([status], map: "idx_proactive_messages_status")
   @@index([phoneNumber], map: "idx_proactive_phone")
   @@index([status], map: "idx_proactive_status")
   @@map("proactive_messages")
@@ -194,11 +196,10 @@ model ProactiveMessage {
 model WhatsAppConversation {
   id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   leadId        String?   @map("lead_id") @db.Uuid
+  messageId     String?   @map("message_id") @db.Uuid
   sessionId     String    @map("session_id") @db.VarChar(255)
   phoneNumber   String    @map("phone_number") @db.VarChar(50)
   contactName   String?   @map("contact_name") @db.VarChar(255)
-  messageText   String?   @map("message_text") @db.Text
-  responseText  String?   @map("response_text") @db.Text
   messageType   String?   @default("text") @map("message_type") @db.VarChar(50)
   intent        String?   @db.VarChar(255)
   sentiment     String?   @db.VarChar(100)
@@ -211,12 +212,28 @@ model WhatsAppConversation {
   createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime? @default(now()) @map("updated_at") @db.Timestamptz(6)
   aiProvider    String?   @default("gemini") @map("ai_provider") @db.VarChar(50)
-  lead          Lead?     @relation(fields: [leadId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  lead          Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  message       Message?  @relation(fields: [messageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([createdAt], map: "idx_whatsapp_created")
   @@index([phoneNumber], map: "idx_whatsapp_phone")
   @@index([sessionId], map: "idx_whatsapp_session")
+  @@index([messageId], map: "idx_whatsapp_conversations_message_id")
   @@map("whatsapp_conversations")
+}
+
+model AiTrainingInteraction {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userMessage          String   @map("user_message")
+  aiResponse           String   @map("ai_response")
+  knowledgeBaseIdsUsed String[] @default([]) @map("knowledge_base_ids_used")
+  successScore         Decimal? @default(0.50) @map("success_score") @db.Decimal
+  contextData          Json     @map("context_data")
+  feedbackMetrics      Json     @map("feedback_metrics")
+  createdAt            DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  updatedAt            DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+
+  @@map("ai_training_interactions")
 }
 
 model WhatsAppSession {
@@ -250,7 +267,7 @@ model WhatsAppWhitelistLog {
   sessionId      String?   @map("session_id") @db.VarChar(255)
   decision       String    @db.VarChar(20) // NOT NULL - standardized on this field
   reason         String?   @db.Text
-  leadId         String?   @map("lead_id") @db.VarChar(255)
+  leadId         String?   @map("lead_id") @db.Uuid
   leadName       String?   @map("lead_name") @db.VarChar(255)
   messagePreview String?   @map("message_preview") @db.Text
   aiProvider     String?   @map("ai_provider") @db.VarChar(50)

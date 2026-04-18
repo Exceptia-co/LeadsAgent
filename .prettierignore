@@ -1,0 +1,44 @@
+# Build artifacts
+node_modules
+dist
+build
+.next
+.turbo
+*.tsbuildinfo
+coverage
+
+# Generated
+packages/db/prisma/client
+**/.prisma
+
+# Docs — authored with intentional line breaks and tables, do not auto-format
+docs/**
+CLAUDE.md
+AGENTS.md
+README.md
+PRD-ESTABILIZACION.md
+PRD.md
+ANALISIS-ESTADO-PROYECTO.md
+apps/dashboard/README.md
+apps/api/README.md
+packages/**/README.md
+
+# Lock files & env
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+.env*
+
+# Logs
+logs
+*.log
+
+# WhatsApp session artifacts
+apps/whatsapp-service/sessions
+apps/whatsapp-service/.wwebjs_auth
+apps/whatsapp-service/.wwebjs_cache
+apps/whatsapp-service/wwebjs_auth
+apps/whatsapp-service/wwebjs_auth_test
+
+# Patches
+patches/**

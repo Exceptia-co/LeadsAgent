@@ -23,12 +23,7 @@ interface TemplateCardProps {
   onUse: (template: Template) => void;
 }
 
-export default function TemplateCard({
-  template,
-  onEdit,
-  onDelete,
-  onUse,
-}: TemplateCardProps) {
+export default function TemplateCard({ template, onEdit, onDelete, onUse }: TemplateCardProps) {
   return (
     <Card className="p-4 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between mb-3">
@@ -39,9 +34,7 @@ export default function TemplateCard({
               {template.category}
             </Badge>
             {template.usageCount !== undefined && (
-              <span className="text-xs text-gray-500">
-                {template.usageCount} usos
-              </span>
+              <span className="text-xs text-gray-500">{template.usageCount} usos</span>
             )}
           </div>
         </div>

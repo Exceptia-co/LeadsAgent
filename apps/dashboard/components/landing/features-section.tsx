@@ -1,14 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import {
-  MessageSquare,
-  Brain,
-  Users,
-  BarChart3,
-  Zap,
-  Shield,
-} from "lucide-react";
+import { MessageSquare, Brain, Users, BarChart3, Zap, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const features = [
@@ -22,40 +15,35 @@ const features = [
   },
   {
     title: "IA Conversacional",
-    description:
-      "Asistente inteligente que entiende el contexto y responde como un humano.",
+    description: "Asistente inteligente que entiende el contexto y responde como un humano.",
     icon: Brain,
     color: "from-purple-500 to-violet-500",
     bgColor: "bg-purple-500/10",
   },
   {
     title: "Gestion de Leads",
-    description:
-      "Organiza, califica y da seguimiento a todos tus prospectos en un solo lugar.",
+    description: "Organiza, califica y da seguimiento a todos tus prospectos en un solo lugar.",
     icon: Users,
     color: "from-blue-500 to-cyan-500",
     bgColor: "bg-blue-500/10",
   },
   {
     title: "Analytics Avanzados",
-    description:
-      "Metricas en tiempo real: conversion, respuesta, engagement y mas.",
+    description: "Metricas en tiempo real: conversion, respuesta, engagement y mas.",
     icon: BarChart3,
     color: "from-orange-500 to-amber-500",
     bgColor: "bg-orange-500/10",
   },
   {
     title: "Respuesta Instantanea",
-    description:
-      "Tiempo de respuesta de segundos, no horas. Nunca pierdas un lead.",
+    description: "Tiempo de respuesta de segundos, no horas. Nunca pierdas un lead.",
     icon: Zap,
     color: "from-yellow-500 to-orange-500",
     bgColor: "bg-yellow-500/10",
   },
   {
     title: "Seguro y Privado",
-    description:
-      "Tus datos y conversaciones protegidos con encriptacion de nivel empresarial.",
+    description: "Tus datos y conversaciones protegidos con encriptacion de nivel empresarial.",
     icon: Shield,
     color: "from-slate-500 to-gray-500",
     bgColor: "bg-slate-500/10",
@@ -110,8 +98,7 @@ export function FeaturesSection() {
             </span>
           </h2>
           <p className="text-neutral-400 text-lg max-w-2xl mx-auto">
-            Herramientas poderosas para automatizar tu WhatsApp y convertir mas
-            leads en clientes.
+            Herramientas poderosas para automatizar tu WhatsApp y convertir mas leads en clientes.
           </p>
         </motion.div>
 
@@ -152,9 +139,7 @@ export function FeaturesSection() {
               <h3 className="text-xl font-semibold text-white mb-2 group-hover:text-green-400 transition-colors">
                 {feature.title}
               </h3>
-              <p className="text-neutral-400 text-sm leading-relaxed">
-                {feature.description}
-              </p>
+              <p className="text-neutral-400 text-sm leading-relaxed">{feature.description}</p>
 
               {/* Hover gradient effect */}
               <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-green-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />

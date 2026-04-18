@@ -8,6 +8,8 @@ import {
   validateSessionId,
   validateWhatsAppSendMessage,
   rateLimit,
+  rateLimitBySession,
+  type SessionThrottleContext,
 } from '../middleware/validation';
 
 const router: Router = Router();
@@ -93,7 +95,9 @@ router.get(
       if (qr) {
         return res.json({ success: true, qrCode: qr, source: 'redis' });
       }
-    } catch { /* fall through to controller */ }
+    } catch {
+      /* fall through to controller */
+    }
     next();
   },
   sessionController.getQRCode.bind(sessionController)
@@ -102,72 +106,56 @@ router.get(
 // ── Session Backup / Restore / Health endpoints ──────────────────
 
 // Force backup a session
-router.post(
-  '/sessions/:sessionId/backup',
-  validateSessionId,
-  async (req, res) => {
-    try {
-      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-      const result = await WhatsAppService.forceBackup(req.params.sessionId);
-      if (result.success) {
-        res.json({ success: true, data: { sizeBytes: result.sizeBytes } });
-      } else {
-        res.status(400).json({ success: false, error: result.error });
-      }
-    } catch (error) {
-      res.status(500).json({ success: false, error: 'Error creating backup' });
+router.post('/sessions/:sessionId/backup', validateSessionId, async (req, res) => {
+  try {
+    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+    const result = await WhatsAppService.forceBackup(req.params.sessionId);
+    if (result.success) {
+      res.json({ success: true, data: { sizeBytes: result.sizeBytes } });
+    } else {
+      res.status(400).json({ success: false, error: result.error });
     }
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Error creating backup' });
   }
-);
+});
 
 // Restore backup for a session
-router.post(
-  '/sessions/:sessionId/restore-backup',
-  validateSessionId,
-  async (req, res) => {
-    try {
-      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-      const result = await WhatsAppService.restoreBackup(req.params.sessionId);
-      if (result.success) {
-        res.json({ success: true, message: 'Backup restored successfully' });
-      } else {
-        res.status(400).json({ success: false, error: result.error });
-      }
-    } catch (error) {
-      res.status(500).json({ success: false, error: 'Error restoring backup' });
+router.post('/sessions/:sessionId/restore-backup', validateSessionId, async (req, res) => {
+  try {
+    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+    const result = await WhatsAppService.restoreBackup(req.params.sessionId);
+    if (result.success) {
+      res.json({ success: true, message: 'Backup restored successfully' });
+    } else {
+      res.status(400).json({ success: false, error: result.error });
     }
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Error restoring backup' });
   }
-);
+});
 
 // Get backup status for a session
-router.get(
-  '/sessions/:sessionId/backup-status',
-  validateSessionId,
-  async (req, res) => {
-    try {
-      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-      const status = await WhatsAppService.getBackupStatus(req.params.sessionId);
-      res.json({ success: true, data: status });
-    } catch (error) {
-      res.status(500).json({ success: false, error: 'Error getting backup status' });
-    }
+router.get('/sessions/:sessionId/backup-status', validateSessionId, async (req, res) => {
+  try {
+    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+    const status = await WhatsAppService.getBackupStatus(req.params.sessionId);
+    res.json({ success: true, data: status });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Error getting backup status' });
   }
-);
+});
 
 // Get session health
-router.get(
-  '/sessions/:sessionId/health',
-  validateSessionId,
-  async (req, res) => {
-    try {
-      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-      const health = await WhatsAppService.getSessionHealth(req.params.sessionId);
-      res.json({ success: true, data: health });
-    } catch (error) {
-      res.status(500).json({ success: false, error: 'Error getting session health' });
-    }
+router.get('/sessions/:sessionId/health', validateSessionId, async (req, res) => {
+  try {
+    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+    const health = await WhatsAppService.getSessionHealth(req.params.sessionId);
+    res.json({ success: true, data: health });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Error getting session health' });
   }
-);
+});
 
 // Message routes
 router.post(
@@ -281,267 +269,9 @@ router.post('/ai/test', async (req, res) => {
   }
 });
 
-// Leads management endpoints
-// Public endpoints (no auth required)
-router.get('/public/leads', async (req, res) => {
-  try {
-    const { limit = 50, page = 1 } = req.query;
-
-    const { default: DatabaseService } = await import('../services/DatabaseService');
-    const leads = await DatabaseService.getAllLeads();
-
-    // Simple pagination
-    const offset = (Number(page) - 1) * Number(limit);
-    const paginatedLeads = leads.slice(offset, offset + Number(limit));
-
-    res.json({
-      data: paginatedLeads,
-      meta: {
-        page: Number(page),
-        limit: Number(limit),
-        total: leads.length,
-        totalPages: Math.ceil(leads.length / Number(limit)),
-        hasPrev: Number(page) > 1,
-        hasNext: Number(page) < Math.ceil(leads.length / Number(limit)),
-      },
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Error getting leads',
-    });
-  }
-});
-
-// Create new lead - public endpoint
-router.post('/public/leads', async (req, res) => {
-  try {
-    const { name, email, phone, status = 'NUEVO', source = 'manual' } = req.body;
-
-    // Validation
-    if (!phone) {
-      return res.status(400).json({
-        success: false,
-        error: 'Phone number is required',
-      });
-    }
-
-    // Basic phone number validation (allow various formats)
-    const phoneRegex = /^[+]?[1-9]\d{1,14}$/;
-    const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
-
-    if (!phoneRegex.test(cleanPhone)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid phone number format',
-      });
-    }
-
-    // Validate status if provided
-    const validStatuses = ['NUEVO', 'CONTACTADO', 'QUALIFIED', 'GANADO', 'PERDIDO'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        error: `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
-      });
-    }
-
-    const { default: DatabaseService } = await import('../services/DatabaseService');
-    const newLead = await DatabaseService.createLead({
-      name: name || null,
-      email: email || null,
-      phone: cleanPhone,
-      status,
-      source,
-    });
-
-    if (newLead) {
-      const { logger } = await import('../utils/logger');
-      logger.info(`📝 New lead created: ${newLead.name || 'Unnamed'} (${newLead.phone})`);
-
-      // Return the lead directly (not wrapped in success/data for compatibility)
-      res.status(201).json(newLead);
-    } else {
-      res.status(500).json({
-        success: false,
-        error: 'Failed to create lead',
-      });
-    }
-  } catch (error: any) {
-    const { logger } = await import('../utils/logger');
-    logger.error('Error creating lead:', error);
-
-    // Handle duplicate phone number error
-    if (
-      error.code === '23505' ||
-      error.message?.includes('duplicate') ||
-      error.message?.includes('unique')
-    ) {
-      res.status(409).json({
-        success: false,
-        error: 'A lead with this phone number already exists',
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        error: 'Error creating lead',
-      });
-    }
-  }
-});
-
-// Private endpoints (auth required)
-router.get('/leads', async (req, res) => {
-  try {
-    const { limit = 50, page = 1 } = req.query;
-
-    const { default: DatabaseService } = await import('../services/DatabaseService');
-    const leads = await DatabaseService.getAllLeads();
-
-    // Simple pagination
-    const offset = (Number(page) - 1) * Number(limit);
-    const paginatedLeads = leads.slice(offset, offset + Number(limit));
-
-    res.json({
-      success: true,
-      leads: paginatedLeads,
-      pagination: {
-        page: Number(page),
-        limit: Number(limit),
-        total: leads.length,
-        totalPages: Math.ceil(leads.length / Number(limit)),
-        hasPrev: Number(page) > 1,
-        hasNext: Number(page) < Math.ceil(leads.length / Number(limit)),
-      },
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Error getting leads',
-    });
-  }
-});
-
-// Create new lead
-router.post('/leads', async (req, res) => {
-  try {
-    const { name, email, phone, status = 'NUEVO', source = 'manual' } = req.body;
-
-    // Validation
-    if (!phone) {
-      return res.status(400).json({
-        success: false,
-        error: 'Phone number is required',
-      });
-    }
-
-    // Basic phone number validation (allow various formats)
-    const phoneRegex = /^[+]?[1-9]\d{1,14}$/;
-    const cleanPhone = phone.replace(/[\s\-\(\)]/g, '');
-
-    if (!phoneRegex.test(cleanPhone)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Invalid phone number format',
-      });
-    }
-
-    // Validate status if provided
-    const validStatuses = ['NUEVO', 'CONTACTADO', 'QUALIFIED', 'GANADO', 'PERDIDO'];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        error: `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
-      });
-    }
-
-    const { default: DatabaseService } = await import('../services/DatabaseService');
-    const newLead = await DatabaseService.createLead({
-      name: name || null,
-      email: email || null,
-      phone: cleanPhone,
-      status,
-      source,
-    });
-
-    if (newLead) {
-      const { logger } = await import('../utils/logger');
-      logger.info(`📝 New lead created: ${newLead.name || 'Unnamed'} (${newLead.phone})`);
-
-      res.status(201).json({
-        success: true,
-        data: newLead,
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        error: 'Failed to create lead',
-      });
-    }
-  } catch (error: any) {
-    const { logger } = await import('../utils/logger');
-    logger.error('Error creating lead:', error);
-
-    // Handle duplicate phone number error
-    if (
-      error.code === '23505' ||
-      error.message?.includes('duplicate') ||
-      error.message?.includes('unique')
-    ) {
-      res.status(409).json({
-        success: false,
-        error: 'A lead with this phone number already exists',
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        error: 'Error creating lead',
-      });
-    }
-  }
-});
-
-// Toggle WhatsApp authorization for a lead
-router.patch('/leads/:leadId/whatsapp', async (req, res) => {
-  try {
-    const { leadId } = req.params;
-    const { whatsappAuthorized } = req.body;
-
-    if (typeof whatsappAuthorized !== 'boolean') {
-      return res.status(400).json({
-        success: false,
-        error: 'whatsappAuthorized must be a boolean',
-      });
-    }
-
-    const { default: DatabaseService } = await import('../services/DatabaseService');
-    const updated = await DatabaseService.updateLeadWhatsAppAuth(leadId, whatsappAuthorized);
-
-    if (updated) {
-      // Log the authorization change
-      const { logger } = await import('../utils/logger');
-      logger.info(
-        `📱 Lead ${leadId} WhatsApp authorization ${whatsappAuthorized ? 'enabled' : 'disabled'}`
-      );
-
-      res.json({
-        success: true,
-        message: `WhatsApp authorization ${whatsappAuthorized ? 'enabled' : 'disabled'} for lead`,
-        data: { leadId, whatsappAuthorized },
-      });
-    } else {
-      res.status(404).json({
-        success: false,
-        error: 'Lead not found',
-      });
-    }
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: 'Error updating lead WhatsApp authorization',
-    });
-  }
-});
+// Lead CRUD lives in the NestJS API (apps/api/src/leads) and is consumed via
+// Clerk-authenticated endpoints. The whatsapp-service must not expose lead
+// endpoints directly — see PRD T0.7.
 
 // ============================================
 // ENDPOINTS DE CONVERSACIONES (NUEVOS)
@@ -801,179 +531,18 @@ router.get('/stats/whitelist', async (req, res) => {
 // ============================================
 // ENDPOINTS DE TEMPLATES DE MENSAJES
 // ============================================
-
-// Obtener todos los templates
-router.get('/templates', async (req, res) => {
-  try {
-    const { category, activeOnly = 'true' } = req.query;
-
-    const { default: DatabaseService } = await import('../services/DatabaseService');
-    const templates = await DatabaseService.getMessageTemplates(
-      category as string,
-      activeOnly === 'true'
-    );
-
-    res.json({
-      success: true,
-      data: templates,
-    });
-  } catch (error) {
-    console.error('Error getting templates:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error getting templates',
-    });
-  }
-});
-
-// Crear nuevo template
-router.post('/templates', async (req, res) => {
-  try {
-    const { name, category, subject, content, variables } = req.body;
-
-    if (!name || !category || !content) {
-      return res.status(400).json({
-        success: false,
-        error: 'Name, category, and content are required',
-      });
-    }
-
-    const { default: DatabaseService } = await import('../services/DatabaseService');
-    const templateId = await DatabaseService.createMessageTemplate({
-      name,
-      category,
-      subject,
-      content,
-      variables: Array.isArray(variables) ? variables : [],
-      createdBy: 'admin', // TODO: Get from auth
-    });
-
-    if (templateId) {
-      res.status(201).json({
-        success: true,
-        data: { id: templateId },
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        error: 'Failed to create template',
-      });
-    }
-  } catch (error) {
-    console.error('Error creating template:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error creating template',
-    });
-  }
-});
-
-// Actualizar template
-router.put('/templates/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { name, category, subject, content, variables, isActive } = req.body;
-
-    const { default: DatabaseService } = await import('../services/DatabaseService');
-    const updated = await DatabaseService.updateMessageTemplate(id, {
-      name,
-      category,
-      subject,
-      content,
-      variables: Array.isArray(variables) ? variables : undefined,
-      isActive,
-    });
-
-    if (updated) {
-      res.json({
-        success: true,
-        message: 'Template updated successfully',
-      });
-    } else {
-      res.status(404).json({
-        success: false,
-        error: 'Template not found',
-      });
-    }
-  } catch (error) {
-    console.error('Error updating template:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error updating template',
-    });
-  }
-});
-
-// Eliminar template
-router.delete('/templates/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const { default: DatabaseService } = await import('../services/DatabaseService');
-    const deleted = await DatabaseService.deleteMessageTemplate(id);
-
-    if (deleted) {
-      res.json({
-        success: true,
-        message: 'Template deleted successfully',
-      });
-    } else {
-      res.status(404).json({
-        success: false,
-        error: 'Template not found',
-      });
-    }
-  } catch (error) {
-    console.error('Error deleting template:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error deleting template',
-    });
-  }
-});
-
-// Preview template con variables
-router.post('/templates/:id/preview', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { variables = {} } = req.body;
-
-    const { default: DatabaseService } = await import('../services/DatabaseService');
-    const templates = await DatabaseService.getMessageTemplates();
-    const template = templates.find(t => t.id === id);
-
-    if (!template) {
-      return res.status(404).json({
-        success: false,
-        error: 'Template not found',
-      });
-    }
-
-    const previewContent = DatabaseService.replaceTemplateVariables(template.content, variables);
-
-    res.json({
-      success: true,
-      data: {
-        originalContent: template.content,
-        previewContent,
-        variables: template.variables,
-      },
-    });
-  } catch (error) {
-    console.error('Error previewing template:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error previewing template',
-    });
-  }
-});
+//
+// CRUD y preview se consolidaron en la API Nest (/templates) con Clerk JWT
+// tras T2.2 (PRD v5.11). Este archivo sólo conserva los helpers AI y el
+// lookup de variables disponibles, que siguen dependiendo de servicios locales
+// (DatabaseService, AIThinkingService). Ver apps/api/src/templates/* para CRUD.
 
 // ============================================
 // ENDPOINTS DE MENSAJES PROACTIVOS
 // ============================================
 
 // Crear y enviar mensaje proactivo
-router.post('/proactive-messages', async (req, res) => {
+router.post('/proactive-messages', rateLimitBySession, async (req, res) => {
   try {
     const { leadId, templateId, sessionId = 'default-session', content, variables = {} } = req.body;
 
@@ -1145,7 +714,7 @@ router.post('/proactive-messages', async (req, res) => {
 });
 
 // Enviar mensajes proactivos masivos
-router.post('/proactive-messages/bulk', async (req, res) => {
+router.post('/proactive-messages/bulk', rateLimitBySession, async (req, res) => {
   try {
     const { leadIds, templateId, sessionId, content, variables } = req.body;
 
@@ -1161,6 +730,17 @@ router.post('/proactive-messages/bulk', async (req, res) => {
         success: false,
         error: 'sessionId is required',
       });
+    }
+
+    // T2.4: throttle adaptativo según uso actual de la cuota por sesión
+    const throttleCtx = (req as typeof req & { sessionThrottle?: SessionThrottleContext })
+      .sessionThrottle;
+    const baseDelayMs = 2000;
+    const adaptiveDelayMs = baseDelayMs * (throttleCtx?.throttleFactor ?? 1);
+    if (throttleCtx && throttleCtx.throttleFactor > 1) {
+      console.log(
+        `⚠️ Session ${throttleCtx.sessionId} at ${throttleCtx.usageAfter}/${throttleCtx.quota} → delay x${throttleCtx.throttleFactor}`
+      );
     }
 
     const results = {
@@ -1225,10 +805,10 @@ router.post('/proactive-messages/bulk', async (req, res) => {
         console.log(`📤 Sending message to: ${lead.phone} via session: ${sessionId}`);
         console.log(`💬 Message content: ${messageContent.substring(0, 50)}...`);
 
-        // Add small delay to avoid rate limiting
+        // Add delay (adaptive based on session quota usage — see T2.4)
         if (leadIds.indexOf(leadId) > 0) {
-          console.log('⏱️ Adding delay to avoid rate limiting...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          console.log(`⏱️ Adding ${adaptiveDelayMs}ms delay to avoid rate limiting...`);
+          await new Promise(resolve => setTimeout(resolve, adaptiveDelayMs));
         }
 
         const sendResult = await WhatsAppService.sendMessage(sessionId, lead.phone, messageContent);

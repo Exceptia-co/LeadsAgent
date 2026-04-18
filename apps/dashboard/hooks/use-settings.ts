@@ -17,12 +17,8 @@ const WHATSAPP_SERVICE_BASE_URL = getWhatsAppUrl();
 export function useSettings() {
   // System status states
   const [systemServices, setSystemServices] = useState<SystemStatus[]>([]);
-  const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus | null>(
-    null,
-  );
-  const [systemMetrics, setSystemMetrics] = useState<SystemMetrics | null>(
-    null,
-  );
+  const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus | null>(null);
+  const [systemMetrics, setSystemMetrics] = useState<SystemMetrics | null>(null);
 
   // Configuration states
   const [apiKeys, setApiKeys] = useState<ApiKeyConfig[]>([]);
