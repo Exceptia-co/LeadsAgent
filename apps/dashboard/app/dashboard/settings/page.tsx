@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { Card } from "../../../components/ui/card";
 import { Badge } from "../../../components/ui/badge";
-import { Toggle } from "@leadcrm/ui";
-import { Alert, AlertTitle, AlertDescription } from "@leadcrm/ui";
+import { Toggle } from "../../../components/ui/toggle";
+import { Alert, AlertTitle, AlertDescription } from "../../../components/ui/alert";
 import { useSettings } from "../../../hooks/use-settings";
 import { useUser } from "@clerk/nextjs";
 import {
