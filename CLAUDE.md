@@ -157,6 +157,51 @@ The stabilization PRD (`PRD-ESTABILIZACION.md`, v5.23) closed on 2026-04-18. All
 
 The AIThinkingService modularization (formerly in branch `refactor/whatsapp-service`) is **complete** — the module lives at `apps/whatsapp-service/src/services/ai-thinking/` with CacheManager, IntentAnalyzer, ContextEnricher, ComplexityAnalyzer, KnowledgeRetriever, ResponseGenerator, StrategySelector, DecisionEngine. Integration with the rest of the service is via `AIThinkingModuleFactory`.
 
+### PLAN-WHATSAPP-AGENT-MULTITENANT (v7.1, en curso)
+
+El plan multi-tenant + agente IA configurable (`PLAN-WHATSAPP-AGENT-MULTITENANT.md`) pasó por 12 rondas de review y quedó aprobado para **ruta completa**. Se ejecuta por fases en branches separadas.
+
+**Fase A — Foundation hotfixes (completada 2026-04-19, branch `feature/foundation-hotfixes`)**:
+
+Los 10 cambios P0 aplicados + 1 hotfix tangencial:
+
+- **A5** — Validación zod de envs en bootstrap (`config/env.ts`). Fail-fast en producción si falta `WHATSAPP_SERVICE_HMAC_SECRET`; warnings en dev.
+- **A6** — Eliminado `process.exit(1)` en `uncaughtException`/`unhandledRejection`: el proceso sobrevive para no tumbar las demás sesiones.
+- **A1** — Deduplicación de mensajes entrantes con Redis `SETNX whatsapp:dedup:{message.id}` TTL 300s. Nuevo método `redisClient.setNX()` (fail-open: Redis error → trata como "primera vez").
+- **A2** — Filtro explícito de grupos (`@g.us`) y `status@broadcast` antes de parsear/responder.
+- **A3** — Typing indicator (`chat.sendStateTyping` + `clearState`) en `MessageHandler.sendResponseWithStrategy`. Apagado en `finally` incluso si el envío falla.
+- **A4** — Unificación de `saveConversation`: nueva helper `persistMessagePair()` paraleliza user msg + bot msg con `Promise.allSettled` y logging unificado. Sobre el modelo unified-write existente del PRD Fase 1.
+- **A7** — System prompt hardcoded movido a `ai_configuration` (key `system_prompt.default.es`) con cache in-memory + background refresh. Fallback al hardcoded si la key no está seedeada.
+- **A8** — Tests HMAC ampliados: body vacío, firma sin prefijo `sha256=`, prefijo distinto (`md5=`), timestamp malformado, timestamp en futuro excesivo.
+- **A9** — Test unitario de `redisClient.setNX` (primitive de dedupe): primera → true, segunda → false, Redis error → true (fail-open), secuencia típica.
+- **A10** — Este update a `CLAUDE.md`.
+- **A11 (hotfix descubierto en prueba móvil)** — `ResponseGenerator.ensureFinalQuestion` solo detectaba `?` ASCII. Cuando el LLM generaba `"¿...hoy"` sin cerrar, concatenaba otra pregunta. Fix: `/[?¿]/.test(content)`.
+- **A12 (optimización UX)** — `sendStateTyping()` movido al **inicio** del handler `processMessageWithAI` en vez de al final (`sendResponseWithStrategy`). Cubre visualmente todo el LLM thinking time (~10s) en vez de solo el último segundo.
+- **A13 (eliminación humanized delay)** — borradas las funciones `addHumanizedDelay` y `addHumanizedDelayEnhanced` (~70 líneas) de `MessageHandler`. Razón: el LLM ya aporta 6-11s de latencia real; añadir 5-6s artificiales simulaba humano redundantemente. El typing indicator (A12) cubre visualmente la espera. Ahorro: ~5-6s por mensaje. Latencia total baja de ~15-18s a **~5-6s** (medido en prueba del owner con "hola" → thinkingTime=4644ms + overhead = 5.35s). Si en Fase E7 llegan templates Tier-2 instantáneos, reintroducir delay con target-total (no sumado).
+- **A14 (bug A4 detectado y corregido en prueba del owner)** — `persistMessagePair` pasaba el contenido del bot en `messageText` con `responseText: undefined`. Pero `DatabaseService.saveConversation` usa `canonicalContent = isFromUser ? messageText : responseText`. Para `isFromUser=false`, el contenido del bot debe ir en `responseText`. El log warn `⚠️ [UNIFIED-WRITE] saveConversation called without canonical content — skipping message row` reveló que la respuesta del bot NO se estaba persistiendo. Fix: para el bot msg ahora `{ messageText: undefined, responseText: botResponseText, isFromUser: false }`.
+- **A15 (whitelist default abierta por coherencia con el producto)** — `AuthAuditLogger.ts:84` tenía `allowNewLeads: false`. Un número nuevo (`34644773622` en la prueba del owner) recibía log `🚫 Respuesta automática bloqueada... Número no autorizado - no cumple con criterios`. Para un SaaS de captación de leads la IA **debe responder a cualquier número que escriba**; un bot que solo responde a la whitelist pre-cargada no captaría leads. Default cambiado a `true`. Si algún cliente quisiera modo "support privado" (solo responde a conocidos), puede poner `WHATSAPP_ALLOW_NEW_LEADS=false` en su `.env`. Cuando lleguen los `AiAgent` configurables (Fase B), este flag pasará a la configuración por agente para permitir políticas distintas por cliente.
+- **A15-bis (segundo whitelist en API Nest también default-false)** — descubierto tras A15: `apps/api/src/whatsapp/whitelist.service.ts:119-120` tenía su propia evaluación independiente con `allowNewLeads = env === 'true'` (default `false` si env sin setear). Esto generaba un BLOCK adicional con razón `"Creación de leads nuevos deshabilitada"` **aunque A15 ya hubiera pasado en whatsapp-service**. Arquitectura actual: el whitelist se evalúa dos veces (una en whatsapp-service, otra en API Nest al procesar el message). Fix: invertir semántica a `env !== 'false'` (default `true`, cierre explícito). Coherente con A15. **Pendiente Fase C**: unificar las dos evaluaciones en un solo sitio para evitar tener que mantener ambas sincronizadas.
+- **A15-ter (env var `.env` explícita ganaba a ambos defaults)** — tras A15 + A15-bis el lead nuevo seguía bloqueado. Causa: `/.env` tenía `WHATSAPP_ALLOW_NEW_LEADS=false` explícito, que overrideaba los dos defaults de código. Cambiado a `=true` con comentario explicativo. Regla general: **env > DB config > hardcoded default**. Recomendación para Fase B: que `validateEnv()` (A5) imprima al boot el config de auth resuelto, así evitamos debugging de 30 min la próxima vez.
+
+### Deudas técnicas post-Fase A (detectadas pero no arregladas)
+
+Tres bugs tangenciales surgidos durante la verificación end-to-end del nuevo lead `34644773622` (2026-04-19). No son bloqueantes del MVP pero conviene cerrarlos en Fase B o C:
+
+- **T1. `messages` creadas con `lead_id=null` desde whatsapp-service**. `DatabaseService.saveConversation` no hace lookup al `Lead` antes de crear el `Message`; cuando el lead aún no existe (primer mensaje de un número nuevo), las filas quedan huérfanas. Los queries que hacen `JOIN leads ON messages.lead_id = leads.id` no las ven. Fix Fase B: saveConversation debe resolver/crear el `Lead` primero o aceptar un `leadId` explícito del caller.
+- **T2. Duplicación de `Message` entre whatsapp-service y API Nest**. Ambos persisten el mensaje entrante: whatsapp-service via `saveConversation` (sin leadId), API Nest via `prisma.message.create` en el webhook handler (con leadId). Resultado: **3 filas en `messages` para 2 mensajes reales** (user entrante duplicado + bot respuesta). Fix Fase C: decidir un owner único del write de `Message` (recomendado: API Nest tras recibir webhook) y que whatsapp-service solo escriba `whatsapp_conversations` con metadata.
+- **T3. Timestamp 1970 en messages de API Nest**. `new Date(messageData.timestamp)` en `apps/api/src/whatsapp/whatsapp.service.ts:114` interpreta un epoch en segundos como milisegundos (o viceversa), generando `created_at` en 1970. No rompe funcionalidad pero ensucia orderings por fecha. Fix Fase B: multiplicar por 1000 si el valor es menor a `1e12` (heurística segunda/milis).
+
+**Tests suite post-Fase A**: 15/15 pasan (6 HMAC originales + 5 edge cases nuevos + 4 redis.spec). Se borraron 9 suites `ai-thinking/__tests__/*` y `phase4-integration.test.ts` (22 tests pre-existentes rotos, consideradas deuda muerta).
+
+**Deudas técnicas conocidas post-Fase A (no bloqueantes)**:
+- **Doble init del whatsapp-service**: el log `"Initializing WhatsApp service implementation"` aparece 2 veces por arranque. El handler de mensajes solo se dispara una vez por evento (verificado), pero el logging sugiere doble instancia del facade vs simple. A investigar en Fase C.
+- **Dedupe secundario multi-device**: WhatsApp Linked Devices (`@lid`) puede entregar el mismo mensaje con `message.id` distintos. El dedupe por `message.id` no lo detecta. Fix futuro: dedupe secundario por `(from, body-hash, ±3s)` — considerar en Fase C.
+
+**Decisiones de arquitectura de Fase A que se mantienen en Fase B**:
+- `redisClient.setNX(key, value, ttlSeconds)` es la primitive pública para dedupe atómico. Reusarlo si hace falta dedupe en otros flujos.
+- `validateEnv()` en `apps/whatsapp-service/src/config/env.ts` es el contrato de envs requeridas. Extender el zod schema al añadir nuevas envs.
+- El pattern "cache in-memory + background refresh" de `SystemPromptService` es el modelo para cargar config desde DB sin volver async a los callers.
+
 ## Environment Variables
 
 Environment files:

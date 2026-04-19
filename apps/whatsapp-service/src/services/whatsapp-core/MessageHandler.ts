@@ -139,6 +139,23 @@ export class MessageHandler {
     try {
       logger.info(`🧠 Processing message with enhanced AI thinking for session ${sessionId}`);
 
+      // Fase A (optimización 2026-04-19 tras prueba móvil del owner):
+      // activar typing indicator AQUÍ, antes del LLM, no al final en
+      // `sendResponseWithStrategy`. Razón: el pipeline completo tarda
+      // 10-18 segundos (6-11s LLM + 5-6s humanized delay). Si el typing
+      // solo se activa en el último tramo, el usuario ve silencio durante
+      // 15s y luego "escribiendo..." fugaz. Activarlo temprano hace que
+      // el indicator cubra todo el pipeline → percepción drásticamente
+      // mejor con el mismo tiempo total. whatsapp-web.js mantiene el
+      // state por ~25s sin `clearState`, suficiente para cubrir el flow.
+      try {
+        const chatEarly = await originalMessage.getChat();
+        await chatEarly.sendStateTyping();
+        logger.debug('⌨️  Typing indicator activated early (covering LLM + humanized delay)');
+      } catch (typingErr) {
+        logger.warn('⚠️  Early typing indicator failed (non-blocking):', typingErr);
+      }
+
       // Import services dynamically to avoid circular dependencies
       const { default: AIThinkingService } = await import('../AIThinkingService');
       const { default: DatabaseService } = await import('../DatabaseService');
@@ -186,50 +203,35 @@ export class MessageHandler {
       ) {
         aiResponse = thinkingResult.content;
 
-        // Calculate enhanced delay based on thinking complexity
-        const complexityDelayMultiplier = {
-          simple: 1.0,
-          medium: 1.3,
-          complex: 1.8,
-        }[thinkingResult.thinkingProcess.estimatedComplexity];
-
-        // Add humanized delay with complexity factor
-        await this.addHumanizedDelayEnhanced(
-          whatsappMessage.body,
-          thinkingResult.thinkingProcess,
-          complexityDelayMultiplier
-        );
+        // Fase A (2026-04-19, post-prueba owner): eliminado el humanized
+        // delay artificial. El LLM ya aporta 6-11s de latencia real y el
+        // typing indicator (activado al inicio del handler) cubre visualmente
+        // toda la espera. Añadir 5-6s encima solo duplicaba la latencia sin
+        // beneficio perceptible. Si en Fase E7 llegan templates Tier-2 con
+        // respuestas instantáneas, ahí se podrá introducir un delay con
+        // target total (~3-4s) en vez de un delay sumado.
 
         // Determine sending method based on strategy
         const strategy = thinkingResult.thinkingProcess.responseStrategy;
         await this.sendResponseWithStrategy(originalMessage, thinkingResult.content, strategy);
 
-        // Save enhanced conversation data to database
-        await DatabaseService.saveConversation({
-          sessionId: sessionId,
-          phoneNumber: phoneNumber,
-          messageText: whatsappMessage.body,
-          responseText: undefined,
-          messageType: whatsappMessage.type,
-          intent: thinkingResult.thinkingProcess.steps[0]?.data?.intent || 'unknown',
-          sentiment: thinkingResult.thinkingProcess.steps[0]?.data?.sentiment || 'neutral',
+        // Fase A4 (2026-04-19): unificar las dos llamadas sueltas de
+        // saveConversation (user msg + bot msg) en una única operación
+        // paralela con try/catch compartido. Reduce latencia (dos round-trips
+        // Postgres en paralelo) y evita estados inconsistentes donde el user
+        // msg se persiste pero el bot msg no. saveConversation internamente
+        // ya es unified-write (PRD Fase 1): cada llamada crea 1 fila en
+        // `messages` + 1 en `whatsapp_conversations` con FK message_id.
+        await this.persistMessagePair({
+          sessionId,
+          phoneNumber,
+          userMessageText: whatsappMessage.body,
+          userMessageType: whatsappMessage.type,
+          botResponseText: thinkingResult.content,
+          intent: thinkingResult.thinkingProcess.steps[0]?.data?.intent,
+          sentiment: thinkingResult.thinkingProcess.steps[0]?.data?.sentiment,
           aiProvider: thinkingResult.provider,
           tokensUsed: thinkingResult.tokensUsed || 0,
-          isFromUser: true,
-        });
-
-        // Save AI response
-        await DatabaseService.saveConversation({
-          sessionId: sessionId,
-          phoneNumber: phoneNumber,
-          messageText: thinkingResult.content,
-          responseText: undefined,
-          messageType: 'text',
-          intent: thinkingResult.thinkingProcess.steps[0]?.data?.intent || 'response',
-          sentiment: 'neutral',
-          aiProvider: thinkingResult.provider,
-          tokensUsed: 0,
-          isFromUser: false,
         });
 
         // Calculate success metrics for learning
@@ -381,68 +383,6 @@ export class MessageHandler {
   }
 
   /**
-   * Add humanized delay before responding to simulate human behavior
-   */
-  private async addHumanizedDelay(messageText: string): Promise<void> {
-    // Get delay settings from environment variables
-    const minDelay = parseInt(process.env.AI_RESPONSE_DELAY_MIN || '2000'); // 2 seconds default
-    const maxDelay = parseInt(process.env.AI_RESPONSE_DELAY_MAX || '6000'); // 6 seconds default
-
-    // Calculate delay based on message length (longer messages = longer thinking time)
-    const baseDelay = Math.min(messageText.length * 50, 2000); // 50ms per character, max 2s extra
-    const randomDelay = Math.random() * (maxDelay - minDelay) + minDelay;
-    const totalDelay = Math.min(randomDelay + baseDelay, maxDelay);
-
-    logger.info(
-      `⏱️ Adding humanized delay: ${Math.round(totalDelay)}ms (message length: ${messageText.length})`
-    );
-
-    await new Promise(resolve => setTimeout(resolve, totalDelay));
-  }
-
-  /**
-   * Enhanced delay with complexity-based timing
-   */
-  private async addHumanizedDelayEnhanced(
-    messageText: string,
-    thinkingProcess: any,
-    complexityMultiplier: number = 1.0
-  ): Promise<void> {
-    // Get delay settings from environment variables
-    const minDelay = parseInt(process.env.AI_RESPONSE_DELAY_MIN || '2000');
-    const maxDelay = parseInt(process.env.AI_RESPONSE_DELAY_MAX || '8000'); // Increased max for complex thinking
-
-    // Base delay from original method
-    const baseDelay = Math.min(messageText.length * 50, 2000);
-
-    // Add thinking complexity factor
-    const thinkingDelay = Math.min(thinkingProcess.processingTimeMs * 0.3, 2000); // 30% of thinking time, max 2s
-
-    // Add confidence factor (lower confidence = more "hesitation")
-    const confidenceFactor = Math.max(0.5, thinkingProcess.confidence);
-    const hesitationDelay = (1 - confidenceFactor) * 1500; // Up to 1.5s hesitation
-
-    // Random variation for human-like behavior
-    const randomVariation = Math.random() * 1000;
-
-    // Calculate total delay
-    const calculatedDelay =
-      (baseDelay + thinkingDelay + hesitationDelay + randomVariation) * complexityMultiplier;
-
-    const totalDelay = Math.max(minDelay, Math.min(calculatedDelay, maxDelay));
-
-    logger.info(`🧠⏱️ Enhanced delay: ${Math.round(totalDelay)}ms`, {
-      messageLength: messageText.length,
-      complexity: thinkingProcess.estimatedComplexity,
-      confidence: thinkingProcess.confidence,
-      thinkingTime: thinkingProcess.processingTimeMs,
-      multiplier: complexityMultiplier,
-    });
-
-    await new Promise(resolve => setTimeout(resolve, totalDelay));
-  }
-
-  /**
    * Send response with intelligent quoting strategy
    */
   private async sendResponseWithStrategy(
@@ -450,6 +390,20 @@ export class MessageHandler {
     responseText: string,
     strategy: any
   ): Promise<void> {
+    // Fase A3 (2026-04-19): typing indicator para que la respuesta de la IA
+    // se vea natural en WhatsApp. Sin esto el mensaje aparece "de golpe" y el
+    // usuario percibe al bot como robótico. `sendStateTyping()` muestra
+    // "escribiendo…" en el cliente del receptor; `clearState()` lo apaga.
+    let chat: Awaited<ReturnType<Message['getChat']>> | null = null;
+    try {
+      chat = await originalMessage.getChat();
+      await chat.sendStateTyping();
+    } catch (typingErr) {
+      // No bloqueante: si sendStateTyping falla, seguimos con el envío sin
+      // indicator. Evita que un problema transitorio impida la respuesta.
+      logger.warn('⚠️  Could not send typing state (continuing without):', typingErr);
+    }
+
     try {
       if (
         strategy.shouldQuote ||
@@ -459,15 +413,24 @@ export class MessageHandler {
         await originalMessage.reply(responseText);
         logger.debug('📝 Response sent with quote');
       } else {
-        // Send without quoting
-        const chat = await originalMessage.getChat();
-        await chat.sendMessage(responseText);
+        // Send without quoting — reusa `chat` ya obtenido arriba si existe
+        const targetChat = chat ?? (await originalMessage.getChat());
+        await targetChat.sendMessage(responseText);
         logger.debug('📝 Response sent without quote');
       }
     } catch (error) {
       logger.error('Error in sendResponseWithStrategy:', error);
       // Fallback to simple reply
       await originalMessage.reply(responseText);
+    } finally {
+      // Limpiar el typing state siempre — tanto en éxito como en fallback.
+      if (chat) {
+        try {
+          await chat.clearState();
+        } catch (clearErr) {
+          logger.debug('Could not clear typing state (non-critical):', clearErr);
+        }
+      }
     }
   }
 
@@ -747,6 +710,91 @@ Respuesta:`,
 
     // Default intelligent fallback
     return 'Hola! 👋 He recibido tu mensaje y entiendo que necesitas información. Te pondré en contacto con uno de nuestros especialistas que podrá ayudarte de manera personalizada. En unos momentos te contactará. ¡Gracias por elegirnos!';
+  }
+
+  /**
+   * Fase A4 (2026-04-19): helper unificado para persistir user msg + bot
+   * response en una operación. Ejecuta las dos llamadas a saveConversation
+   * en paralelo (Promise.allSettled) con logging unificado de errores.
+   *
+   * Se usa allSettled en vez de all para que, si el user msg se persiste
+   * pero el bot msg falla, no perdamos el user msg (allSettled no propaga
+   * el reject). Logueamos cada resultado para observabilidad.
+   *
+   * TODO (futuro, cuando llegue AiAgent FK en Fase B): cambiar a una
+   * operación transaccional única en DatabaseService que cree el par de
+   * mensajes con FK bidireccional. Por ahora mantenemos compat con el
+   * modelo unified-write actual.
+   */
+  private async persistMessagePair(params: {
+    sessionId: string;
+    phoneNumber: string;
+    userMessageText: string;
+    userMessageType: string;
+    botResponseText: string;
+    intent?: string;
+    sentiment?: string;
+    aiProvider: string;
+    tokensUsed: number;
+  }): Promise<void> {
+    const { default: DatabaseService } = await import('../DatabaseService');
+    const {
+      sessionId,
+      phoneNumber,
+      userMessageText,
+      userMessageType,
+      botResponseText,
+      intent,
+      sentiment,
+      aiProvider,
+      tokensUsed,
+    } = params;
+
+    const [userResult, botResult] = await Promise.allSettled([
+      DatabaseService.saveConversation({
+        sessionId,
+        phoneNumber,
+        messageText: userMessageText,
+        responseText: undefined,
+        messageType: userMessageType,
+        intent: intent || 'unknown',
+        sentiment: sentiment || 'neutral',
+        aiProvider,
+        tokensUsed,
+        isFromUser: true,
+      }),
+      DatabaseService.saveConversation({
+        sessionId,
+        phoneNumber,
+        // DatabaseService.saveConversation usa `canonicalContent` = isFromUser
+        // ? messageText : responseText. Para el bot msg (isFromUser=false) el
+        // contenido debe ir en `responseText`. Bug detectado en prueba del
+        // owner 2026-04-19: antes tenía messageText y el warn
+        // "called without canonical content — skipping message row" indicaba
+        // que el bot msg no se persistía.
+        messageText: undefined,
+        responseText: botResponseText,
+        messageType: 'text',
+        intent: intent || 'response',
+        sentiment: 'neutral',
+        aiProvider,
+        tokensUsed: 0,
+        isFromUser: false,
+      }),
+    ]);
+
+    if (userResult.status === 'rejected') {
+      logger.error('💾 [PAIR] Failed to persist user message:', userResult.reason);
+    }
+    if (botResult.status === 'rejected') {
+      logger.error('💾 [PAIR] Failed to persist bot response:', botResult.reason);
+    }
+    if (userResult.status === 'fulfilled' && botResult.status === 'fulfilled') {
+      logger.debug('💾 [PAIR] Message pair persisted OK', {
+        userMsgId: userResult.value,
+        botMsgId: botResult.value,
+      });
+    }
   }
 }
 
