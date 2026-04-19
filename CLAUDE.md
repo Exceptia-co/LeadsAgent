@@ -220,11 +220,30 @@ Si retomas el proyecto en una sesión futura, aquí está el estado exacto y el 
   ```
 - Fix permanente = tarea **B1.15** (primera tarea de Fase B.1). Estimación <30 min.
 
+**⚠️ Deploy real del código Fase A a Hetzner está PENDIENTE** (2026-04-20):
+Hoy en prod Hetzner solo está actualizada la env var `WHATSAPP_ALLOW_NEW_LEADS=true` (editada vía SSH manual). El **código** de Fase A (A1 dedupe, A3 typing temprano, A13 humanized delay eliminado, A11 hotfix pregunta duplicada, etc.) **sigue siendo pre-Fase A**. Los bugs que arreglamos siguen ocurriendo en prod.
+
+Para deployar el código nuevo (hacer esto antes o junto con Fase B.1):
+```bash
+ssh root@46.225.26.89 '
+  set -e
+  cd /opt/leadcrm
+  git pull origin develop
+  pnpm install
+  pm2 restart all --update-env
+'
+```
+
+Efectos: downtime ~15-30s mientras reinstala deps + reinicia. Sesión WhatsApp `test` se desconecta brevemente y reconecta sola via LocalAuth. Verificar tras deploy: `pm2 logs whatsapp-service --lines 30` debe mostrar `Environment validated (NODE_ENV=production)` (A5 feature) y `[DEDUPE] Checking msgId=...` (A1) ante cualquier mensaje entrante.
+
+**Sobre Vercel**: el dashboard Next.js en `guatsapp.me` auto-deploya desde la "Production Branch" configurada en Vercel (suele ser `main`). Para que los cambios de `develop` lleguen a prod Vercel: `git checkout main && git merge develop && git push`. En Fase A no se tocó dashboard, así que mergear a main no cambia nada funcional — se puede diferir.
+
 **Próximo paso concreto cuando retomes**:
 1. `git checkout develop && git pull` (asegura estar al día)
-2. `git checkout -b feature/b1-foundational-multitenancy`
-3. Empezar por **B1.15** (ver `PLAN-WHATSAPP-AGENT-MULTITENANT.md §5 Fase B.1`): `ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] })` en `apps/api/src/app.module.ts`.
-4. Continuar con B1.1 (activar Clerk Organizations) → B1.1a (crear org real EscortsHub) → B1.1b (`/select-org` UI) → resto de Fase B.1.
+2. **(recomendado antes de Fase B)** deployar Fase A a Hetzner con el comando SSH de arriba — así prod se beneficia de los fixes
+3. `git checkout -b feature/b1-foundational-multitenancy`
+4. Empezar por **B1.15** (ver `PLAN-WHATSAPP-AGENT-MULTITENANT.md §5 Fase B.1`): `ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] })` en `apps/api/src/app.module.ts`.
+5. Continuar con B1.1 (activar Clerk Organizations) → B1.1a (crear org real EscortsHub) → B1.1b (`/select-org` UI) → resto de Fase B.1.
 
 **Estado de documentos**:
 - `PLAN-WHATSAPP-AGENT-MULTITENANT.md` v7.3 — Fase A marcada ejecutada+deployed, B1.15 añadida con justificación
