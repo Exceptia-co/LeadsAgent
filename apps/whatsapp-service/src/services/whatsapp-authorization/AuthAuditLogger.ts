@@ -78,10 +78,18 @@ export class AuthAuditLogger {
   public async loadConfiguration(): Promise<AuthorizationConfig> {
     logger.debug('📋 Loading authorization configuration');
 
-    // Configuración por defecto
+    // Configuración por defecto.
+    //
+    // Fase A (2026-04-19): `allowNewLeads` cambiado de `false` a `true` tras
+    // prueba real del owner. El bloqueo del default viejo era inconsistente
+    // con el objetivo del producto: un SaaS de captación de leads **debe
+    // responder a cualquier número nuevo que escriba** (ahí está la capta).
+    // Si se quisiera cerrar el acceso (modo support privado), ponga
+    // `WHATSAPP_ALLOW_NEW_LEADS=false` en el .env. El default `true` solo
+    // afecta al flujo cuando no hay config en DB ni override de entorno.
     let config: AuthorizationConfig = {
       allowKnownLeadsWithAuth: true,
-      allowNewLeads: false,
+      allowNewLeads: true,
       blockExplicitlyDenied: true,
       allowedCountryCodes: ['+34', '+54', '+52', '+1'], // España, Argentina, México, USA/Canadá
       blockedCountryCodes: [], // Vacío por defecto

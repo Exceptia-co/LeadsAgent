@@ -190,6 +190,26 @@ class RedisClient {
     }
   }
 
+  /**
+   * Atomic "set-if-not-exists" con TTL. Retorna `true` si la clave se creó
+   * (no existía antes), `false` si ya existía.
+   *
+   * Fail-open real: ante error de Redis, retorna `true` (comporta como
+   * "primera vez"), para que el caller procese el mensaje. Preferimos una
+   * doble respuesta rara a silencio total si Redis se cae.
+   *
+   * Usado por Fase A1 (dedupe de mensajes WhatsApp entrantes).
+   */
+  async setNX(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    try {
+      const result = await this.client.set(key, value, 'EX', ttlSeconds, 'NX');
+      return result === 'OK';
+    } catch (error) {
+      logger.error(`Redis SET NX error for key ${key} (fail-open, treating as first-time):`, error);
+      return true;
+    }
+  }
+
   // Métodos para contadores
   async incr(key: string, ttl?: number): Promise<number> {
     try {
@@ -331,6 +351,15 @@ export const REDIS_KEYS = {
   AI_QUEUE: 'ai:queue:',
   STATS_COUNTER: 'stats:counter:',
   WEBHOOK_QUEUE: 'webhook:queue:',
+  // Fase A1 (2026-04-19): dedupe de mensajes WhatsApp entrantes.
+  // El key combina el message.id serializado y se fija con TTL 300s via setNX.
+  MESSAGE_DEDUP: 'whatsapp:dedup:',
+};
+
+export const REDIS_TTL = {
+  // Fase A1: ventana de 5 min es el sweet spot industry-standard para WhatsApp.
+  // Cubre casi todos los re-emits de whatsapp-web.js sin acumular claves.
+  MESSAGE_DEDUP_SECONDS: 300,
 };
 
 export const REDIS_CHANNELS = {

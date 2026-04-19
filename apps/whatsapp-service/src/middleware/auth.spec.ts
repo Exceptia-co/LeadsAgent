@@ -145,4 +145,92 @@ describe('verifyServiceSignature', () => {
     expect(next).not.toHaveBeenCalled();
     expect(statusSpy).toHaveBeenCalledWith(500);
   });
+
+  // ─── Fase A8 (2026-04-19): edge cases añadidos en esta fase ───
+
+  it('lets GET requests with empty body through when signed correctly', () => {
+    // Requests GET/DELETE no tienen body. Auth capture en main.ts setea
+    // `rawBody = Buffer.from('')`. La firma se calcula sobre string vacío.
+    const body = '';
+    const { timestamp: ts, signature: sig } = signServiceRequest(body, SECRET);
+    const { req, res, next, statusSpy } = buildReqRes({
+      method: 'GET',
+      path: '/api/sessions',
+      headers: { 'x-service-timestamp': ts, 'x-service-signature': sig },
+      rawBody: body,
+    });
+
+    verifyServiceSignature(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(statusSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects with 401 when the signature lacks the sha256= prefix', () => {
+    const body = JSON.stringify({ hello: 'world' });
+    const { timestamp: ts, signature: sig } = signServiceRequest(body, SECRET);
+    const sigWithoutPrefix = sig.replace(/^sha256=/, '');
+    const { req, res, next, statusSpy } = buildReqRes({
+      headers: { 'x-service-timestamp': ts, 'x-service-signature': sigWithoutPrefix },
+      rawBody: body,
+    });
+
+    verifyServiceSignature(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(statusSpy).toHaveBeenCalledWith(401);
+  });
+
+  it('rejects with 401 when the signature uses a different algorithm prefix', () => {
+    const body = JSON.stringify({ hello: 'world' });
+    const { timestamp: ts, signature: sig } = signServiceRequest(body, SECRET);
+    const wrongAlgo = sig.replace(/^sha256=/, 'md5=');
+    const { req, res, next, statusSpy } = buildReqRes({
+      headers: { 'x-service-timestamp': ts, 'x-service-signature': wrongAlgo },
+      rawBody: body,
+    });
+
+    verifyServiceSignature(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(statusSpy).toHaveBeenCalledWith(401);
+  });
+
+  it('rejects with 401 when the timestamp is not a valid number', () => {
+    const body = JSON.stringify({ hello: 'world' });
+    const { signature: sig } = signServiceRequest(body, SECRET);
+    const { req, res, next, statusSpy } = buildReqRes({
+      headers: { 'x-service-timestamp': 'not-a-number', 'x-service-signature': sig },
+      rawBody: body,
+    });
+
+    verifyServiceSignature(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(statusSpy).toHaveBeenCalledWith(401);
+  });
+
+  it('rejects with 401 when the timestamp is in the future beyond the window', () => {
+    // El check usa Math.abs(Date.now() - ts), así que timestamps muy futuros
+    // también deben rechazarse (protege contra replay adelantado si un cliente
+    // tiene reloj corrido).
+    const body = JSON.stringify({ hello: 'world' });
+    const futureTs = (Date.now() + 6 * 60 * 1000).toString();
+    const hex = require('node:crypto')
+      .createHmac('sha256', SECRET)
+      .update(`${futureTs}.${body}`)
+      .digest('hex');
+    const { req, res, next, statusSpy } = buildReqRes({
+      headers: {
+        'x-service-timestamp': futureTs,
+        'x-service-signature': `sha256=${hex}`,
+      },
+      rawBody: body,
+    });
+
+    verifyServiceSignature(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(statusSpy).toHaveBeenCalledWith(401);
+  });
 });

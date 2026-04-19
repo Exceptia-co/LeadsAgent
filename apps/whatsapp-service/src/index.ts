@@ -7,18 +7,25 @@ import fs from 'fs';
 import { createServer } from 'http';
 import { logger } from './utils/logger';
 import { initializeSocketService } from './services/SocketService';
+import { validateEnv } from './config/env';
 
-// Capturar errores no manejados ANTES de cualquier otro código
+// Fase A6 (2026-04-19): capturar errores no manejados pero NO matar el proceso.
+// Antes un uncaughtException en una sesión WhatsApp tumbaba todas las demás
+// (cada sesión = 1 Chromium; si whatsapp-web.js dispara un error, el proceso
+// entero se moría). Ahora loguear y continuar; la sesión problemática se
+// recupera vía SessionRecoveryService. El graceful recovery por sesión
+// específica se afinará en Fase C8 (detached frame healthcheck).
 process.on('uncaughtException', error => {
   console.error('Uncaught Exception:', error);
-  logger.error('Uncaught Exception:', error);
-  process.exit(1);
+  logger.error('Uncaught Exception — keeping process alive to protect other sessions:', error);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', { promise, reason });
-  logger.error('Unhandled Rejection at:', { promise, reason });
-  process.exit(1);
+  logger.error('Unhandled Rejection — keeping process alive to protect other sessions:', {
+    promise,
+    reason,
+  });
 });
 
 logger.info('🏁 Starting bootstrap process...');
@@ -30,6 +37,11 @@ if (fs.existsSync(rootEnvPath)) {
 } else {
   logger.info('📁 No root .env found, using system environment variables');
 }
+
+// Fase A5: validación centralizada con zod. Corre AQUÍ (tras dotenv.config, antes
+// de crear el Express app) para que un fallo crítico en prod termine el proceso
+// antes de abrir puertos o registrar listeners.
+validateEnv();
 
 const app: Express = express();
 const PORT = process.env.WHATSAPP_SERVICE_PORT || process.env.PORT || 3002;

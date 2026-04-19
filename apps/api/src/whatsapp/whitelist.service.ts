@@ -115,9 +115,17 @@ export class WhitelistService {
         };
       }
 
-      // 3. Check environment settings for new leads
+      // 3. Check environment settings for new leads.
+      //
+      // Fase A15 bis (2026-04-19): default abierto. Antes la condición era
+      // `allowNewLeads = env === 'true'` → si `WHATSAPP_ALLOW_NEW_LEADS` no
+      // estaba seteada, `allowNewLeads` era `false` y bloqueaba todo número
+      // nuevo. Para un SaaS de captación de leads lo lógico es lo opuesto:
+      // default open, cierre explícito si el cliente lo pide poniendo
+      // `WHATSAPP_ALLOW_NEW_LEADS=false` en su .env. Coherente con el cambio
+      // equivalente en `whatsapp-service/AuthAuditLogger.ts:92`.
       const allowNewLeads =
-        process.env.WHATSAPP_ALLOW_NEW_LEADS?.toLowerCase() === 'true';
+        process.env.WHATSAPP_ALLOW_NEW_LEADS?.toLowerCase() !== 'false';
 
       if (!existingLead && !allowNewLeads) {
         this.logger.log(`🚫 New lead creation disabled for: ${cleanPhone}`);
