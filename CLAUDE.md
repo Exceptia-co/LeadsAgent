@@ -190,6 +190,7 @@ Tres bugs tangenciales surgidos durante la verificación end-to-end del nuevo le
 - **T1. `messages` creadas con `lead_id=null` desde whatsapp-service**. `DatabaseService.saveConversation` no hace lookup al `Lead` antes de crear el `Message`; cuando el lead aún no existe (primer mensaje de un número nuevo), las filas quedan huérfanas. Los queries que hacen `JOIN leads ON messages.lead_id = leads.id` no las ven. Fix Fase B: saveConversation debe resolver/crear el `Lead` primero o aceptar un `leadId` explícito del caller.
 - **T2. Duplicación de `Message` entre whatsapp-service y API Nest**. Ambos persisten el mensaje entrante: whatsapp-service via `saveConversation` (sin leadId), API Nest via `prisma.message.create` en el webhook handler (con leadId). Resultado: **3 filas en `messages` para 2 mensajes reales** (user entrante duplicado + bot respuesta). Fix Fase C: decidir un owner único del write de `Message` (recomendado: API Nest tras recibir webhook) y que whatsapp-service solo escriba `whatsapp_conversations` con metadata.
 - **T3. Timestamp 1970 en messages de API Nest**. `new Date(messageData.timestamp)` en `apps/api/src/whatsapp/whatsapp.service.ts:114` interpreta un epoch en segundos como milisegundos (o viceversa), generando `created_at` en 1970. No rompe funcionalidad pero ensucia orderings por fecha. Fix Fase B: multiplicar por 1000 si el valor es menor a `1e12` (heurística segunda/milis).
+- **T4. API NestJS no lee `.env` automáticamente**. Descubierto 2026-04-20 al actualizar `WHATSAPP_ALLOW_NEW_LEADS` en prod (Hetzner): el whatsapp-service sí recogió el cambio porque hace `dotenv.config()` en `index.ts:26`, pero `leadcrm-api` no. El `.env` de `apps/api/` es cosmético hoy — las envs llegan al proceso Nest solo via la shell que arranca PM2. Workaround usado en prod: `export WHATSAPP_ALLOW_NEW_LEADS=true && pm2 restart leadcrm-api --update-env`. Frágil: ante reboot del VPS / `pm2 resurrect` / cron restart automático la env desaparece y el bug de whitelist vuelve. **Fix Fase B** (añadido como `B1.15`): `apps/api/src/app.module.ts` debe importar `ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] })`. Son ~3 líneas que transforman "env solo si la shell la exporta" en "env leída del `.env` igual que whatsapp-service".
 
 **Tests suite post-Fase A**: 15/15 pasan (6 HMAC originales + 5 edge cases nuevos + 4 redis.spec). Se borraron 9 suites `ai-thinking/__tests__/*` y `phase4-integration.test.ts` (22 tests pre-existentes rotos, consideradas deuda muerta).
 
@@ -201,6 +202,34 @@ Tres bugs tangenciales surgidos durante la verificación end-to-end del nuevo le
 - `redisClient.setNX(key, value, ttlSeconds)` es la primitive pública para dedupe atómico. Reusarlo si hace falta dedupe en otros flujos.
 - `validateEnv()` en `apps/whatsapp-service/src/config/env.ts` es el contrato de envs requeridas. Extender el zod schema al añadir nuevas envs.
 - El pattern "cache in-memory + background refresh" de `SystemPromptService` es el modelo para cargar config desde DB sin volver async a los callers.
+
+### Punto de continuación (post-deploy Fase A, 2026-04-20)
+
+Si retomas el proyecto en una sesión futura, aquí está el estado exacto y el siguiente paso:
+
+**Estado en producción (Hetzner VPS 46.225.26.89)**:
+- `/opt/leadcrm/apps/whatsapp-service/.env` y `/opt/leadcrm/apps/api/.env` tienen `WHATSAPP_ALLOW_NEW_LEADS=true` (agregados 2026-04-20).
+- PM2 procesos `whatsapp-service` (id 0) y `leadcrm-api` (id 1) arrancan con esa env cargada tras restart con `--update-env`.
+- Captación automática de leads nuevos en producción: **operativa**. Cualquier número nuevo que escriba al WhatsApp conectado se crea como `Lead` con `whatsapp_authorized=true`.
+
+**Si el VPS se reinicia (reboot, crash, etc.)**:
+- `whatsapp-service` recarga el `.env` automáticamente via `dotenv.config()` → funciona OK.
+- `leadcrm-api` **NO lee** el `.env` — la env `WHATSAPP_ALLOW_NEW_LEADS=true` se perderá. Workaround manual tras cada reboot:
+  ```bash
+  ssh root@46.225.26.89 'export WHATSAPP_ALLOW_NEW_LEADS=true && pm2 restart leadcrm-api --update-env'
+  ```
+- Fix permanente = tarea **B1.15** (primera tarea de Fase B.1). Estimación <30 min.
+
+**Próximo paso concreto cuando retomes**:
+1. `git checkout develop && git pull` (asegura estar al día)
+2. `git checkout -b feature/b1-foundational-multitenancy`
+3. Empezar por **B1.15** (ver `PLAN-WHATSAPP-AGENT-MULTITENANT.md §5 Fase B.1`): `ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] })` en `apps/api/src/app.module.ts`.
+4. Continuar con B1.1 (activar Clerk Organizations) → B1.1a (crear org real EscortsHub) → B1.1b (`/select-org` UI) → resto de Fase B.1.
+
+**Estado de documentos**:
+- `PLAN-WHATSAPP-AGENT-MULTITENANT.md` v7.3 — Fase A marcada ejecutada+deployed, B1.15 añadida con justificación
+- `CLAUDE.md` (este archivo) — 15 hotfixes de Fase A documentados + 4 deudas técnicas (T1-T4)
+- Git: PR #10 cerrado (merge commit `1fd9e95`), branch `feature/foundation-hotfixes` puede borrarse (local + remote) tras Fase B.1
 
 ## Environment Variables
 
