@@ -250,6 +250,14 @@ Efectos: downtime ~15-30s mientras reinstala deps + reinicia. Sesión WhatsApp `
 - `CLAUDE.md` (este archivo) — 15 hotfixes de Fase A documentados + 4 deudas técnicas (T1-T4)
 - Git: PR #10 cerrado (merge commit `1fd9e95`), branch `feature/foundation-hotfixes` puede borrarse (local + remote) tras Fase B.1
 
+**Decisión de automatización de deploy (discutida 2026-04-20, decisión pospuesta para Fase C)**:
+Hoy el deploy a Hetzner es 100% manual (SSH + git pull + pm2 restart). Se valoraron 3 opciones:
+- (A) Seguir manual — control total, fricción real.
+- (B) `workflow_dispatch` (botón GitHub Actions) — recomendada para MVP, sin automatizar triggers pero sin typos SSH.
+- (C) Auto on push to main — estándar gitflow pero genera ~15-30s de caída de sesiones WhatsApp cada deploy por restart de Chromium.
+
+**Decisión actual**: seguir con Opción A hasta que llegue Fase C. En Fase C7 (ya existe como "Restart automático programado de workers") añadir **C0 — Workflow de deploy semi-auto**: `.github/workflows/deploy-hetzner.yml` con `workflow_dispatch`, secrets `HETZNER_SSH_KEY`, pasos `git pull + pnpm install + pm2 reload all` (reload, no restart, para reducir downtime). La Opción C queda vetada hasta que el whatsapp-service soporte zero-downtime deploy (blue-green o PM2 cluster mode con graceful reload).
+
 ## Environment Variables
 
 Environment files:
