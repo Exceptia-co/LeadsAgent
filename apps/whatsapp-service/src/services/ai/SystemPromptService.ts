@@ -20,9 +20,53 @@ export type PromptType = 'standard' | 'intent_analysis' | 'customer_service' | '
 export class SystemPromptService {
   private promptConfig: ReturnType<typeof aiConfig.getPromptConfig>;
 
+  /**
+   * Fase A7 (2026-04-19): cache in-memory del prompt base.
+   * Se carga en background desde `ai_configuration` key `system_prompt.default.es`
+   * al iniciar el servicio. Si la key no existe o falla la carga, `getBasePrompt()`
+   * usa el hardcoded como fallback (backwards compat).
+   *
+   * `getBasePrompt()` debe permanecer síncrono porque tiene muchos callers en
+   * toda la cadena AI — hacerlo async requeriría propagar awaits profundamente.
+   */
+  private cachedBasePrompt: string | null = null;
+  private basePromptKey = 'system_prompt.default.es';
+
   constructor() {
     this.promptConfig = aiConfig.getPromptConfig();
+    // Fire-and-forget: cargar en background, sin bloquear el constructor.
+    void this.refreshBasePrompt();
     logger.info('✅ System Prompt Service initialized');
+  }
+
+  /**
+   * Recarga el prompt base desde `ai_configuration`. No bloquea el boot;
+   * si falla, el servicio sigue usando el hardcoded fallback.
+   * Puede llamarse manualmente desde un admin endpoint para propagar cambios
+   * sin restart.
+   */
+  public async refreshBasePrompt(): Promise<void> {
+    try {
+      const { default: DatabaseService } = await import('../DatabaseService');
+      const loaded = await DatabaseService.getAIConfiguration(this.basePromptKey);
+      if (loaded && loaded.trim().length > 0) {
+        this.cachedBasePrompt = loaded;
+        logger.info(
+          `✅ [PROMPT] Base prompt loaded from DB (${loaded.length} chars, key=${this.basePromptKey})`
+        );
+      } else {
+        this.cachedBasePrompt = null;
+        logger.info(
+          `ℹ️ [PROMPT] No DB override for ${this.basePromptKey} — using hardcoded fallback`
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        `⚠️ [PROMPT] Failed to load ${this.basePromptKey} from DB — using hardcoded fallback:`,
+        err
+      );
+      this.cachedBasePrompt = null;
+    }
   }
 
   /**
@@ -77,9 +121,24 @@ export class SystemPromptService {
   }
 
   /**
-   * Get base system prompt
+   * Get base system prompt.
+   *
+   * Fase A7: prefiere la versión cacheada desde `ai_configuration.system_prompt.default.es`
+   * si está disponible. Si no, fallback al hardcoded que mantiene compat con
+   * el comportamiento pre-A7.
    */
   private getBasePrompt(): string {
+    if (this.cachedBasePrompt) {
+      return this.cachedBasePrompt;
+    }
+    return this.getHardcodedBasePrompt();
+  }
+
+  /**
+   * Hardcoded fallback — también seedea la tabla `ai_configuration` cuando
+   * se ejecute el script de setup post-deploy.
+   */
+  private getHardcodedBasePrompt(): string {
     return `
 Eres un asistente virtual profesional de ${this.promptConfig.platform}, la plataforma líder de escorts en España. Tu misión es ayudar a los usuarios con información sobre nuestros productos de manera BREVE, NATURAL y CONVERSACIONAL.
 

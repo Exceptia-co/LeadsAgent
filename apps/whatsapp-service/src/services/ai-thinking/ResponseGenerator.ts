@@ -445,13 +445,23 @@ export class ResponseGenerator {
   }
 
   /**
-   * Ensure appropriate final question
+   * Ensure appropriate final question.
+   *
+   * Fase A (hotfix 2026-04-19, descubierto durante prueba con móvil):
+   * el chequeo previo `content.includes('?')` solo detectaba el signo de
+   * cierre ASCII. Cuando el LLM generaba una pregunta española con `¿` pero
+   * olvidaba el `?` de cierre (ej. "¡Hola! 👋 ¿En qué puedo ayudarte hoy"),
+   * la guarda fallaba y este método añadía una segunda pregunta, resultando
+   * en texto concatenado tipo:
+   *   "¡Hola! 👋 ¿En qué puedo ayudarte hoy ¿En qué puedo ayudarte?"
+   * Ahora detectamos cualquier signo interrogativo (apertura o cierre) y
+   * asumimos que el contenido ya intenta ser pregunta.
    */
   private ensureFinalQuestion(
     content: string,
     intent: string
   ): { content: string; applied: boolean } {
-    if (content.includes('?')) {
+    if (/[?¿]/.test(content)) {
       return { content, applied: false };
     }
 

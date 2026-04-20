@@ -3,7 +3,7 @@ import qrcode from 'qrcode-terminal';
 import { logger } from '../../utils/logger';
 import advancedLogger from '../../utils/advancedLogger';
 import type { WhatsAppMessage, WebhookPayload } from '../../types';
-import redisClient, { REDIS_KEYS } from '../../config/redis';
+import redisClient, { REDIS_KEYS, REDIS_TTL } from '../../config/redis';
 import { signServiceRequest } from '../../middleware/auth';
 
 /**
@@ -315,6 +315,40 @@ export class EventDispatcher {
         `[DIAG] MESSAGE event fired for session ${sessionId} from=${message.from} body=${message.body?.substring(0, 50)}`
       );
       try {
+        // Fase A1 (2026-04-19): dedupe atómico en Redis.
+        // whatsapp-web.js puede re-emitir el mismo mensaje si Chromium hace
+        // reload o si hay una reconexión en medio; sin este check, la IA
+        // respondería dos veces al mismo `hola`.
+        const messageId = message.id._serialized;
+        const dedupeKey = `${REDIS_KEYS.MESSAGE_DEDUP}${messageId}`;
+        logger.info(`[DEDUPE] Checking msgId=${messageId} session=${sessionId}`);
+        const isFirstTime = await redisClient.setNX(
+          dedupeKey,
+          '1',
+          REDIS_TTL.MESSAGE_DEDUP_SECONDS
+        );
+        if (!isFirstTime) {
+          logger.info(
+            `[DEDUPE] Skipping already-processed message ${messageId} in session ${sessionId}`
+          );
+          return;
+        }
+
+        // Fase A2 (2026-04-19): ignorar broadcasts y grupos ANTES de parsear
+        // para no gastar work en mensajes que nunca debemos responder.
+        // whatsapp-web.js usa sufijos de JID: `@c.us` = chat 1:1, `@g.us` =
+        // grupo, `status@broadcast` = estados/status.
+        if (message.from === 'status@broadcast') {
+          logger.debug(`[FILTER] Skipping status@broadcast in session ${sessionId}`);
+          return;
+        }
+        if (message.from?.endsWith('@g.us')) {
+          logger.debug(
+            `[FILTER] Skipping group message (from=${message.from}) in session ${sessionId}`
+          );
+          return;
+        }
+
         // Throttled health check update — avoids DB/Redis writes on every message
         const now = Date.now();
         if (now - lastHealthUpdate > 30000) {
