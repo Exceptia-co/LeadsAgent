@@ -1,6 +1,7 @@
 import type { Client } from 'whatsapp-web.js';
 import { logger } from '../utils/logger';
 import type { WhatsAppSession, SendMessageResponse } from '../types';
+import type { HealthAlert } from './session-health-check/AlertManager';
 import SessionRecoveryService from './SessionRecoveryService';
 import SessionHealthCheckService from './SessionHealthCheckService';
 import SnapshotService from './auth-snapshot/SnapshotService';
@@ -34,6 +35,21 @@ class WhatsAppServiceSimple {
   private isSnapshotBatchRunning: boolean = false;
   private destroyingSessions: Set<string> = new Set();
   private sessionInitLocks: Set<string> = new Set();
+  private initialized: boolean = false;
+  private initializePromise: Promise<void> | null = null;
+  // Stable callback identity so it can be unregistered at shutdown and dedupe
+  // works in AlertManager. Defined as an arrow property (not inline at register
+  // time) so the same reference is reused across calls.
+  private alertCallback = (alert: HealthAlert): void => {
+    logger.warn(
+      `🚨 Health Alert [${alert.severity.toUpperCase()}] ${alert.sessionId}: ${alert.message}`,
+      {
+        type: alert.type,
+        recommendation: alert.recommendation,
+        timestamp: alert.timestamp,
+      }
+    );
+  };
 
   // Module instances
   private messageHandler = MessageHandler;
@@ -46,7 +62,27 @@ class WhatsAppServiceSimple {
     logger.info('🚀 WhatsApp Service initialized with MODULAR architecture');
   }
 
+  // Lazy idempotent init: same pattern as the WhatsAppService facade. Direct
+  // callers (e.g. tests) and the facade share the singleton, so the guard
+  // protects both paths even though the facade's own guard already prevents
+  // duplicate calls in the normal boot path.
   async initialize(): Promise<void> {
+    if (this.initialized) return;
+    if (this.initializePromise) return this.initializePromise;
+
+    this.initializePromise = this.runInitialize().then(
+      () => {
+        this.initialized = true;
+      },
+      err => {
+        this.initializePromise = null;
+        throw err;
+      }
+    );
+    return this.initializePromise;
+  }
+
+  private async runInitialize(): Promise<void> {
     logger.info('🚀 Iniciando WhatsApp service con persistencia y monitoreo avanzado (MODULAR)...');
 
     // Recover existing sessions from database using smart filtering
@@ -75,29 +111,21 @@ class WhatsAppServiceSimple {
       logger.info('⏸️ Auto-recovery disabled. Sessions must be created manually from dashboard.');
     }
 
-    // Start periodic health checks (legacy)
-    SessionRecoveryService.scheduleHealthChecks(this);
-
-    // Start advanced health monitoring
+    // Start advanced health monitoring (the legacy SessionRecoveryService.scheduleHealthChecks
+    // was removed: nobody downstream consumed metadata.lastHealthCheck, and the
+    // active signals — Redis heartbeat + reactive lastHealthCheck on session events —
+    // already cover the same need.)
     SessionHealthCheckService.startMonitoring(this);
 
     // Start Redis heartbeat updates for session health tracking
     this.sessionManager.startHeartbeatUpdates();
 
-    // Register alert callback for logging
-    SessionHealthCheckService.onAlert(alert => {
-      logger.warn(
-        `🚨 Health Alert [${alert.severity.toUpperCase()}] ${alert.sessionId}: ${alert.message}`,
-        {
-          type: alert.type,
-          recommendation: alert.recommendation,
-          timestamp: alert.timestamp,
-        }
-      );
-    });
+    // Register alert callback (stable identity so AlertManager dedupes and we
+    // can unregister on shutdown).
+    SessionHealthCheckService.onAlert(this.alertCallback);
 
     // Schedule periodic snapshots for ready sessions
-    if (SnapshotService.isEnabled()) {
+    if (SnapshotService.isEnabled() && !this.snapshotIntervalId) {
       const intervalHours = parseInt(process.env.SNAPSHOT_INTERVAL_HOURS || '4', 10);
       this.snapshotIntervalId = setInterval(
         async () => {
@@ -314,6 +342,7 @@ class WhatsAppServiceSimple {
     // Stop health monitoring and periodic tasks
     try {
       SessionHealthCheckService.stopMonitoring();
+      SessionHealthCheckService.offAlert(this.alertCallback);
       this.sessionManager.stopHeartbeatUpdates();
       if (this.snapshotIntervalId) {
         clearInterval(this.snapshotIntervalId);

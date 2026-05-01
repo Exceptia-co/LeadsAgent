@@ -166,43 +166,6 @@ export class HealthMetrics {
     }
   }
 
-  async updateSessionHealthMetadata(
-    whatsAppService: any,
-    intervalMs: number = 5 * 60 * 1000
-  ): Promise<void> {
-    try {
-      const health = await this.checkSessionsHealth(whatsAppService);
-      logger.debug(
-        `💊 Health check: ${health.healthy}/${health.total} sesiones saludables (${health.healthyPercentage.toFixed(1)}%)`
-      );
-
-      const sessions = await whatsAppService.getAllSessions();
-      for (const session of sessions) {
-        await this.persistenceService.updateSessionStatus(session.id, session.status, {
-          metadata: {
-            lastHealthCheck: new Date().toISOString(),
-            healthCheckInterval: intervalMs,
-            isHealthy: session.status === 'ready' || session.status === 'authenticated',
-          },
-        });
-      }
-    } catch (error) {
-      logger.error('Error updating session health metadata:', error);
-    }
-  }
-
-  scheduleHealthChecks(whatsAppService: any, intervalMs: number = 5 * 60 * 1000): NodeJS.Timeout {
-    logger.info(`⏰ Programando health checks cada ${intervalMs / 1000} segundos`);
-
-    return setInterval(async () => {
-      try {
-        await this.updateSessionHealthMetadata(whatsAppService, intervalMs);
-      } catch (error) {
-        logger.error('Error en health check programado:', error);
-      }
-    }, intervalMs);
-  }
-
   calculateUptimeMetrics(startTime: number): {
     uptimeMs: number;
     uptimeSeconds: number;

@@ -264,6 +264,15 @@ export class SessionHealthCheckService {
   }
 
   /**
+   * Unregister alert callback. Pair with `onAlert()` and call from shutdown
+   * paths so callbacks do not leak across restarts of the singleton.
+   */
+  offAlert(callback: (alert: HealthAlert) => void): void {
+    if (!USE_MODULAR_HEALTH_CHECK) return;
+    this.alertManager.removeAlertCallback(callback);
+  }
+
+  /**
    * Get health dashboard data
    */
   async getHealthDashboard(): Promise<{

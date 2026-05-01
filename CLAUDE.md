@@ -81,7 +81,7 @@ packages/
 └── config-ts/             # @leadcrm/config-ts
 ```
 
-`packages/ui` was removed in T3.2 (commit `04c1113`); the two components actually used (Alert, Toggle) live in `apps/dashboard/components/ui/`. Local `packages/ui/{dist,node_modules}` may linger as build artifacts but are untracked and unreferenced — safe to delete with `rm -rf packages/ui`.
+`packages/ui` was removed in T3.2 (commit `04c1113`); the two components actually used (Alert, Toggle) live in `apps/dashboard/components/ui/`. The local artifact directory was cleaned up on 2026-05-01 — there is no shared UI package to reinstate.
 
 **Data Flow:**
 
@@ -135,6 +135,7 @@ UUIDs are primary keys throughout. Cascade was relaxed in T4.1 to support soft d
 - Group/broadcast filter: `@g.us` and `status@broadcast` JIDs are dropped before parsing
 - Typing indicator wraps the entire `processMessageWithAI` (start at handler entry, clear in `finally`) so the user sees "typing..." for the full ~5-6s LLM thinking window
 - The runtime stays alive on `uncaughtException` / `unhandledRejection` (no `process.exit(1)`) so a crash in one session doesn't kill the others
+- **Dev local con `PUPPETEER_HEADLESS=false`**: el Chrome de Puppeteer queda visible con DevTools abierto (`devtools = !isProduction && !headless` en `puppeteer.config.ts:103`). Cualquier interacción tuya con esa ventana (abrir DevTools, refrescar, scroll en panel de elementos) puede destruir el JS context y causar `Protocol error: Execution context was destroyed` en el siguiente `Client.sendMessage`. Para smoke runtime fiable: `PUPPETEER_HEADLESS=true pnpm dev` (la env var debe estar declarada en `turbo.json globalEnv` — ya incluida como `PUPPETEER_*`, ver patrón whitelist; también `dotenv.config()` no pisa env vars existentes, así que el override de shell gana sobre `.env`). Producción siempre es headless por `NODE_ENV=production`.
 
 ### Dashboard (apps/dashboard)
 
@@ -218,12 +219,24 @@ Tracked in `PLAN-WHATSAPP-AGENT-MULTITENANT.md`. Highlights:
 - **T2**: Both whatsapp-service and Nest API persist inbound messages, producing 3 `messages` rows for 2 real messages. Fix scheduled for Phase C: Nest API becomes sole owner; whatsapp-service writes only `whatsapp_conversations`
 - **T3**: `apps/api/src/whatsapp/whatsapp.service.ts:114` interprets WhatsApp epoch in seconds as milliseconds → `created_at` lands in 1970. Functional but messes up date ordering
 - **Whitelist evaluated twice**: once in whatsapp-service, once in Nest API. Defaults are in sync (`true`) but coupling is fragile. Phase C will unify
-- **Double init of whatsapp-service**: log "Initializing WhatsApp service implementation" appears twice per boot. Handler fires once per event (verified) but logging suggests a duplicate facade instance — investigate in Phase C
 - **Multi-device dedupe**: WhatsApp Linked Devices (`@lid`) can deliver the same message with different `message.id`. Current dedupe by `message.id` doesn't catch it. Future fix: secondary dedupe by `(from, body-hash, ±3s)`
+
+### Resolved: WhatsApp service double init (2026-05-01, branch `fix/whatsapp-double-init`)
+
+The "Initializing WhatsApp service implementation" log fired twice per boot because `WhatsAppService.ts` called `this.initialize()` fire-and-forget in its constructor and `index.ts` then awaited a second `initialize()` on the same singleton. Fixed with the **lazy idempotent init pattern** (`initialized` flag + `initializePromise` cache):
+
+- Constructor no longer triggers init; bootstrap is the only caller.
+- Concurrent calls share the same in-flight promise; resolved calls are no-ops; failed calls clear the promise so callers can retry.
+- Same pattern applied to `WhatsAppServiceSimple` for direct callers (e.g. tests).
+- Side-effect cleanup: `snapshotIntervalId` guarded against duplicate `setInterval`; alert callback registered with stable identity; `AlertManager.registerAlertCallback` dedupes by reference; `SessionHealthCheckService.offAlert` exposed and called in shutdown.
+- Legacy `SessionRecoveryService.scheduleHealthChecks` + `HealthMetrics.scheduleHealthChecks` + `HealthMetrics.updateSessionHealthMetadata` removed as zombie code: no consumer reads `metadata.lastHealthCheck` (verified across `apps/api`, `apps/dashboard`, `packages/db`); the active signals — Redis heartbeat (every 30s, TTL 120s) and reactive `lastHealthCheck` updates on session events — already cover the same need.
+- Boot order intentionally changed: `checkRedisConnection()` now runs **after** `redisClient.connect()` (the previous order was the accidental side-effect of the fire-and-forget race).
+
+The lazy idempotent init pattern (`initialized + initializePromise`) is the convention in this repo for singleton async init — reuse it when adding similar services.
 
 ### Test suite status
 
-15/15 active tests pass (6 HMAC originals + 5 HMAC edge cases + 4 redis.spec). 22 pre-existing tests in `ai-thinking/__tests__/*` and `phase4-integration.test.ts` were deleted as dead debt during Phase A.
+21/21 active tests pass (15 pre-existing — HMAC originals + edge cases + redis.spec — plus 4 init idempotency + 2 alert callback dedupe added with the double-init fix). 22 pre-existing tests in `ai-thinking/__tests__/*` and `phase4-integration.test.ts` were deleted as dead debt during Phase A.
 
 ## Production deployment notes
 
