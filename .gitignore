@@ -45,6 +45,7 @@ yarn-debug.log*
 yarn-error.log*
 apps/whatsapp-service/logs/
 apps/whatsapp-service/*.log
+.playwright-mcp/
 
 # WhatsApp specific (CRITICAL - contains sensitive session data)
 apps/whatsapp-service/sessions/

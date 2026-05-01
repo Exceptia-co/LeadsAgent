@@ -4,7 +4,7 @@
 **Branch analizado:** `feature/b1-foundation-schema` (HEAD `364979a`; base `develop` actualizado a `730599e`)
 **Método:** Auditoría `path:line` verificable + checks locales (`prisma validate`, `db:generate`, `typecheck`, `test`, `build`, `lint`) + inspección de migration SQL additive-only. La información live de Supabase/Hetzner/Vercel se conserva del snapshot v5 salvo donde se indica explícitamente.
 
-> **Novedad v6:** Además del MVP estabilizado de v5, el fix de double-init del whatsapp-service ya quedó mergeado a `develop` y la primera pieza de Fase B.1 quedó implementada en branch: schema foundation multi-tenant additive-only. No se ha aplicado la migration B1 a Supabase producción; el despliegue de DB se acumula para PR1+PR2+PR3 con backfill.
+> **Novedad v6:** Además del MVP estabilizado de v5, el fix de double-init del whatsapp-service ya quedó mergeado a `develop` y la primera pieza de Fase B.1 quedó implementada en branch: schema foundation multi-tenant additive-only. No se ha aplicado la migration B1 a Supabase producción; el despliegue de DB se acumula para PR1+PR2+PR3 con backfill. El smoke local del 2026-05-01 confirmó que API/dashboard de esta rama no deben correr contra una DB sin esa migration: Prisma Client selecciona columnas nuevas y `/leads`/`/templates` devuelven 500.
 
 ---
 
@@ -180,6 +180,7 @@ Historial de FKs pre-T4.1: las tres primeras eran `ON DELETE CASCADE` — se rel
 |-----|---------|---------|
 | Multi-tenant runtime aún no activo | Alto | B1 PR1 solo preparó schema additive-only en branch. Faltan Clerk Organizations/webhook, backfill, Prisma extension/TenantContextGuard, RLS secundaria y UI |
 | Migration B1 no aplicada en prod | Alto | Deliberado: aplicar solo PR1 dejaría `tenant_id=NULL` sin Tenant real. Se aplica como combo PR1+PR2+PR3 con backfill |
+| Runtime B1 contra DB vieja | Alto | Confirmado en Playwright: `/dashboard/leads` carga shell pero `GET localhost:3003/leads` y `/templates` devuelven 500 porque la DB no tiene `tenant_id`. No usar Supabase prod para smoke de esta rama; preparar local/staging migrado |
 | Webhook Nest con header estático | ⚠️ Medio | `apps/api/src/whatsapp/whatsapp.controller.ts:45-54` — solo valida presencia del header `x-whatsapp-service`. Elevar a HMAC completo es follow-up técnico; la exposición real es baja porque el whatsapp-service ya no es alcanzable desde internet |
 | RLS deshabilitado con 0 policies | ⚠️ WARN aceptado | Opción C del PRD T0.1; reabrible si aparece segundo usuario, exposición PostgREST directa, o JWT Clerk↔Supabase |
 | Tabla `migrations` legacy vacía en prod | Bajo | Código ya no la referencia ni recrea; drop manual pendiente (`DROP TABLE public.migrations;`) |
@@ -195,6 +196,7 @@ Historial de FKs pre-T4.1: las tres primeras eran `ON DELETE CASCADE` — se rel
 - **B1 PR1 foundation schema commiteado**: commit `364979a` en `feature/b1-foundation-schema`.
 - **Prisma migrations recuperadas en Git**: `.gitignore` ya no ignora `packages/db/prisma/migrations/`; se versionaron las migrations históricas y `20260501120000_b1_foundation_schema`.
 - **B1 schema es additive-only**: mantiene `Lead.phone @unique`, mantiene `whatsapp_conversations.session_id`, mantiene `ai_knowledge_base` sin rename y añade columnas nuevas nullable en paralelo.
+- **Smoke runtime B1 requiere DB migrada**: additive-only no significa app-backward-compatible con DB vieja; Prisma Client generado pide columnas nuevas por defecto.
 - **Checks verdes**: `prisma validate`, `pnpm db:generate`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm lint`.
 
 **Todos los gaps críticos de v4 están resueltos.**
