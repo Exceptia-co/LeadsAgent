@@ -421,9 +421,17 @@ export class AlertManager {
   }
 
   /**
-   * Register alert callback
+   * Register alert callback. Idempotent by callback identity — re-registering
+   * the same function reference is a no-op so accidental double-init does not
+   * fan out alerts into duplicate log lines.
    */
   registerAlertCallback(callback: (alert: HealthAlert) => void): void {
+    if (this.alertCallbacks.indexOf(callback) !== -1) {
+      logger.debug(
+        `📞 Alert callback already registered, skipping (total: ${this.alertCallbacks.length})`
+      );
+      return;
+    }
     this.alertCallbacks.push(callback);
     logger.debug(`📞 Registered alert callback (total: ${this.alertCallbacks.length})`);
   }

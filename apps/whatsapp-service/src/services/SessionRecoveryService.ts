@@ -208,10 +208,6 @@ export class SessionRecoveryService {
     };
   }
 
-  scheduleHealthChecks(whatsAppService: any, intervalMs: number = 5 * 60 * 1000): NodeJS.Timeout {
-    return this.healthMetrics.scheduleHealthChecks(whatsAppService, intervalMs);
-  }
-
   async getRecoveryStats(): Promise<{
     lastRecovery?: Date;
     totalRecoveries: number;

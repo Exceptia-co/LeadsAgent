@@ -42,11 +42,13 @@ interface AIResponseWithCache {
  * USE_WHATSAPP_REFACTORED) was removed in T3.1 after D4 resolved to keep the
  * Simple implementation.
  */
-class WhatsAppService {
+export class WhatsAppService {
   private isRedisConnected: boolean = false;
   private simpleService: typeof WhatsAppServiceSimple;
   private statsService: WhatsAppStatsService;
   private redisMonitoring: RedisMonitoringService;
+  private initialized: boolean = false;
+  private initializePromise: Promise<void> | null = null;
 
   constructor() {
     logger.info('🏗️ WhatsApp Service Architecture: SIMPLE (unique implementation)');
@@ -54,10 +56,29 @@ class WhatsAppService {
     this.simpleService = WhatsAppServiceSimple;
     this.statsService = new WhatsAppStatsService(redisClient);
     this.redisMonitoring = new RedisMonitoringService(redisClient);
-    this.initialize();
   }
 
+  // Lazy idempotent init: concurrent callers share the same promise; once it
+  // resolves, subsequent calls are no-ops; on failure the promise is cleared so
+  // the bootstrap can retry. The previous fire-and-forget initialize() in the
+  // constructor was the source of the double-init bug — removed intentionally.
   public async initialize(): Promise<void> {
+    if (this.initialized) return;
+    if (this.initializePromise) return this.initializePromise;
+
+    this.initializePromise = this.runInitialize().then(
+      () => {
+        this.initialized = true;
+      },
+      err => {
+        this.initializePromise = null;
+        throw err;
+      }
+    );
+    return this.initializePromise;
+  }
+
+  private async runInitialize(): Promise<void> {
     await this.checkRedisConnection();
     await this.statsService.loadStatsFromRedis();
 
