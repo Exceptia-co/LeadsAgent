@@ -48,6 +48,25 @@ enum MessageStatus {
   @@map("message_status")
 }
 
+enum PrimaryGoal {
+  REGISTER @map("register")
+  PURCHASE @map("purchase")
+  MEETING  @map("meeting")
+  CONTACT  @map("contact")
+  CUSTOM   @map("custom")
+
+  @@map("primary_goal")
+}
+
+enum AgentTone {
+  FORMAL    @map("formal")
+  CASUAL    @map("casual")
+  FRIENDLY  @map("friendly")
+  TECHNICAL @map("technical")
+
+  @@map("agent_tone")
+}
+
 model User {
   id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   clerk_id          String    @unique @db.VarChar(255)
@@ -70,34 +89,62 @@ model User {
   @@map("users")
 }
 
+model Tenant {
+  id                     String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clerkOrgId             String                  @unique @map("clerk_org_id") @db.VarChar(255)
+  name                   String                  @db.VarChar(255)
+  plan                   String                  @default("starter") @db.VarChar(50)
+  settings               Json?                   @default("{}")
+  createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                @updatedAt @map("updated_at") @db.Timestamptz(6)
+  leads                  Lead[]
+  messages               Message[]
+  aiConfigurations       ai_configuration[]
+  knowledgeBaseItems     ai_knowledge_base[]
+  messageTemplates       MessageTemplate[]
+  proactiveMessages      ProactiveMessage[]
+  whatsappConversations  WhatsAppConversation[]
+  aiTrainingInteractions AiTrainingInteraction[]
+  whatsappSessions       WhatsAppSession[]
+  whatsappWhitelistLogs  WhatsAppWhitelistLog[]
+  aiAgents               AiAgent[]
+  aiProducts             AiProduct[]
+
+  @@map("tenants")
+}
+
 model Lead {
-  id                   String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                 String?                  @db.VarChar(255)
-  email                String?                  @db.VarChar(255)
-  phone                String                   @unique @db.VarChar(50)
-  status               LeadStatus?              @default(NUEVO)
-  source               String?                  @db.VarChar(255)
-  tags                 Json?                    @default("[]")
-  whatsappAuthorized   Boolean?                 @default(false) @map("whatsapp_authorized")
-  moodScore            Decimal?                 @map("mood_score") @db.Decimal(3, 2)
-  lastContact          DateTime?                @map("last_contact") @db.Timestamptz(6)
-  assignedTo           String?                  @map("assigned_to") @db.VarChar(255)
-  deletedAt            DateTime?                @map("deleted_at") @db.Timestamptz(6)
-  createdAt            DateTime?                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt            DateTime?                @default(now()) @map("updated_at") @db.Timestamptz(6)
-  messages             Message[]
-  proactiveMessages    ProactiveMessage[]
+  id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String?                @map("tenant_id") @db.Uuid
+  name                  String?                @db.VarChar(255)
+  email                 String?                @db.VarChar(255)
+  phone                 String                 @unique @db.VarChar(50)
+  status                LeadStatus?            @default(NUEVO)
+  source                String?                @db.VarChar(255)
+  tags                  Json?                  @default("[]")
+  whatsappAuthorized    Boolean?               @default(false) @map("whatsapp_authorized")
+  moodScore             Decimal?               @map("mood_score") @db.Decimal(3, 2)
+  lastContact           DateTime?              @map("last_contact") @db.Timestamptz(6)
+  assignedTo            String?                @map("assigned_to") @db.VarChar(255)
+  deletedAt             DateTime?              @map("deleted_at") @db.Timestamptz(6)
+  createdAt             DateTime?              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime?              @default(now()) @map("updated_at") @db.Timestamptz(6)
+  messages              Message[]
+  proactiveMessages     ProactiveMessage[]
   whatsappConversations WhatsAppConversation[]
+  tenant                Tenant?                @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([createdAt], map: "idx_leads_created_at")
   @@index([phone], map: "idx_leads_phone")
   @@index([status], map: "idx_leads_status")
   @@index([deletedAt], map: "idx_leads_deleted_at")
+  @@index([tenantId], map: "idx_leads_tenant_id")
   @@map("leads")
 }
 
 model Message {
   id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String?                @map("tenant_id") @db.Uuid
   leadId                String?                @map("lead_id") @db.Uuid
   content               String
   direction             MessageDirection       @map("direction")
@@ -110,29 +157,36 @@ model Message {
   createdAt             DateTime?              @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt             DateTime?              @default(now()) @map("updated_at") @db.Timestamptz(6)
   lead                  Lead?                  @relation(fields: [leadId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  tenant                Tenant?                @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   whatsappConversations WhatsAppConversation[]
 
   @@index([createdAt], map: "idx_messages_created_at")
   @@index([direction], map: "idx_messages_direction")
   @@index([leadId], map: "idx_messages_lead_id")
   @@index([deletedAt], map: "idx_messages_deleted_at")
+  @@index([tenantId], map: "idx_messages_tenant_id")
   @@map("messages")
 }
 
 model ai_configuration {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String?   @map("tenant_id") @db.Uuid
   config_key   String    @unique @db.VarChar(100)
   config_value String
   description  String?
   updated_by   String?   @db.VarChar(255)
   created_at   DateTime? @default(now()) @db.Timestamp(6)
   updated_at   DateTime? @default(now()) @db.Timestamp(6)
+  tenant       Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([config_key], map: "idx_ai_config_key")
+  @@index([tenantId], map: "idx_ai_config_tenant_id")
 }
 
 model ai_knowledge_base {
   id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId   String?   @map("tenant_id") @db.Uuid
+  agentId    String?   @map("agent_id") @db.Uuid
   category   String    @db.VarChar(100)
   title      String    @db.VarChar(255)
   content    String
@@ -141,14 +195,19 @@ model ai_knowledge_base {
   is_active  Boolean?  @default(true)
   created_at DateTime? @default(now()) @db.Timestamp(6)
   updated_at DateTime? @default(now()) @db.Timestamp(6)
+  tenant     Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  agent      AiAgent?  @relation(fields: [agentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([is_active], map: "idx_knowledge_active")
   @@index([category], map: "idx_knowledge_category")
   @@index([priority(sort: Desc)], map: "idx_knowledge_priority")
+  @@index([tenantId], map: "idx_knowledge_tenant_id")
+  @@index([agentId], map: "idx_knowledge_agent_id")
 }
 
 model MessageTemplate {
   id                String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String?            @map("tenant_id") @db.Uuid
   name              String             @db.VarChar(255)
   category          String             @db.VarChar(100)
   subject           String?            @db.VarChar(500)
@@ -160,109 +219,131 @@ model MessageTemplate {
   createdAt         DateTime?          @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt         DateTime?          @default(now()) @map("updated_at") @db.Timestamptz(6)
   proactiveMessages ProactiveMessage[]
+  tenant            Tenant?            @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([isActive], map: "idx_templates_active")
   @@index([category], map: "idx_templates_category")
   @@index([usageCount(sort: Desc)], map: "idx_templates_usage")
+  @@index([tenantId], map: "idx_templates_tenant_id")
   @@map("message_templates")
 }
 
 model ProactiveMessage {
-  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  leadId        String?          @map("lead_id") @db.Uuid
-  templateId    String?          @map("template_id") @db.Uuid
-  templateName  String?          @map("template_name") @db.VarChar(255)
-  phoneNumber   String           @map("phone_number") @db.VarChar(50)
-  content       String
-  status        String?          @default("pending") @db.VarChar(50)
-  variables     Json?
-  sessionId     String?          @map("session_id") @db.VarChar(255)
-  sentAt        DateTime?        @map("sent_at") @db.Timestamptz(6)
-  deliveredAt   DateTime?        @map("delivered_at") @db.Timestamptz(6)
-  errorMessage  String?          @map("error_message")
-  createdBy     String?          @map("created_by") @db.VarChar(255)
-  createdAt     DateTime?        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime?        @default(now()) @map("updated_at") @db.Timestamptz(6)
-  lead          Lead?            @relation(fields: [leadId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  template      MessageTemplate? @relation(fields: [templateId], references: [id], onUpdate: NoAction)
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String?          @map("tenant_id") @db.Uuid
+  leadId       String?          @map("lead_id") @db.Uuid
+  templateId   String?          @map("template_id") @db.Uuid
+  templateName String?          @map("template_name") @db.VarChar(255)
+  phoneNumber  String           @map("phone_number") @db.VarChar(50)
+  content      String
+  status       String?          @default("pending") @db.VarChar(50)
+  variables    Json?
+  sessionId    String?          @map("session_id") @db.VarChar(255)
+  sentAt       DateTime?        @map("sent_at") @db.Timestamptz(6)
+  deliveredAt  DateTime?        @map("delivered_at") @db.Timestamptz(6)
+  errorMessage String?          @map("error_message")
+  createdBy    String?          @map("created_by") @db.VarChar(255)
+  createdAt    DateTime?        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime?        @default(now()) @map("updated_at") @db.Timestamptz(6)
+  lead         Lead?            @relation(fields: [leadId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  template     MessageTemplate? @relation(fields: [templateId], references: [id], onUpdate: NoAction)
+  tenant       Tenant?          @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([createdAt], map: "idx_proactive_created")
   @@index([leadId], map: "idx_proactive_lead")
   @@index([phoneNumber], map: "idx_proactive_phone")
   @@index([status], map: "idx_proactive_status")
+  @@index([tenantId], map: "idx_proactive_tenant_id")
   @@map("proactive_messages")
 }
 
 model WhatsAppConversation {
-  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  leadId        String?   @map("lead_id") @db.Uuid
-  messageId     String?   @map("message_id") @db.Uuid
-  sessionId     String    @map("session_id") @db.VarChar(255)
-  phoneNumber   String    @map("phone_number") @db.VarChar(50)
-  contactName   String?   @map("contact_name") @db.VarChar(255)
-  messageType   String?   @default("text") @map("message_type") @db.VarChar(50)
-  intent        String?   @db.VarChar(255)
-  sentiment     String?   @db.VarChar(100)
-  isFromUser    Boolean?  @default(true) @map("is_from_user")
-  tokensUsed    Int?      @default(0) @map("tokens_used")
-  lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz(6)
-  messageCount  Int?      @default(0) @map("message_count")
-  status        String?   @default("active") @db.VarChar(50)
-  metadata      Json?     @default("{}")
-  createdAt     DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime? @default(now()) @map("updated_at") @db.Timestamptz(6)
-  aiProvider    String?   @default("gemini") @map("ai_provider") @db.VarChar(50)
-  lead          Lead?     @relation(fields: [leadId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  message       Message?  @relation(fields: [messageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId          String?          @map("tenant_id") @db.Uuid
+  leadId            String?          @map("lead_id") @db.Uuid
+  messageId         String?          @map("message_id") @db.Uuid
+  whatsappSessionId String?          @map("whatsapp_session_id") @db.Uuid
+  sessionId         String           @map("session_id") @db.VarChar(255)
+  phoneNumber       String           @map("phone_number") @db.VarChar(50)
+  contactName       String?          @map("contact_name") @db.VarChar(255)
+  messageType       String?          @default("text") @map("message_type") @db.VarChar(50)
+  intent            String?          @db.VarChar(255)
+  sentiment         String?          @db.VarChar(100)
+  isFromUser        Boolean?         @default(true) @map("is_from_user")
+  tokensUsed        Int?             @default(0) @map("tokens_used")
+  lastMessageAt     DateTime?        @map("last_message_at") @db.Timestamptz(6)
+  messageCount      Int?             @default(0) @map("message_count")
+  status            String?          @default("active") @db.VarChar(50)
+  metadata          Json?            @default("{}")
+  createdAt         DateTime?        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime?        @default(now()) @map("updated_at") @db.Timestamptz(6)
+  aiProvider        String?          @default("gemini") @map("ai_provider") @db.VarChar(50)
+  lead              Lead?            @relation(fields: [leadId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  message           Message?         @relation(fields: [messageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  tenant            Tenant?          @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  whatsappSession   WhatsAppSession? @relation(fields: [whatsappSessionId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([createdAt], map: "idx_whatsapp_created")
   @@index([phoneNumber], map: "idx_whatsapp_phone")
   @@index([sessionId], map: "idx_whatsapp_session")
   @@index([messageId], map: "idx_whatsapp_conversations_message_id")
+  @@index([tenantId], map: "idx_whatsapp_conversations_tenant_id")
+  @@index([whatsappSessionId], map: "idx_whatsapp_conversations_session_uuid")
   @@map("whatsapp_conversations")
 }
 
 model AiTrainingInteraction {
-  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userMessage          String   @map("user_message")
-  aiResponse           String   @map("ai_response")
-  knowledgeBaseIdsUsed String[] @default([]) @map("knowledge_base_ids_used")
-  successScore         Decimal? @default(0.50) @map("success_score") @db.Decimal
-  contextData          Json     @map("context_data")
-  feedbackMetrics      Json     @map("feedback_metrics")
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId             String?   @map("tenant_id") @db.Uuid
+  userMessage          String    @map("user_message")
+  aiResponse           String    @map("ai_response")
+  knowledgeBaseIdsUsed String[]  @default([]) @map("knowledge_base_ids_used")
+  successScore         Decimal?  @default(0.50) @map("success_score") @db.Decimal
+  contextData          Json      @map("context_data")
+  feedbackMetrics      Json      @map("feedback_metrics")
   createdAt            DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
   updatedAt            DateTime? @default(now()) @map("updated_at") @db.Timestamp(6)
+  tenant               Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
+  @@index([tenantId], map: "idx_ai_training_tenant_id")
   @@map("ai_training_interactions")
 }
 
 model WhatsAppSession {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  sessionId       String    @unique @map("session_id") @db.VarChar(255)
-  name            String?   @db.VarChar(255)
-  status          String    @default("connecting") @db.VarChar(50)
-  qrCode          String?   @map("qr_code") @db.Text
-  connectedNumber String?   @map("connected_number") @db.VarChar(50)
-  authData        Json?     @map("auth_data")
-  lastSeen        DateTime  @default(now()) @map("last_seen") @db.Timestamptz(6)
-  isActive        Boolean   @default(true) @map("is_active")
-  reconnectCount  Int       @default(0) @map("reconnect_count")
-  lastError       String?   @map("last_error")
-  webhookUrl      String?   @map("webhook_url")
-  metadata        Json?     @default("{}")
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String?                @map("tenant_id") @db.Uuid
+  aiAgentId             String?                @map("ai_agent_id") @db.Uuid
+  sessionId             String                 @unique @map("session_id") @db.VarChar(255)
+  name                  String?                @db.VarChar(255)
+  status                String                 @default("connecting") @db.VarChar(50)
+  qrCode                String?                @map("qr_code") @db.Text
+  connectedNumber       String?                @map("connected_number") @db.VarChar(50)
+  authData              Json?                  @map("auth_data")
+  lastSeen              DateTime               @default(now()) @map("last_seen") @db.Timestamptz(6)
+  isActive              Boolean                @default(true) @map("is_active")
+  reconnectCount        Int                    @default(0) @map("reconnect_count")
+  lastError             String?                @map("last_error")
+  webhookUrl            String?                @map("webhook_url")
+  metadata              Json?                  @default("{}")
+  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime               @default(now()) @map("updated_at") @db.Timestamptz(6)
+  tenant                Tenant?                @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  aiAgent               AiAgent?               @relation(fields: [aiAgentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  whatsappConversations WhatsAppConversation[]
 
   @@index([sessionId], map: "idx_sessions_session_id")
   @@index([status], map: "idx_sessions_status")
   @@index([isActive], map: "idx_sessions_active")
   @@index([lastSeen], map: "idx_sessions_last_seen")
   @@index([connectedNumber], map: "idx_sessions_phone")
+  @@index([tenantId], map: "idx_sessions_tenant_id")
+  @@index([aiAgentId], map: "idx_sessions_ai_agent_id")
   @@map("whatsapp_sessions")
 }
 
 model WhatsAppWhitelistLog {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId       String?   @map("tenant_id") @db.Uuid
   phoneNumber    String    @map("phone_number") @db.VarChar(50)
   sessionId      String?   @map("session_id") @db.VarChar(255)
   decision       String    @db.VarChar(20) // NOT NULL - standardized on this field
@@ -275,11 +356,67 @@ model WhatsAppWhitelistLog {
   userAgent      String?   @map("user_agent") @db.Text
   createdBy      String?   @map("created_by") @db.VarChar(255)
   createdAt      DateTime? @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant         Tenant?   @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([createdAt], map: "idx_whitelist_logs_created")
   @@index([decision], map: "idx_whitelist_logs_decision")
   @@index([phoneNumber], map: "idx_whitelist_logs_phone")
   @@index([sessionId], map: "idx_whitelist_logs_session")
   @@index([leadId], map: "idx_whitelist_logs_lead_id")
+  @@index([tenantId], map: "idx_whitelist_logs_tenant_id")
   @@map("whatsapp_whitelist_logs")
+}
+
+model AiAgent {
+  id                         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                   String              @map("tenant_id") @db.Uuid
+  name                       String              @db.VarChar(255)
+  businessName               String              @map("business_name") @db.VarChar(255)
+  industry                   String?             @db.VarChar(255)
+  websiteUrl                 String?             @map("website_url") @db.VarChar(500)
+  logoUrl                    String?             @map("logo_url") @db.VarChar(500)
+  businessHours              Json?               @map("business_hours")
+  personaName                String?             @map("persona_name") @db.VarChar(255)
+  primaryGoal                PrimaryGoal         @default(CONTACT) @map("primary_goal")
+  goalCtaUrl                 String?             @map("goal_cta_url") @db.VarChar(500)
+  goalDescription            String?             @map("goal_description") @db.Text
+  tone                       AgentTone           @default(FRIENDLY)
+  language                   String              @default("es") @db.VarChar(10)
+  customInstructions         String?             @map("custom_instructions") @db.Text
+  responseMaxWords           Int?                @map("response_max_words")
+  allowEmojis                Boolean             @default(true) @map("allow_emojis")
+  llmProvider                String?             @map("llm_provider") @db.VarChar(50)
+  llmModel                   String?             @map("llm_model") @db.VarChar(100)
+  enableStructuredExtraction Boolean             @default(false) @map("enable_structured_extraction")
+  createdAt                  DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant                     Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  knowledgeBaseItems         ai_knowledge_base[]
+  products                   AiProduct[]
+  whatsappSessions           WhatsAppSession[]
+
+  @@index([tenantId], map: "idx_ai_agents_tenant_id")
+  @@map("ai_agents")
+}
+
+model AiProduct {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  agentId     String   @map("agent_id") @db.Uuid
+  name        String   @db.VarChar(255)
+  description String?  @db.Text
+  priceMin    Decimal? @map("price_min") @db.Decimal(10, 2)
+  priceMax    Decimal? @map("price_max") @db.Decimal(10, 2)
+  url         String?  @db.VarChar(500)
+  imageUrl    String?  @map("image_url") @db.VarChar(500)
+  tags        String[] @db.VarChar(50)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  agent       AiAgent  @relation(fields: [agentId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId], map: "idx_ai_products_tenant_id")
+  @@index([agentId], map: "idx_ai_products_agent_id")
+  @@map("ai_products")
 }
