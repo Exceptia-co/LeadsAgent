@@ -104,6 +104,11 @@
       "inputs": ["prisma/schema.prisma", ".env*"],
       "outputs": ["node_modules/.pnpm/**"]
     },
+    "db:generate:win": {
+      "cache": false,
+      "inputs": ["prisma/schema.prisma", ".env*"],
+      "outputs": ["node_modules/.pnpm/**"]
+    },
     "db:migrate:dev": {
       "cache": false
     },

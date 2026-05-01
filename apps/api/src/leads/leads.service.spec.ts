@@ -76,6 +76,40 @@ describe('LeadsService', () => {
     });
   });
 
+  describe('update', () => {
+    it('updates only active leads and strips + from phone', async () => {
+      prisma.lead.findFirst.mockResolvedValue({ id: 'u1' });
+      prisma.lead.update.mockResolvedValue({
+        id: 'u1',
+        phone: '34600112233',
+        moodScore: null,
+      });
+
+      const result = await service.update('u1', {
+        phone: '+34600112233',
+      } as any);
+
+      expect(prisma.lead.findFirst).toHaveBeenCalledWith({
+        where: { id: 'u1', deletedAt: null },
+        select: { id: true },
+      });
+      expect(prisma.lead.update).toHaveBeenCalledWith({
+        where: { id: 'u1' },
+        data: { phone: '34600112233' },
+      });
+      expect(result.phone).toBe('+34600112233');
+    });
+
+    it('throws when trying to update a missing or soft-deleted lead', async () => {
+      prisma.lead.findFirst.mockResolvedValue(null);
+
+      await expect(service.update('missing', { name: 'Nope' })).rejects.toThrow(
+        /not found/i,
+      );
+      expect(prisma.lead.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('findAll', () => {
     it('includes deletedAt: null in the where clause (T4.1)', async () => {
       prisma.lead.findMany.mockResolvedValue([]);
@@ -134,6 +168,7 @@ describe('LeadsService', () => {
 
   describe('remove', () => {
     it('performs a soft delete via update, not a destructive delete (T4.1)', async () => {
+      prisma.lead.findFirst.mockResolvedValue({ id: 'u1' });
       prisma.lead.update.mockResolvedValue({ id: 'u1', deletedAt: new Date() });
 
       await service.remove('u1');
@@ -163,7 +198,12 @@ describe('LeadsService', () => {
 
   describe('updateStatus', () => {
     it('updates status and reformats phone on output', async () => {
-      prisma.lead.update.mockResolvedValue({ id: 'u1', phone: '34600112233' });
+      prisma.lead.findFirst.mockResolvedValue({ id: 'u1' });
+      prisma.lead.update.mockResolvedValue({
+        id: 'u1',
+        phone: '34600112233',
+        moodScore: null,
+      });
 
       const result = await service.updateStatus('u1', LeadStatus.GANADO);
 
@@ -177,6 +217,7 @@ describe('LeadsService', () => {
 
   describe('updateWhatsAppAuth', () => {
     it('persists the flag and returns a structured response', async () => {
+      prisma.lead.findFirst.mockResolvedValue({ id: 'u1' });
       prisma.lead.update.mockResolvedValue({ id: 'u1' });
 
       const result = await service.updateWhatsAppAuth('u1', true);

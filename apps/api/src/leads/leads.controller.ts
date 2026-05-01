@@ -10,7 +10,6 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
-  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -42,19 +41,16 @@ export class LeadsController {
   })
   @ApiResponse({ status: 400, description: 'Bad Request.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  async create(@Body() createLeadDto: CreateLeadDto, @CurrentUser() user: any) {
-    try {
-      // If assignedTo is not provided in DTO but user context exists, use it
-      if (!createLeadDto.assignedTo && user?.userId) {
-        createLeadDto.assignedTo = user.userId;
-      }
-      return await this.leadsService.create(createLeadDto);
-    } catch (error) {
-      if (error.message === 'Ya existe un lead con este número de teléfono') {
-        throw new BadRequestException(error.message);
-      }
-      throw error;
+  async create(
+    @Body() createLeadDto: CreateLeadDto,
+    @CurrentUser() user: { userId?: string },
+  ) {
+    // If assignedTo is not provided in DTO but user context exists, use it
+    if (!createLeadDto.assignedTo && user?.userId) {
+      createLeadDto.assignedTo = user.userId;
     }
+
+    return this.leadsService.create(createLeadDto);
   }
 
   @Get()

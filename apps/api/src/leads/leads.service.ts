@@ -1,18 +1,52 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { LeadsQueryDto } from './dto/leads-query.dto';
-import { LeadStatus } from '@prisma/client';
+import { Lead, LeadStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class LeadsService {
   constructor(private prisma: PrismaService) {}
 
+  private cleanPhone(phone: string): string {
+    return phone.replace(/^\+/, '');
+  }
+
+  private formatLeadForResponse(lead: Lead) {
+    return {
+      ...lead,
+      phone: lead.phone ? '+' + lead.phone : lead.phone,
+      score: lead.moodScore ? Number(lead.moodScore) : null,
+    };
+  }
+
+  private isPrismaError(error: unknown, code: string): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === code
+    );
+  }
+
+  private async assertActiveLead(id: string): Promise<void> {
+    const lead = await this.prisma.lead.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (!lead) {
+      throw new NotFoundException('Lead not found');
+    }
+  }
+
   async create(createLeadDto: CreateLeadDto) {
     try {
       // Limpiar el número de teléfono - remover el símbolo + si existe
-      const cleanedPhone = createLeadDto.phone.replace(/^\+/, '');
+      const cleanedPhone = this.cleanPhone(createLeadDto.phone);
 
       // Verificar si ya existe un lead con este número
       const existingLead = await this.prisma.lead.findUnique({
@@ -20,7 +54,9 @@ export class LeadsService {
       });
 
       if (existingLead) {
-        throw new Error('Ya existe un lead con este número de teléfono');
+        throw new ConflictException(
+          'Ya existe un lead con este número de teléfono',
+        );
       }
 
       // Crear el lead con el teléfono limpio (sin +)
@@ -32,18 +68,13 @@ export class LeadsService {
       });
 
       // Devolver el lead con el formato de teléfono con +
-      return {
-        ...lead,
-        phone: lead.phone ? '+' + lead.phone : lead.phone,
-      };
+      return this.formatLeadForResponse(lead);
     } catch (error) {
-      // Re-lanzar el error para que sea manejado por el controlador
-      if (error.message === 'Ya existe un lead con este número de teléfono') {
-        throw error;
-      }
       // Para errores de Prisma, proporcionar mensajes más amigables
-      if (error.code === 'P2002') {
-        throw new Error('Ya existe un lead con este número de teléfono');
+      if (this.isPrismaError(error, 'P2002')) {
+        throw new ConflictException(
+          'Ya existe un lead con este número de teléfono',
+        );
       }
       throw error;
     }
@@ -84,11 +115,9 @@ export class LeadsService {
     ]);
 
     // Transform data to match frontend expectations
-    const transformedLeads = leads.map((lead) => ({
-      ...lead,
-      phone: lead.phone ? '+' + lead.phone : lead.phone, // Add + to phone number for display
-      score: lead.moodScore ? Number(lead.moodScore) : null, // Map moodScore to score for frontend and convert to number
-    }));
+    const transformedLeads = leads.map((lead) =>
+      this.formatLeadForResponse(lead),
+    );
 
     return {
       data: transformedLeads,
@@ -109,36 +138,44 @@ export class LeadsService {
       where: { id, deletedAt: null },
     });
     if (!lead) {
-      throw new Error('Lead not found');
+      throw new NotFoundException('Lead not found');
     }
 
     // Transform data to match frontend expectations
-    return {
-      ...lead,
-      phone: lead.phone ? '+' + lead.phone : lead.phone, // Add + to phone number for display
-      score: lead.moodScore ? Number(lead.moodScore) : null, // Map moodScore to score for frontend and convert to number
-    };
+    return this.formatLeadForResponse(lead);
   }
 
   async update(id: string, updateLeadDto: UpdateLeadDto) {
-    // Si se está actualizando el teléfono, limpiarlo primero
-    if (updateLeadDto.phone) {
-      updateLeadDto.phone = updateLeadDto.phone.replace(/^\+/, '');
-    }
+    await this.assertActiveLead(id);
 
-    const lead = await this.prisma.lead.update({
-      where: { id },
-      data: updateLeadDto,
-    });
-
-    // Devolver con el formato de teléfono con +
-    return {
-      ...lead,
-      phone: lead.phone ? '+' + lead.phone : lead.phone,
+    const data: UpdateLeadDto = {
+      ...updateLeadDto,
+      ...(updateLeadDto.phone
+        ? { phone: this.cleanPhone(updateLeadDto.phone) }
+        : {}),
     };
+
+    try {
+      const lead = await this.prisma.lead.update({
+        where: { id },
+        data,
+      });
+
+      // Devolver con el formato de teléfono con +
+      return this.formatLeadForResponse(lead);
+    } catch (error) {
+      if (this.isPrismaError(error, 'P2002')) {
+        throw new ConflictException(
+          'Ya existe un lead con este número de teléfono',
+        );
+      }
+      throw error;
+    }
   }
 
   async remove(id: string) {
+    await this.assertActiveLead(id);
+
     // T4.1: soft delete — marcar `deleted_at` en vez de eliminar la fila.
     // Las tablas relacionadas (messages, proactive_messages,
     // whatsapp_conversations) tienen FK ON DELETE SET NULL, pero al usar
@@ -202,20 +239,21 @@ export class LeadsService {
   }
 
   async updateStatus(id: string, status: LeadStatus) {
+    await this.assertActiveLead(id);
+
     const lead = await this.prisma.lead.update({
       where: { id },
       data: { status },
     });
 
     // Devolver con el formato de teléfono con +
-    return {
-      ...lead,
-      phone: lead.phone ? '+' + lead.phone : lead.phone,
-    };
+    return this.formatLeadForResponse(lead);
   }
 
   async updateWhatsAppAuth(id: string, whatsappAuthorized: boolean) {
-    const lead = await this.prisma.lead.update({
+    await this.assertActiveLead(id);
+
+    await this.prisma.lead.update({
       where: { id },
       data: { whatsappAuthorized },
     });
