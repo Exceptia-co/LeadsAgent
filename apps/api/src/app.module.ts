@@ -10,6 +10,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { AuthModule } from './auth/auth.module';
 import { TemplatesModule } from './templates/templates.module';
 import { resolve } from 'path';
+import { ClerkWebhooksModule } from './clerk-webhooks/clerk-webhooks.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { resolve } from 'path';
     LeadsModule,
     TemplatesModule,
     WhatsAppModule,
+    ClerkWebhooksModule,
   ],
   controllers: [AppController],
   providers: [
