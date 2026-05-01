@@ -7,7 +7,10 @@ import { WhatsAppService } from './WhatsAppService';
 function spyOnRunInitialize(impl: () => Promise<void>): jest.Mock<Promise<void>, []> {
   const mock = jest.fn(impl);
   jest
-    .spyOn(WhatsAppService.prototype as unknown as { runInitialize: () => Promise<void> }, 'runInitialize')
+    .spyOn(
+      WhatsAppService.prototype as unknown as { runInitialize: () => Promise<void> },
+      'runInitialize'
+    )
     .mockImplementation(mock);
   return mock;
 }
