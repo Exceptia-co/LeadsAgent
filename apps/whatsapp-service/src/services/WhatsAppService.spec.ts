@@ -1,19 +1,25 @@
 import { WhatsAppService } from './WhatsAppService';
 
-// Bypass the heavy deps the constructor wires up (Redis, stats service, etc.)
-// and exercise only the idempotent init contract.
-function makeService(runImpl: jest.Mock<Promise<void>, []>) {
-  const svc = new WhatsAppService();
-  // Replace the private body with the mock — the public initialize() wraps it
-  // with the idempotent guard we want to test.
-  (svc as unknown as { runInitialize: () => Promise<void> }).runInitialize = runImpl;
-  return svc;
+// Spy on the prototype BEFORE constructing — this way any accidental
+// re-introduction of `this.initialize()` (or the underlying runInitialize)
+// inside the constructor would still hit the mock and reveal itself, instead
+// of silently invoking the real implementation against unmocked Redis/etc.
+function spyOnRunInitialize(impl: () => Promise<void>): jest.Mock<Promise<void>, []> {
+  const mock = jest.fn(impl);
+  jest
+    .spyOn(WhatsAppService.prototype as unknown as { runInitialize: () => Promise<void> }, 'runInitialize')
+    .mockImplementation(mock);
+  return mock;
 }
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
 
 describe('WhatsAppService.initialize idempotency', () => {
   test('runs the real init body exactly once even with two sequential calls', async () => {
-    const run = jest.fn().mockResolvedValue(undefined);
-    const svc = makeService(run);
+    const run = spyOnRunInitialize(() => Promise.resolve());
+    const svc = new WhatsAppService();
 
     await svc.initialize();
     await svc.initialize();
@@ -23,13 +29,13 @@ describe('WhatsAppService.initialize idempotency', () => {
 
   test('two concurrent calls share the same in-flight promise', async () => {
     let resolveInner: () => void = () => undefined;
-    const run = jest.fn().mockImplementation(
+    const run = spyOnRunInitialize(
       () =>
         new Promise<void>(res => {
           resolveInner = res;
         })
     );
-    const svc = makeService(run);
+    const svc = new WhatsAppService();
 
     const p1 = svc.initialize();
     const p2 = svc.initialize();
@@ -44,11 +50,12 @@ describe('WhatsAppService.initialize idempotency', () => {
   });
 
   test('after a failure the promise is cleared so a retry can run again', async () => {
-    const run = jest
-      .fn()
-      .mockRejectedValueOnce(new Error('boom'))
-      .mockResolvedValueOnce(undefined);
-    const svc = makeService(run);
+    let attempt = 0;
+    const run = spyOnRunInitialize(() => {
+      attempt += 1;
+      return attempt === 1 ? Promise.reject(new Error('boom')) : Promise.resolve();
+    });
+    const svc = new WhatsAppService();
 
     await expect(svc.initialize()).rejects.toThrow('boom');
     await expect(svc.initialize()).resolves.toBeUndefined();
@@ -56,10 +63,12 @@ describe('WhatsAppService.initialize idempotency', () => {
   });
 
   test('constructor does not start initialization on import', () => {
-    const run = jest.fn().mockResolvedValue(undefined);
-    const svc = makeService(run);
+    const run = spyOnRunInitialize(() => Promise.resolve());
+    const svc = new WhatsAppService();
 
-    // No call yet — caller must opt in via initialize().
+    // No call yet — caller must opt in via initialize(). This guards against
+    // regressions that re-introduce a fire-and-forget this.initialize() in
+    // the constructor.
     expect(run).not.toHaveBeenCalled();
     void svc;
   });

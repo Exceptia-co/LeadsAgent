@@ -135,6 +135,7 @@ UUIDs are primary keys throughout. Cascade was relaxed in T4.1 to support soft d
 - Group/broadcast filter: `@g.us` and `status@broadcast` JIDs are dropped before parsing
 - Typing indicator wraps the entire `processMessageWithAI` (start at handler entry, clear in `finally`) so the user sees "typing..." for the full ~5-6s LLM thinking window
 - The runtime stays alive on `uncaughtException` / `unhandledRejection` (no `process.exit(1)`) so a crash in one session doesn't kill the others
+- **Dev local con `PUPPETEER_HEADLESS=false`**: el Chrome de Puppeteer queda visible con DevTools abierto (`devtools = !isProduction && !headless` en `puppeteer.config.ts:103`). Cualquier interacción tuya con esa ventana (abrir DevTools, refrescar, scroll en panel de elementos) puede destruir el JS context y causar `Protocol error: Execution context was destroyed` en el siguiente `Client.sendMessage`. Para smoke runtime fiable: `PUPPETEER_HEADLESS=true pnpm dev` (la env var debe estar declarada en `turbo.json globalEnv` — ya incluida como `PUPPETEER_*`, ver patrón whitelist; también `dotenv.config()` no pisa env vars existentes, así que el override de shell gana sobre `.env`). Producción siempre es headless por `NODE_ENV=production`.
 
 ### Dashboard (apps/dashboard)
 
