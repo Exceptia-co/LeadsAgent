@@ -6,6 +6,7 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
   "/sign-up(.*)",
+  "/select-org(.*)",
   "/api/webhooks/(.*)",
   "/api/public/(.*)", // Todas las rutas API públicas
   "/test-clerk", // Ruta de debugging
@@ -17,28 +18,50 @@ const isProtectedRoute = createRouteMatcher(["/dashboard(.*)"]);
 export default clerkMiddleware(async (auth, request) => {
   const { nextUrl } = request;
 
-  // Si es una ruta pública, permitir acceso SIN llamar a auth() para evitar errores de clerk
+  // === Rutas públicas ===
   if (isPublicRoute(request)) {
     // Para rutas API públicas, evitar cualquier procesamiento de autenticación
     if (nextUrl.pathname.startsWith("/api/public/")) {
       return NextResponse.next();
     }
 
-    // Para otras rutas públicas, verificar autenticación solo si es necesario
-    const { userId } = await auth();
+    // /select-org delega su lógica de auth al Server Component (defensa en
+    // profundidad). El middleware no llama auth() aquí para no acoplar la
+    // página al middleware ni provocar latencia extra.
+    if (nextUrl.pathname.startsWith("/select-org")) {
+      return NextResponse.next();
+    }
+
+    // Solo "/" llama auth() y redirige según orgId
+    const { userId, orgId } = await auth();
     if (userId && nextUrl.pathname === "/") {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
+      return NextResponse.redirect(
+        new URL(orgId ? "/dashboard" : "/select-org", request.url),
+      );
     }
     return NextResponse.next();
   }
 
-  // Para rutas protegidas, verificar autenticación
-  const { userId } = await auth();
-  if (isProtectedRoute(request) && !userId) {
-    return NextResponse.redirect(new URL("/sign-in", request.url));
+  // === Rutas protegidas /dashboard(.*) ===
+  if (isProtectedRoute(request)) {
+    const { userId, orgId } = await auth();
+
+    // Caso A: sin sesión → /sign-in
+    if (!userId) {
+      return NextResponse.redirect(new URL("/sign-in", request.url));
+    }
+
+    // Caso B: sesión sin org activa → /select-org
+    if (!orgId) {
+      return NextResponse.redirect(new URL("/select-org", request.url));
+    }
   }
 
-  // Permitir acceso si está autenticado o si no es una ruta protegida
+  // === Resto de rutas (incluye API routes privadas) ===
+  // El middleware NO toca auth aquí. Cada handler aplica su propia
+  // protección (requireClerkToken, ClerkAuthGuard, etc.) y devuelve
+  // 401 JSON si falla — no redirige a HTML. Esto preserva el contrato
+  // existente de las API routes privadas (/api/whatsapp/*, /api/leads/*, etc.).
   return NextResponse.next();
 });
 
