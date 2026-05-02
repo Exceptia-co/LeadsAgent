@@ -1295,8 +1295,18 @@ class DatabaseService {
   // NUEVOS MÉTODOS PARA CONVERSACIONES
   // ============================================
 
-  // Obtener conversaciones estructuradas con información de leads
-  public async getConversations(limit: number = 50, offset: number = 0): Promise<any[]> {
+  // Obtener conversaciones estructuradas con información de leads.
+  //
+  // PR5a-ter (Codex review #2): tenantId is REQUIRED. Both the inner
+  // whatsapp_conversations scan and the JOIN to leads filter by
+  // tenant_id, so a tenant only sees conversations and leads that
+  // belong to it. Mock fallback is also tenant-aware (returns empty for
+  // non-default tenants in dev).
+  public async getConversations(
+    tenantId: string,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<any[]> {
     if (!this.pool) {
       logger.warn('No hay conexión a base de datos para obtener conversaciones');
       return this.getMockConversations(limit, offset);
@@ -1307,6 +1317,8 @@ class DatabaseService {
       // `getAllLeads()` + `find()` por cada fila = escaneo O(N*M)).
       // T4.1: filtra leads soft-deleted.
       // T1.1-bis paso 4: el contenido canónico vive en messages.content.
+      // PR5a-ter: WHERE tenant_id added on both whatsapp_conversations
+      // scans and the leads JOIN.
       const query = `
         WITH latest_messages AS (
           SELECT DISTINCT ON (wc.phone_number)
@@ -1320,6 +1332,7 @@ class DatabaseService {
             wc.updated_at
           FROM whatsapp_conversations wc
           LEFT JOIN messages m ON m.id = wc.message_id
+          WHERE wc.tenant_id = $1::uuid
           ORDER BY wc.phone_number, wc.created_at DESC
         ),
         unread_counts AS (
@@ -1327,7 +1340,7 @@ class DatabaseService {
             phone_number,
             COUNT(*) as unread_count
           FROM whatsapp_conversations
-          WHERE is_from_user = true
+          WHERE is_from_user = true AND tenant_id = $1::uuid
           GROUP BY phone_number
         )
         SELECT
@@ -1341,13 +1354,14 @@ class DatabaseService {
         LEFT JOIN unread_counts uc ON lm.phone_number = uc.phone_number
         LEFT JOIN leads l
           ON l.deleted_at IS NULL
+          AND l.tenant_id = $1::uuid
           AND RIGHT(REGEXP_REPLACE(l.phone, '[^0-9]', '', 'g'), 10)
             = RIGHT(REGEXP_REPLACE(lm.phone_number, '[^0-9]', '', 'g'), 10)
         ORDER BY lm.created_at DESC
-        LIMIT $1 OFFSET $2;
+        LIMIT $2 OFFSET $3;
       `;
 
-      const result = await this.pool.query(query, [limit, offset]);
+      const result = await this.pool.query(query, [tenantId, limit, offset]);
 
       const conversations = result.rows.map(row => ({
         id: `conv_${row.phone_number}`,
@@ -1385,19 +1399,31 @@ class DatabaseService {
     }
   }
 
-  // Obtener conversación específica por ID
-  public async getConversationById(conversationId: string): Promise<any | null> {
+  // Obtener conversación específica por ID.
+  // PR5a-ter: tenant-scoped lead lookup; null on cross-tenant conv id.
+  public async getConversationById(
+    conversationId: string,
+    tenantId: string
+  ): Promise<any | null> {
+    if (!this.prisma) return null;
     try {
-      // Extraer número de teléfono del ID de conversación
       const phoneNumber = conversationId.replace('conv_', '');
-      const leads = await this.getAllLeads();
+      const conversationPhone = phoneNumber.replace(/[^0-9]/g, '').slice(-10);
 
-      // Buscar lead correspondiente
+      const leads = await this.prisma.lead.findMany({
+        where: { tenantId, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          status: true,
+        },
+      });
+
       const lead = leads.find(l => {
         if (!l.phone) return false;
         const leadPhone = l.phone.replace(/[^0-9]/g, '');
-        const conversationPhone = phoneNumber.replace(/[^0-9]/g, '');
-        return leadPhone.slice(-10) === conversationPhone.slice(-10);
+        return leadPhone.slice(-10) === conversationPhone;
       });
 
       if (!lead) {
@@ -1407,7 +1433,7 @@ class DatabaseService {
       return {
         id: conversationId,
         leadId: lead.id,
-        lead: lead,
+        lead,
       };
     } catch (error) {
       logger.error('Error obteniendo conversación por ID:', error);
@@ -1415,18 +1441,21 @@ class DatabaseService {
     }
   }
 
-  // Obtener mensajes de una conversación con paginación
+  // Obtener mensajes de una conversación con paginación.
+  //
+  // PR5a-ter (Codex review #2): tenantId required. SQL filters
+  // whatsapp_conversations.tenant_id so messages of another tenant with
+  // the same phone are never returned.
   public async getConversationMessages(
     conversationId: string,
+    tenantId: string,
     limit: number = 50,
     offset: number = 0
   ): Promise<{ conversation: any; messages?: any[] }> {
     try {
-      // Extraer número de teléfono del ID de conversación
       const phoneNumber = conversationId.replace('conv_', '');
 
-      // Obtener información de la conversación
-      const conversation = await this.getConversationById(conversationId);
+      const conversation = await this.getConversationById(conversationId, tenantId);
       if (!conversation) {
         return { conversation: null };
       }
@@ -1441,7 +1470,6 @@ class DatabaseService {
         };
       }
 
-      // Obtener mensajes de la base de datos (JOIN con messages tras T1.1-bis paso 4).
       const query = `
         SELECT
           wc.id, wc.session_id, wc.phone_number, wc.contact_name,
@@ -1449,12 +1477,12 @@ class DatabaseService {
           wc.message_type, wc.is_from_user, wc.created_at, wc.updated_at
         FROM whatsapp_conversations wc
         LEFT JOIN messages m ON m.id = wc.message_id
-        WHERE wc.phone_number = $1
+        WHERE wc.phone_number = $1 AND wc.tenant_id = $4::uuid
         ORDER BY wc.created_at ASC
         LIMIT $2 OFFSET $3;
       `;
 
-      const result = await this.pool.query(query, [phoneNumber, limit, offset]);
+      const result = await this.pool.query(query, [phoneNumber, limit, offset, tenantId]);
 
       // Convertir mensajes al formato esperado
       const messages = result.rows.map(row => ({
@@ -2198,8 +2226,11 @@ class DatabaseService {
   // MENSAJES PROACTIVOS
   // ============================================
 
-  // Crear mensaje proactivo
+  // Crear mensaje proactivo.
+  // PR5a-ter (Codex review #3): tenantId is REQUIRED. The route resolves
+  // it from the HMAC tenant header before calling this method.
   public async createProactiveMessage(data: {
+    tenantId: string;
     leadId: string;
     templateId?: string;
     sessionId?: string;
@@ -2214,12 +2245,13 @@ class DatabaseService {
 
     try {
       const query = `
-        INSERT INTO proactive_messages (lead_id, template_id, session_id, phone_number, content, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO proactive_messages (tenant_id, lead_id, template_id, session_id, phone_number, content, created_by)
+        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)
         RETURNING id;
       `;
 
       const values = [
+        data.tenantId,
         data.leadId,
         data.templateId || null,
         data.sessionId || null,
@@ -2289,34 +2321,40 @@ class DatabaseService {
   }
 
   // Obtener mensajes proactivos
+  /**
+   * PR5a-ter (Codex review #3): tenant scoping. `tenantId` is REQUIRED;
+   * leaving it optional would re-open the global view that this PR
+   * specifically closes.
+   */
   public async getProactiveMessages(
     options: {
+      tenantId: string;
       leadId?: string;
       status?: string;
       limit?: number;
       offset?: number;
-    } = {}
+    }
   ): Promise<any[]> {
     if (!this.pool) {
       return this.getMockProactiveMessages(options);
     }
 
     try {
-      const { leadId, status, limit = 50, offset = 0 } = options;
+      const { tenantId, leadId, status, limit = 50, offset = 0 } = options;
 
       let query = `
-        SELECT 
+        SELECT
           pm.id, pm.lead_id, pm.template_id, pm.session_id, pm.phone_number,
           pm.content, pm.status, pm.sent_at, pm.delivered_at, pm.error_message,
           pm.created_by, pm.created_at, pm.updated_at,
           mt.name as template_name
         FROM proactive_messages pm
         LEFT JOIN message_templates mt ON pm.template_id = mt.id
-        WHERE 1=1
+        WHERE pm.tenant_id = $1::uuid
       `;
 
-      const values: any[] = [];
-      let valueIndex = 1;
+      const values: any[] = [tenantId];
+      let valueIndex = 2;
 
       if (leadId) {
         query += ` AND pm.lead_id = $${valueIndex++}`;

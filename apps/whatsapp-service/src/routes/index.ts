@@ -3,6 +3,11 @@ import sessionController from '../controllers/SessionController';
 import healthRoutes from './health';
 import redisRoutes from './redis';
 import {
+  assertSessionOwnership,
+  requireSessionOwnership,
+  requireTenantContext,
+} from '../middleware/tenant-guard';
+import {
   validateCreateSession,
   validateSendMessage,
   validateSessionId,
@@ -83,13 +88,18 @@ router.post(
   sessionController.forceDisconnectSession.bind(sessionController)
 );
 
-// QR code route (with Redis fast-read fallback)
+// QR code route (with Redis fast-read fallback).
+//
+// PR5a-ter: requireSessionOwnership runs BEFORE the Redis short-circuit
+// so the QR cannot be returned for a session belonging to another
+// tenant. Skipping ownership for the Redis path was the original bug —
+// the cache hit answered cross-tenant.
 router.get(
   '/sessions/:sessionId/qr',
   validateSessionId,
+  requireSessionOwnership,
   async (req, res, next) => {
     try {
-      // Try Redis first for fast access
       const { redisClient, REDIS_KEYS } = await import('../config/redis');
       const qr = await redisClient.get(`${REDIS_KEYS.SESSION_QR}${req.params.sessionId}`);
       if (qr) {
@@ -104,58 +114,83 @@ router.get(
 );
 
 // ── Session Backup / Restore / Health endpoints ──────────────────
+//
+// PR5a-ter (Codex review #1): every :sessionId route now goes through
+// requireSessionOwnership before the handler so a tenant cannot
+// backup/restore/inspect a session owned by another tenant. Cross-tenant
+// returns 404 (matches SessionController's leak-safe pattern).
 
 // Force backup a session
-router.post('/sessions/:sessionId/backup', validateSessionId, async (req, res) => {
-  try {
-    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-    const result = await WhatsAppService.forceBackup(req.params.sessionId);
-    if (result.success) {
-      res.json({ success: true, data: { sizeBytes: result.sizeBytes } });
-    } else {
-      res.status(400).json({ success: false, error: result.error });
+router.post(
+  '/sessions/:sessionId/backup',
+  validateSessionId,
+  requireSessionOwnership,
+  async (req, res) => {
+    try {
+      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+      const result = await WhatsAppService.forceBackup(req.params.sessionId);
+      if (result.success) {
+        res.json({ success: true, data: { sizeBytes: result.sizeBytes } });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({ success: false, error: 'Error creating backup' });
     }
-  } catch (error) {
-    res.status(500).json({ success: false, error: 'Error creating backup' });
   }
-});
+);
 
 // Restore backup for a session
-router.post('/sessions/:sessionId/restore-backup', validateSessionId, async (req, res) => {
-  try {
-    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-    const result = await WhatsAppService.restoreBackup(req.params.sessionId);
-    if (result.success) {
-      res.json({ success: true, message: 'Backup restored successfully' });
-    } else {
-      res.status(400).json({ success: false, error: result.error });
+router.post(
+  '/sessions/:sessionId/restore-backup',
+  validateSessionId,
+  requireSessionOwnership,
+  async (req, res) => {
+    try {
+      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+      const result = await WhatsAppService.restoreBackup(req.params.sessionId);
+      if (result.success) {
+        res.json({ success: true, message: 'Backup restored successfully' });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({ success: false, error: 'Error restoring backup' });
     }
-  } catch (error) {
-    res.status(500).json({ success: false, error: 'Error restoring backup' });
   }
-});
+);
 
 // Get backup status for a session
-router.get('/sessions/:sessionId/backup-status', validateSessionId, async (req, res) => {
-  try {
-    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-    const status = await WhatsAppService.getBackupStatus(req.params.sessionId);
-    res.json({ success: true, data: status });
-  } catch (error) {
-    res.status(500).json({ success: false, error: 'Error getting backup status' });
+router.get(
+  '/sessions/:sessionId/backup-status',
+  validateSessionId,
+  requireSessionOwnership,
+  async (req, res) => {
+    try {
+      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+      const status = await WhatsAppService.getBackupStatus(req.params.sessionId);
+      res.json({ success: true, data: status });
+    } catch (error) {
+      res.status(500).json({ success: false, error: 'Error getting backup status' });
+    }
   }
-});
+);
 
 // Get session health
-router.get('/sessions/:sessionId/health', validateSessionId, async (req, res) => {
-  try {
-    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-    const health = await WhatsAppService.getSessionHealth(req.params.sessionId);
-    res.json({ success: true, data: health });
-  } catch (error) {
-    res.status(500).json({ success: false, error: 'Error getting session health' });
+router.get(
+  '/sessions/:sessionId/health',
+  validateSessionId,
+  requireSessionOwnership,
+  async (req, res) => {
+    try {
+      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+      const health = await WhatsAppService.getSessionHealth(req.params.sessionId);
+      res.json({ success: true, data: health });
+    } catch (error) {
+      res.status(500).json({ success: false, error: 'Error getting session health' });
+    }
   }
-});
+);
 
 // Message routes
 router.post(
@@ -277,13 +312,19 @@ router.post('/ai/test', async (req, res) => {
 // ENDPOINTS DE CONVERSACIONES (NUEVOS)
 // ============================================
 
-// Obtener todas las conversaciones con paginación
-router.get('/conversations', async (req, res) => {
+// Obtener todas las conversaciones con paginación.
+// PR5a-ter (Codex review #2): tenant-scoped — req.tenantId comes from
+// the HMAC middleware and is required.
+router.get('/conversations', requireTenantContext, async (req, res) => {
   try {
     const { limit = 50, offset = 0 } = req.query;
 
     const { default: DatabaseService } = await import('../services/DatabaseService');
-    const conversations = await DatabaseService.getConversations(Number(limit), Number(offset));
+    const conversations = await DatabaseService.getConversations(
+      req.tenantId!,
+      Number(limit),
+      Number(offset)
+    );
 
     res.json(conversations); // Retornar directamente el array para compatibilidad
   } catch (error) {
@@ -295,80 +336,120 @@ router.get('/conversations', async (req, res) => {
   }
 });
 
-// Obtener mensajes de una conversación específica
-router.get('/conversations/:conversationId/messages', async (req, res) => {
-  try {
-    const { conversationId } = req.params;
-    const { limit = 50, offset = 0 } = req.query;
+// Obtener mensajes de una conversación específica.
+// PR5a-ter: tenant-scoped — getConversationMessages filters by tenantId
+// so a conversationId from another tenant returns 404.
+router.get(
+  '/conversations/:conversationId/messages',
+  requireTenantContext,
+  async (req, res) => {
+    try {
+      const { conversationId } = req.params;
+      const { limit = 50, offset = 0 } = req.query;
 
-    const { default: DatabaseService } = await import('../services/DatabaseService');
-    const result = await DatabaseService.getConversationMessages(
-      conversationId,
-      Number(limit),
-      Number(offset)
-    );
+      const { default: DatabaseService } = await import('../services/DatabaseService');
+      const result = await DatabaseService.getConversationMessages(
+        conversationId,
+        req.tenantId!,
+        Number(limit),
+        Number(offset)
+      );
 
-    if (!result.conversation) {
-      return res.status(404).json({
-        success: false,
-        error: 'Conversation not found',
-      });
-    }
+      if (!result.conversation) {
+        return res.status(404).json({
+          success: false,
+          error: 'Conversation not found',
+        });
+      }
 
-    res.json(result);
-  } catch (error) {
-    console.error('Error getting conversation messages:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error getting conversation messages',
-    });
-  }
-});
-
-// Enviar mensaje en una conversación específica
-router.post('/conversations/:conversationId/send', async (req, res) => {
-  try {
-    const { conversationId } = req.params;
-    const { sessionId, message, type = 'text' } = req.body;
-
-    if (!sessionId || !message) {
-      return res.status(400).json({
-        success: false,
-        error: 'sessionId and message are required',
-      });
-    }
-
-    // Extraer número de teléfono del ID de conversación
-    const phoneNumber = conversationId.replace('conv_', '');
-
-    // Importar el servicio de WhatsApp
-    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-
-    // Formatear número para WhatsApp
-    const formattedNumber = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
-
-    // Enviar mensaje
-    const result = await WhatsAppService.sendMessage(sessionId, formattedNumber, message);
-
-    if (result.success) {
-      res.json({
-        success: true,
-        messageId: result.messageId,
-      });
-    } else {
+      res.json(result);
+    } catch (error) {
+      console.error('Error getting conversation messages:', error);
       res.status(500).json({
         success: false,
-        error: result.error || 'Failed to send message',
+        error: 'Error getting conversation messages',
       });
     }
-  } catch (error) {
-    console.error('Error sending message in conversation:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error sending message',
-    });
   }
-});
+);
+
+// Enviar mensaje en una conversación específica.
+//
+// PR5a-ter (Codex review #2): the sessionId still comes from the body
+// (legacy contract — dashboard picks the session) but we now MUST verify
+// it belongs to req.tenantId before sending. Without this, knowledge of
+// a sessionId would let a tenant send through another tenant's WhatsApp
+// session.
+router.post(
+  '/conversations/:conversationId/send',
+  requireTenantContext,
+  async (req, res) => {
+    try {
+      const { conversationId } = req.params;
+      const { sessionId, message } = req.body;
+
+      if (!sessionId || !message) {
+        return res.status(400).json({
+          success: false,
+          error: 'sessionId and message are required',
+        });
+      }
+
+      const ownsSession = await assertSessionOwnership(sessionId, req.tenantId!);
+      if (!ownsSession) {
+        return res
+          .status(404)
+          .json({ success: false, error: 'Session not found' });
+      }
+
+      // Verify the conversation also belongs to this tenant.
+      const { default: DatabaseService } = await import('../services/DatabaseService');
+      const conversation = await DatabaseService.getConversationById(
+        conversationId,
+        req.tenantId!
+      );
+      if (!conversation) {
+        return res
+          .status(404)
+          .json({ success: false, error: 'Conversation not found' });
+      }
+
+      // Extraer número de teléfono del ID de conversación
+      const phoneNumber = conversationId.replace('conv_', '');
+
+      // Importar el servicio de WhatsApp
+      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+
+      // Formatear número para WhatsApp
+      const formattedNumber = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
+
+      // Enviar mensaje
+      const result = await WhatsAppService.sendMessage(
+        sessionId,
+        formattedNumber,
+        message
+      );
+
+      if (result.success) {
+        res.json({
+          success: true,
+          messageId: result.messageId,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: result.error || 'Failed to send message',
+        });
+      }
+    } catch (error) {
+      console.error('Error sending message in conversation:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Error sending message',
+      });
+    }
+  }
+);
 
 // Conversations management endpoints (ORIGINALES - mantener para compatibilidad)
 //
@@ -550,8 +631,14 @@ router.get('/stats/whitelist', async (req, res) => {
 // ENDPOINTS DE MENSAJES PROACTIVOS
 // ============================================
 
-// Crear y enviar mensaje proactivo
-router.post('/proactive-messages', rateLimitBySession, async (req, res) => {
+// Crear y enviar mensaje proactivo.
+//
+// PR5a-ter (Codex review #3): tenant-guarded.
+//   - leadId: looked up scoped to req.tenantId (cross-tenant -> 404)
+//   - sessionId: ownership verified against req.tenantId (cross-tenant -> 404)
+//   - createProactiveMessage now persists tenant_id; no more tenantless
+//     proactive_messages rows from this route
+router.post('/proactive-messages', requireTenantContext, rateLimitBySession, async (req, res) => {
   try {
     const { leadId, templateId, sessionId = 'default-session', content, variables = {} } = req.body;
 
@@ -564,10 +651,30 @@ router.post('/proactive-messages', rateLimitBySession, async (req, res) => {
 
     const { default: DatabaseService } = await import('../services/DatabaseService');
     const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+    const { PrismaClient } = await import('@leadcrm/db');
+    // Reuse the singleton on DatabaseService rather than spawning a new
+    // PrismaClient per request — see DatabaseService constructor.
+    const prismaClient = (DatabaseService as unknown as { prisma: InstanceType<typeof PrismaClient> }).prisma;
+    if (!prismaClient) {
+      return res.status(500).json({
+        success: false,
+        error: 'Database not initialized',
+      });
+    }
 
-    // Obtener información del lead
-    const leads = await DatabaseService.getAllLeads();
-    const lead = leads.find(l => l.id === leadId);
+    // PR5a-ter: tenant-scoped lookup. Cross-tenant leadId -> 404 (no leak).
+    const lead = await prismaClient.lead.findFirst({
+      where: { id: leadId, tenantId: req.tenantId!, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        email: true,
+        status: true,
+        source: true,
+        whatsappAuthorized: true,
+      },
+    });
 
     if (!lead) {
       return res.status(404).json({
@@ -581,6 +688,21 @@ router.post('/proactive-messages', rateLimitBySession, async (req, res) => {
         success: false,
         error: 'Lead has not authorized WhatsApp messages',
       });
+    }
+
+    // PR5a-ter: session ownership check unless we're using the demo
+    // sentinel sessionIds (which never produce real sends — see isDemoMode
+    // below). The dashboard always passes a real sessionId for production
+    // sends; demo-session/default-session are local-dev shortcuts.
+    const isDemoSentinel = sessionId === 'demo-session' || sessionId === 'default-session';
+    if (!isDemoSentinel) {
+      const ownsSession = await assertSessionOwnership(sessionId, req.tenantId!);
+      if (!ownsSession) {
+        return res.status(404).json({
+          success: false,
+          error: 'Session not found',
+        });
+      }
     }
 
     // Procesar content con variables - SIEMPRE aplicar reemplazo de variables
@@ -615,8 +737,9 @@ router.post('/proactive-messages', rateLimitBySession, async (req, res) => {
     // SIEMPRE aplicar reemplazo de variables (incluye sistema + lead + dinámicas + custom)
     finalContent = DatabaseService.replaceTemplateVariables(content, baseLeadVariables);
 
-    // Crear registro del mensaje proactivo
+    // Crear registro del mensaje proactivo (PR5a-ter: tenantId required).
     const proactiveMessageId = await DatabaseService.createProactiveMessage({
+      tenantId: req.tenantId!,
       leadId,
       templateId: validTemplateId, // Solo usar si es un UUID válido
       sessionId,
@@ -722,8 +845,15 @@ router.post('/proactive-messages', rateLimitBySession, async (req, res) => {
   }
 });
 
-// Enviar mensajes proactivos masivos
-router.post('/proactive-messages/bulk', rateLimitBySession, async (req, res) => {
+// Enviar mensajes proactivos masivos.
+// PR5a-ter (Codex review #3): tenant-guarded — sessionId ownership
+// verified once up front; each leadId is filtered scoped per iteration
+// inside the loop (see lead.findFirst with tenantId).
+router.post(
+  '/proactive-messages/bulk',
+  requireTenantContext,
+  rateLimitBySession,
+  async (req, res) => {
   try {
     const { leadIds, templateId, sessionId, content, variables } = req.body;
 
@@ -739,6 +869,12 @@ router.post('/proactive-messages/bulk', rateLimitBySession, async (req, res) => 
         success: false,
         error: 'sessionId is required',
       });
+    }
+
+    // PR5a-ter: session ownership before bulk loop
+    const ownsSession = await assertSessionOwnership(sessionId, req.tenantId!);
+    if (!ownsSession) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
     }
 
     // T2.4: throttle adaptativo según uso actual de la cuota por sesión
@@ -761,14 +897,24 @@ router.post('/proactive-messages/bulk', rateLimitBySession, async (req, res) => 
     // Importar servicios
     const { default: DatabaseService } = await import('../services/DatabaseService');
     const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+    // PR5a-ter: tenant-scoped Prisma client used for the per-lead lookup
+    // inside the loop (cross-tenant leadIds are silently skipped as
+    // "Lead no encontrado").
+    const prismaClient = (DatabaseService as unknown as {
+      prisma: { lead: { findFirst: (args: any) => Promise<any> } };
+    }).prisma;
 
     // Procesar cada lead
     for (const leadId of leadIds) {
       try {
         console.log(`🔄 Processing lead: ${leadId}`);
 
-        // Obtener información del lead
-        const lead = await DatabaseService.findLeadById(leadId);
+        // PR5a-ter: tenant-scoped lookup (cross-tenant -> not found).
+        const lead = prismaClient
+          ? await prismaClient.lead.findFirst({
+              where: { id: leadId, tenantId: req.tenantId!, deletedAt: null },
+            })
+          : null;
         if (!lead) {
           console.log(`❌ Lead not found: ${leadId}`);
           results.failed++;
@@ -800,8 +946,9 @@ router.post('/proactive-messages/bulk', rateLimitBySession, async (req, res) => 
         // Usar el método de DatabaseService que incluye todas las variables (sistema + dinámicas)
         messageContent = DatabaseService.replaceTemplateVariables(messageContent, leadVariables);
 
-        // Guardar el mensaje en la base de datos
+        // Guardar el mensaje en la base de datos (PR5a-ter: tenantId required)
         const proactiveMessageId = await DatabaseService.createProactiveMessage({
+          tenantId: req.tenantId!,
           leadId,
           templateId: templateId || undefined,
           sessionId,
@@ -865,15 +1012,18 @@ router.post('/proactive-messages/bulk', rateLimitBySession, async (req, res) => 
       error: 'Error sending bulk proactive messages',
     });
   }
-});
+  }
+);
 
-// Obtener mensajes proactivos
-router.get('/proactive-messages', async (req, res) => {
+// Obtener mensajes proactivos.
+// PR5a-ter: tenant-scoped — getProactiveMessages filters by tenantId.
+router.get('/proactive-messages', requireTenantContext, async (req, res) => {
   try {
     const { leadId, status, limit = 50, offset = 0 } = req.query;
 
     const { default: DatabaseService } = await import('../services/DatabaseService');
     const messages = await DatabaseService.getProactiveMessages({
+      tenantId: req.tenantId!,
       leadId: leadId as string,
       status: status as string,
       limit: parseInt(limit as string),
@@ -893,13 +1043,15 @@ router.get('/proactive-messages', async (req, res) => {
   }
 });
 
-// Obtener estadísticas de mensajes proactivos
-router.get('/proactive-messages/stats', async (req, res) => {
+// Obtener estadísticas de mensajes proactivos.
+// PR5a-ter: tenant-scoped (passes tenantId to getProactiveMessages).
+router.get('/proactive-messages/stats', requireTenantContext, async (req, res) => {
   try {
     const { default: DatabaseService } = await import('../services/DatabaseService');
 
-    // Obtener mensajes de todos los estados
+    // Obtener mensajes de todos los estados (filtrados por tenant)
     const allMessages = await DatabaseService.getProactiveMessages({
+      tenantId: req.tenantId!,
       limit: 1000,
     });
 
