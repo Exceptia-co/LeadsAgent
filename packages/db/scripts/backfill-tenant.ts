@@ -205,15 +205,102 @@ async function backfillTenantId(
       planned[m.tableName] = Number(row[0].count);
       console.log(`[Plan] UPDATE ${m.tableName} SET tenant_id='${tenantId}' WHERE tenant_id IS NULL  -- ${planned[m.tableName]} rows`);
     } else {
-      const result: Array<{ updated: bigint }> = await prisma.$queryRawUnsafe(
-        `UPDATE "${m.tableName}" SET tenant_id = $1::uuid WHERE tenant_id IS NULL RETURNING 1 AS updated`,
+      // $executeRawUnsafe returns count of affected rows directly (no RETURNING materialization).
+      // Más eficiente para volúmenes grandes que RETURNING 1 + result.length.
+      const affected = await prisma.$executeRawUnsafe(
+        `UPDATE "${m.tableName}" SET tenant_id = $1::uuid WHERE tenant_id IS NULL`,
         tenantId,
       );
-      planned[m.tableName] = result.length;
-      console.log(`[Apply] UPDATE ${m.tableName}: ${planned[m.tableName]} rows updated`);
+      planned[m.tableName] = affected;
+      console.log(`[Apply] UPDATE ${m.tableName}: ${affected} rows updated`);
     }
   }
   return planned;
+}
+
+/**
+ * B1.9 extensions (Codex review post-PR4):
+ *   - whatsapp_sessions.ai_agent_id = default agent (operacional para PR5)
+ *   - ai_knowledge_base.agent_id   = default agent (B2 KB retrieval por agent)
+ *   - whatsapp_conversations.whatsapp_session_id = JOIN whatsapp_sessions.session_id
+ *     (B1.6(b) backfill parcial; el drop de session_id VARCHAR queda para PR5)
+ *
+ * Se ejecutan después del UPDATE tenant_id para que las filas afectadas ya
+ * tengan tenant_id correcto (reduce sorpresas si Prisma extension PR5 mira
+ * tenant_id durante este UPDATE).
+ */
+async function backfillRelations(
+  prisma: PrismaClient,
+  tenantId: string,
+  agentId: string,
+  apply: boolean,
+): Promise<void> {
+  // 1. whatsapp_sessions.ai_agent_id = agentId WHERE ai_agent_id IS NULL
+  if (!apply) {
+    const row: Array<{ count: bigint }> = await prisma.$queryRawUnsafe(
+      `SELECT COUNT(*)::bigint AS count FROM "whatsapp_sessions" WHERE ai_agent_id IS NULL AND tenant_id = $1::uuid`,
+      tenantId,
+    );
+    console.log(`[Plan] UPDATE whatsapp_sessions SET ai_agent_id='${agentId}' WHERE ai_agent_id IS NULL  -- ${Number(row[0].count)} rows`);
+  } else {
+    const affected = await prisma.$executeRawUnsafe(
+      `UPDATE "whatsapp_sessions" SET ai_agent_id = $1::uuid WHERE ai_agent_id IS NULL AND tenant_id = $2::uuid`,
+      agentId,
+      tenantId,
+    );
+    console.log(`[Apply] UPDATE whatsapp_sessions.ai_agent_id: ${affected} rows updated`);
+  }
+
+  // 2. ai_knowledge_base.agent_id = agentId WHERE agent_id IS NULL
+  if (!apply) {
+    const row: Array<{ count: bigint }> = await prisma.$queryRawUnsafe(
+      `SELECT COUNT(*)::bigint AS count FROM "ai_knowledge_base" WHERE agent_id IS NULL AND tenant_id = $1::uuid`,
+      tenantId,
+    );
+    console.log(`[Plan] UPDATE ai_knowledge_base SET agent_id='${agentId}' WHERE agent_id IS NULL  -- ${Number(row[0].count)} rows`);
+  } else {
+    const affected = await prisma.$executeRawUnsafe(
+      `UPDATE "ai_knowledge_base" SET agent_id = $1::uuid WHERE agent_id IS NULL AND tenant_id = $2::uuid`,
+      agentId,
+      tenantId,
+    );
+    console.log(`[Apply] UPDATE ai_knowledge_base.agent_id: ${affected} rows updated`);
+  }
+
+  // 3. whatsapp_conversations.whatsapp_session_id = JOIN whatsapp_sessions
+  //    matching session_id VARCHAR. Filas sin match en whatsapp_sessions quedan
+  //    NULL (huérfanas) — eso es información operativa que el reporte muestra.
+  if (!apply) {
+    const orphanRow: Array<{ count: bigint }> = await prisma.$queryRawUnsafe(
+      `SELECT COUNT(*)::bigint AS count FROM "whatsapp_conversations" c
+       WHERE c.whatsapp_session_id IS NULL
+       AND NOT EXISTS (SELECT 1 FROM "whatsapp_sessions" s WHERE s.session_id = c.session_id)`,
+    );
+    const matchableRow: Array<{ count: bigint }> = await prisma.$queryRawUnsafe(
+      `SELECT COUNT(*)::bigint AS count FROM "whatsapp_conversations" c
+       WHERE c.whatsapp_session_id IS NULL
+       AND EXISTS (SELECT 1 FROM "whatsapp_sessions" s WHERE s.session_id = c.session_id)`,
+    );
+    console.log(`[Plan] UPDATE whatsapp_conversations.whatsapp_session_id JOIN whatsapp_sessions  -- ${Number(matchableRow[0].count)} matchable, ${Number(orphanRow[0].count)} orphan (no matching session_id)`);
+  } else {
+    const affected = await prisma.$executeRawUnsafe(
+      `UPDATE "whatsapp_conversations" c
+       SET whatsapp_session_id = s.id
+       FROM "whatsapp_sessions" s
+       WHERE c.whatsapp_session_id IS NULL
+       AND s.session_id = c.session_id`,
+    );
+    console.log(`[Apply] UPDATE whatsapp_conversations.whatsapp_session_id: ${affected} rows updated`);
+
+    // Reportar huérfanos restantes (no es error, es información)
+    const orphanRow: Array<{ count: bigint }> = await prisma.$queryRawUnsafe(
+      `SELECT COUNT(*)::bigint AS count FROM "whatsapp_conversations" WHERE whatsapp_session_id IS NULL`,
+    );
+    const orphan = Number(orphanRow[0].count);
+    if (orphan > 0) {
+      console.log(`[Apply] WARN: ${orphan} whatsapp_conversations rows still have NULL whatsapp_session_id (no matching whatsapp_sessions.session_id). Drop de session_id VARCHAR queda para PR5 — verificar antes.`);
+    }
+  }
 }
 
 async function ensureDefaultAiAgent(
@@ -221,15 +308,17 @@ async function ensureDefaultAiAgent(
   tenantId: string,
   tenantName: string,
   apply: boolean,
-): Promise<void> {
+): Promise<string> {
   const existing = await prisma.aiAgent.findFirst({ where: { tenantId } });
   if (existing) {
     console.log(`[AiAgent] Found existing for tenant ${tenantId}: ${existing.id} ("${existing.name}"). Skip create.`);
-    return;
+    return existing.id;
   }
   const defaultName = `${tenantName} Default`;
   console.log(`[AiAgent] No agents for tenant ${tenantId}. Plan: CREATE name="${defaultName}".`);
-  if (!apply) return;
+  if (!apply) {
+    return '<dry-run-placeholder-agent-uuid>';
+  }
 
   const agent = await prisma.aiAgent.create({
     data: {
@@ -241,6 +330,7 @@ async function ensureDefaultAiAgent(
     },
   });
   console.log(`[AiAgent] CREATED ${agent.id}`);
+  return agent.id;
 }
 
 async function patchClerkMetadata(
@@ -313,11 +403,15 @@ async function main() {
     console.log('');
     const planned = await backfillTenantId(prisma, tenantId, args.apply);
 
-    // 4. Ensure default AiAgent
+    // 4. Ensure default AiAgent (and capture its id for relation backfill)
     console.log('');
-    await ensureDefaultAiAgent(prisma, tenantId, args.tenantName, args.apply);
+    const agentId = await ensureDefaultAiAgent(prisma, tenantId, args.tenantName, args.apply);
 
-    // 5. Counts after (only if apply, else print plan summary)
+    // 5. Backfill relations to default agent + session FK (Codex review post-PR4)
+    console.log('');
+    await backfillRelations(prisma, tenantId, agentId, args.apply);
+
+    // 6. Counts after (only if apply, else print plan summary)
     if (args.apply) {
       const after = await countOrphanRows(prisma);
       printCountTable(after, 'Counts AFTER backfill');
@@ -327,7 +421,7 @@ async function main() {
       console.log(`Would UPDATE ${totalPlanned} rows total across ${Object.keys(planned).length} tables.`);
     }
 
-    // 6. PATCH Clerk metadata if requested
+    // 7. PATCH Clerk metadata if requested
     if (args.patchClerk) {
       console.log('');
       await patchClerkMetadata(args.clerkOrgId, tenantId, args.apply);
