@@ -50,10 +50,13 @@ export class TemplatesService {
     });
   }
 
+  /**
+   * PR5a-bis (Codex finding #3): atomic tenant-scoped update via
+   * updateMany. One SQL statement, no TOCTOU window.
+   */
   async update(id: string, dto: UpdateTemplateDto, tenantId: string) {
-    await this.findOne(id, tenantId);
-    return this.prisma.messageTemplate.update({
-      where: { id },
+    const result = await this.prisma.messageTemplate.updateMany({
+      where: { id, tenantId },
       data: {
         name: dto.name,
         category: dto.category,
@@ -63,11 +66,30 @@ export class TemplatesService {
         isActive: dto.isActive,
       },
     });
+    if (result.count === 0) {
+      throw new NotFoundException(`Template ${id} not found`);
+    }
+    // Re-fetch to return the updated row.
+    const template = await this.prisma.messageTemplate.findFirst({
+      where: { id, tenantId },
+    });
+    if (!template) {
+      throw new NotFoundException(`Template ${id} not found`);
+    }
+    return template;
   }
 
+  /**
+   * PR5a-bis: atomic tenant-scoped delete via deleteMany.
+   */
   async remove(id: string, tenantId: string) {
-    await this.findOne(id, tenantId);
-    return this.prisma.messageTemplate.delete({ where: { id } });
+    const result = await this.prisma.messageTemplate.deleteMany({
+      where: { id, tenantId },
+    });
+    if (result.count === 0) {
+      throw new NotFoundException(`Template ${id} not found`);
+    }
+    return { success: true, templateId: id };
   }
 
   async preview(

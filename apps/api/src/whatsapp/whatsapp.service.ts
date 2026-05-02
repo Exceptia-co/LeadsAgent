@@ -304,8 +304,21 @@ export class WhatsAppService {
         return false;
       }
 
+      // PR5a-bis: bind the session's tenantId into the HMAC payload so
+      // the whatsapp-service can authoritatively scope the send by tenant.
+      // If the session has no tenantId (legacy pre-backfill) we abort
+      // rather than send under an empty tenant claim — the receiver would
+      // reject it anyway, this just fails earlier with a clearer log.
+      const tenantId = await this.getSessionTenantId(sessionId);
+      if (!tenantId) {
+        this.logger.error(
+          `Cannot send via session ${sessionId}: session has no tenantId. Run B1.9 backfill.`,
+        );
+        return false;
+      }
+
       const body = JSON.stringify({ to, message });
-      const signedHeaders = signServiceRequest(body, secret);
+      const signedHeaders = signServiceRequest(body, secret, tenantId);
 
       const response = await fetch(
         `${whatsappServiceUrl}/api/sessions/${sessionId}/send`,

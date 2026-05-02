@@ -362,35 +362,30 @@ class DatabaseService {
     }
 
     try {
-      // PR5a: resolve tenant from the session BEFORE writing. We persist
-      // tenantId on both messages and whatsapp_conversations so PR5b can
-      // safely add NOT NULL + drop the global unique on Lead.phone.
+      // PR5a-bis (Codex finding #2): tenantId is REQUIRED to write. Tenantless
+      // writes were a regression — they reintroduced rows that PR5b NOT NULL
+      // would block, and they leaked across orgs. If the session has no
+      // tenantId yet, skip the write entirely; the operator must run B1.9
+      // backfill on whatsapp_sessions before runtime can persist messages.
       const tenantId = await this.getSessionTenantId(data.sessionId);
       if (!tenantId) {
-        logger.warn(
-          `⚠️ [UNIFIED-WRITE] session ${data.sessionId} has no tenantId — message persisted with tenant_id=null. Run B1.9 backfill.`
+        logger.error(
+          `🚫 [UNIFIED-WRITE] session ${data.sessionId} has no tenantId — DROPPING message (no tenantless persistence). Run B1.9 backfill on whatsapp_sessions.`
         );
+        return null;
       }
 
       const normalizedPhone = data.phoneNumber.replace(/^\+/, '');
-      // findFirst (not findUnique) so the lookup is tenant-aware and ready
-      // for PR5b composite unique. When tenantId is null (legacy session),
-      // fall back to the global unique to keep behaviour identical.
-      const lead = tenantId
-        ? await this.prisma.lead.findFirst({
-            where: { phone: normalizedPhone, tenantId },
-            select: { id: true },
-          })
-        : await this.prisma.lead.findUnique({
-            where: { phone: normalizedPhone },
-            select: { id: true },
-          });
+      const lead = await this.prisma.lead.findFirst({
+        where: { phone: normalizedPhone, tenantId },
+        select: { id: true },
+      });
 
       const result = await this.prisma.$transaction(async tx => {
         const message = await tx.message.create({
           data: {
             leadId: lead?.id ?? null,
-            tenantId: tenantId ?? null,
+            tenantId,
             content: canonicalContent,
             direction: isFromUser ? MessageDirection.INBOUND : MessageDirection.OUTBOUND,
             messageType: toPrismaMessageType(data.messageType),
@@ -401,7 +396,7 @@ class DatabaseService {
         const conversation = await tx.whatsAppConversation.create({
           data: {
             leadId: lead?.id ?? null,
-            tenantId: tenantId ?? null,
+            tenantId,
             messageId: message.id,
             sessionId: data.sessionId,
             phoneNumber: data.phoneNumber,
@@ -446,14 +441,18 @@ class DatabaseService {
 
   // Obtener historial de conversación por número de teléfono.
   //
-  // T1.1-bis paso 3 (reader migration): ahora usa Prisma con include del
-  // message vinculado. Prefiere message_text/response_text legacy si están
-  // poblados; si no, cae a message.content via el FK. Esto hace que el
-  // reader funcione antes y después de que el paso 4 dropee los campos
-  // duplicados.
+  // T1.1-bis paso 3 (reader migration): usa Prisma con include del message
+  // vinculado.
+  //
+  // PR5a-bis (Codex finding #2): tenant scoping. Callers should pass
+  // `opts.tenantId` directly when known, or `opts.sessionId` so we can
+  // derive it. If neither is provided, the read falls back to phone-only
+  // (legacy behavior) and emits a WARN — this surfaces remaining
+  // unscoped call sites without breaking them mid-deploy.
   public async getConversationHistory(
     phoneNumber: string,
-    limit: number = 50
+    limit: number = 50,
+    opts?: { tenantId?: string; sessionId?: string }
   ): Promise<ConversationHistory[]> {
     if (!this.prisma) {
       logger.warn('No hay Prisma client disponible');
@@ -461,8 +460,17 @@ class DatabaseService {
     }
 
     try {
+      const tenantId =
+        opts?.tenantId ??
+        (opts?.sessionId ? await this.getSessionTenantId(opts.sessionId) : null);
+      if (!tenantId) {
+        logger.warn(
+          `[UNSCOPED-READ] getConversationHistory(${phoneNumber}) without tenantId/sessionId — falling back to global phone scope. Update caller to pass opts.tenantId or opts.sessionId.`
+        );
+      }
+
       const rows = await this.prisma.whatsAppConversation.findMany({
-        where: { phoneNumber },
+        where: tenantId ? { phoneNumber, tenantId } : { phoneNumber },
         orderBy: { createdAt: 'desc' },
         take: limit,
         include: { message: { select: { content: true, direction: true } } },
@@ -494,7 +502,12 @@ class DatabaseService {
     }
   }
 
-  // Obtener historial reciente para contexto de IA (últimos N mensajes)
+  // Obtener historial reciente para contexto de IA (últimos N mensajes).
+  //
+  // PR5a-bis (Codex finding #2): always derives tenantId from the session
+  // and filters by it. If the session has no tenant yet (legacy
+  // pre-backfill), returns [] rather than leaking cross-tenant context to
+  // the AI.
   public async getRecentContext(
     phoneNumber: string,
     sessionId: string,
@@ -509,8 +522,16 @@ class DatabaseService {
     }
 
     try {
+      const tenantId = await this.getSessionTenantId(sessionId);
+      if (!tenantId) {
+        logger.warn(
+          `[TENANT-SAFE] getRecentContext: session ${sessionId} has no tenantId — returning empty context (no cross-tenant leak)`
+        );
+        return [];
+      }
+
       const rows = await this.prisma.whatsAppConversation.findMany({
-        where: { phoneNumber, sessionId },
+        where: { phoneNumber, sessionId, tenantId },
         orderBy: { createdAt: 'asc' },
         take: limit,
         include: { message: { select: { content: true } } },
@@ -981,10 +1002,16 @@ class DatabaseService {
     return true;
   }
 
-  // Get recent conversations across all phone numbers
+  // Get recent conversations across all phone numbers.
+  //
+  // PR5a-bis (Codex finding #2): tenant scoping.
+  //   - sessionId provided -> derive tenantId from session, filter by both.
+  //   - sessionId omitted but opts.tenantId provided -> filter by tenantId only.
+  //   - neither provided -> WARN and fall back to global (legacy callers).
   public async getRecentConversations(
     sessionId?: string,
-    limit: number = 50
+    limit: number = 50,
+    opts?: { tenantId?: string }
   ): Promise<ConversationHistory[]> {
     if (!this.prisma) {
       logger.warn('No hay Prisma client disponible');
@@ -992,8 +1019,22 @@ class DatabaseService {
     }
 
     try {
+      const tenantId =
+        opts?.tenantId ??
+        (sessionId ? await this.getSessionTenantId(sessionId) : null);
+      if (!tenantId) {
+        logger.warn(
+          `[UNSCOPED-READ] getRecentConversations(${sessionId ?? 'no-session'}) without tenantId — falling back to global scope. Update caller to pass opts.tenantId or a tenant-bound sessionId.`
+        );
+      }
+
+      const where: Prisma.WhatsAppConversationWhereInput = {
+        ...(sessionId ? { sessionId } : {}),
+        ...(tenantId ? { tenantId } : {}),
+      };
+
       const rows = await this.prisma.whatsAppConversation.findMany({
-        where: sessionId ? { sessionId } : {},
+        where,
         orderBy: { createdAt: 'desc' },
         take: limit,
         include: { message: { select: { content: true, direction: true } } },

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWhatsAppServiceUrl } from "../../../../lib/api-config";
 import { requireClerkToken } from "../../../../lib/auth/proxy-auth";
+import { resolveActiveTenantId } from "../../../../lib/auth/tenant-lookup";
 import { signServiceRequest } from "../../../../lib/service-auth";
 
 // Force dynamic rendering for this route
@@ -20,6 +21,22 @@ export const runtime = "nodejs";
 async function proxyRequest(request: NextRequest, path: string[], method: string) {
   const gate = await requireClerkToken();
   if (gate instanceof NextResponse) return gate;
+
+  // PR5a-bis (Codex finding #1): resolve the caller's tenant from the
+  // active Clerk org and bind it into the HMAC. Without this, any
+  // authenticated user could enumerate sessions/conversations across
+  // tenants since the whatsapp-service has no other way to know who is
+  // calling. If the user has no active org or the org has no Tenant row
+  // yet, return 403 — the dashboard middleware should already have
+  // redirected them to /select-org, so this is the server-side last line
+  // of defense.
+  const tenantId = await resolveActiveTenantId();
+  if (!tenantId) {
+    return NextResponse.json(
+      { error: "No active organization. Select an organization to continue." },
+      { status: 403 },
+    );
+  }
 
   try {
     const pathString = path.join("/");
@@ -59,7 +76,7 @@ async function proxyRequest(request: NextRequest, path: string[], method: string
       );
     }
 
-    const signedHeaders = signServiceRequest(bodyString, secret);
+    const signedHeaders = signServiceRequest(bodyString, secret, tenantId);
 
     const fetchOptions: RequestInit = {
       method,

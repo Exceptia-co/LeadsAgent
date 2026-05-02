@@ -19,6 +19,7 @@ type PrismaMock = {
     count: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
+    updateMany: jest.Mock;
     aggregate: jest.Mock;
   };
 };
@@ -32,6 +33,7 @@ function buildPrismaMock(): PrismaMock {
       count: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
       aggregate: jest.fn(),
     },
   };
@@ -87,9 +89,11 @@ describe('LeadsService', () => {
   });
 
   describe('update', () => {
-    it('updates only active leads in the caller tenant and strips + from phone', async () => {
-      prisma.lead.findFirst.mockResolvedValue({ id: 'u1' });
-      prisma.lead.update.mockResolvedValue({
+    // PR5a-bis (Codex finding #3): mutations now use updateMany with
+    // composite where {id, tenantId, deletedAt: null} — atomic, no TOCTOU.
+    it('updates via tenant-scoped updateMany and strips + from phone', async () => {
+      prisma.lead.updateMany.mockResolvedValue({ count: 1 });
+      prisma.lead.findFirst.mockResolvedValue({
         id: 'u1',
         phone: '34600112233',
         moodScore: null,
@@ -101,43 +105,36 @@ describe('LeadsService', () => {
         TENANT_A,
       );
 
-      expect(prisma.lead.findFirst).toHaveBeenCalledWith({
+      expect(prisma.lead.updateMany).toHaveBeenCalledWith({
         where: { id: 'u1', tenantId: TENANT_A, deletedAt: null },
-        select: { id: true },
-      });
-      expect(prisma.lead.update).toHaveBeenCalledWith({
-        where: { id: 'u1' },
         data: { phone: '34600112233' },
       });
+      expect(prisma.lead.update).not.toHaveBeenCalled();
       expect(result.phone).toBe('+34600112233');
     });
 
-    it('throws not-found when trying to update a missing or soft-deleted lead', async () => {
-      prisma.lead.findFirst.mockResolvedValue(null);
+    it('throws not-found when updateMany affects 0 rows (missing/soft-deleted/cross-tenant)', async () => {
+      prisma.lead.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(
         service.update('missing', { name: 'Nope' }, TENANT_A),
       ).rejects.toThrow(/not found/i);
-      expect(prisma.lead.update).not.toHaveBeenCalled();
     });
 
-    // PR5a: cross-tenant isolation. A lead that exists in TENANT_A must not
-    // be reachable from TENANT_B — the service should treat it as not found
-    // (404) rather than 403, to avoid leaking that the id exists.
-    it('returns not-found when the lead exists in a different tenant', async () => {
-      prisma.lead.findFirst.mockResolvedValue(null); // mock as if no row matches the (id, tenantId) filter
+    it('returns not-found when the lead exists in a different tenant (count=0)', async () => {
+      prisma.lead.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(
         service.update('lead-of-tenant-a', { name: 'X' }, TENANT_B),
       ).rejects.toThrow(/not found/i);
 
-      expect(prisma.lead.findFirst).toHaveBeenCalledWith({
+      expect(prisma.lead.updateMany).toHaveBeenCalledWith({
         where: {
           id: 'lead-of-tenant-a',
           tenantId: TENANT_B,
           deletedAt: null,
         },
-        select: { id: true },
+        data: { name: 'X' },
       });
     });
   });
@@ -224,16 +221,24 @@ describe('LeadsService', () => {
   });
 
   describe('remove', () => {
-    it('performs a soft delete via update, not a destructive delete (T4.1)', async () => {
-      prisma.lead.findFirst.mockResolvedValue({ id: 'u1' });
-      prisma.lead.update.mockResolvedValue({ id: 'u1', deletedAt: new Date() });
+    it('soft-deletes via tenant-scoped updateMany (T4.1 + PR5a-bis)', async () => {
+      prisma.lead.updateMany.mockResolvedValue({ count: 1 });
 
       await service.remove('u1', TENANT_A);
 
-      expect(prisma.lead.update).toHaveBeenCalledWith({
-        where: { id: 'u1' },
+      expect(prisma.lead.updateMany).toHaveBeenCalledWith({
+        where: { id: 'u1', tenantId: TENANT_A, deletedAt: null },
         data: expect.objectContaining({ deletedAt: expect.any(Date) }),
       });
+      expect(prisma.lead.update).not.toHaveBeenCalled();
+    });
+
+    it('throws not-found when remove affects 0 rows (cross-tenant or missing)', async () => {
+      prisma.lead.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.remove('lead-of-other-tenant', TENANT_B)).rejects.toThrow(
+        /not found/i,
+      );
     });
   });
 
@@ -255,12 +260,13 @@ describe('LeadsService', () => {
   });
 
   describe('updateStatus', () => {
-    it('updates status only after asserting tenant ownership', async () => {
-      prisma.lead.findFirst.mockResolvedValue({ id: 'u1' });
-      prisma.lead.update.mockResolvedValue({
+    it('updates status atomically via tenant-scoped updateMany', async () => {
+      prisma.lead.updateMany.mockResolvedValue({ count: 1 });
+      prisma.lead.findFirst.mockResolvedValue({
         id: 'u1',
         phone: '34600112233',
         moodScore: null,
+        status: LeadStatus.GANADO,
       });
 
       const result = await service.updateStatus(
@@ -269,35 +275,44 @@ describe('LeadsService', () => {
         TENANT_A,
       );
 
-      expect(prisma.lead.findFirst).toHaveBeenCalledWith({
+      expect(prisma.lead.updateMany).toHaveBeenCalledWith({
         where: { id: 'u1', tenantId: TENANT_A, deletedAt: null },
-        select: { id: true },
-      });
-      expect(prisma.lead.update).toHaveBeenCalledWith({
-        where: { id: 'u1' },
         data: { status: LeadStatus.GANADO },
       });
+      expect(prisma.lead.update).not.toHaveBeenCalled();
       expect(result.phone).toBe('+34600112233');
+    });
+
+    it('throws not-found when updateMany affects 0 rows', async () => {
+      prisma.lead.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.updateStatus('id', LeadStatus.GANADO, TENANT_B),
+      ).rejects.toThrow(/not found/i);
     });
   });
 
   describe('updateWhatsAppAuth', () => {
-    it('persists the flag and returns a structured response', async () => {
-      prisma.lead.findFirst.mockResolvedValue({ id: 'u1' });
-      prisma.lead.update.mockResolvedValue({ id: 'u1' });
+    it('persists the flag via tenant-scoped updateMany and returns a structured response', async () => {
+      prisma.lead.updateMany.mockResolvedValue({ count: 1 });
 
       const result = await service.updateWhatsAppAuth('u1', true, TENANT_A);
 
-      expect(prisma.lead.findFirst).toHaveBeenCalledWith({
+      expect(prisma.lead.updateMany).toHaveBeenCalledWith({
         where: { id: 'u1', tenantId: TENANT_A, deletedAt: null },
-        select: { id: true },
-      });
-      expect(prisma.lead.update).toHaveBeenCalledWith({
-        where: { id: 'u1' },
         data: { whatsappAuthorized: true },
       });
+      expect(prisma.lead.update).not.toHaveBeenCalled();
       expect(result.success).toBe(true);
       expect(result.data.whatsappAuthorized).toBe(true);
+    });
+
+    it('throws not-found when updateMany affects 0 rows', async () => {
+      prisma.lead.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.updateWhatsAppAuth('lead-of-other-tenant', true, TENANT_B),
+      ).rejects.toThrow(/not found/i);
     });
   });
 });

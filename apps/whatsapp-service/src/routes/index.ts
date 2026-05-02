@@ -371,13 +371,22 @@ router.post('/conversations/:conversationId/send', async (req, res) => {
 });
 
 // Conversations management endpoints (ORIGINALES - mantener para compatibilidad)
+//
+// PR5a-bis: accepts ?sessionId query param so the reader can derive
+// tenantId. Issue #1 (dashboard proxy + header propagation) will replace
+// this with a trusted x-tenant-id header. Until then, sessionId is the
+// best signal we have for tenant scoping.
 router.get('/conversations/:phoneNumber', async (req, res) => {
   try {
     const { phoneNumber } = req.params;
-    const { limit = 50 } = req.query;
+    const { limit = 50, sessionId } = req.query;
 
     const { default: DatabaseService } = await import('../services/DatabaseService');
-    const history = await DatabaseService.getConversationHistory(phoneNumber, Number(limit));
+    const history = await DatabaseService.getConversationHistory(
+      phoneNumber,
+      Number(limit),
+      typeof sessionId === 'string' ? { sessionId } : undefined
+    );
 
     res.json({
       success: true,
@@ -406,7 +415,7 @@ router.post('/conversations', async (req, res) => {
         Number(limit)
       );
     } else {
-      // Get recent conversations if no search term
+      // PR5a-bis: getRecentConversations now derives tenantId from sessionId.
       conversations = await DatabaseService.getRecentConversations(sessionId, Number(limit));
     }
 

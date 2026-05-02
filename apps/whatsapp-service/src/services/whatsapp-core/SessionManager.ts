@@ -114,12 +114,24 @@ export class SessionManager {
   }
 
   /**
-   * Persist session to database
+   * Persist session to database.
+   *
+   * PR5a-bis: tenantId is required when creating a NEW session row.
+   * Existing rows keep their tenantId (saveSession only writes tenantId
+   * on the create path). Callers that don't have a tenantId yet (legacy)
+   * may pass undefined; the row will land with tenantId=null and require
+   * a backfill — but the HTTP layer prevents this for new creates.
    */
-  async persistSession(sessionId: string, webhookUrl?: string, authFileInfo?: any): Promise<void> {
+  async persistSession(
+    sessionId: string,
+    tenantId?: string,
+    webhookUrl?: string,
+    authFileInfo?: any
+  ): Promise<void> {
     try {
       await SessionPersistenceService.saveSession({
         sessionId: sessionId,
+        tenantId,
         name: sessionId,
         status: 'connecting',
         lastSeen: new Date(),

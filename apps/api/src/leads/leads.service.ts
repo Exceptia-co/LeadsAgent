@@ -33,19 +33,31 @@ export class LeadsService {
   }
 
   /**
-   * PR5a: assert active AND tenant-scoped. Returns 404 (not 403) when the
-   * lead exists in another tenant — exposing existence cross-tenant would
-   * be an information leak.
+   * PR5a-bis (Codex finding #3): atomic tenant-scoped mutate. Uses
+   * updateMany with composite where {id, tenantId, deletedAt: null}, one
+   * SQL statement — no TOCTOU window between an "exists" check and the
+   * actual UPDATE. Returns the affected count; callers convert 0 -> 404.
    */
-  private async assertActiveLead(id: string, tenantId: string): Promise<void> {
-    const lead = await this.prisma.lead.findFirst({
+  private async scopedUpdate(
+    id: string,
+    tenantId: string,
+    data: Prisma.LeadUpdateManyMutationInput,
+  ): Promise<number> {
+    const result = await this.prisma.lead.updateMany({
       where: { id, tenantId, deletedAt: null },
-      select: { id: true },
+      data,
     });
+    return result.count;
+  }
 
-    if (!lead) {
-      throw new NotFoundException('Lead not found');
-    }
+  /**
+   * PR5a-bis: re-fetch the row after an atomic scopedUpdate so callers can
+   * format the response. Tenant-scoped lookup; returns null if not found.
+   */
+  private async fetchScopedLead(id: string, tenantId: string) {
+    return this.prisma.lead.findFirst({
+      where: { id, tenantId, deletedAt: null },
+    });
   }
 
   async create(createLeadDto: CreateLeadDto, tenantId: string) {
@@ -156,8 +168,6 @@ export class LeadsService {
   }
 
   async update(id: string, updateLeadDto: UpdateLeadDto, tenantId: string) {
-    await this.assertActiveLead(id, tenantId);
-
     const data: UpdateLeadDto = {
       ...updateLeadDto,
       ...(updateLeadDto.phone
@@ -166,14 +176,17 @@ export class LeadsService {
     };
 
     try {
-      // PR5a: composite where with tenantId guards against TOCTOU between
-      // assertActiveLead and update — Prisma throws P2025 if the row was
-      // moved to another tenant in between (defense in depth).
-      const lead = await this.prisma.lead.update({
-        where: { id },
-        data,
-      });
+      const count = await this.scopedUpdate(id, tenantId, data);
+      if (count === 0) {
+        throw new NotFoundException('Lead not found');
+      }
 
+      const lead = await this.fetchScopedLead(id, tenantId);
+      // count > 0 means the row exists, but soft-delete in flight could
+      // theoretically nullify the re-fetch — treat as 404 to be safe.
+      if (!lead) {
+        throw new NotFoundException('Lead not found');
+      }
       return this.formatLeadForResponse(lead);
     } catch (error) {
       if (this.isPrismaError(error, 'P2002')) {
@@ -186,12 +199,13 @@ export class LeadsService {
   }
 
   async remove(id: string, tenantId: string) {
-    await this.assertActiveLead(id, tenantId);
-
-    return this.prisma.lead.update({
-      where: { id },
-      data: { deletedAt: new Date() },
+    const count = await this.scopedUpdate(id, tenantId, {
+      deletedAt: new Date(),
     });
+    if (count === 0) {
+      throw new NotFoundException('Lead not found');
+    }
+    return { success: true, leadId: id };
   }
 
   async getStats(tenantId: string, assignedUserId?: string) {
@@ -246,13 +260,14 @@ export class LeadsService {
   }
 
   async updateStatus(id: string, status: LeadStatus, tenantId: string) {
-    await this.assertActiveLead(id, tenantId);
-
-    const lead = await this.prisma.lead.update({
-      where: { id },
-      data: { status },
-    });
-
+    const count = await this.scopedUpdate(id, tenantId, { status });
+    if (count === 0) {
+      throw new NotFoundException('Lead not found');
+    }
+    const lead = await this.fetchScopedLead(id, tenantId);
+    if (!lead) {
+      throw new NotFoundException('Lead not found');
+    }
     return this.formatLeadForResponse(lead);
   }
 
@@ -261,12 +276,10 @@ export class LeadsService {
     whatsappAuthorized: boolean,
     tenantId: string,
   ) {
-    await this.assertActiveLead(id, tenantId);
-
-    await this.prisma.lead.update({
-      where: { id },
-      data: { whatsappAuthorized },
-    });
+    const count = await this.scopedUpdate(id, tenantId, { whatsappAuthorized });
+    if (count === 0) {
+      throw new NotFoundException('Lead not found');
+    }
 
     return {
       success: true,
