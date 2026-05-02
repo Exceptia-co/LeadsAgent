@@ -11,6 +11,8 @@ import {
 import { WhatsAppService } from './whatsapp.service';
 import { WhitelistService } from './whitelist.service';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
+import { TenantContextGuard } from '../auth/tenant-context.guard';
+import { CurrentUser } from '../auth/user.decorator';
 import { HmacAuthGuard } from './hmac-auth.guard';
 
 interface SendMessageDto {
@@ -95,13 +97,24 @@ export class WhatsAppController {
   }
 
   @Post('send')
-  @UseGuards(ClerkAuthGuard)
-  async sendMessage(@Body() sendMessageDto: SendMessageDto) {
+  @UseGuards(ClerkAuthGuard, TenantContextGuard)
+  async sendMessage(
+    @Body() sendMessageDto: SendMessageDto,
+    @CurrentUser() user: { tenantId?: string },
+  ) {
     this.logger.log(
       `Sending message to ${sendMessageDto.phone} via session ${sendMessageDto.sessionId}`,
     );
 
     try {
+      // PR5a: verify the session belongs to the caller's tenant before
+      // forwarding the send. Without this, a tenant could enumerate
+      // sessionIds and send messages from a session it doesn't own.
+      await this.whatsAppService.assertSessionTenant(
+        sendMessageDto.sessionId,
+        user.tenantId!,
+      );
+
       const success = await this.whatsAppService.sendMessage(
         sendMessageDto.sessionId,
         sendMessageDto.phone,
@@ -120,11 +133,17 @@ export class WhatsAppController {
   }
 
   @Get('whitelist/stats')
-  @UseGuards(ClerkAuthGuard)
-  async getWhitelistStats(@Query('days') days?: string) {
+  @UseGuards(ClerkAuthGuard, TenantContextGuard)
+  async getWhitelistStats(
+    @Query('days') days: string | undefined,
+    @CurrentUser() user: { tenantId?: string },
+  ) {
     try {
       const daysNumber = days ? parseInt(days) : 7;
-      const stats = await this.whitelistService.getWhitelistStats(daysNumber);
+      const stats = await this.whitelistService.getWhitelistStats(
+        daysNumber,
+        user.tenantId!,
+      );
 
       return {
         success: true,
@@ -138,14 +157,16 @@ export class WhatsAppController {
   }
 
   @Post('whitelist/authorize')
-  @UseGuards(ClerkAuthGuard)
+  @UseGuards(ClerkAuthGuard, TenantContextGuard)
   async updateLeadAuthorization(
     @Body() body: { leadId: string; authorized: boolean; reason?: string },
+    @CurrentUser() user: { tenantId?: string },
   ) {
     try {
       const success = await this.whitelistService.updateLeadAuthorization(
         body.leadId,
         body.authorized,
+        user.tenantId!,
         body.reason,
       );
 

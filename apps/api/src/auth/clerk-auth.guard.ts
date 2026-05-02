@@ -15,6 +15,12 @@ export interface AuthenticatedRequest extends Request {
     firstName?: string;
     lastName?: string;
     imageUrl?: string;
+    // PR5a (B1.2(a) Vía B): orgId built-in claim from Clerk session token.
+    // Clerk emits `org_id` automatically when the user has an active org —
+    // no custom session token claim required (compatible with Student plan).
+    // tenantId is filled in by TenantContextGuard after lookup.
+    orgId?: string;
+    tenantId?: string;
   };
 }
 
@@ -45,11 +51,14 @@ export class ClerkAuthGuard implements CanActivate {
         throw new UnauthorizedException('Invalid token payload');
       }
 
-      // Agregar información del usuario al request
-      // Por ahora solo usamos la información del token
+      // Agregar información del usuario al request.
+      // `org_id` is a Clerk built-in claim populated when the session has an
+      // active organization. Empty string is normalized to undefined so
+      // downstream guards can treat "no active org" uniformly.
+      const orgId = (payload as { org_id?: string }).org_id;
       request.user = {
         userId: payload.sub,
-        // Otros campos se pueden obtener del token o hacer una llamada adicional si es necesario
+        orgId: orgId && orgId.length > 0 ? orgId : undefined,
       };
 
       return true;

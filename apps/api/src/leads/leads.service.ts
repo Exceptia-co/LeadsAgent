@@ -32,9 +32,14 @@ export class LeadsService {
     );
   }
 
-  private async assertActiveLead(id: string): Promise<void> {
+  /**
+   * PR5a: assert active AND tenant-scoped. Returns 404 (not 403) when the
+   * lead exists in another tenant — exposing existence cross-tenant would
+   * be an information leak.
+   */
+  private async assertActiveLead(id: string, tenantId: string): Promise<void> {
     const lead = await this.prisma.lead.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, tenantId, deletedAt: null },
       select: { id: true },
     });
 
@@ -43,12 +48,16 @@ export class LeadsService {
     }
   }
 
-  async create(createLeadDto: CreateLeadDto) {
+  async create(createLeadDto: CreateLeadDto, tenantId: string) {
     try {
-      // Limpiar el número de teléfono - remover el símbolo + si existe
       const cleanedPhone = this.cleanPhone(createLeadDto.phone);
 
-      // Verificar si ya existe un lead con este número
+      // PR5a: phone is still globally unique on the schema. Detecting the
+      // collision early gives a friendlier error than the P2002 thrown by
+      // Prisma. Until PR5b lifts the global unique into a composite
+      // (phone, tenant_id), this also doubles as cross-tenant collision
+      // detection — which is acceptable because the `phone` column is
+      // shared until then.
       const existingLead = await this.prisma.lead.findUnique({
         where: { phone: cleanedPhone },
       });
@@ -59,18 +68,16 @@ export class LeadsService {
         );
       }
 
-      // Crear el lead con el teléfono limpio (sin +)
       const lead = await this.prisma.lead.create({
         data: {
           ...createLeadDto,
           phone: cleanedPhone,
+          tenantId,
         },
       });
 
-      // Devolver el lead con el formato de teléfono con +
       return this.formatLeadForResponse(lead);
     } catch (error) {
-      // Para errores de Prisma, proporcionar mensajes más amigables
       if (this.isPrismaError(error, 'P2002')) {
         throw new ConflictException(
           'Ya existe un lead con este número de teléfono',
@@ -80,11 +87,16 @@ export class LeadsService {
     }
   }
 
-  async findAll(query: LeadsQueryDto, assignedUserId?: string) {
+  async findAll(
+    query: LeadsQueryDto,
+    tenantId: string,
+    assignedUserId?: string,
+  ) {
     const { page = 1, limit = 10, q, status } = query;
     const skip = (page - 1) * limit;
 
-    const where = {
+    const where: Prisma.LeadWhereInput = {
+      tenantId,
       // T4.1: soft delete — excluir leads marcados como deleted.
       deletedAt: null,
       ...(assignedUserId && { assignedTo: assignedUserId }),
@@ -107,14 +119,13 @@ export class LeadsService {
         include: {
           messages: {
             orderBy: { createdAt: 'desc' },
-            take: 1, // Get latest message
+            take: 1,
           },
         },
       }),
       this.prisma.lead.count({ where }),
     ]);
 
-    // Transform data to match frontend expectations
     const transformedLeads = leads.map((lead) =>
       this.formatLeadForResponse(lead),
     );
@@ -132,21 +143,20 @@ export class LeadsService {
     };
   }
 
-  async findOne(id: string) {
-    // T4.1: soft delete — treat a soft-deleted lead as not found.
+  async findOne(id: string, tenantId: string) {
+    // PR5a: tenant-scoped lookup. soft-deleted treated as not found (T4.1).
     const lead = await this.prisma.lead.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, tenantId, deletedAt: null },
     });
     if (!lead) {
       throw new NotFoundException('Lead not found');
     }
 
-    // Transform data to match frontend expectations
     return this.formatLeadForResponse(lead);
   }
 
-  async update(id: string, updateLeadDto: UpdateLeadDto) {
-    await this.assertActiveLead(id);
+  async update(id: string, updateLeadDto: UpdateLeadDto, tenantId: string) {
+    await this.assertActiveLead(id, tenantId);
 
     const data: UpdateLeadDto = {
       ...updateLeadDto,
@@ -156,12 +166,14 @@ export class LeadsService {
     };
 
     try {
+      // PR5a: composite where with tenantId guards against TOCTOU between
+      // assertActiveLead and update — Prisma throws P2025 if the row was
+      // moved to another tenant in between (defense in depth).
       const lead = await this.prisma.lead.update({
         where: { id },
         data,
       });
 
-      // Devolver con el formato de teléfono con +
       return this.formatLeadForResponse(lead);
     } catch (error) {
       if (this.isPrismaError(error, 'P2002')) {
@@ -173,22 +185,18 @@ export class LeadsService {
     }
   }
 
-  async remove(id: string) {
-    await this.assertActiveLead(id);
+  async remove(id: string, tenantId: string) {
+    await this.assertActiveLead(id, tenantId);
 
-    // T4.1: soft delete — marcar `deleted_at` en vez de eliminar la fila.
-    // Las tablas relacionadas (messages, proactive_messages,
-    // whatsapp_conversations) tienen FK ON DELETE SET NULL, pero al usar
-    // soft delete los registros relacionados conservan su lead_id intacto.
     return this.prisma.lead.update({
       where: { id },
       data: { deletedAt: new Date() },
     });
   }
 
-  async getStats(assignedUserId?: string) {
-    // T4.1: soft delete — las estadísticas excluyen leads soft-deleted.
-    const where = {
+  async getStats(tenantId: string, assignedUserId?: string) {
+    const where: Prisma.LeadWhereInput = {
+      tenantId,
       deletedAt: null,
       ...(assignedUserId ? { assignedTo: assignedUserId } : {}),
     };
@@ -222,7 +230,6 @@ export class LeadsService {
       }),
     ]);
 
-    // Calculate average score, default to 0 if no leads have scores
     const averageScore = averageScoreData._avg.moodScore || 0;
 
     return {
@@ -238,20 +245,23 @@ export class LeadsService {
     };
   }
 
-  async updateStatus(id: string, status: LeadStatus) {
-    await this.assertActiveLead(id);
+  async updateStatus(id: string, status: LeadStatus, tenantId: string) {
+    await this.assertActiveLead(id, tenantId);
 
     const lead = await this.prisma.lead.update({
       where: { id },
       data: { status },
     });
 
-    // Devolver con el formato de teléfono con +
     return this.formatLeadForResponse(lead);
   }
 
-  async updateWhatsAppAuth(id: string, whatsappAuthorized: boolean) {
-    await this.assertActiveLead(id);
+  async updateWhatsAppAuth(
+    id: string,
+    whatsappAuthorized: boolean,
+    tenantId: string,
+  ) {
+    await this.assertActiveLead(id, tenantId);
 
     await this.prisma.lead.update({
       where: { id },

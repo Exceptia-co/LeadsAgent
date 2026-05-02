@@ -71,9 +71,20 @@ export interface Lead {
   updatedAt: Date;
 }
 
+// PR5a: in-memory cache for sessionId -> tenantId resolution. Keyed by
+// sessionId; null cached for sessions without tenantId yet (legacy
+// pre-backfill data) so we don't re-query every message. TTL is short
+// because backfill runs are visible immediately after expiration.
+interface SessionTenantCacheEntry {
+  tenantId: string | null;
+  expiresAt: number;
+}
+const SESSION_TENANT_CACHE_TTL_MS = 60_000;
+
 class DatabaseService {
   private pool: Pool | null = null;
   private prisma: PrismaClient | null = null;
+  private sessionTenantCache = new Map<string, SessionTenantCacheEntry>();
 
   constructor() {
     this.initializePool();
@@ -284,6 +295,41 @@ class DatabaseService {
   // filas quedan vinculadas al mismo leadId; si no, ambas con leadId=null.
   // Esto detiene la divergencia entre `messages` y `whatsapp_conversations`
   // para mensajes nuevos.
+  /**
+   * PR5a: resolve a WhatsApp session to its owning tenant. Caches both
+   * positive and negative results for SESSION_TENANT_CACHE_TTL_MS. Returns
+   * null if the session has no tenantId yet (typically pre-backfill data
+   * or a session created before B1.9 ran).
+   */
+  public async getSessionTenantId(sessionId: string): Promise<string | null> {
+    if (!this.prisma) return null;
+
+    const now = Date.now();
+    const cached = this.sessionTenantCache.get(sessionId);
+    if (cached && cached.expiresAt > now) {
+      return cached.tenantId;
+    }
+
+    const session = await this.prisma.whatsAppSession.findUnique({
+      where: { sessionId },
+      select: { tenantId: true },
+    });
+
+    const tenantId = session?.tenantId ?? null;
+    this.sessionTenantCache.set(sessionId, {
+      tenantId,
+      expiresAt: now + SESSION_TENANT_CACHE_TTL_MS,
+    });
+    return tenantId;
+  }
+
+  /**
+   * PR5a: test-only cache reset.
+   */
+  public resetSessionTenantCacheForTests(): void {
+    this.sessionTenantCache.clear();
+  }
+
   public async saveConversation(data: ConversationData): Promise<string | null> {
     logger.info('🔍 [UNIFIED-WRITE] saveConversation called:', {
       sessionId: data.sessionId,
@@ -316,16 +362,35 @@ class DatabaseService {
     }
 
     try {
+      // PR5a: resolve tenant from the session BEFORE writing. We persist
+      // tenantId on both messages and whatsapp_conversations so PR5b can
+      // safely add NOT NULL + drop the global unique on Lead.phone.
+      const tenantId = await this.getSessionTenantId(data.sessionId);
+      if (!tenantId) {
+        logger.warn(
+          `⚠️ [UNIFIED-WRITE] session ${data.sessionId} has no tenantId — message persisted with tenant_id=null. Run B1.9 backfill.`
+        );
+      }
+
       const normalizedPhone = data.phoneNumber.replace(/^\+/, '');
-      const lead = await this.prisma.lead.findUnique({
-        where: { phone: normalizedPhone },
-        select: { id: true },
-      });
+      // findFirst (not findUnique) so the lookup is tenant-aware and ready
+      // for PR5b composite unique. When tenantId is null (legacy session),
+      // fall back to the global unique to keep behaviour identical.
+      const lead = tenantId
+        ? await this.prisma.lead.findFirst({
+            where: { phone: normalizedPhone, tenantId },
+            select: { id: true },
+          })
+        : await this.prisma.lead.findUnique({
+            where: { phone: normalizedPhone },
+            select: { id: true },
+          });
 
       const result = await this.prisma.$transaction(async tx => {
         const message = await tx.message.create({
           data: {
             leadId: lead?.id ?? null,
+            tenantId: tenantId ?? null,
             content: canonicalContent,
             direction: isFromUser ? MessageDirection.INBOUND : MessageDirection.OUTBOUND,
             messageType: toPrismaMessageType(data.messageType),
@@ -336,6 +401,7 @@ class DatabaseService {
         const conversation = await tx.whatsAppConversation.create({
           data: {
             leadId: lead?.id ?? null,
+            tenantId: tenantId ?? null,
             messageId: message.id,
             sessionId: data.sessionId,
             phoneNumber: data.phoneNumber,
