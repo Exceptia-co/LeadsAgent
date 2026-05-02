@@ -270,10 +270,14 @@ export class SessionPersistenceService {
   }
 
   /**
-   * Get session statistics
-   * @returns Promise<SessionStats> - Session statistics
+   * Get session statistics.
+   *
+   * PR5a-quinquies (Codex review #4): tenant scoping.
+   *  - tenantId provided  -> counts scoped to that tenant only.
+   *  - tenantId omitted   -> global counts (operator-only callers — the
+   *                          HTTP dashboard route always passes tenantId).
    */
-  async getSessionStats(): Promise<{
+  async getSessionStats(tenantId?: string): Promise<{
     total: number;
     active: number;
     connected: number;
@@ -281,12 +285,21 @@ export class SessionPersistenceService {
     disconnected: number;
   }> {
     try {
+      const baseWhere = tenantId ? { tenantId } : {};
       const [total, active, connected, connecting, disconnected] = await Promise.all([
-        this.prisma.whatsAppSession.count(),
-        this.prisma.whatsAppSession.count({ where: { isActive: true } }),
-        this.prisma.whatsAppSession.count({ where: { status: 'ready' } }),
-        this.prisma.whatsAppSession.count({ where: { status: 'connecting' } }),
-        this.prisma.whatsAppSession.count({ where: { status: 'disconnected' } }),
+        this.prisma.whatsAppSession.count({ where: baseWhere }),
+        this.prisma.whatsAppSession.count({
+          where: { ...baseWhere, isActive: true },
+        }),
+        this.prisma.whatsAppSession.count({
+          where: { ...baseWhere, status: 'ready' },
+        }),
+        this.prisma.whatsAppSession.count({
+          where: { ...baseWhere, status: 'connecting' },
+        }),
+        this.prisma.whatsAppSession.count({
+          where: { ...baseWhere, status: 'disconnected' },
+        }),
       ]);
 
       return { total, active, connected, connecting, disconnected };

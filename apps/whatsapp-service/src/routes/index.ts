@@ -4,6 +4,7 @@ import healthRoutes from './health';
 import redisRoutes from './redis';
 import {
   assertSessionOwnership,
+  requireOperatorRole,
   requireSessionOwnership,
   requireTenantContext,
 } from '../middleware/tenant-guard';
@@ -44,11 +45,14 @@ router.post('/sessions/restore', sessionController.restoreSessions.bind(sessionC
 router.get('/sessions/health', sessionController.getSessionsHealth.bind(sessionController));
 router.get('/sessions/backup', sessionController.backupSessions.bind(sessionController));
 router.get('/sessions/enhanced', sessionController.getEnhancedSessions.bind(sessionController));
-router.get('/sessions/stats', async (req, res) => {
+// PR5a-quinquies (Codex review #4): tenant-scoped session counts.
+// Each tenant only sees its own sessions; operator-only global stats
+// would require requireOperatorRole and a different endpoint.
+router.get('/sessions/stats', requireTenantContext, async (req, res) => {
   try {
     const { default: SessionPersistenceService } =
       await import('../services/SessionPersistenceService');
-    const stats = await SessionPersistenceService.getSessionStats();
+    const stats = await SessionPersistenceService.getSessionStats(req.tenantId);
 
     res.json({
       success: true,
@@ -222,8 +226,16 @@ router.get(
 
 // Session monitoring endpoints
 
-// AI Management endpoints
-router.get('/ai/status', async (req, res) => {
+// AI Management endpoints.
+//
+// PR5a-quinquies (Codex review #4):
+//  - /ai/status   : tenant-readable (read-only, no PII).
+//  - /ai/switch   : OPERATOR-ONLY. Switching the LLM provider affects
+//                   every tenant globally; only the operator HMAC may
+//                   call it. Returns 403 from any tenant HMAC.
+//  - /ai/test     : OPERATOR-ONLY. Triggers a real model call without
+//                   tenant context — could be abused for cost/probing.
+router.get('/ai/status', requireTenantContext, async (req, res) => {
   try {
     const { default: AIService } = await import('../services/AIService');
     const status = AIService.getStatus();
@@ -244,7 +256,7 @@ router.get('/ai/status', async (req, res) => {
   }
 });
 
-router.post('/ai/switch', async (req, res) => {
+router.post('/ai/switch', requireOperatorRole, async (req, res) => {
   try {
     const { provider } = req.body;
 
@@ -278,7 +290,7 @@ router.post('/ai/switch', async (req, res) => {
   }
 });
 
-router.post('/ai/test', async (req, res) => {
+router.post('/ai/test', requireOperatorRole, async (req, res) => {
   try {
     const { message } = req.body;
 
@@ -1500,9 +1512,26 @@ Genera un mensaje efectivo y personalizado:`;
 // ============================================
 // ENDPOINTS DE VARIABLES DEL SISTEMA
 // ============================================
+//
+// PR5a-quinquies (Codex review #4): split tenant-readable vs operator-only.
+//
+// READS (GET /system/variables, GET /system/variables/:key,
+//        POST /system/variables/process-text):
+//   tenant-readable. The variables in `ai_configuration` today are GLOBAL
+//   shared config (company name, support email, etc.) so every tenant
+//   sees the same values. PR5b will move tenant-scoped overrides into
+//   the same table partitioned by tenant_id; until then we accept that
+//   the read view is shared.
+//
+// WRITES (PUT /system/variables, PUT /system/variables/:key,
+//         POST /system/variables/clear-cache):
+//   OPERATOR-ONLY. Writing a global variable affects every tenant; an
+//   ordinary tenant must not be able to mutate the support email used
+//   by other tenants. Blocked with 403 until the operator HMAC role is
+//   configured (env WHATSAPP_OPERATOR_HMAC_TENANT_ID).
 
 // Obtener todas las variables del sistema
-router.get('/system/variables', async (req, res) => {
+router.get('/system/variables', requireTenantContext, async (req, res) => {
   try {
     const { default: DatabaseService } = await import('../services/DatabaseService');
     const variables = await DatabaseService.getSystemVariables();
@@ -1521,7 +1550,7 @@ router.get('/system/variables', async (req, res) => {
 });
 
 // Obtener una variable específica del sistema
-router.get('/system/variables/:key', async (req, res) => {
+router.get('/system/variables/:key', requireTenantContext, async (req, res) => {
   try {
     const { key } = req.params;
 
@@ -1548,8 +1577,8 @@ router.get('/system/variables/:key', async (req, res) => {
   }
 });
 
-// Actualizar múltiples variables del sistema
-router.put('/system/variables', async (req, res) => {
+// Actualizar múltiples variables del sistema (OPERATOR-ONLY)
+router.put('/system/variables', requireOperatorRole, async (req, res) => {
   try {
     const updates = req.body;
 
@@ -1655,8 +1684,8 @@ router.put('/system/variables', async (req, res) => {
   }
 });
 
-// Actualizar una variable específica del sistema
-router.put('/system/variables/:key', async (req, res) => {
+// Actualizar una variable específica del sistema (OPERATOR-ONLY)
+router.put('/system/variables/:key', requireOperatorRole, async (req, res) => {
   try {
     const { key } = req.params;
     const { value } = req.body;
@@ -1727,8 +1756,9 @@ router.put('/system/variables/:key', async (req, res) => {
   }
 });
 
-// Procesar texto reemplazando variables del sistema (útil para preview)
-router.post('/system/variables/process-text', async (req, res) => {
+// Procesar texto reemplazando variables del sistema (útil para preview).
+// Tenant-readable: misma política de lectura que GET /system/variables.
+router.post('/system/variables/process-text', requireTenantContext, async (req, res) => {
   try {
     const { text } = req.body;
 
@@ -1759,8 +1789,10 @@ router.post('/system/variables/process-text', async (req, res) => {
   }
 });
 
-// Limpiar cache de variables del sistema (útil para desarrollo/testing)
-router.post('/system/variables/clear-cache', async (req, res) => {
+// Limpiar cache de variables del sistema (OPERATOR-ONLY).
+// Cache shared across tenants -> any tenant flushing it would impact
+// all the others. Blocked behind operator role.
+router.post('/system/variables/clear-cache', requireOperatorRole, async (req, res) => {
   try {
     const { default: DatabaseService } = await import('../services/DatabaseService');
     DatabaseService.clearSystemVariablesCache();

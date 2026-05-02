@@ -84,3 +84,41 @@ export async function assertSessionOwnership(
   }
   return true;
 }
+
+/**
+ * PR5a-quinquies (Codex review #4): operator-only guard for endpoints
+ * that mutate or read GLOBAL state shared across tenants (e.g.
+ * /ai/switch, /system/variables PUT, /sessions/stats overall counts).
+ *
+ * Today there is no role/admin claim in the HMAC envelope, so the safe
+ * default is to BLOCK these endpoints from tenant-scoped HTTP. The lock
+ * is opened by setting `WHATSAPP_OPERATOR_HMAC_TENANT_ID` to a single
+ * tenantId in env; that tenant's HMAC is treated as the operator. PR5b
+ * will replace this with a real role claim signed into the HMAC.
+ *
+ * Until then, the dashboard cannot accidentally invoke a global mutation
+ * because the dashboard signs with the user's tenantId, not the operator
+ * sentinel.
+ */
+export function requireOperatorRole(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  const operatorTenant = process.env.WHATSAPP_OPERATOR_HMAC_TENANT_ID?.trim();
+  if (!operatorTenant) {
+    res.status(403).json({
+      success: false,
+      error:
+        'operator role not configured (WHATSAPP_OPERATOR_HMAC_TENANT_ID unset) — endpoint disabled',
+    });
+    return;
+  }
+  if (!req.tenantId || req.tenantId !== operatorTenant) {
+    res
+      .status(403)
+      .json({ success: false, error: 'operator role required' });
+    return;
+  }
+  next();
+}
