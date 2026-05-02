@@ -129,8 +129,33 @@ await check("POST /api/sessions tampered body", 401, () => {
   });
 });
 
+// PR5a-sexies (Codex round 6 #1): positive precondition check.
+// Without this, the cross-tenant cases below would pass even if the
+// fixture session 'tester' didn't exist — the 404 would be from
+// "session not found", not from tenant isolation. Asserting a 200 first
+// guarantees the cross-tenant 404 is a real isolation signal.
+console.log("\n[G-pre] Fixture sanity: GET /api/sessions/tester with VALID tenant -> 200");
+const fixtureRes = await fetch(`${URL_BASE}/api/sessions/tester`, {
+  headers: sign("", TENANT_VALID),
+});
+if (fixtureRes.status !== 200) {
+  console.error(
+    `  ABORT  fixture missing: GET /api/sessions/tester with TENANT_VALID returned ${fixtureRes.status}.`
+  );
+  console.error(
+    `         The cross-tenant cases (G/H) cannot be trusted without this fixture — aborting.`
+  );
+  console.error(
+    `         Ensure whatsapp_sessions has session_id='tester', tenant_id='${TENANT_VALID}', is_active=true.`
+  );
+  process.exit(2);
+}
+console.log(`  PASS  fixture exists  -> 200`);
+pass++;
+
 console.log("\n[G] Cross-tenant session ownership -> 404");
-// Tenant 'TENANT_OTHER' tries to GET session 'tester' which belongs to TENANT_VALID.
+// Now G is meaningful: 'tester' definitely exists and belongs to TENANT_VALID.
+// A 404 from TENANT_OTHER proves isolation, not absence.
 await check("GET /api/sessions/tester (cross tenant)", 404, () =>
   fetch(`${URL_BASE}/api/sessions/tester`, {
     headers: sign("", TENANT_OTHER),
@@ -176,6 +201,22 @@ await check("GET /system/variables", 200, () =>
 console.log("\n[L] /sessions/stats tenant-scoped -> 200");
 await check("GET /sessions/stats (valid tenant)", 200, () =>
   fetch(`${URL_BASE}/api/sessions/stats`, {
+    headers: sign("", TENANT_VALID),
+  })
+);
+
+// PR5a-sexies (Codex round 6 #2): operator-only routes that previously
+// returned global aggregates without operator gate.
+console.log("\n[M] /sessions/health operator-only -> 403 (env unset)");
+await check("GET /sessions/health (no operator)", 403, () =>
+  fetch(`${URL_BASE}/api/sessions/health`, {
+    headers: sign("", TENANT_VALID),
+  })
+);
+
+console.log("\n[N] /sessions/socket-stats operator-only -> 403 (env unset)");
+await check("GET /sessions/socket-stats (no operator)", 403, () =>
+  fetch(`${URL_BASE}/api/sessions/socket-stats`, {
     headers: sign("", TENANT_VALID),
   })
 );

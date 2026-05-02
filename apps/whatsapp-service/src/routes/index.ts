@@ -40,9 +40,21 @@ router.use('/health', healthRoutes);
 // Redis management and monitoring routes
 router.use('/redis', redisRoutes);
 
-// Enhanced session management routes (must be before parameterized routes)
+// Enhanced session management routes (must be before parameterized routes).
+//
+// PR5a-sexies (Codex review #6 / Medium #2): /sessions/health and
+// /sessions/socket-stats return GLOBAL aggregates (DB-wide recovery
+// stats, in-memory socket counts) and were reachable by any tenant
+// HMAC. Both are now requireOperatorRole — consistent with /ai/switch
+// and PUT /system/variables. Tenant-scoped equivalents are:
+//   - /sessions/stats              -> tenant-scoped session counts (already)
+//   - GET /sessions                -> tenant-scoped session list (already)
 router.post('/sessions/restore', sessionController.restoreSessions.bind(sessionController));
-router.get('/sessions/health', sessionController.getSessionsHealth.bind(sessionController));
+router.get(
+  '/sessions/health',
+  requireOperatorRole,
+  sessionController.getSessionsHealth.bind(sessionController)
+);
 router.get('/sessions/backup', sessionController.backupSessions.bind(sessionController));
 router.get('/sessions/enhanced', sessionController.getEnhancedSessions.bind(sessionController));
 // PR5a-quinquies (Codex review #4): tenant-scoped session counts.
@@ -65,7 +77,11 @@ router.get('/sessions/stats', requireTenantContext, async (req, res) => {
     });
   }
 });
-router.get('/sessions/socket-stats', sessionController.getSocketStats.bind(sessionController));
+router.get(
+  '/sessions/socket-stats',
+  requireOperatorRole,
+  sessionController.getSocketStats.bind(sessionController)
+);
 
 // Session routes
 router.post(

@@ -92,7 +92,14 @@ export class SessionController {
     }
   }
 
-  // Get session status
+  // Get session status.
+  //
+  // PR5a-sexies (Codex round 6 #1 follow-up): if the session is owned by
+  // the caller's tenant in DB but not currently loaded in memory (e.g.
+  // after a service restart, before lazy reconnection completes), fall
+  // back to the persisted snapshot. Without this fallback the controller
+  // returned 404 indistinguishably from a real not-found, which masked
+  // the cross-tenant smoke check.
   async getSession(req: Request, res: Response): Promise<void> {
     try {
       const tenantId = this.requireTenant(req, res);
@@ -110,17 +117,28 @@ export class SessionController {
 
       const session = await WhatsAppService.getSessionStatus(sessionId);
 
-      if (!session) {
-        res.status(404).json({
-          success: false,
-          error: 'Session not found',
-        });
+      if (session) {
+        res.json({ success: true, data: session });
         return;
       }
 
+      // In-memory miss but ownership confirmed -> return persisted view.
+      const persisted = await SessionPersistenceService.getSession(sessionId);
+      if (!persisted) {
+        // Race: ownership lookup found a row but it just got deleted.
+        res.status(404).json({ success: false, error: 'Session not found' });
+        return;
+      }
       res.json({
         success: true,
-        data: session,
+        data: {
+          id: persisted.sessionId,
+          status: persisted.status,
+          phoneNumber: persisted.connectedNumber,
+          qrCode: persisted.qrCode,
+          lastSeen: persisted.lastSeen,
+          inMemory: false,
+        },
       });
     } catch (error) {
       logger.error('Error getting session:', error);
