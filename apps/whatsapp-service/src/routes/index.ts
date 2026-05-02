@@ -451,13 +451,13 @@ router.post(
   }
 );
 
-// Conversations management endpoints (ORIGINALES - mantener para compatibilidad)
+// Conversations management endpoints (legacy compat).
 //
-// PR5a-bis: accepts ?sessionId query param so the reader can derive
-// tenantId. Issue #1 (dashboard proxy + header propagation) will replace
-// this with a trusted x-tenant-id header. Until then, sessionId is the
-// best signal we have for tenant scoping.
-router.get('/conversations/:phoneNumber', async (req, res) => {
+// PR5a-quater (Codex review #1): every legacy route now requires
+// req.tenantId from the HMAC. The sessionId from query/body remains an
+// optional FILTER inside the tenant scope; it is no longer the source of
+// truth for who-is-the-caller.
+router.get('/conversations/:phoneNumber', requireTenantContext, async (req, res) => {
   try {
     const { phoneNumber } = req.params;
     const { limit = 50, sessionId } = req.query;
@@ -466,7 +466,10 @@ router.get('/conversations/:phoneNumber', async (req, res) => {
     const history = await DatabaseService.getConversationHistory(
       phoneNumber,
       Number(limit),
-      typeof sessionId === 'string' ? { sessionId } : undefined
+      {
+        tenantId: req.tenantId!,
+        sessionId: typeof sessionId === 'string' ? sessionId : undefined,
+      }
     );
 
     res.json({
@@ -481,8 +484,9 @@ router.get('/conversations/:phoneNumber', async (req, res) => {
   }
 });
 
-// Search conversations with filters
-router.post('/conversations', async (req, res) => {
+// Search conversations with filters.
+// PR5a-quater: tenant from req.tenantId, sessionId is just a filter.
+router.post('/conversations', requireTenantContext, async (req, res) => {
   try {
     const { searchTerm, sessionId, limit = 50 } = req.body;
 
@@ -492,17 +496,21 @@ router.post('/conversations', async (req, res) => {
     if (searchTerm) {
       conversations = await DatabaseService.searchConversations(
         searchTerm,
+        req.tenantId!,
         sessionId,
         Number(limit)
       );
     } else {
-      // PR5a-bis: getRecentConversations now derives tenantId from sessionId.
-      conversations = await DatabaseService.getRecentConversations(sessionId, Number(limit));
+      conversations = await DatabaseService.getRecentConversations(
+        sessionId,
+        Number(limit),
+        { tenantId: req.tenantId! }
+      );
     }
 
     res.json({
       success: true,
-      conversations: conversations,
+      conversations,
     });
   } catch (error) {
     res.status(500).json({
@@ -512,17 +520,18 @@ router.post('/conversations', async (req, res) => {
   }
 });
 
-// Statistics endpoints
-router.get('/stats', async (req, res) => {
+// Statistics endpoints.
+// PR5a-quater: tenant-scoped.
+router.get('/stats', requireTenantContext, async (req, res) => {
   try {
     const { sessionId } = req.query;
 
     const { default: DatabaseService } = await import('../services/DatabaseService');
-    const stats = await DatabaseService.getStats(sessionId as string);
+    const stats = await DatabaseService.getStats(req.tenantId!, sessionId as string);
 
     res.json({
       success: true,
-      ...stats, // Return stats directly instead of wrapping in data
+      ...stats,
     });
   } catch (error) {
     res.status(500).json({
@@ -532,11 +541,12 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-// WhatsApp authorization statistics
-router.get('/stats/whatsapp-auth', async (req, res) => {
+// WhatsApp authorization statistics.
+// PR5a-quater: getAllLeads now scoped by tenantId.
+router.get('/stats/whatsapp-auth', requireTenantContext, async (req, res) => {
   try {
     const { default: DatabaseService } = await import('../services/DatabaseService');
-    const leads = await DatabaseService.getAllLeads();
+    const leads = await DatabaseService.getAllLeads({ tenantId: req.tenantId! });
 
     const authorizedCount = leads.filter(lead => lead.whatsappAuthorized).length;
     const unauthorizedCount = leads.length - authorizedCount;
@@ -559,8 +569,10 @@ router.get('/stats/whatsapp-auth', async (req, res) => {
   }
 });
 
-// Whitelist logs and statistics
-router.get('/logs/whitelist', async (req, res) => {
+// Whitelist logs and statistics.
+// PR5a-quater: tenant-scoped via req.tenantId; sessionId stays as
+// optional filter within that tenant scope.
+router.get('/logs/whitelist', requireTenantContext, async (req, res) => {
   try {
     const {
       limit = 50,
@@ -574,6 +586,7 @@ router.get('/logs/whitelist', async (req, res) => {
 
     const { default: DatabaseService } = await import('../services/DatabaseService');
     const logs = await DatabaseService.getWhitelistLogs({
+      tenantId: req.tenantId!,
       limit: Number(limit),
       offset: Number(offset),
       phoneNumber: phoneNumber as string,
@@ -595,12 +608,13 @@ router.get('/logs/whitelist', async (req, res) => {
   }
 });
 
-router.get('/stats/whitelist', async (req, res) => {
+router.get('/stats/whitelist', requireTenantContext, async (req, res) => {
   try {
     const { sessionId, startDate, endDate } = req.query;
 
     const { default: DatabaseService } = await import('../services/DatabaseService');
     const stats = await DatabaseService.getWhitelistStats({
+      tenantId: req.tenantId!,
       sessionId: sessionId as string,
       startDate: startDate ? new Date(startDate as string) : undefined,
       endDate: endDate ? new Date(endDate as string) : undefined,
@@ -1351,8 +1365,13 @@ Template mejorado:`;
   }
 });
 
-// Generar mensaje proactivo personalizado
-router.post('/proactive-messages/ai-generate', async (req, res) => {
+// Generar mensaje proactivo personalizado.
+//
+// PR5a-quater (Codex review #3): tenant-scoped lookup. Even though this
+// route doesn't send messages or persist anything, leaking lead PII into
+// the AI prompt for a leadId from another tenant is a data exposure.
+// findLeadById now filters by tenantId; cross-tenant leadId returns 404.
+router.post('/proactive-messages/ai-generate', requireTenantContext, async (req, res) => {
   try {
     const {
       leadId,
@@ -1373,8 +1392,8 @@ router.post('/proactive-messages/ai-generate', async (req, res) => {
     const { default: DatabaseService } = await import('../services/DatabaseService');
     const { default: AIService } = await import('../services/AIService');
 
-    // Obtener información del lead
-    const lead = await DatabaseService.findLeadById(leadId);
+    // Obtener información del lead (PR5a-quater: scoped a req.tenantId)
+    const lead = await DatabaseService.findLeadById(leadId, { tenantId: req.tenantId! });
     if (!lead) {
       return res.status(404).json({
         success: false,

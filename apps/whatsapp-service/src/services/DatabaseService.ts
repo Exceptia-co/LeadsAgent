@@ -554,7 +554,13 @@ class DatabaseService {
   }
 
   // Obtener estadísticas de conversaciones
-  public async getStats(sessionId?: string): Promise<any> {
+  /**
+   * PR5a-quater (Codex review #3): tenantId is REQUIRED. Filtering only
+   * by sessionId let an attacker probe stats from another tenant by
+   * passing a known sessionId. Now we always filter by tenant_id; the
+   * sessionId is an additional filter inside the same tenant.
+   */
+  public async getStats(tenantId: string, sessionId?: string): Promise<any> {
     if (!this.pool) {
       return {
         totalConversations: 0,
@@ -564,16 +570,17 @@ class DatabaseService {
     }
 
     let query = `
-      SELECT 
+      SELECT
         COUNT(*) as total_conversations,
         COUNT(DISTINCT phone_number) as unique_contacts,
         COUNT(CASE WHEN ai_provider IS NOT NULL THEN 1 END) as ai_responses
       FROM whatsapp_conversations
+      WHERE tenant_id = $1::uuid
     `;
 
-    const values: any[] = [];
+    const values: any[] = [tenantId];
     if (sessionId) {
-      query += ' WHERE session_id = $1';
+      query += ' AND session_id = $2';
       values.push(sessionId);
     }
 
@@ -598,9 +605,14 @@ class DatabaseService {
     }
   }
 
-  // Buscar conversaciones por términos
+  /**
+   * PR5a-quater: tenantId is REQUIRED. sessionId is now optional but
+   * always filtered AFTER tenantId, so a sessionId from another tenant
+   * silently yields empty results.
+   */
   public async searchConversations(
     searchTerm: string,
+    tenantId: string,
     sessionId?: string,
     limit: number = 20
   ): Promise<ConversationHistory[]> {
@@ -615,6 +627,7 @@ class DatabaseService {
     try {
       const rows = await this.prisma.whatsAppConversation.findMany({
         where: {
+          tenantId,
           ...(sessionId ? { sessionId } : {}),
           OR: [
             { contactName: { contains: searchTerm, mode: 'insensitive' } },
@@ -677,15 +690,31 @@ class DatabaseService {
   }
 
   // Obtener todos los leads (con fallback a datos mockeados)
-  public async getAllLeads(): Promise<Lead[]> {
+  /**
+   * PR5a-quater (Codex review #2): tenant scoping. Callers that have a
+   * tenant context MUST pass `opts.tenantId` — the SQL filters by it.
+   *
+   * Callers without a tenant (a few legacy internal helpers like
+   * findLeadByPhone, plus dev scripts) get the legacy global view and a
+   * `[UNSCOPED-READ]` WARN so we can finish migrating them in
+   * follow-up PRs without breaking anything mid-deploy.
+   */
+  public async getAllLeads(opts?: { tenantId?: string }): Promise<Lead[]> {
+    const tenantId = opts?.tenantId;
+    if (!tenantId) {
+      logger.warn(
+        '[UNSCOPED-READ] getAllLeads() called without tenantId — returning global. Update caller to pass opts.tenantId.'
+      );
+    }
+
     // Intentar obtener leads de la base de datos real
     if (this.pool) {
       try {
         // Verificar si existe la tabla de leads
         const checkTableQuery = `
           SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' 
+            SELECT FROM information_schema.tables
+            WHERE table_schema = 'public'
             AND table_name = 'leads'
           );
         `;
@@ -694,16 +723,28 @@ class DatabaseService {
 
         if (tableExists.rows[0].exists) {
           // La tabla existe, obtener leads reales con estructura de Supabase
-          const query = `
-            SELECT 
-              id, name, phone, email, tags, status, mood_score, 
-              last_contact, assigned_to, source, whatsapp_authorized,
-              created_at, updated_at
-            FROM leads 
-            ORDER BY created_at DESC;
-          `;
+          const query = tenantId
+            ? `
+              SELECT
+                id, name, phone, email, tags, status, mood_score,
+                last_contact, assigned_to, source, whatsapp_authorized,
+                created_at, updated_at
+              FROM leads
+              WHERE tenant_id = $1::uuid
+              ORDER BY created_at DESC;
+            `
+            : `
+              SELECT
+                id, name, phone, email, tags, status, mood_score,
+                last_contact, assigned_to, source, whatsapp_authorized,
+                created_at, updated_at
+              FROM leads
+              ORDER BY created_at DESC;
+            `;
 
-          const result = await this.pool.query(query);
+          const result = tenantId
+            ? await this.pool.query(query, [tenantId])
+            : await this.pool.query(query);
           const realLeads = result.rows.map(row => ({
             id: row.id,
             name: row.name,
@@ -815,18 +856,33 @@ class DatabaseService {
     }
   }
 
-  // Find lead by ID
-  public async findLeadById(leadId: string): Promise<Lead | null> {
+  /**
+   * PR5a-quater (Codex review #3): tenant-scoped lookup.
+   *   - opts.tenantId provided -> WHERE id = $1 AND tenant_id = $2.
+   *     Cross-tenant id returns null (404 from caller).
+   *   - opts.tenantId omitted -> legacy global lookup, with WARN.
+   *     Used only by tests/scripts; HTTP routes always pass tenantId.
+   */
+  public async findLeadById(
+    leadId: string,
+    opts?: { tenantId?: string }
+  ): Promise<Lead | null> {
     if (!this.pool) {
       return null;
+    }
+    const tenantId = opts?.tenantId;
+    if (!tenantId) {
+      logger.warn(
+        `[UNSCOPED-READ] findLeadById(${leadId}) called without tenantId — global lookup. Update caller to pass opts.tenantId.`
+      );
     }
 
     try {
       // Check if the table exists first
       const checkTableQuery = `
         SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_schema = 'public' 
+          SELECT FROM information_schema.tables
+          WHERE table_schema = 'public'
           AND table_name = 'leads'
         );
       `;
@@ -834,16 +890,27 @@ class DatabaseService {
       const tableExists = await this.pool.query(checkTableQuery);
 
       if (tableExists.rows[0].exists) {
-        const query = `
-          SELECT 
-            id, name, phone, email, tags, status, mood_score, 
-            last_contact, assigned_to, source, whatsapp_authorized,
-            created_at, updated_at
-          FROM leads 
-          WHERE id = $1;
-        `;
+        const query = tenantId
+          ? `
+            SELECT
+              id, name, phone, email, tags, status, mood_score,
+              last_contact, assigned_to, source, whatsapp_authorized,
+              created_at, updated_at
+            FROM leads
+            WHERE id = $1 AND tenant_id = $2::uuid;
+          `
+          : `
+            SELECT
+              id, name, phone, email, tags, status, mood_score,
+              last_contact, assigned_to, source, whatsapp_authorized,
+              created_at, updated_at
+            FROM leads
+            WHERE id = $1;
+          `;
 
-        const result = await this.pool.query(query, [leadId]);
+        const result = tenantId
+          ? await this.pool.query(query, [leadId, tenantId])
+          : await this.pool.query(query, [leadId]);
 
         if (result.rows.length > 0) {
           const row = result.rows[0];
@@ -1131,8 +1198,14 @@ class DatabaseService {
   }
 
   // Obtener logs de whitelist con filtros
+  /**
+   * PR5a-quater: tenantId required. Was filtering by sessionId optional
+   * which let a caller probe whitelist decisions for any tenant by
+   * passing a sessionId.
+   */
   public async getWhitelistLogs(
     options: {
+      tenantId: string;
       limit?: number;
       offset?: number;
       phoneNumber?: string;
@@ -1140,13 +1213,14 @@ class DatabaseService {
       decision?: 'ALLOWED' | 'BLOCKED';
       startDate?: Date;
       endDate?: Date;
-    } = {}
+    }
   ): Promise<any[]> {
     if (!this.pool) {
       return [];
     }
 
     const {
+      tenantId,
       limit = 50,
       offset = 0,
       phoneNumber,
@@ -1157,14 +1231,14 @@ class DatabaseService {
     } = options;
 
     let query = `
-      SELECT 
+      SELECT
         id, phone_number, session_id, decision, reason, created_by, created_at
       FROM whatsapp_whitelist_logs
-      WHERE 1=1
+      WHERE tenant_id = $1::uuid
     `;
 
-    const values: any[] = [];
-    let valueIndex = 1;
+    const values: any[] = [tenantId];
+    let valueIndex = 2;
 
     if (phoneNumber) {
       query += ` AND phone_number = $${valueIndex++}`;
@@ -1211,13 +1285,18 @@ class DatabaseService {
     }
   }
 
-  // Obtener estadísticas de whitelist
+  /**
+   * PR5a-quater: tenantId required. SQL filters whatsapp_whitelist_logs
+   * by tenant_id; sessionId/dates remain optional filters within the
+   * tenant scope.
+   */
   public async getWhitelistStats(
     options: {
+      tenantId: string;
       sessionId?: string;
       startDate?: Date;
       endDate?: Date;
-    } = {}
+    }
   ): Promise<any> {
     if (!this.pool) {
       return {
@@ -1230,20 +1309,20 @@ class DatabaseService {
       };
     }
 
-    const { sessionId, startDate, endDate } = options;
+    const { tenantId, sessionId, startDate, endDate } = options;
 
     let query = `
-      SELECT 
+      SELECT
         COUNT(*) as total_decisions,
         COUNT(CASE WHEN decision = 'ALLOWED' THEN 1 END) as allowed_count,
         COUNT(CASE WHEN decision = 'BLOCKED' THEN 1 END) as blocked_count,
         COUNT(DISTINCT phone_number) as unique_phones
       FROM whatsapp_whitelist_logs
-      WHERE 1=1
+      WHERE tenant_id = $1::uuid
     `;
 
-    const values: any[] = [];
-    let valueIndex = 1;
+    const values: any[] = [tenantId];
+    let valueIndex = 2;
 
     if (sessionId) {
       query += ` AND session_id = $${valueIndex++}`;
