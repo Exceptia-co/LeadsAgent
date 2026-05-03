@@ -118,6 +118,10 @@
       "cache": false,
       "persistent": true
     },
+    "db:seed:smoke": {
+      "cache": false,
+      "env": ["DATABASE_URL", "DIRECT_URL", "SMOKE_*"]
+    },
     "db:migrate:reset": {
       "cache": false
     },

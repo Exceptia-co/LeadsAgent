@@ -138,9 +138,11 @@ class WhatsAppAuthorizationService {
   }
 
   /**
-   * Generate compliance report
+   * Generate compliance report.
+   * PR5a-quater: tenantId required.
    */
   public async generateComplianceReport(options: {
+    tenantId: string;
     startDate: Date;
     endDate: Date;
     includePersonalData?: boolean;

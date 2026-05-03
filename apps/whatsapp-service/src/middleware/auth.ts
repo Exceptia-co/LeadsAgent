@@ -1,20 +1,23 @@
 /**
- * T0.4-ter: HMAC service-to-service authentication for whatsapp-service.
+ * T0.4-ter (PR5a-bis update): HMAC service-to-service authentication for
+ * whatsapp-service.
  *
  * Shape of signed requests (shared by dashboard proxy, API Nest, and any
  * other backend caller):
  *
  *   headers:
- *     x-service-timestamp: <epoch ms>
- *     x-service-signature: sha256=<hex HMAC-SHA256 of `timestamp + "." + rawBody`>
+ *     x-service-timestamp:  <epoch ms>
+ *     x-service-tenant-id:  <UUID | "" for /health public probes>
+ *     x-service-signature:  sha256=<hex HMAC-SHA256 of `${timestamp}.${tenantId}.${body}`>
  *
- * The receiver rebuilds the HMAC from the raw body bytes and compares with
- * `timingSafeEqual`. Requests older than 5 minutes are rejected to protect
- * against replay. The helper `signServiceRequest` below is duplicated
- * (intentionally, ~15 lines) in `apps/dashboard/lib/service-auth.ts` and
- * `apps/api/src/whatsapp/service-auth.ts` so the three apps stay decoupled
- * without a new workspace package. If the three ever diverge the HMAC mismatch
- * makes the bug loud and local.
+ * The receiver rebuilds the HMAC from the raw body bytes plus the
+ * tenant-id header and compares with `timingSafeEqual`. The tenantId is
+ * INSIDE the signed payload so a MITM can't swap the tenant header without
+ * invalidating the signature.
+ *
+ * Tenant-scoped paths (everything outside PUBLIC_PATH_PREFIXES) require a
+ * non-empty UUID tenant id. /health stays open with empty tenantId so
+ * monitoring still works without authoritative org context.
  */
 import type { NextFunction, Request, Response } from 'express';
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -22,32 +25,48 @@ import { logger } from '../utils/logger';
 
 const MAX_SIGNATURE_AGE_MS = 5 * 60 * 1000;
 const SIGNATURE_PREFIX = 'sha256=';
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// Routes that stay public (liveness/readiness). Everything else requires a
-// valid HMAC signature. The check is `startsWith` so both `/health` and
-// `/api/health` match after the `/api` mount.
 const PUBLIC_PATH_PREFIXES = ['/health', '/api/health'];
+
+// Express module augmentation: request.tenantId is set by this middleware
+// after a successful HMAC verification so handlers can use it directly.
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace Express {
+    interface Request {
+      tenantId?: string;
+    }
+  }
+}
 
 export function signServiceRequest(
   body: string,
-  secret: string
-): { timestamp: string; signature: string } {
+  secret: string,
+  tenantId: string = ''
+): { timestamp: string; tenantId: string; signature: string } {
   const timestamp = Date.now().toString();
-  const payload = `${timestamp}.${body}`;
+  const payload = `${timestamp}.${tenantId}.${body}`;
   const hex = createHmac('sha256', secret).update(payload).digest('hex');
-  return { timestamp, signature: `${SIGNATURE_PREFIX}${hex}` };
+  return {
+    timestamp,
+    tenantId,
+    signature: `${SIGNATURE_PREFIX}${hex}`,
+  };
 }
 
 export function verifyServiceSignature(req: Request, res: Response, next: NextFunction): void {
   try {
-    // Skip auth entirely in automated tests so the suite does not need a secret.
     if (process.env.NODE_ENV === 'test') {
       next();
       return;
     }
 
-    // Public liveness endpoints stay open so monitoring can reach them.
-    if (PUBLIC_PATH_PREFIXES.some(prefix => req.path.startsWith(prefix))) {
+    const isPublicPath = PUBLIC_PATH_PREFIXES.some(prefix =>
+      req.path.startsWith(prefix)
+    );
+    if (isPublicPath) {
       next();
       return;
     }
@@ -63,6 +82,11 @@ export function verifyServiceSignature(req: Request, res: Response, next: NextFu
 
     const timestamp = req.header('x-service-timestamp');
     const signature = req.header('x-service-signature');
+    // PR5a-bis: tenant-id header. May be empty string only on public
+    // paths (already returned above). For tenant-scoped paths, an empty
+    // string is rejected after signature verification.
+    const tenantHeader = req.header('x-service-tenant-id') ?? '';
+
     if (!timestamp || !signature) {
       res.status(401).json({
         success: false,
@@ -80,11 +104,9 @@ export function verifyServiceSignature(req: Request, res: Response, next: NextFu
       return;
     }
 
-    // express.json({ verify }) stores the raw buffer here; for requests without
-    // body (GET/DELETE) rawBody may be undefined, which signs as empty string.
     const rawBody = (req as Request & { rawBody?: Buffer }).rawBody?.toString('utf8') ?? '';
     const expectedHex = createHmac('sha256', secret)
-      .update(`${timestamp}.${rawBody}`)
+      .update(`${timestamp}.${tenantHeader}.${rawBody}`)
       .digest('hex');
     const expected = `${SIGNATURE_PREFIX}${expectedHex}`;
 
@@ -95,6 +117,19 @@ export function verifyServiceSignature(req: Request, res: Response, next: NextFu
       return;
     }
 
+    // Signature OK. Now enforce that tenant-scoped paths carry a real
+    // UUID. The signature already binds whatever tenantHeader was sent,
+    // so this check rejects callers that authenticated with an empty
+    // tenant claim against a tenant-scoped resource.
+    if (!tenantHeader || !UUID_RE.test(tenantHeader)) {
+      res.status(403).json({
+        success: false,
+        error: 'tenant context required for this endpoint',
+      });
+      return;
+    }
+
+    req.tenantId = tenantHeader;
     next();
   } catch (error) {
     logger.error('❌ [AUTH] verifyServiceSignature failed unexpectedly:', error);

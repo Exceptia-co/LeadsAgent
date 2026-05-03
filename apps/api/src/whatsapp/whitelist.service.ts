@@ -18,10 +18,15 @@ export class WhitelistService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * Quick whitelist check for API webhook - determines if number should create leads
+   * Quick whitelist check for API webhook - determines if number should create leads.
+   *
+   * PR5a: tenant-scoped. The caller (WhatsAppService.handleIncomingMessage)
+   * resolves tenantId from the session before calling this method, so the
+   * lead lookup can never accidentally cross tenants.
    */
   async isNumberAuthorized(
     phoneNumber: string,
+    tenantId: string,
     sessionId?: string,
     messagePreview?: string,
   ): Promise<WhitelistCheckResult> {
@@ -35,9 +40,11 @@ export class WhitelistService {
         `🔍 Checking whitelist authorization for: ${cleanPhone}`,
       );
 
-      // 1. Check if lead exists and has explicit WhatsApp authorization
-      const existingLead = await this.prisma.lead.findUnique({
-        where: { phone: cleanPhone },
+      // 1. Check if lead exists in this tenant. findFirst (not findUnique on
+      // phone) so when PR5b lifts `phone @unique` to composite this stays
+      // correct without code change.
+      const existingLead = await this.prisma.lead.findFirst({
+        where: { phone: cleanPhone, tenantId },
         select: {
           id: true,
           name: true,
@@ -66,6 +73,7 @@ export class WhitelistService {
           this.logger.log(`🚫 Lead ${cleanPhone} explicitly denied`);
           await this.logWhitelistDecision(
             cleanPhone,
+            tenantId,
             sessionId,
             'BLOCKED',
             `Lead con autorización denegada: ${existingLead.name || cleanPhone}`,
@@ -95,6 +103,7 @@ export class WhitelistService {
         );
         await this.logWhitelistDecision(
           cleanPhone,
+          tenantId,
           sessionId,
           'BLOCKED',
           `Patrón sospechoso detectado: ${suspiciousCheck.reasons.join(', ')}`,
@@ -131,6 +140,7 @@ export class WhitelistService {
         this.logger.log(`🚫 New lead creation disabled for: ${cleanPhone}`);
         await this.logWhitelistDecision(
           cleanPhone,
+          tenantId,
           sessionId,
           'BLOCKED',
           'Creación de leads nuevos deshabilitada',
@@ -151,6 +161,7 @@ export class WhitelistService {
         );
         await this.logWhitelistDecision(
           cleanPhone,
+          tenantId,
           sessionId,
           'ALLOWED',
           'Número nuevo permitido - se creará lead',
@@ -162,6 +173,7 @@ export class WhitelistService {
         );
         await this.logWhitelistDecision(
           cleanPhone,
+          tenantId,
           sessionId,
           'ALLOWED',
           'Lead existente sin autorización explícita - permitido',
@@ -188,6 +200,7 @@ export class WhitelistService {
       // Conservative approach: block on error
       await this.logWhitelistDecision(
         phoneNumber,
+        tenantId,
         sessionId,
         'BLOCKED',
         'Error en verificación de whitelist - bloqueado por seguridad',
@@ -259,20 +272,22 @@ export class WhitelistService {
   }
 
   /**
-   * Log whitelist decision to database
+   * Log whitelist decision to database. PR5a: persist tenantId so the
+   * decision audit log is tenant-scoped (and getWhitelistStats can filter).
    */
   private async logWhitelistDecision(
     phoneNumber: string,
+    tenantId: string | null,
     sessionId?: string,
     decision: 'ALLOWED' | 'BLOCKED' = 'BLOCKED',
     reason?: string,
     messagePreview?: string,
   ): Promise<void> {
     try {
-      // ✅ OPTIMIZED: Use Prisma ORM instead of raw SQL for better type safety
       await this.prisma.whatsAppWhitelistLog.create({
         data: {
           phoneNumber,
+          tenantId: tenantId || null,
           sessionId: sessionId || null,
           decision,
           reason: reason || null,
@@ -291,24 +306,37 @@ export class WhitelistService {
   }
 
   /**
-   * Update lead WhatsApp authorization
+   * Update lead WhatsApp authorization.
+   *
+   * PR5a: tenant-scoped. Updating a lead from another tenant returns false
+   * (treated as not-found) instead of leaking that the leadId exists.
    */
   async updateLeadAuthorization(
     leadId: string,
     authorized: boolean,
+    tenantId: string,
     reason?: string,
   ): Promise<boolean> {
     try {
-      await this.prisma.lead.update({
-        where: { id: leadId },
+      // Use updateMany with composite where so a cross-tenant id silently
+      // matches 0 rows (no exception, no leak).
+      const result = await this.prisma.lead.updateMany({
+        where: { id: leadId, tenantId },
         data: {
           whatsappAuthorized: authorized,
           updatedAt: new Date(),
         },
       });
 
+      if (result.count === 0) {
+        this.logger.warn(
+          `Lead ${leadId} not found in tenant ${tenantId} (or already deleted)`,
+        );
+        return false;
+      }
+
       this.logger.log(
-        `Updated lead ${leadId} WhatsApp authorization: ${authorized}`,
+        `Updated lead ${leadId} WhatsApp authorization: ${authorized} (reason: ${reason ?? 'n/a'})`,
       );
       return true;
     } catch (error) {
@@ -318,9 +346,15 @@ export class WhitelistService {
   }
 
   /**
-   * Get whitelist statistics for monitoring
+   * Get whitelist statistics for monitoring.
+   *
+   * PR5a: tenant-scoped. The whatsapp_whitelist_logs table has tenantId
+   * (B1 schema) so stats are filtered to the caller's tenant.
    */
-  async getWhitelistStats(days = 7): Promise<{
+  async getWhitelistStats(
+    days = 7,
+    tenantId?: string,
+  ): Promise<{
     total: number;
     allowed: number;
     blocked: number;
@@ -331,20 +365,33 @@ export class WhitelistService {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
 
-      // ✅ FIXED: Use 'decision' field directly (no need for alias)
-      const stats = await this.prisma.$queryRaw<
-        Array<{
-          decision: string;
-          count: bigint;
-        }>
-      >`
-        SELECT 
-          decision,
-          COUNT(*) as count
-        FROM whatsapp_whitelist_logs 
-        WHERE created_at >= ${startDate}
-        GROUP BY decision
-      `;
+      // tenantId is required at runtime (controllers pass it post-PR5a) but
+      // typed as optional to keep backwards compatibility for any callers
+      // we may have missed. If missing, fall back to global stats and log
+      // a warning so we can spot the leak in dev.
+      if (!tenantId) {
+        this.logger.warn(
+          'getWhitelistStats called without tenantId — returning global aggregates (PR5a regression?)',
+        );
+      }
+
+      const stats = tenantId
+        ? await this.prisma.$queryRaw<
+            Array<{ decision: string; count: bigint }>
+          >`
+            SELECT decision, COUNT(*) as count
+            FROM whatsapp_whitelist_logs
+            WHERE created_at >= ${startDate} AND tenant_id = ${tenantId}::uuid
+            GROUP BY decision
+          `
+        : await this.prisma.$queryRaw<
+            Array<{ decision: string; count: bigint }>
+          >`
+            SELECT decision, COUNT(*) as count
+            FROM whatsapp_whitelist_logs
+            WHERE created_at >= ${startDate}
+            GROUP BY decision
+          `;
 
       let total = 0;
       let allowed = 0;

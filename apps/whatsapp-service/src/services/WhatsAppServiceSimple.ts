@@ -139,7 +139,7 @@ class WhatsAppServiceSimple {
     logger.info('✅ WhatsApp service initialized successfully with modular architecture');
   }
 
-  async createSession(sessionId: string): Promise<WhatsAppSession> {
+  async createSession(sessionId: string, tenantId?: string): Promise<WhatsAppSession> {
     try {
       if (this.clients.has(sessionId)) {
         throw new Error(`Session ${sessionId} already exists`);
@@ -201,8 +201,13 @@ class WhatsAppServiceSimple {
       // Store client in memory
       this.clients.set(sessionId, client);
 
-      // Persist session to database
-      await this.sessionManager.persistSession(sessionId, process.env.WEBHOOK_URL, authFileInfo);
+      // Persist session to database (PR5a-bis: bind tenantId on first create)
+      await this.sessionManager.persistSession(
+        sessionId,
+        tenantId,
+        process.env.WEBHOOK_URL,
+        authFileInfo
+      );
 
       // Setup event listeners using EventDispatcher (with snapshot trigger callback)
       this.eventDispatcher.setupClientEventListeners(

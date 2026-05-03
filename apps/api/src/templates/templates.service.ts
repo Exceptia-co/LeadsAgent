@@ -8,9 +8,10 @@ import { TemplatesQueryDto } from './dto/templates-query.dto';
 export class TemplatesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(query: TemplatesQueryDto) {
+  async findAll(query: TemplatesQueryDto, tenantId: string) {
     const { category, activeOnly = true } = query;
     const where = {
+      tenantId,
       ...(category ? { category } : {}),
       ...(activeOnly ? { isActive: true } : {}),
     };
@@ -21,9 +22,13 @@ export class TemplatesService {
     });
   }
 
-  async findOne(id: string) {
-    const template = await this.prisma.messageTemplate.findUnique({
-      where: { id },
+  /**
+   * PR5a: tenant-scoped fetch. Returns 404 (not 403) if the template
+   * exists in another tenant — same anti-leak rationale as LeadsService.
+   */
+  async findOne(id: string, tenantId: string) {
+    const template = await this.prisma.messageTemplate.findFirst({
+      where: { id, tenantId },
     });
     if (!template) {
       throw new NotFoundException(`Template ${id} not found`);
@@ -31,7 +36,7 @@ export class TemplatesService {
     return template;
   }
 
-  async create(dto: CreateTemplateDto, createdBy?: string) {
+  async create(dto: CreateTemplateDto, tenantId: string, createdBy?: string) {
     return this.prisma.messageTemplate.create({
       data: {
         name: dto.name,
@@ -40,14 +45,18 @@ export class TemplatesService {
         content: dto.content,
         variables: dto.variables ?? [],
         createdBy: createdBy ?? null,
+        tenantId,
       },
     });
   }
 
-  async update(id: string, dto: UpdateTemplateDto) {
-    await this.findOne(id);
-    return this.prisma.messageTemplate.update({
-      where: { id },
+  /**
+   * PR5a-bis (Codex finding #3): atomic tenant-scoped update via
+   * updateMany. One SQL statement, no TOCTOU window.
+   */
+  async update(id: string, dto: UpdateTemplateDto, tenantId: string) {
+    const result = await this.prisma.messageTemplate.updateMany({
+      where: { id, tenantId },
       data: {
         name: dto.name,
         category: dto.category,
@@ -57,15 +66,38 @@ export class TemplatesService {
         isActive: dto.isActive,
       },
     });
+    if (result.count === 0) {
+      throw new NotFoundException(`Template ${id} not found`);
+    }
+    // Re-fetch to return the updated row.
+    const template = await this.prisma.messageTemplate.findFirst({
+      where: { id, tenantId },
+    });
+    if (!template) {
+      throw new NotFoundException(`Template ${id} not found`);
+    }
+    return template;
   }
 
-  async remove(id: string) {
-    await this.findOne(id);
-    return this.prisma.messageTemplate.delete({ where: { id } });
+  /**
+   * PR5a-bis: atomic tenant-scoped delete via deleteMany.
+   */
+  async remove(id: string, tenantId: string) {
+    const result = await this.prisma.messageTemplate.deleteMany({
+      where: { id, tenantId },
+    });
+    if (result.count === 0) {
+      throw new NotFoundException(`Template ${id} not found`);
+    }
+    return { success: true, templateId: id };
   }
 
-  async preview(id: string, variables: Record<string, string> = {}) {
-    const template = await this.findOne(id);
+  async preview(
+    id: string,
+    tenantId: string,
+    variables: Record<string, string> = {},
+  ) {
+    const template = await this.findOne(id, tenantId);
     const rendered = this.renderVariables(template.content, variables);
     return {
       id: template.id,
