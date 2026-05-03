@@ -1,16 +1,16 @@
 # Informe de Estado Real — LeadsCRM
 
-**Fecha:** 2026-05-01 (v6 — post double-init fix + B1 PR1 foundation schema)
-**Branch analizado:** `feature/b1-foundation-schema` (HEAD `364979a`; base `develop` actualizado a `730599e`)
-**Método:** Auditoría `path:line` verificable + checks locales (`prisma validate`, `db:generate`, `typecheck`, `test`, `build`, `lint`) + inspección de migration SQL additive-only. La información live de Supabase/Hetzner/Vercel se conserva del snapshot v5 salvo donde se indica explícitamente.
+**Fecha:** 2026-05-03 (v7 — Fase B.1 deployada en producción + Clerk Production webhook configurado)
+**Branch analizado:** `main` (HEAD `0d949ac` — merges de PR #11 + 4 follow-up Vercel-Prisma fixes)
+**Método:** Auditoría `path:line` verificable + checks locales (`prisma validate`, `db:generate`, `typecheck`, `test`, `build`, `lint`) + verificación live Supabase MCP + Hetzner SSH + Clerk Dashboard (Chrome MCP) + smoke webhook E2E con org `WebhookSmokeTest` el 2026-05-03 19:51 UTC.
 
-> **Novedad v6:** Además del MVP estabilizado de v5, el fix de double-init del whatsapp-service ya quedó mergeado a `develop` y la primera pieza de Fase B.1 quedó implementada en branch: schema foundation multi-tenant additive-only. No se ha aplicado la migration B1 a Supabase producción; el despliegue de DB se acumula para PR1+PR2+PR3 con backfill. El smoke local del 2026-05-01 confirmó que API/dashboard de esta rama no deben correr contra una DB sin esa migration: Prisma Client selecciona columnas nuevas y `/leads`/`/templates` devuelven 500.
+> **Novedad v7:** Fase B.1 (multi-tenant foundation + runtime enforcement) cerrada en producción. PR #11 (commit `dcf81dd` = "feat(b1): multi-tenant foundation + runtime enforcement (PR1-PR5a combo)") mergeado a `main` 2026-05-02 con 4 follow-up merges de fixes Vercel-Prisma (binaryTargets, postinstall, externalize @prisma/client, JWT v2 shape). Migration B1 aplicada a Supabase prod via Supabase MCP `execute_sql`. Tenant `EscortsHub` provisionado (`923493fc-ffe9-49c6-9963-74e24eae0689` ↔ `org_3DDKQD4ThoPcwJnHC5mWTmrr5L3`); 731 filas backfilled. Clerk Production webhook para `organization.*` configurado 2026-05-03 19:51 UTC con `CLERK_ORG_WEBHOOK_SECRET` en Hetzner; smoke real verde end-to-end. Multi-tenancy ahora activo en runtime y en producción.
 
 ---
 
 ## 1. Resumen Ejecutivo
 
-LeadsCRM es un CRM con automatización de WhatsApp en **estado MVP estabilizado y en producción**, con el primer PR técnico de multi-tenant ya preparado en branch. El flujo crítico (leads + WhatsApp + IA) es end-to-end funcional: recepción de mensaje → whitelist → lead/message persistidos atómicamente → pipeline IA (OpenRouter primario / Gemini fallback) → respuesta con rate limit por sesión. El bug de double-init del whatsapp-service quedó resuelto con lazy idempotent init y smoke runtime real. La **superficie de autenticación actual está cerrada**: Clerk JWT gate desde el usuario hasta la API Nest; HMAC SHA-256 con replay protection para tráfico server-to-server hacia el whatsapp-service; guards aplicados en cada controller Nest sensible. Multi-tenancy todavía no está activo en runtime ni en producción, pero la base de datos ya tiene una migration preparada: `Tenant`, `AiAgent`, `AiProduct`, `tenant_id` nullable, `ai_agent_id`, `agent_id` y `whatsapp_session_id`, sin drops/renames/NOT NULL. Lo que queda para activar multi-tenant real: Clerk Organizations/webhook, backfill, enforcement en Prisma/Nest, RLS secundaria y UI.
+LeadsCRM es un CRM con automatización de WhatsApp en **estado MVP estabilizado y en producción multi-tenant**. El flujo crítico (leads + WhatsApp + IA) es end-to-end funcional: recepción de mensaje → whitelist → lead/message persistidos atómicamente → pipeline IA (OpenRouter primario / Gemini fallback) → respuesta con rate limit por sesión. La **superficie de autenticación está cerrada y tenant-aware**: Clerk JWT gate desde el usuario hasta la API Nest; `TenantContextGuard` valida cada request server-side resolviendo `orgId → tenantId` (cache LRU 60s); HMAC SHA-256 tenant-aware (`${timestamp}.${tenantId}.${body}`) con replay protection para tráfico server-to-server. Multi-tenancy **activo en runtime y producción desde 2026-05-02**: tabla `tenants` poblada (`EscortsHub` provisionado), 9 tablas tenant-scoped backfilled (731 filas), `TenantContextGuard` activo en cada controller, webhook Clerk Production auto-crea `tenants` y patcha `public_metadata.tenant_id` para nuevas orgs desde 2026-05-03. Cross-tenant requests devuelven 404 (no 403 — evitar leak de id-existence). Lo que queda como deuda técnica menor: Prisma extension global (B1.13 — PR5a optó por scoping manual per-service), ESLint rule `no-unscoped-prisma` (B1.14 depende de B1.13), JWT template "supabase" (B1.2(a) Vía A — bloqueado por plan Student de Clerk; Vía B lookup server-side activa), y los destructive cleanups (B1.5 unique compuesto + B1.7b rename `ai_knowledge_items`) postponed hasta post-stabilization de prod.
 
 ---
 
@@ -34,18 +34,18 @@ LeadsCRM es un CRM con automatización de WhatsApp en **estado MVP estabilizado 
 | `@leadcrm/config-ts` | Configs TypeScript base | Activo |
 | ~~`@leadcrm/ui`~~ | — | **Eliminado (T3.2)**; los 2 componentes usados (Alert, Toggle) viven ahora en `apps/dashboard/components/ui/` |
 
-### Integraciones Externas (verificadas live 2026-04-18)
+### Integraciones Externas (verificadas live 2026-05-03)
 
 | Servicio | Propósito | Estado |
 |----------|-----------|--------|
-| **Clerk** | JWT auth dashboard + guards API Nest | Webhook configurado apuntando a `cromgod.space/api/webhooks/clerk`; secret inyectado en Vercel env |
-| **Supabase PostgreSQL** | DB principal | Proyecto `yxjzsargboxnuwnbuzax` (`CRMWhatsApp`), region `eu-west-3`, status `ACTIVE_HEALTHY`, versión `17.6` (arm64). **Advisor security: 0 lints.** service_role con GRANTs desde migration `grant_service_role_access_public_schema` |
+| **Clerk** | JWT auth dashboard + guards API Nest + Organizations sync | App `app_31WLEq9qTjC0BUewQuM1ACMLsAp`. **2 webhooks configurados**: (1) user-events `/api/webhooks/clerk` — secret `CLERK_WEBHOOK_SECRET` (Vercel/Next handler); (2) **org-events `/api/webhooks/clerk/organizations` — secret `CLERK_ORG_WEBHOOK_SECRET`** (Hetzner Nest handler, configurado 2026-05-03 19:51 UTC, suscripto a `organization.created/updated/deleted`). Tenant `EscortsHub` (`org_3DDKQD4ThoPcwJnHC5mWTmrr5L3`) ↔ Supabase `923493fc-ffe9-49c6-9963-74e24eae0689` |
+| **Supabase PostgreSQL** | DB principal | Proyecto `yxjzsargboxnuwnbuzax` (`CRMWhatsApp`), region `eu-west-3`, status `ACTIVE_HEALTHY`, versión `17.6.1.104` (arm64). **Advisor security: 0 lints.** service_role con GRANTs desde migration `grant_service_role_access_public_schema`. 16 tablas en `public` (3 nuevas en B1: `tenants`, `ai_agents`, `ai_products`) |
 | **Redis** | Cache sesiones, QR, IA, pub/sub | `ioredis` en whatsapp-service, Docker local en dev |
 | **OpenRouter** | IA primario | `OpenRouterProvider.ts` |
 | **Google Gemini** | IA fallback | `GeminiProvider.ts` |
 | **Socket.IO** | Namespace `/whatsapp-sessions` | T2.3 cerrado el bug: `auth_failure` mapea a `AUTH_INVALID` |
-| **Vercel** | Deploy dashboard | Team `udeope's projects`, project `dashboard` (`prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6`), Node 24, dominio `cromgod.space`. Producción actual `53927ab` (merge PR #3) + auto-deploy pendiente de `78ae524` (merge PR #4). Env var `WHATSAPP_SERVICE_HMAC_SECRET` configurada en los 3 environments |
-| **Hetzner** | API + whatsapp-service (misma VM) | Server `118344573` ("whatsapp-service"), CX23, Nuremberg. Commit deployado `1eeb155`. PM2 con 2 procesos (leadcrm-api + whatsapp-service), ambos online. `.env` separados por app con `WHATSAPP_SERVICE_HMAC_SECRET` sincronizado |
+| **Vercel** | Deploy dashboard | Team `udeope's projects`, project `dashboard` (`prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6`), Node 24, dominio **`guatsapp.me`**. Producción actual: HEAD `main` (`0d949ac` Merge develop -> main: Next.js Prisma bundling). Envs prod: `WHATSAPP_SERVICE_HMAC_SECRET`, `CLERK_SECRET_KEY` (sk_live_), `CLERK_WEBHOOK_SECRET`, `DATABASE_URL`/`DIRECT_URL` (Supabase prod) |
+| **Hetzner** | API + whatsapp-service (misma VM) | Server `118344573` ("whatsapp-service"), CX23, Nuremberg, IP `46.225.26.89`. Commit deployado: HEAD de `main` (`0d949ac`). PM2 con 2 procesos (leadcrm-api id=1 PID 1421178 reiniciado 2026-05-03 19:49 UTC tras secret sync, whatsapp-service id=0 uptime 7h+), ambos `online`. `.env` separados por app: `/opt/leadcrm/apps/api/.env` con `CLERK_ORG_WEBHOOK_SECRET` set + `WHATSAPP_SERVICE_HMAC_SECRET` sincronizado |
 | **GitHub Actions** | CI | 2 workflows: `Infra Audit` (blocking, 15/1/0/0) + `CI/CD - LeadsCRM` (auto-format, no blocking sobre Prettier) |
 
 ---
@@ -77,7 +77,7 @@ LeadsCRM es un CRM con automatización de WhatsApp en **estado MVP estabilizado 
 
 | Dominio | Estado | Notas clave |
 |---------|--------|-------------|
-| Auth + multi-tenancy | 🟡 Single-user/admin operativo + schema foundation listo | Clerk webhook poblando `users` vía svix; runtime sigue single tenant. Branch `feature/b1-foundation-schema` añade base Prisma multi-tenant sin enforcement ni backfill todavía |
+| Auth + multi-tenancy | ✅ Activo en producción | PR #11 deployado 2026-05-02. Tenant `EscortsHub` provisionado, 731 filas backfilled, `TenantContextGuard` valida cada request en NestJS API + middleware equivalente en whatsapp-service, HMAC tenant-aware (`${timestamp}.${tenantId}.${body}`), cross-tenant → 404. Webhook Clerk Production auto-crea Tenants para nuevas orgs desde 2026-05-03. Smoke E2E verde con `WebhookSmokeTest`. Pendientes menores: B1.13 Prisma extension global (PR5a optó por scoping manual per-service), B1.14 ESLint rule, B1.2(a) JWT template (Vía A bloqueado por plan Student; Vía B lookup activa) |
 | Leads CRUD | ✅ Completo | Nest `LeadsController` con 7 endpoints (create/findAll/findOne/update/updateStatus/updateWhatsAppAuth/remove) + soft delete (`deletedAt`) |
 | Templates CRUD | ✅ Nuevo (T2.2) | Nest `TemplatesModule` con `ClerkAuthGuard`, DTOs `class-validator`, preview engine |
 | WhatsApp sessions | ✅ Persistencia + snapshots | `SessionManager` en `whatsapp-core/`, `SnapshotService` encriptado, reconexión automática con toggle. Double-init resuelto en `develop`; schema B1 añade `tenant_id`/`ai_agent_id` nullable para futuro |
@@ -96,27 +96,28 @@ LeadsCRM es un CRM con automatización de WhatsApp en **estado MVP estabilizado 
 
 ---
 
-## 5. Base de Datos (snapshot live 2026-04-18)
+## 5. Base de Datos (snapshot live 2026-05-03)
 
-### Tablas en `public` (13, sin cambios vs v4 pero con contenidos distintos)
+### Tablas en `public` (16 — 3 nuevas en B1: `tenants`, `ai_agents`, `ai_products`)
 
-> **Nota v6:** la tabla siguiente describe producción/Supabase del snapshot v5. En branch `feature/b1-foundation-schema`, el schema Prisma ya prepara el siguiente estado con `tenants`, `ai_agents`, `ai_products`, `tenant_id` nullable en tablas scopeadas, `ai_agent_id`, `agent_id` y `whatsapp_session_id`. Esa migration no se ha aplicado a producción.
-
-| Tabla | Cols | Filas | Δ vs v4 | Nota |
+| Tabla | Cols | Filas | Δ vs v6 | Nota |
 |-------|------|-------|---------|------|
-| `leads` | 14 | 12 | +11 | +`deleted_at` (T4.1) |
-| `messages` | 12 | 82 | +65 | +`deleted_at` (T4.1); 58 filas nuevas por backfill T1.1-bis step 2 + 7 del seed + nuevos del flujo |
-| `whatsapp_conversations` | 18 | 59 | +21 | +`message_id` (T1.1 Phase A); −`message_text` −`response_text` (T1.1-bis step 4). **59/59 linked al 100%** |
-| `ai_training_interactions` | 9 | 29 | +10 | Ahora **modelado en Prisma** como `AiTrainingInteraction` |
-| `ai_knowledge_base` | 9 | 3 | +3 | Seed T1.2 pobló con 3 entradas |
-| `message_templates` | 11 | 1 | +1 | Una plantilla test creada durante validación T2.2 |
-| `whatsapp_sessions` | 15 | 24 | 0 | |
-| `whatsapp_whitelist_logs` | 13 | 383 | +356 | `lead_id` ahora `uuid` (T1.3) |
-| `proactive_messages` | 15 | 0 | 0 | 3 pares de índices duplicados eliminados (T1.3) |
-| `users` | 12 | 2 | +2 | admin + agent del seed |
-| `ai_configuration` | 7 | 0 | 0 | |
-| `_prisma_migrations` | 8 | 2 | 0 | |
-| `migrations` | 5 | 0 | 0 | **Legacy**; `MigrationService.ts` ya no existe en código, pero la tabla vacía persiste en DB — drop manual pendiente |
+| **`tenants`** | **7** | **1** | NEW | B1 — fila única `EscortsHub` (`923493fc-...-0689`) ↔ `org_3DDKQD4ThoPcwJnHC5mWTmrr5L3` |
+| **`ai_agents`** | **22** | **1** | NEW | B1 — agente default `EscortsHub Default` creado por backfill |
+| **`ai_products`** | **13** | **0** | NEW | B1 — vacía hasta que se diseñe UI de productos en Fase B.2 |
+| `leads` | 15 | 13 | +1, +1 col (`tenant_id`) | Crecimiento orgánico en prod |
+| `messages` | 13 | 132 | +50 filas, +1 col (`tenant_id`) | +50 mensajes reales prod desde v6 |
+| `whatsapp_conversations` | 20 | 89 | +30 filas, +2 cols (`tenant_id`, `whatsapp_session_id`) | +30 conversaciones reales prod |
+| `whatsapp_sessions` | 17 | 27 | +3 filas, +2 cols (`tenant_id`, `ai_agent_id`) | |
+| `ai_training_interactions` | 10 | ~30 | +1 col (`tenant_id`) | |
+| `ai_knowledge_base` | 11 | 3 | +2 cols (`tenant_id`, `agent_id`) | Rename a `ai_knowledge_items` postponed (B1.7b PR5b destructive) |
+| `message_templates` | 12 | 1 | +1 col (`tenant_id`) | |
+| `whatsapp_whitelist_logs` | 14 | ~400 | +1 col (`tenant_id`) | |
+| `proactive_messages` | 16 | 0 | +1 col (`tenant_id`) | |
+| `users` | 12 | 2 | 0 | admin + agent del seed |
+| `ai_configuration` | 8 | 0 | +1 col (`tenant_id` nullable; intencional para configs globales) | |
+| `_prisma_migrations` | 8 | 5 | +3 (B1 foundation + soft delete baseline + ai_training_interactions) | |
+| `migrations` | 5 | 0 | 0 | **Legacy**; tabla vacía sin uso, drop manual pendiente |
 
 ### RLS, policies y advisors
 
@@ -124,16 +125,20 @@ LeadsCRM es un CRM con automatización de WhatsApp en **estado MVP estabilizado 
 - **pg_policies**: 0 en `public`.
 - **Advisors security**: `lints: []` (antes había `vulnerable_postgres_version`; cerrado por el upgrade Postgres).
 
-### FKs clave (tras T4.1)
+### FKs clave (tras T4.1 + B1)
 
 ```
 messages.lead_id               → leads(id) ON DELETE SET NULL
 proactive_messages.lead_id     → leads(id) ON DELETE SET NULL
 whatsapp_conversations.lead_id → leads(id) ON DELETE SET NULL
 whatsapp_conversations.message_id → messages(id) ON DELETE SET NULL
+whatsapp_conversations.whatsapp_session_id → whatsapp_sessions(id) (B1)
+whatsapp_sessions.ai_agent_id  → ai_agents(id) (B1)
+ai_knowledge_base.agent_id     → ai_agents(id) (B1)
+<11 tablas>.tenant_id          → tenants(id) (B1, sin ON DELETE CASCADE)
 ```
 
-Historial de FKs pre-T4.1: las tres primeras eran `ON DELETE CASCADE` — se relajaron para que un hard delete de un lead no destruya su historial.
+Historial de FKs pre-T4.1: las tres primeras eran `ON DELETE CASCADE` — se relajaron para que un hard delete de un lead no destruya su historial. Las nuevas FKs `tenant_id` se añadieron sin `ON DELETE CASCADE` deliberadamente: el handler `organization.deleted` hace `prisma.tenant.deleteMany` que actualmente fallaría con FK error si el Tenant tiene relaciones (descubierto en smoke 2026-05-03; ver `docs/deployment/multi-tenant-rollout.md` gap 3.5). Decisión futura: switch a soft delete o añadir cascade — pending PR.
 
 ---
 
@@ -147,15 +152,18 @@ Historial de FKs pre-T4.1: las tres primeras eran `ON DELETE CASCADE` — se rel
   - HTTP `:80` → `0.0.0.0/0, ::/0` (redirect a HTTPS en reverse proxy).
   - HTTPS `:443` → `0.0.0.0/0, ::/0` (reverse proxy termina TLS y reenvía a `:3002`/`:3003` localmente).
 - **Puertos 3002 y 3003 ya no son accesibles desde internet**.
-- Código deployado: commit `1eeb155` (post-`git pull origin/develop` + `pnpm install` + `pnpm db:generate:win` + `pnpm build` + `pm2 restart all --update-env`).
-- `.env` separados por app: `/opt/leadcrm/apps/whatsapp-service/.env` y `/opt/leadcrm/apps/api/.env`, ambos con `WHATSAPP_SERVICE_HMAC_SECRET` sincronizado con el de Vercel.
+- Código deployado: HEAD `main` = `0d949ac` (Merge develop -> main: Next.js Prisma bundling). Pull/build/restart aplicado durante PR #11 cutover 2026-05-02 + restart 2026-05-03 19:49 UTC tras sync de `CLERK_ORG_WEBHOOK_SECRET`.
+- `.env` separados por app: `/opt/leadcrm/apps/whatsapp-service/.env` y `/opt/leadcrm/apps/api/.env`. Envs prod relevantes:
+  - `WHATSAPP_SERVICE_HMAC_SECRET` sincronizado con Vercel
+  - **`CLERK_ORG_WEBHOOK_SECRET`** (nuevo en B.1, set 2026-05-03) — solo en `apps/api/.env`; Vercel no consume este secret porque el handler corre en Nest API
+  - `WHATSAPP_OPERATOR_HMAC_TENANT_ID` deliberadamente UNSET (operator endpoints stay locked; PR5b feature)
 
 ### Vercel
 
 - Project `dashboard` (`prj_3JGVC3KT0dnixeuZZwpcHTT0u3F6`), Node 24, Next.js.
-- Dominio producción: `cromgod.space`.
-- Env var nueva: `WHATSAPP_SERVICE_HMAC_SECRET` en Production + Preview + Development.
-- Producción actual: `53927ab` (merge PR #3). PR #4 mergeó a main como `78ae524` → auto-deploy disparado.
+- Dominio producción: **`guatsapp.me`**.
+- Envs prod: `WHATSAPP_SERVICE_HMAC_SECRET`, `CLERK_SECRET_KEY` (sk_live_), `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (pk_live_), `CLERK_WEBHOOK_SECRET`, `DATABASE_URL` + `DIRECT_URL` (Supabase prod), `NEXT_PUBLIC_API_URL=https://api.guatsapp.me`.
+- Producción actual: HEAD de `main` = `0d949ac` (Merge develop -> main: Next.js Prisma bundling). 4 follow-up merges resolvieron cascade Vercel-Prisma post-PR#11: `bebdec6` (binaryTargets rhel-openssl-3.0.x), `c914cdb` (postinstall prisma generate), `0d949ac` (outputFileTracingIncludes + externalize @prisma/client), `c7efd6e` (JWT v2 shape `o.id` vs `org_id`).
 - Repo visibility: `public` (decisión PO T0.6).
 
 ### Supabase
@@ -178,9 +186,10 @@ Historial de FKs pre-T4.1: las tres primeras eran `ON DELETE CASCADE` — se rel
 
 | Gap | Impacto | Detalle |
 |-----|---------|---------|
-| Multi-tenant runtime aún no activo | Alto | B1 PR1 solo preparó schema additive-only en branch. Faltan Clerk Organizations/webhook, backfill, Prisma extension/TenantContextGuard, RLS secundaria y UI |
-| Migration B1 no aplicada en prod | Alto | Deliberado: aplicar solo PR1 dejaría `tenant_id=NULL` sin Tenant real. Se aplica como combo PR1+PR2+PR3 con backfill |
-| Runtime B1 contra DB vieja | Alto | Confirmado en Playwright: `/dashboard/leads` carga shell pero `GET localhost:3003/leads` y `/templates` devuelven 500 porque la DB no tiene `tenant_id`. No usar Supabase prod para smoke de esta rama; preparar local/staging migrado |
+| **PR5b destructive cleanup pending** | Bajo (postponed by design) | B1.5 (`@@unique([tenantId, phone])`) + B1.7b (rename `ai_knowledge_base → ai_knowledge_items`). Postponed hasta confirmar 1 semana de prod sin webhook fallidos. Deliberado: el unique compuesto no se puede aplicar mientras haya filas con `tenant_id NULL` (pasado, no hay; verificar antes de PR5b) |
+| **FK cascade en `organization.deleted`** | Bajo | Handler ejecuta `prisma.tenant.deleteMany` (`apps/api/src/clerk-webhooks/clerk-organizations.service.ts:79`) sin `ON DELETE CASCADE` en relaciones. Una org con leads/messages asociados fallaría con `P2003`. Smoke 2026-05-03 confirma test orgs vírgenes pasan limpias. Future PR: soft delete vs cascade — ver `docs/deployment/multi-tenant-rollout.md` gap 3.5 |
+| **Prisma extension global no shipped (B1.13)** | Bajo | PR5a optó por scoping manual per-service en lugar de extension global. Trade-off: más boilerplate pero más debuggable. Revisitar si emerge dolor de scaling con muchos services nuevos. ESLint rule `no-unscoped-prisma` (B1.14) depende de B1.13 |
+| **JWT template "supabase" (B1.2(a) Vía A)** | Bajo | Bloqueado por plan Student de Clerk. Vía B (lookup server-side via TenantContextGuard) funciona como workaround; revisitar si y solo si se requiere `getToken({template:'supabase'})` para RLS directa |
 | Webhook Nest con header estático | ⚠️ Medio | `apps/api/src/whatsapp/whatsapp.controller.ts:45-54` — solo valida presencia del header `x-whatsapp-service`. Elevar a HMAC completo es follow-up técnico; la exposición real es baja porque el whatsapp-service ya no es alcanzable desde internet |
 | RLS deshabilitado con 0 policies | ⚠️ WARN aceptado | Opción C del PRD T0.1; reabrible si aparece segundo usuario, exposición PostgREST directa, o JWT Clerk↔Supabase |
 | Tabla `migrations` legacy vacía en prod | Bajo | Código ya no la referencia ni recrea; drop manual pendiente (`DROP TABLE public.migrations;`) |
@@ -249,19 +258,28 @@ Base en los 58 commits entre `2395d04` (v4 point-in-time) y `1eeb155` (HEAD actu
 
 ## 10. Pending / Next Phase
 
-La siguiente fase activa ya está definida: **Fase B.1 multi-tenant**. Estado actual:
+**Fase B.1 multi-tenant CERRADA en producción** (PR #11 mergeado a main 2026-05-02; webhook Clerk Production configurado 2026-05-03 19:51 UTC; smoke E2E verde con `WebhookSmokeTest`). Detalles + post-mortem en `docs/deployment/multi-tenant-rollout.md`.
 
-- PR1 schema foundation: implementado y commiteado en branch.
-- PR2 pendiente: Clerk Organizations + webhook de organizaciones + metadata `tenant_id`.
-- PR3 pendiente: backfill `tenant_id`, `ai_agent_id`, `whatsapp_session_id` y creación de AiAgent default.
-- PR4 pendiente: enforcement (`TenantContextGuard`, Prisma extension, ESLint rule), `NOT NULL`, unicidad compuesta de `Lead.phone`, rename runtime-aware `ai_knowledge_base → ai_knowledge_items`.
-- PR5 pendiente: UI `/select-org` + `OrganizationSwitcher`.
+**Siguiente fase activa: Fase B.2 — Configurable AI agents (no iniciada)**.
+9 sub-tareas B2.0–B2.9 documentadas en `PLAN-WHATSAPP-AGENT-MULTITENANT.md` §5: refactor de operaciones Prisma no cubiertas por extension + `SystemPromptService` parametrizado por agente + endpoints CRUD agents + preview engine + retirada de branding hardcoded del runtime.
 
-No aplicar la migration B1 a Supabase producción hasta coordinar PR1+PR2+PR3.
+**Cleanup PR diferido: PR5b destructive** (B1.5 `@@unique([tenantId, phone])` + B1.7b rename `ai_knowledge_base → ai_knowledge_items`). Postponed hasta confirmar ≥1 semana de prod sin webhook fallidos ni regresiones, evitando coordinar destructive migrations con la estabilización de B.1.
+
+**Mejoras opcionales sin urgencia**: B1.13 Prisma extension global (revisitar si scaling pain), B1.14 ESLint rule (depende de B1.13), B1.2(a) Vía A JWT template (requeriría upgrade plan Clerk Pro+).
 
 ---
 
-## 11. Correcciones respecto a v4 (deltas verificables)
+## 11. Correcciones respecto a v6 (deltas verificables)
+
+| Afirmación v6 | Estado v7 | Evidencia |
+|---|---|---|
+| "Multi-tenancy todavía no está activo en runtime ni en producción" | Resuelto — activo en prod desde 2026-05-02 | `git log main` muestra PR #11 merged; Supabase live `tenants` count=1 (EscortsHub); `apps/api/src/auth/tenant-context.guard.ts` activo |
+| "Migration B1 no aplicada en prod" | Resuelto — aplicada via Supabase MCP `execute_sql` 2026-05-02 | `_prisma_migrations` count = 5 (vs 2 en v6); 731 filas backfilled |
+| "Runtime B1 contra DB vieja" | Resuelto — DB y código sincronizados | Smoke E2E `WebhookSmokeTest` verde 2026-05-03; runbook `docs/deployment/multi-tenant-rollout.md` |
+| "PR2 pendiente: Clerk Organizations + webhook" | Resuelto — webhook configurado prod 2026-05-03 19:51 UTC | `pm2 logs leadcrm-api` línea `Mapped {/api/webhooks/clerk/organizations, POST}`; smoke verbatim en runbook gap 3.5 |
+| Hetzner commit `1eeb155` | Resuelto — actualizado a `0d949ac` (HEAD main) | `ssh root@46.225.26.89 'cd /opt/leadcrm && git rev-parse HEAD'` |
+
+## 12. Correcciones respecto a v4 (deltas verificables — histórico)
 
 | Afirmación v4 | Estado v5 | Evidencia |
 |---------------|-----------|-----------|

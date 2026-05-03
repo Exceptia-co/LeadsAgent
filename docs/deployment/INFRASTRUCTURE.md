@@ -39,10 +39,10 @@ Este documento describe la configuración completa de infraestructura para despl
 
 | Subdominio          | Tipo  | Destino              | Propósito           |
 | ------------------- | ----- | -------------------- | ------------------- |
-| `cromgod.space`     | A     | 76.76.21.21          | Dashboard (Vercel)  |
-| `www.cromgod.space` | CNAME | cname.vercel-dns.com | Dashboard alias     |
-| `api.cromgod.space` | A     | 46.225.26.89         | API (Hetzner)       |
-| `ws.cromgod.space`  | A     | 46.225.26.89         | WebSocket (Hetzner) |
+| `guatsapp.me`     | A     | 76.76.21.21          | Dashboard (Vercel)  |
+| `www.guatsapp.me` | CNAME | cname.vercel-dns.com | Dashboard alias     |
+| `api.guatsapp.me` | A     | 46.225.26.89         | API (Hetzner)       |
+| `ws.guatsapp.me`  | A     | 46.225.26.89         | WebSocket (Hetzner) |
 
 ### Configuración DNS en Namecheap
 
@@ -56,7 +56,7 @@ Este documento describe la configuración completa de infraestructura para despl
 
 ### Proyecto
 
-- **URL Producción**: https://cromgod.space
+- **URL Producción**: https://guatsapp.me
 - **URL Preview**: https://dashboard-ten-phi-38.vercel.app
 - **Framework**: Next.js 14.2.15
 - **Root Directory**: `apps/dashboard`
@@ -73,10 +73,10 @@ NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/dashboard
 NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/dashboard
 
 # API Backend (Hetzner)
-NEXT_PUBLIC_API_URL=https://api.cromgod.space
+NEXT_PUBLIC_API_URL=https://api.guatsapp.me
 
 # WebSocket (Hetzner con SSL)
-NEXT_PUBLIC_WEBSOCKET_URL=wss://ws.cromgod.space
+NEXT_PUBLIC_WEBSOCKET_URL=wss://ws.guatsapp.me
 ```
 
 ### vercel.json
@@ -86,15 +86,15 @@ NEXT_PUBLIC_WEBSOCKET_URL=wss://ws.cromgod.space
   "rewrites": [
     {
       "source": "/api/leads/:path*",
-      "destination": "https://api.cromgod.space/leads/:path*"
+      "destination": "https://api.guatsapp.me/leads/:path*"
     },
     {
       "source": "/api/public/:path*",
-      "destination": "https://api.cromgod.space/public/:path*"
+      "destination": "https://api.guatsapp.me/public/:path*"
     },
     {
       "source": "/api/backend-whatsapp/:path*",
-      "destination": "https://api.cromgod.space/whatsapp/:path*"
+      "destination": "https://api.guatsapp.me/whatsapp/:path*"
     }
   ]
 }
@@ -103,7 +103,7 @@ NEXT_PUBLIC_WEBSOCKET_URL=wss://ws.cromgod.space
 ### Dominios Personalizados
 
 1. Settings → Domains → Add Domain
-2. Añadir `cromgod.space` y `www.cromgod.space`
+2. Añadir `guatsapp.me` y `www.guatsapp.me`
 3. Verificar configuración DNS
 
 ---
@@ -145,7 +145,7 @@ CLERK_SECRET_KEY=sk_live_xxxxxxxxxxxxx
 CLERK_PUBLISHABLE_KEY=pk_live_xxxxxxxxxxxxx
 
 # CORS
-CORS_ORIGINS=https://cromgod.space,https://www.cromgod.space,https://dashboard-ten-phi-38.vercel.app
+CORS_ORIGINS=https://guatsapp.me,https://www.guatsapp.me,https://dashboard-ten-phi-38.vercel.app
 
 # WhatsApp Service
 WHATSAPP_SERVICE_URL=http://localhost:3002
@@ -164,7 +164,7 @@ NODE_ENV=production
 DATABASE_URL=postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true
 
 # API Backend (local en el mismo servidor)
-API_URL=https://api.cromgod.space
+API_URL=https://api.guatsapp.me
 
 # AI Provider
 AI_PROVIDER=openrouter
@@ -190,7 +190,7 @@ apt update && apt install -y nginx certbot python3-certbot-nginx
 ```nginx
 server {
     listen 80;
-    server_name api.cromgod.space;
+    server_name api.guatsapp.me;
 
     location / {
         proxy_pass http://127.0.0.1:3003;
@@ -208,7 +208,7 @@ server {
 ```nginx
 server {
     listen 80;
-    server_name ws.cromgod.space;
+    server_name ws.guatsapp.me;
 
     location / {
         proxy_pass http://127.0.0.1:3002;
@@ -239,8 +239,8 @@ nginx -t
 systemctl reload nginx
 
 # Obtener certificados SSL (Let's Encrypt)
-certbot --nginx -d api.cromgod.space
-certbot --nginx -d ws.cromgod.space
+certbot --nginx -d api.guatsapp.me
+certbot --nginx -d ws.guatsapp.me
 ```
 
 ### PM2 - Process Manager
@@ -294,21 +294,21 @@ ufw status
 En Clerk Dashboard → Settings → Domains:
 
 ```
-cromgod.space
-www.cromgod.space
+guatsapp.me
+www.guatsapp.me
 dashboard-ten-phi-38.vercel.app
 ```
 
 ### Clerk Frontend API
 
 ```
-https://clerk.cromgod.space
+https://clerk.guatsapp.me
 ```
 
 Requiere registro CNAME en DNS:
 
 ```
-clerk.cromgod.space → frontend-api.clerk.services
+clerk.guatsapp.me → frontend-api.clerk.services
 ```
 
 ### Webhooks (Opcional)
@@ -316,7 +316,7 @@ clerk.cromgod.space → frontend-api.clerk.services
 Si necesitas sincronizar usuarios con tu base de datos:
 
 1. Clerk Dashboard → Webhooks → Add Endpoint
-2. URL: `https://api.cromgod.space/api/webhooks/clerk`
+2. URL: `https://guatsapp.me/api/webhooks/clerk` (handler vive en Next/Vercel — `apps/dashboard/app/api/webhooks/clerk/route.ts`, root domain). Para el webhook de organizaciones que vive en Nest/Hetzner ver `https://api.guatsapp.me/api/webhooks/clerk/organizations` (handler en `apps/api/src/clerk-webhooks/clerk-organizations.controller.ts`).
 3. Events: `user.created`, `user.updated`, `user.deleted`
 
 ---
@@ -405,7 +405,7 @@ pm2 restart whatsapp-service
 
 ```bash
 # Verificar que carga
-curl -I https://cromgod.space
+curl -I https://guatsapp.me
 
 # Esperado: HTTP/2 200
 ```
@@ -414,7 +414,7 @@ curl -I https://cromgod.space
 
 ```bash
 # Health check
-curl https://api.cromgod.space/api/health
+curl https://api.guatsapp.me/health
 
 # Esperado: {"status":"ok"}
 ```
@@ -423,7 +423,7 @@ curl https://api.cromgod.space/api/health
 
 ```bash
 # Verificar SSL
-curl -I https://ws.cromgod.space
+curl -I https://ws.guatsapp.me
 
 # Esperado: HTTP/1.1 404 (o 200 si hay health endpoint)
 # Importante: Debe mostrar "Server: nginx" y respuesta de Express
@@ -431,7 +431,7 @@ curl -I https://ws.cromgod.space
 
 ### 4. WebSocket
 
-Abrir https://cromgod.space/dashboard/whatsapp y verificar:
+Abrir https://guatsapp.me/dashboard/whatsapp y verificar:
 
 - Estado: "En vivo" (no "Conectando")
 - Console del navegador: `Socket connected with ID: ...`
@@ -442,11 +442,11 @@ Abrir https://cromgod.space/dashboard/whatsapp y verificar:
 
 ### WebSocket no conecta
 
-1. Verificar DNS propagado: `nslookup ws.cromgod.space`
-2. Verificar SSL: `curl -I https://ws.cromgod.space`
+1. Verificar DNS propagado: `nslookup ws.guatsapp.me`
+2. Verificar SSL: `curl -I https://ws.guatsapp.me`
 3. Verificar nginx: `nginx -t && systemctl status nginx`
 4. Verificar servicio: `pm2 status`
-5. Verificar variable en Vercel: `NEXT_PUBLIC_WEBSOCKET_URL=wss://ws.cromgod.space`
+5. Verificar variable en Vercel: `NEXT_PUBLIC_WEBSOCKET_URL=wss://ws.guatsapp.me`
 6. **Importante**: Después de añadir/cambiar variables `NEXT_PUBLIC_*`, hacer nuevo build (no redeploy)
 
 ### API retorna CORS error
@@ -482,9 +482,9 @@ Abrir https://cromgod.space/dashboard/whatsapp y verificar:
 
 Configurar en servicio como UptimeRobot o Better Uptime:
 
-- https://cromgod.space (Dashboard)
-- https://api.cromgod.space/api/health (API)
-- https://ws.cromgod.space (WebSocket)
+- https://guatsapp.me (Dashboard)
+- https://api.guatsapp.me/health (API)
+- https://ws.guatsapp.me (WebSocket)
 
 ---
 
@@ -504,7 +504,7 @@ Mantener en gestor de contraseñas seguro:
 
 ## Checklist de Nuevo Despliegue
 
-- [ ] DNS configurado (cromgod.space, api.cromgod.space, ws.cromgod.space)
+- [ ] DNS configurado (guatsapp.me, api.guatsapp.me, ws.guatsapp.me)
 - [ ] Clerk instancia de producción creada
 - [ ] Clerk dominios autorizados
 - [ ] Supabase proyecto creado

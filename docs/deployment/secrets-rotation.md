@@ -11,7 +11,7 @@ Operational log and procedure for rotating credentials used by LeadsCRM. Each en
    - `.mcp.json` at repo root (gitignored, used by Claude Code MCP servers).
    - GitHub Actions repository secrets (`Settings → Secrets and variables → Actions`) consumed by `.github/workflows/*`.
    - Production VPS `/opt/leadcrm/apps/{api,whatsapp-service}/.env` on Hetzner `46.225.26.89`.
-   - Vercel project env vars (Production / Preview / Development) for `cromgod.space`.
+   - Vercel project env vars (Production / Preview / Development) for `guatsapp.me`.
 2. **Provision the new credential** before invalidating the old one. Generate the new value at the source (Hetzner / Clerk / Supabase / Vercel / OpenRouter / etc.) and capture it once.
 3. **Propagate** to every surface from step 1 in any order. Use `gh secret set NAME --repo Exceptia-co/LeadsAgent` for GitHub. Use the Vercel CLI or dashboard for Vercel envs. Use SSH + `pm2 restart all --update-env` on the VPS.
 4. **Validate** the new credential is alive and the old one is no longer required. Preferred: trigger the relevant CI workflow (`gh workflow run audit-infra.yml`) so the validation runs in the same context where the secret is used.

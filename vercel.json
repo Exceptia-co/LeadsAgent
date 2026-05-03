@@ -39,15 +39,15 @@
   "rewrites": [
     {
       "source": "/api/leads/:path*",
-      "destination": "https://api.cromgod.space/leads/:path*"
+      "destination": "https://api.guatsapp.me/leads/:path*"
     },
     {
       "source": "/api/public/:path*",
-      "destination": "https://api.cromgod.space/public/:path*"
+      "destination": "https://api.guatsapp.me/public/:path*"
     },
     {
       "source": "/api/backend-whatsapp/:path*",
-      "destination": "https://api.cromgod.space/whatsapp/:path*"
+      "destination": "https://api.guatsapp.me/whatsapp/:path*"
     }
   ]
 }
