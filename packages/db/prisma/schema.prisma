@@ -2,6 +2,11 @@ generator client {
   provider        = "prisma-client-js"
   engineType      = "binary"
   previewFeatures = ["driverAdapters"]
+  // PR5a-deploy fix: Vercel serverless runs on rhel-openssl-3.0.x.
+  // Without this, the dashboard's tenant-lookup.ts (Vercel function)
+  // throws PrismaClientInitializationError: "could not locate Query
+  // Engine for runtime rhel-openssl-3.0.x". Local dev uses native.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
