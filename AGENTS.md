@@ -80,7 +80,7 @@ Note: `packages/ui` was removed in T3.2 — the two components actually used (Al
 
 ## Database Schema (PostgreSQL)
 
-**Key Models:** User (Clerk integration), Lead, Message, WhatsAppConversation, WhatsAppSession, WhatsAppWhitelistLog, MessageTemplate, ProactiveMessage, AiTrainingInteraction, ai_knowledge_base, ai_configuration
+**Key Models:** Tenant (multi-tenant root, FK from 11 scoped tables), AiAgent (per-tenant AI agent config), AiProduct, User (Clerk integration), Lead, Message, WhatsAppConversation, WhatsAppSession, WhatsAppWhitelistLog, MessageTemplate, ProactiveMessage, AiTrainingInteraction, ai_knowledge_base, ai_configuration
 **Features:** UUID PKs, tags as JSON, enums in Spanish (LeadStatus, MessageDirection, MessageStatus, MessageType), auto timestamps, soft delete (`deletedAt`) on Lead and Message
 **Relations:** Message → Lead (nullable FK, ON DELETE SET NULL), WhatsAppConversation → Message (nullable FK, ON DELETE SET NULL) — the dual-write between `messages` and `whatsapp_conversations` is unified via this FK (T1.1-bis)
 **No Campaign model:** the `create_campaigns_table` / `create_campaign_leads_table` migrations were applied historically but the tables were dropped in T1.4. Do not reintroduce unless the feature is designed from scratch.
@@ -94,8 +94,9 @@ DATABASE_URL="postgresql://..."        # Supabase PostgreSQL (pooler)
 DIRECT_URL="postgresql://..."          # Supabase direct (migrations)
 CLERK_SECRET_KEY="sk_test_..."         # API server-side
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
-CLERK_WEBHOOK_SECRET="whsec_..."       # Signed Clerk → /api/webhooks/clerk
-WHATSAPP_SERVICE_HMAC_SECRET="<64-hex>" # Shared HMAC across dashboard, API Nest, whatsapp-service. Without it the service returns 500 to every signed request.
+CLERK_WEBHOOK_SECRET="whsec_..."       # Signed Clerk → /api/webhooks/clerk (user.* events, Vercel/Next handler)
+CLERK_ORG_WEBHOOK_SECRET="whsec_..."   # Signed Clerk → /api/webhooks/clerk/organizations (organization.* events, Hetzner Nest handler). Distinct from CLERK_WEBHOOK_SECRET.
+WHATSAPP_SERVICE_HMAC_SECRET="<64-hex>" # Shared HMAC across dashboard, API Nest, whatsapp-service. Tenant-aware payload `${timestamp}.${tenantId}.${body}` since PR5a-bis. Without it the service returns 500 to every signed request.
 OPENROUTER_API_KEY="sk-or-..."         # AI primary
 GEMINI_API_KEY="..."                   # AI fallback
 ```
@@ -112,7 +113,7 @@ GEMINI_API_KEY="..."                   # AI fallback
 
 **Auth:** Clerk JWT required everywhere except `/api/webhooks/*` (which carry their own signing).
 **Format:** Standard `{ success, data, error }` responses.
-**Key Routes:** `/api/leads` (CRUD + soft delete), `/api/templates` (CRUD + preview), `/api/whatsapp/webhook`, `/api/webhooks/clerk`.
+**Key Routes:** `/api/leads` (CRUD + soft delete), `/api/templates` (CRUD + preview), `/api/whatsapp/webhook`, `/api/webhooks/clerk` (user events, Vercel), `/api/webhooks/clerk/organizations` (organization events, Hetzner Nest — auto-creates `tenants` row).
 **Proxy to whatsapp-service:** the dashboard never calls `localhost:3002` directly — every request goes through `apps/dashboard/app/api/whatsapp/[...path]/route.ts`, which `requireClerkToken` + signs HMAC before forwarding. WebSocket (Socket.IO) is the only channel that bypasses the proxy — it uses `getWhatsAppSocketUrl()` directly.
 
 ## Testing Strategy

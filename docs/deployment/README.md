@@ -14,8 +14,8 @@ Guias de deploy y operaciones en produccion.
 
 ## Infraestructura Actual
 
-- **Dashboard**: Vercel (cromgod.space)
-- **API + WhatsApp**: Hetzner VPS (api.cromgod.space / ws.cromgod.space)
+- **Dashboard**: Vercel (guatsapp.me)
+- **API + WhatsApp**: Hetzner VPS (api.guatsapp.me / ws.guatsapp.me)
 - **Base de datos**: Supabase (cloud)
 - **Redis**: Docker local (puerto 6381)
 

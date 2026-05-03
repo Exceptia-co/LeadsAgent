@@ -163,7 +163,8 @@ Files:
 **Critical envs that break the HMAC chain if missing or mismatched:**
 
 - `WHATSAPP_SERVICE_HMAC_SECRET` (64 hex chars) — must be **identical** in Vercel (dashboard), Hetzner VPS (both apps' `.env`), and every developer's local `.env`. Without it: whatsapp-service returns `500 "service auth misconfigured"`, dashboard proxy returns `500 "Proxy misconfigured: missing service auth secret"`
-- `CLERK_WEBHOOK_SECRET` — required by `apps/dashboard/app/api/webhooks/clerk/route.ts`
+- `CLERK_WEBHOOK_SECRET` — required by `apps/dashboard/app/api/webhooks/clerk/route.ts` (user events: `user.created/updated/deleted`). Runs on Vercel.
+- `CLERK_ORG_WEBHOOK_SECRET` — required by `apps/api/src/clerk-webhooks/clerk-organizations.controller.ts` (org events: `organization.created/updated/deleted`). Runs on Hetzner Nest API. **Distinct from `CLERK_WEBHOOK_SECRET`** — different webhook endpoint, different runtime, different signing secret. Without it: new orgs in Clerk Production never auto-create a `tenants` row. Vercel does NOT consume this secret (only Hetzner needs it).
 - `WHATSAPP_ALLOW_NEW_LEADS` — defaults to `true` in code (lead-capture mode). Set to `false` only for "private support" deployments. **Resolution order: env > DB config > hardcoded default**
 
 **Service Ports:**
@@ -197,7 +198,30 @@ The stabilization PRD (`PRD-ESTABILIZACION.md` v5.23) closed on 2026-04-18. All 
 
 The AIThinkingService modularization (formerly branch `refactor/whatsapp-service`) is complete; module lives at `apps/whatsapp-service/src/services/ai-thinking/`.
 
-### PLAN-WHATSAPP-AGENT-MULTITENANT (v7.3)
+### Phase B.1 — Multi-tenant foundation (closed 2026-05-02 / 2026-05-03)
+
+PR #11 (commit `dcf81dd` = "feat(b1): multi-tenant foundation + runtime enforcement (PR1-PR5a combo)") merged to `main` 2026-05-02 and deployed to prod, followed by 4 follow-up Vercel-Prisma fixes (`bebdec6`, `c914cdb`, `0d949ac` + JWT v2 fix `c7efd6e`). Migration B1 applied to Supabase prod via MCP `execute_sql`; 731 rows backfilled; tenant `EscortsHub` provisioned (`923493fc-ffe9-49c6-9963-74e24eae0689` ↔ `org_3DDKQD4ThoPcwJnHC5mWTmrr5L3`).
+
+Runtime enforcement now active:
+- `TenantContextGuard` at `apps/api/src/auth/tenant-context.guard.ts` resolves `orgId → tenantId` server-side (Vía B lookup, cache LRU 60s) and gates every Nest controller. Equivalent middleware in `apps/whatsapp-service/src/middleware/tenant-guard.ts`.
+- HMAC contract is **tenant-aware**: signing payload is `${timestamp}.${tenantId}.${body}` with `x-service-tenant-id` header (PR5a-bis). Old contract (`${timestamp}.${body}`) no longer accepted — both apps must speak v2.
+- Cross-tenant requests return **404, not 403** — avoids id-existence leak (PR5a-quater).
+- `WHATSAPP_OPERATOR_HMAC_TENANT_ID` env-based operator role placeholder; left UNSET in prod (default fail-closed: 403 on global mutations). PR5b will replace with proper JWT role claim.
+
+Clerk Production webhook for `organization.*` configured 2026-05-03 19:51 UTC at `https://api.guatsapp.me/api/webhooks/clerk/organizations`, subscribed to `organization.created/updated/deleted`, signing secret in `CLERK_ORG_WEBHOOK_SECRET` on Hetzner. Smoke verified end-to-end with org `WebhookSmokeTest`: create → tenant row + metadata patch → delete → row removed cleanly. Untested path (orgs with FK references) likely fails with `P2003` — see `docs/deployment/multi-tenant-rollout.md` gap 3.5 for the deferred resolution (soft delete vs cascade).
+
+Items deferred from PR5a:
+- **B1.13 Prisma extension global** — PR5a opted for explicit per-service tenant scoping (every service writes `where: { tenantId }`) instead of magic auto-injection. Trade-off: more boilerplate but more debuggable. Revisit if scaling pain emerges.
+- **B1.14 ESLint rule `no-unscoped-prisma`** — depends on B1.13. Postponed.
+- **B1.2(a) JWT template "supabase"** — Vía A blocked by Clerk Student plan (custom session token claims rejected). Vía B (server-side lookup via TenantContextGuard) is the active workaround.
+
+Destructive cleanups deferred to PR5b (post-stabilization, ≥1 week without webhook failures):
+- B1.5 (`@@unique([tenantId, phone])`) requires confirming `tenant_id IS NOT NULL` on all rows.
+- B1.7b (rename `ai_knowledge_base → ai_knowledge_items`) is coordinated with consumer code updates.
+
+Full runbook + post-mortem in `docs/deployment/multi-tenant-rollout.md`.
+
+### PLAN-WHATSAPP-AGENT-MULTITENANT (v7.6)
 
 The multi-tenant + configurable AI agent plan went through 12 review rounds and was approved for full execution in branches.
 
