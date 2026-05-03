@@ -828,17 +828,23 @@ class DatabaseService {
     return mockLeads;
   }
 
-  // Check if a lead with similar phone number already exists
-  public async findLeadByPhone(phoneNumber: string): Promise<Lead | null> {
+  // Check if a lead with similar phone number already exists.
+  // B2.0: tenantId optional — scoped when present, global with warning when absent.
+  public async findLeadByPhone(phoneNumber: string, opts?: { tenantId?: string }): Promise<Lead | null> {
     if (!this.pool) {
       return null;
     }
 
-    try {
-      // Get all leads to check for duplicates
-      const allLeads = await this.getAllLeads();
+    const tenantId = opts?.tenantId;
+    if (!tenantId) {
+      logger.warn(
+        `[UNSCOPED-READ] findLeadByPhone(${phoneNumber}) without tenantId — scanning global leads. TODO B2.0 follow-up: wire tenantId through authorization/IA pipeline.`,
+      );
+    }
 
-      // Use PhoneNumberService to find equivalent phone numbers
+    try {
+      const allLeads = await this.getAllLeads(tenantId ? { tenantId } : undefined);
+
       for (const lead of allLeads) {
         if (lead.phone && PhoneNumberService.arePhoneNumbersEquivalent(phoneNumber, lead.phone)) {
           logger.info(
@@ -935,25 +941,31 @@ class DatabaseService {
     }
   }
 
-  // Create a new lead
+  // Create a new lead.
+  // B2.0: tenantId optional — scoped when present, global with warning when absent.
   public async createLead(leadData: {
     name?: string | null;
     email?: string | null;
     phone: string;
     status?: 'NUEVO' | 'CONTACTADO' | 'QUALIFIED' | 'GANADO' | 'PERDIDO';
     source?: string;
-  }): Promise<Lead | null> {
+  }, opts?: { tenantId?: string }): Promise<Lead | null> {
     if (!this.pool) {
       logger.warn('No database connection available, cannot create lead');
       return null;
     }
 
+    const tenantId = opts?.tenantId;
+    if (!tenantId) {
+      logger.warn(
+        `[UNSCOPED-WRITE] createLead(${leadData.phone}) without tenantId — inserting without tenant_id. TODO B2.0 follow-up: wire tenantId through pipeline.`,
+      );
+    }
+
     try {
-      // Normalize the phone number before processing
       const normalizedPhone = PhoneNumberService.normalizePhoneNumber(leadData.phone);
 
-      // Check if a lead with this phone number already exists
-      const existingLead = await this.findLeadByPhone(normalizedPhone);
+      const existingLead = await this.findLeadByPhone(normalizedPhone, tenantId ? { tenantId } : undefined);
       if (existingLead) {
         logger.warn(
           `⚠️ Lead with phone number ${leadData.phone} (normalized: ${normalizedPhone}) already exists with ID: ${existingLead.id}`
@@ -962,11 +974,11 @@ class DatabaseService {
           `Duplicate phone number: A lead with phone ${leadData.phone} already exists`
         );
       }
-      // Check if leads table exists
+
       const checkTableQuery = `
         SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_schema = 'public' 
+          SELECT FROM information_schema.tables
+          WHERE table_schema = 'public'
           AND table_name = 'leads'
         );
       `;
@@ -978,24 +990,42 @@ class DatabaseService {
         return null;
       }
 
-      // Insert new lead using Supabase schema column names
-      const query = `
-        INSERT INTO leads (
-          name, email, phone, status, source, whatsapp_authorized, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING 
-          id, name, email, phone, status, source, whatsapp_authorized, 
-          mood_score, last_contact, assigned_to, created_at, updated_at;
-      `;
+      const query = tenantId
+        ? `
+          INSERT INTO leads (
+            tenant_id, name, email, phone, status, source, whatsapp_authorized, created_at, updated_at
+          ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          RETURNING
+            id, name, email, phone, status, source, whatsapp_authorized,
+            mood_score, last_contact, assigned_to, created_at, updated_at;
+        `
+        : `
+          INSERT INTO leads (
+            name, email, phone, status, source, whatsapp_authorized, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          RETURNING
+            id, name, email, phone, status, source, whatsapp_authorized,
+            mood_score, last_contact, assigned_to, created_at, updated_at;
+        `;
 
-      const values = [
-        leadData.name || null,
-        leadData.email || null,
-        normalizedPhone, // Use normalized phone number
-        leadData.status || 'NUEVO',
-        leadData.source || 'manual',
-        true, // Default to WhatsApp authorized
-      ];
+      const values = tenantId
+        ? [
+            tenantId,
+            leadData.name || null,
+            leadData.email || null,
+            normalizedPhone,
+            leadData.status || 'NUEVO',
+            leadData.source || 'manual',
+            true,
+          ]
+        : [
+            leadData.name || null,
+            leadData.email || null,
+            normalizedPhone,
+            leadData.status || 'NUEVO',
+            leadData.source || 'manual',
+            true,
+          ];
 
       const result = await this.pool.query(query, values);
 
@@ -1029,21 +1059,41 @@ class DatabaseService {
     }
   }
 
-  // Update lead WhatsApp authorization status
+  // Update lead WhatsApp authorization status.
+  // B2.0: tenantId optional — scoped when present, global with warning when absent.
   public async updateLeadWhatsAppAuth(
     leadId: string,
-    whatsappAuthorized: boolean
+    whatsappAuthorized: boolean,
+    opts?: { tenantId?: string }
   ): Promise<boolean> {
     if (this.pool) {
-      try {
-        const query = `
-          UPDATE leads 
-          SET "whatsappAuthorized" = $1, "updatedAt" = CURRENT_TIMESTAMP
-          WHERE id = $2
-          RETURNING id;
-        `;
+      const tenantId = opts?.tenantId;
+      if (!tenantId) {
+        logger.warn(
+          `[UNSCOPED-WRITE] updateLeadWhatsAppAuth(${leadId}) without tenantId — global update. TODO B2.0 follow-up: wire tenantId through pipeline.`,
+        );
+      }
 
-        const result = await this.pool.query(query, [whatsappAuthorized, leadId]);
+      try {
+        const query = tenantId
+          ? `
+            UPDATE leads
+            SET "whatsappAuthorized" = $1, "updatedAt" = CURRENT_TIMESTAMP
+            WHERE id = $2 AND tenant_id = $3::uuid
+            RETURNING id;
+          `
+          : `
+            UPDATE leads
+            SET "whatsappAuthorized" = $1, "updatedAt" = CURRENT_TIMESTAMP
+            WHERE id = $2
+            RETURNING id;
+          `;
+
+        const values = tenantId
+          ? [whatsappAuthorized, leadId, tenantId]
+          : [whatsappAuthorized, leadId];
+
+        const result = await this.pool.query(query, values);
 
         if (result.rows.length > 0) {
           logger.info(`✅ Lead ${leadId} WhatsApp authorization updated to: ${whatsappAuthorized}`);
@@ -1058,7 +1108,6 @@ class DatabaseService {
       }
     }
 
-    // For mock data, we can't actually update, so just log and return true
     logger.info(
       `🔧 Mock update: Lead ${leadId} WhatsApp authorization would be set to: ${whatsappAuthorized}`
     );
@@ -1130,6 +1179,7 @@ class DatabaseService {
 
   // Registrar decisión de whitelist en logs
   public async logWhitelistDecision(data: {
+    tenantId?: string;
     phoneNumber: string;
     sessionId?: string;
     decision: 'ALLOWED' | 'BLOCKED';
@@ -1147,28 +1197,56 @@ class DatabaseService {
       return null;
     }
 
-    // ✅ FIXED: Use 'decision' field (NOT 'action') and ensure NOT NULL
-    const query = `
-      INSERT INTO whatsapp_whitelist_logs (
-        phone_number, session_id, decision, reason, lead_id, lead_name,
-        message_preview, ai_provider, ip_address, user_agent, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      RETURNING id;
-    `;
+    if (!data.tenantId) {
+      logger.warn(
+        `[UNSCOPED-WRITE] logWhitelistDecision(${data.phoneNumber}) without tenantId — inserting without tenant_id. TODO B2.0 follow-up: wire tenantId through authorization context.`,
+      );
+    }
 
-    const values = [
-      data.phoneNumber,
-      data.sessionId || null,
-      data.decision, // ✅ This will never be null - REQUIRED field
-      data.reason || null,
-      data.leadId || null,
-      data.leadName || null,
-      data.messagePreview ? data.messagePreview.substring(0, 200) : null, // Limit preview length
-      data.aiProvider || null,
-      data.ipAddress || null,
-      data.userAgent || null,
-      data.createdBy || 'whatsapp-service',
-    ];
+    const query = data.tenantId
+      ? `
+        INSERT INTO whatsapp_whitelist_logs (
+          tenant_id, phone_number, session_id, decision, reason, lead_id, lead_name,
+          message_preview, ai_provider, ip_address, user_agent, created_by
+        ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        RETURNING id;
+      `
+      : `
+        INSERT INTO whatsapp_whitelist_logs (
+          phone_number, session_id, decision, reason, lead_id, lead_name,
+          message_preview, ai_provider, ip_address, user_agent, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING id;
+      `;
+
+    const values = data.tenantId
+      ? [
+          data.tenantId,
+          data.phoneNumber,
+          data.sessionId || null,
+          data.decision,
+          data.reason || null,
+          data.leadId || null,
+          data.leadName || null,
+          data.messagePreview ? data.messagePreview.substring(0, 200) : null,
+          data.aiProvider || null,
+          data.ipAddress || null,
+          data.userAgent || null,
+          data.createdBy || 'whatsapp-service',
+        ]
+      : [
+          data.phoneNumber,
+          data.sessionId || null,
+          data.decision,
+          data.reason || null,
+          data.leadId || null,
+          data.leadName || null,
+          data.messagePreview ? data.messagePreview.substring(0, 200) : null,
+          data.aiProvider || null,
+          data.ipAddress || null,
+          data.userAgent || null,
+          data.createdBy || 'whatsapp-service',
+        ];
 
     try {
       const result = await this.pool.query(query, values);
@@ -2047,7 +2125,7 @@ class DatabaseService {
   // ============================================
 
   // Obtener todos los templates
-  public async getMessageTemplates(category?: string, activeOnly = true): Promise<any[]> {
+  public async getMessageTemplates(tenantId: string, category?: string, activeOnly = true): Promise<any[]> {
     if (!this.pool) {
       return this.getDefaultTemplates();
     }
@@ -2061,6 +2139,9 @@ class DatabaseService {
       const conditions: string[] = [];
       const values: any[] = [];
       let valueIndex = 1;
+
+      conditions.push(`tenant_id = $${valueIndex++}::uuid`);
+      values.push(tenantId);
 
       if (activeOnly) {
         conditions.push('is_active = true');
@@ -2096,9 +2177,8 @@ class DatabaseService {
   }
 
   // Get a single template by ID
-  public async getTemplate(templateId: string): Promise<any | null> {
+  public async getTemplate(tenantId: string, templateId: string): Promise<any | null> {
     if (!this.pool) {
-      // Return from default templates if no database connection
       const defaultTemplates = this.getDefaultTemplates();
       return defaultTemplates.find(template => template.id === templateId) || null;
     }
@@ -2106,11 +2186,11 @@ class DatabaseService {
     try {
       const query = `
         SELECT id, name, category, subject, content, variables, usage_count, is_active, created_at
-        FROM message_templates 
-        WHERE id = $1;
+        FROM message_templates
+        WHERE id = $1 AND tenant_id = $2::uuid;
       `;
 
-      const result = await this.pool.query(query, [templateId]);
+      const result = await this.pool.query(query, [templateId, tenantId]);
 
       if (result.rows.length > 0) {
         return result.rows[0];
@@ -2129,6 +2209,7 @@ class DatabaseService {
 
   // Crear un nuevo template
   public async createMessageTemplate(data: {
+    tenantId: string;
     name: string;
     category: string;
     subject?: string;
@@ -2143,12 +2224,13 @@ class DatabaseService {
 
     try {
       const query = `
-        INSERT INTO message_templates (name, category, subject, content, variables, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO message_templates (tenant_id, name, category, subject, content, variables, created_by)
+        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)
         RETURNING id;
       `;
 
       const values = [
+        data.tenantId,
         data.name,
         data.category,
         data.subject || null,
@@ -2170,6 +2252,7 @@ class DatabaseService {
 
   // Actualizar template
   public async updateMessageTemplate(
+    tenantId: string,
     id: string,
     updates: {
       name?: string;
@@ -2220,12 +2303,12 @@ class DatabaseService {
       }
 
       setParts.push(`updated_at = CURRENT_TIMESTAMP`);
-      values.push(id); // Para el WHERE
+      values.push(id, tenantId);
 
       const query = `
-        UPDATE message_templates 
+        UPDATE message_templates
         SET ${setParts.join(', ')}
-        WHERE id = $${valueIndex}
+        WHERE id = $${valueIndex++} AND tenant_id = $${valueIndex}::uuid
         RETURNING id;
       `;
 
@@ -2245,15 +2328,15 @@ class DatabaseService {
   }
 
   // Eliminar template
-  public async deleteMessageTemplate(id: string): Promise<boolean> {
+  public async deleteMessageTemplate(tenantId: string, id: string): Promise<boolean> {
     if (!this.pool) {
       logger.info(`Mock template deleted: ${id}`);
       return true;
     }
 
     try {
-      const query = `DELETE FROM message_templates WHERE id = $1 RETURNING id;`;
-      const result = await this.pool.query(query, [id]);
+      const query = `DELETE FROM message_templates WHERE id = $1 AND tenant_id = $2::uuid RETURNING id;`;
+      const result = await this.pool.query(query, [id, tenantId]);
 
       if (result.rows.length > 0) {
         logger.info(`✅ Template eliminado: ${id}`);
@@ -2269,19 +2352,19 @@ class DatabaseService {
   }
 
   // Incrementar contador de uso de template
-  public async incrementTemplateUsage(id: string): Promise<boolean> {
+  public async incrementTemplateUsage(tenantId: string, id: string): Promise<boolean> {
     if (!this.pool) {
       return true;
     }
 
     try {
       const query = `
-        UPDATE message_templates 
+        UPDATE message_templates
         SET usage_count = usage_count + 1, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1;
+        WHERE id = $1 AND tenant_id = $2::uuid;
       `;
 
-      await this.pool.query(query, [id]);
+      await this.pool.query(query, [id, tenantId]);
       return true;
     } catch (error) {
       logger.error('Error incrementando uso de template:', error);
@@ -2340,6 +2423,7 @@ class DatabaseService {
 
   // Actualizar estado de mensaje proactivo
   public async updateProactiveMessageStatus(
+    tenantId: string,
     id: string,
     status: 'pending' | 'sent' | 'delivered' | 'failed',
     errorMessage?: string
@@ -2351,7 +2435,7 @@ class DatabaseService {
 
     try {
       let query = `
-        UPDATE proactive_messages 
+        UPDATE proactive_messages
         SET status = $1, updated_at = CURRENT_TIMESTAMP
       `;
 
@@ -2369,8 +2453,8 @@ class DatabaseService {
         values.push(errorMessage);
       }
 
-      query += ` WHERE id = $${valueIndex} RETURNING id;`;
-      values.push(id);
+      query += ` WHERE id = $${valueIndex++} AND tenant_id = $${valueIndex}::uuid RETURNING id;`;
+      values.push(id, tenantId);
 
       const result = await this.pool.query(query, values);
 
@@ -2937,7 +3021,7 @@ class DatabaseService {
   }
 
   // Obtener estadísticas de entrenamiento
-  public async getTrainingStats(): Promise<{
+  public async getTrainingStats(tenantId?: string): Promise<{
     totalInteractions: number;
     averageSuccessScore: number;
     interactionsLast7Days: number;
@@ -2955,25 +3039,32 @@ class DatabaseService {
     }
 
     try {
+      const tenantFilter = tenantId ? 'WHERE tenant_id = $1::uuid' : '';
+      const recentTenantFilter = tenantId
+        ? 'WHERE created_at >= NOW() - INTERVAL \'7 days\' AND tenant_id = $1::uuid'
+        : 'WHERE created_at >= NOW() - INTERVAL \'7 days\'';
+      const values = tenantId ? [tenantId] : [];
+
       const query = `
         WITH recent_interactions AS (
-          SELECT success_score 
-          FROM ai_training_interactions 
-          WHERE created_at >= NOW() - INTERVAL '7 days'
+          SELECT success_score
+          FROM ai_training_interactions
+          ${recentTenantFilter}
         ),
         all_stats AS (
-          SELECT 
+          SELECT
             COUNT(*) as total_interactions,
             AVG(success_score) as avg_success_score
           FROM ai_training_interactions
+          ${tenantFilter}
         ),
         recent_stats AS (
-          SELECT 
+          SELECT
             COUNT(*) as recent_interactions,
             AVG(success_score) as avg_recent_success
           FROM recent_interactions
         )
-        SELECT 
+        SELECT
           COALESCE(a.total_interactions, 0) as total_interactions,
           COALESCE(a.avg_success_score, 0) as avg_success_score,
           COALESCE(r.recent_interactions, 0) as recent_interactions,
@@ -2982,7 +3073,7 @@ class DatabaseService {
         CROSS JOIN recent_stats r;
       `;
 
-      const result = await this.pool.query(query);
+      const result = await this.pool.query(query, values);
       const stats = result.rows[0];
 
       return {
@@ -3006,32 +3097,40 @@ class DatabaseService {
 
   // Buscar patrones en interacciones de entrenamiento
   public async searchTrainingInteractions(
-    searchQuery: string,
+    tenantId?: string,
+    searchQuery?: string,
     minSuccessScore?: number,
     limit: number = 100
   ): Promise<TrainingInteraction[]> {
-    if (!this.pool) {
+    if (!this.pool || !searchQuery) {
       return [];
     }
 
     try {
-      let query = `
-        SELECT 
-          id, user_message, ai_response, knowledge_base_ids_used,
-          success_score, context_data, feedback_metrics, created_at
-        FROM ai_training_interactions 
-        WHERE to_tsvector('spanish', user_message) @@ plainto_tsquery('spanish', $1)
-      `;
-
+      const conditions: string[] = [
+        `to_tsvector('spanish', user_message) @@ plainto_tsquery('spanish', $1)`,
+      ];
       const values: any[] = [searchQuery];
       let valueIndex = 2;
 
+      if (tenantId) {
+        conditions.push(`tenant_id = $${valueIndex++}::uuid`);
+        values.push(tenantId);
+      }
+
       if (minSuccessScore !== undefined) {
-        query += ` AND success_score >= $${valueIndex++}`;
+        conditions.push(`success_score >= $${valueIndex++}`);
         values.push(minSuccessScore);
       }
 
-      query += ` ORDER BY success_score DESC, created_at DESC LIMIT $${valueIndex}`;
+      const query = `
+        SELECT
+          id, user_message, ai_response, knowledge_base_ids_used,
+          success_score, context_data, feedback_metrics, created_at
+        FROM ai_training_interactions
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY success_score DESC, created_at DESC LIMIT $${valueIndex}
+      `;
       values.push(limit);
 
       const result = await this.pool.query(query, values);
@@ -3053,19 +3152,27 @@ class DatabaseService {
   }
 
   // Eliminar interacciones de entrenamiento antiguas (limpieza de datos)
-  public async cleanupOldTrainingInteractions(daysOld: number = 90): Promise<number> {
+  public async cleanupOldTrainingInteractions(tenantId?: string, daysOld: number = 90): Promise<number> {
     if (!this.pool) {
       return 0;
     }
 
     try {
+      const conditions = [`created_at < NOW() - INTERVAL '1 day' * $1`];
+      const values: any[] = [daysOld];
+
+      if (tenantId) {
+        conditions.push(`tenant_id = $2::uuid`);
+        values.push(tenantId);
+      }
+
       const query = `
-        DELETE FROM ai_training_interactions 
-        WHERE created_at < NOW() - INTERVAL '${daysOld} days'
+        DELETE FROM ai_training_interactions
+        WHERE ${conditions.join(' AND ')}
         RETURNING id;
       `;
 
-      const result = await this.pool.query(query);
+      const result = await this.pool.query(query, values);
       const deletedCount = result.rows.length;
 
       if (deletedCount > 0) {

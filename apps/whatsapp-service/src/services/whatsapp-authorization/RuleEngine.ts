@@ -18,6 +18,7 @@ export interface AuthorizationDecision {
 export interface AuthorizationContext {
   phoneNumber: string;
   sessionId?: string;
+  tenantId?: string;
   messagePreview?: string;
   timestamp?: Date;
   ipAddress?: string;
