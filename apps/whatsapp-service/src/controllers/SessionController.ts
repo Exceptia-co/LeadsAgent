@@ -4,10 +4,52 @@ import SessionPersistenceService from '../services/SessionPersistenceService';
 import SessionRecoveryService from '../services/SessionRecoveryService';
 import { logger } from '../utils/logger';
 
+/**
+ * PR5a-bis (Codex finding #1): every session endpoint is now tenant-scoped.
+ * `req.tenantId` is set by the HMAC middleware (see `middleware/auth.ts`)
+ * after it validates that the dashboard signed the request with a real
+ * Tenant.id. Requests without a tenant context never reach these handlers.
+ */
 export class SessionController {
+  /**
+   * Asserts that `sessionId` exists and is owned by `tenantId`. Returns
+   *   "ok"        — caller may proceed
+   *   "not_found" — session row doesn't exist (404)
+   *   "forbidden" — session exists but belongs to another tenant (404 to
+   *                 the client to avoid id-existence leak; logged as
+   *                 forbidden internally)
+   */
+  private async assertSessionOwnership(
+    sessionId: string,
+    tenantId: string
+  ): Promise<'ok' | 'not_found' | 'forbidden'> {
+    const ownerTenantId = await SessionPersistenceService.getSessionTenantId(sessionId);
+    if (ownerTenantId === null) return 'not_found';
+    if (ownerTenantId !== tenantId) {
+      logger.warn(
+        `[TENANT-GUARD] tenant ${tenantId} attempted to access session ${sessionId} owned by ${ownerTenantId}`
+      );
+      return 'forbidden';
+    }
+    return 'ok';
+  }
+
+  private requireTenant(req: Request, res: Response): string | null {
+    if (!req.tenantId) {
+      // The HMAC middleware should have rejected this already; defense in
+      // depth in case a route is mounted before the middleware.
+      res.status(403).json({ success: false, error: 'tenant context required' });
+      return null;
+    }
+    return req.tenantId;
+  }
+
   // Create a new WhatsApp session
   async createSession(req: Request, res: Response): Promise<void> {
     try {
+      const tenantId = this.requireTenant(req, res);
+      if (!tenantId) return;
+
       const { sessionId } = req.body;
 
       if (!sessionId) {
@@ -18,7 +60,21 @@ export class SessionController {
         return;
       }
 
-      const session = await WhatsAppService.createSession(sessionId);
+      // PR5a-bis: if the sessionId is already registered to another
+      // tenant, refuse — sessionId is a global identifier today (PR5b
+      // will compose it with tenantId). Returning 409 is friendlier than
+      // letting WhatsAppService.createSession blow up on its uniqueness
+      // check.
+      const existingOwner = await SessionPersistenceService.getSessionTenantId(sessionId);
+      if (existingOwner !== null && existingOwner !== tenantId) {
+        res.status(409).json({
+          success: false,
+          error: 'Session ID is already registered to another tenant',
+        });
+        return;
+      }
+
+      const session = await WhatsAppService.createSession(sessionId, tenantId);
 
       res.status(201).json({
         success: true,
@@ -33,24 +89,51 @@ export class SessionController {
     }
   }
 
-  // Get session status
+  // Get session status.
+  //
+  // PR5a-sexies (Codex round 6 #1 follow-up): if the session is owned by
+  // the caller's tenant in DB but not currently loaded in memory (e.g.
+  // after a service restart, before lazy reconnection completes), fall
+  // back to the persisted snapshot. Without this fallback the controller
+  // returned 404 indistinguishably from a real not-found, which masked
+  // the cross-tenant smoke check.
   async getSession(req: Request, res: Response): Promise<void> {
     try {
+      const tenantId = this.requireTenant(req, res);
+      if (!tenantId) return;
+
       const { sessionId } = req.params;
 
-      const session = await WhatsAppService.getSessionStatus(sessionId);
-
-      if (!session) {
-        res.status(404).json({
-          success: false,
-          error: 'Session not found',
-        });
+      const ownership = await this.assertSessionOwnership(sessionId, tenantId);
+      if (ownership !== 'ok') {
+        res.status(404).json({ success: false, error: 'Session not found' });
         return;
       }
 
+      const session = await WhatsAppService.getSessionStatus(sessionId);
+
+      if (session) {
+        res.json({ success: true, data: session });
+        return;
+      }
+
+      // In-memory miss but ownership confirmed -> return persisted view.
+      const persisted = await SessionPersistenceService.getSession(sessionId);
+      if (!persisted) {
+        // Race: ownership lookup found a row but it just got deleted.
+        res.status(404).json({ success: false, error: 'Session not found' });
+        return;
+      }
       res.json({
         success: true,
-        data: session,
+        data: {
+          id: persisted.sessionId,
+          status: persisted.status,
+          phoneNumber: persisted.connectedNumber,
+          qrCode: persisted.qrCode,
+          lastSeen: persisted.lastSeen,
+          inMemory: false,
+        },
       });
     } catch (error) {
       logger.error('Error getting session:', error);
@@ -61,26 +144,35 @@ export class SessionController {
     }
   }
 
-  // Get all sessions
+  // Get all sessions (tenant-scoped)
   async getAllSessions(req: Request, res: Response): Promise<void> {
     try {
-      const rawSessions = await WhatsAppService.getAllSessions();
+      const tenantId = this.requireTenant(req, res);
+      if (!tenantId) return;
 
-      // Map session data to dashboard format
-      const sessions = rawSessions.map(session => ({
-        id: session.id,
-        name: session.name || session.clientId,
-        status: this.mapStatusToDashboard(session.status),
-        phoneNumber: session.connectedNumber,
-        qr: session.qrCode,
-        createdAt: session.lastSeen?.toISOString() || new Date().toISOString(),
-        updatedAt: session.lastSeen?.toISOString() || new Date().toISOString(),
-        lastSeen: session.lastSeen?.toISOString(),
-      }));
+      // PR5a-bis: build the visible set from DB-by-tenant, then enrich
+      // with in-memory state. The previous code returned in-memory
+      // sessions globally — sessions of other tenants were leaking.
+      const persisted = await SessionPersistenceService.loadActiveSessionsForTenant(tenantId);
+      const memorySessions = await WhatsAppService.getAllSessions();
+
+      const sessions = persisted.map(p => {
+        const mem = memorySessions.find(m => m.id === p.sessionId);
+        return {
+          id: p.sessionId,
+          name: p.name || p.sessionId,
+          status: this.mapStatusToDashboard(mem?.status ?? p.status),
+          phoneNumber: mem?.connectedNumber ?? p.connectedNumber,
+          qr: mem?.qrCode ?? p.qrCode,
+          createdAt: (p.lastSeen ?? new Date()).toISOString(),
+          updatedAt: (p.lastSeen ?? new Date()).toISOString(),
+          lastSeen: p.lastSeen?.toISOString(),
+        };
+      });
 
       res.json({
         success: true,
-        sessions: sessions,
+        sessions,
       });
     } catch (error) {
       logger.error('Error getting all sessions:', error);
@@ -111,7 +203,16 @@ export class SessionController {
   // Delete a session
   async deleteSession(req: Request, res: Response): Promise<void> {
     try {
+      const tenantId = this.requireTenant(req, res);
+      if (!tenantId) return;
+
       const { sessionId } = req.params;
+
+      const ownership = await this.assertSessionOwnership(sessionId, tenantId);
+      if (ownership !== 'ok') {
+        res.status(404).json({ success: false, error: 'Session not found' });
+        return;
+      }
 
       await WhatsAppService.destroySession(sessionId);
 
@@ -131,11 +232,18 @@ export class SessionController {
   // Force disconnect a session
   async forceDisconnectSession(req: Request, res: Response): Promise<void> {
     try {
+      const tenantId = this.requireTenant(req, res);
+      if (!tenantId) return;
+
       const { sessionId } = req.params;
 
-      logger.info(`🔌 Force disconnect requested for session: ${sessionId}`);
+      const ownership = await this.assertSessionOwnership(sessionId, tenantId);
+      if (ownership !== 'ok') {
+        res.status(404).json({ success: false, error: 'Session not found' });
+        return;
+      }
 
-      // The service method returns void, so we handle success/error via try/catch
+      logger.info(`🔌 Force disconnect requested for session: ${sessionId}`);
       await WhatsAppService.forceDisconnectSession(sessionId);
 
       res.json({
@@ -158,7 +266,16 @@ export class SessionController {
   // Get QR code for session
   async getQRCode(req: Request, res: Response): Promise<void> {
     try {
+      const tenantId = this.requireTenant(req, res);
+      if (!tenantId) return;
+
       const { sessionId } = req.params;
+
+      const ownership = await this.assertSessionOwnership(sessionId, tenantId);
+      if (ownership !== 'ok') {
+        res.status(404).json({ success: false, error: 'Session not found' });
+        return;
+      }
 
       const session = await WhatsAppService.getSessionStatus(sessionId);
 
@@ -197,6 +314,9 @@ export class SessionController {
   // Send message
   async sendMessage(req: Request, res: Response): Promise<void> {
     try {
+      const tenantId = this.requireTenant(req, res);
+      if (!tenantId) return;
+
       const { sessionId } = req.params;
       const { to, message } = req.body;
 
@@ -205,6 +325,12 @@ export class SessionController {
           success: false,
           error: 'Both "to" and "message" fields are required',
         });
+        return;
+      }
+
+      const ownership = await this.assertSessionOwnership(sessionId, tenantId);
+      if (ownership !== 'ok') {
+        res.status(404).json({ success: false, error: 'Session not found' });
         return;
       }
 
@@ -230,17 +356,38 @@ export class SessionController {
     }
   }
 
-  // Restore sessions from database
+  // Restore sessions from database (admin/tenant-scoped)
   async restoreSessions(req: Request, res: Response): Promise<void> {
     try {
-      logger.info('🔄 Manual session restore requested');
+      const tenantId = this.requireTenant(req, res);
+      if (!tenantId) return;
 
-      const recoveryResult = await SessionRecoveryService.recoverAllSessions(WhatsAppService);
+      logger.info(`🔄 Manual session restore requested for tenant ${tenantId}`);
+
+      // PR5a-bis: SessionRecoveryService.recoverAllSessions still
+      // operates globally on boot. The tenant-scoped HTTP path here is
+      // narrowed to the caller's sessions only. If we ever expose this
+      // route to non-admin users, this scoping is what stops one tenant
+      // from triggering reconnection loops on another tenant's sessions.
+      const tenantSessions = await SessionPersistenceService.loadActiveSessionsForTenant(tenantId);
+
+      let recovered = 0;
+      for (const s of tenantSessions) {
+        try {
+          await WhatsAppService.createSession(s.sessionId, tenantId);
+          recovered++;
+        } catch (e) {
+          logger.warn(`Failed to recover session ${s.sessionId}: ${String(e)}`);
+        }
+      }
 
       res.json({
         success: true,
-        data: recoveryResult,
-        message: `Restored ${recoveryResult.recoveredSessions}/${recoveryResult.totalSessions} sessions`,
+        data: {
+          totalSessions: tenantSessions.length,
+          recoveredSessions: recovered,
+        },
+        message: `Restored ${recovered}/${tenantSessions.length} sessions`,
       });
     } catch (error) {
       logger.error('Error restoring sessions:', error);
@@ -251,9 +398,18 @@ export class SessionController {
     }
   }
 
-  // Get session health status
+  // Get session health status (global — operator/observability route)
   async getSessionsHealth(req: Request, res: Response): Promise<void> {
     try {
+      // PR5a-bis: this endpoint reports infra-level health (DB stats,
+      // recovery stats, in-memory health). It is NOT tenant-scoped on
+      // purpose — it's effectively an operator/SRE view. The HMAC
+      // middleware still requires a tenant on the call; we just don't
+      // scope the data. If we ever expose this to end-user dashboards,
+      // wrap the result with tenant filters.
+      const _tenantId = this.requireTenant(req, res);
+      if (!_tenantId) return;
+
       const [dbStats, recoveryStats, serviceHealth] = await Promise.all([
         SessionPersistenceService.getSessionStats(),
         SessionRecoveryService.getRecoveryStats(),
@@ -278,16 +434,19 @@ export class SessionController {
     }
   }
 
-  // Backup session data
+  // Backup session data (tenant-scoped)
   async backupSessions(req: Request, res: Response): Promise<void> {
     try {
-      const sessions = await SessionPersistenceService.loadActiveSessions();
+      const tenantId = this.requireTenant(req, res);
+      if (!tenantId) return;
 
-      // Create backup with timestamp
+      const sessions = await SessionPersistenceService.loadActiveSessionsForTenant(tenantId);
+
       const backup = {
         timestamp: new Date().toISOString(),
         version: '1.0',
-        sessions: sessions,
+        tenantId,
+        sessions,
         metadata: {
           total: sessions.length,
           active: sessions.filter(s => s.isActive).length,
@@ -309,15 +468,17 @@ export class SessionController {
     }
   }
 
-  // Get enhanced sessions list with persistence data
+  // Get enhanced sessions list with persistence data (tenant-scoped)
   async getEnhancedSessions(req: Request, res: Response): Promise<void> {
     try {
+      const tenantId = this.requireTenant(req, res);
+      if (!tenantId) return;
+
       const { limit = 20, offset = 0, status, isActive } = req.query;
 
-      // Get sessions from persistence service with filtering
-      const persistedSessions = await SessionPersistenceService.loadActiveSessions();
+      const persistedSessions =
+        await SessionPersistenceService.loadActiveSessionsForTenant(tenantId);
 
-      // Apply filters
       let filteredSessions = persistedSessions;
 
       if (status && typeof status === 'string') {
@@ -329,15 +490,15 @@ export class SessionController {
         filteredSessions = filteredSessions.filter(s => s.isActive === activeFilter);
       }
 
-      // Apply pagination
       const startIndex = Number(offset);
       const endIndex = startIndex + Number(limit);
       const paginatedSessions = filteredSessions.slice(startIndex, endIndex);
 
-      // Get current memory sessions for comparison
+      // Enrich with in-memory state. Cross-reference is safe because
+      // memorySessions of OTHER tenants won't match any sessionId in the
+      // tenant-scoped paginatedSessions list.
       const memorySessions = await WhatsAppService.getAllSessions();
 
-      // Enhance with memory status
       const enhancedSessions = paginatedSessions.map(persistedSession => {
         const memorySession = memorySessions.find(m => m.id === persistedSession.sessionId);
 
@@ -368,9 +529,12 @@ export class SessionController {
     }
   }
 
-  // Get WebSocket connection statistics
+  // Get WebSocket connection statistics (operator)
   async getSocketStats(req: Request, res: Response): Promise<void> {
     try {
+      const _tenantId = this.requireTenant(req, res);
+      if (!_tenantId) return;
+
       const { getSocketService } = await import('../services/SocketService');
       const socketService = getSocketService();
 
@@ -404,6 +568,9 @@ export class SessionController {
   // Send direct message (without session in URL)
   async sendDirectMessage(req: Request, res: Response): Promise<void> {
     try {
+      const tenantId = this.requireTenant(req, res);
+      if (!tenantId) return;
+
       const { sessionId, phone, message } = req.body;
 
       if (!sessionId || !phone || !message) {
@@ -411,6 +578,12 @@ export class SessionController {
           success: false,
           error: 'sessionId, phone, and message fields are required',
         });
+        return;
+      }
+
+      const ownership = await this.assertSessionOwnership(sessionId, tenantId);
+      if (ownership !== 'ok') {
+        res.status(404).json({ success: false, error: 'Session not found' });
         return;
       }
 
@@ -439,7 +612,16 @@ export class SessionController {
   // Get session status
   async getSessionStatus(req: Request, res: Response): Promise<void> {
     try {
+      const tenantId = this.requireTenant(req, res);
+      if (!tenantId) return;
+
       const { sessionId } = req.params;
+
+      const ownership = await this.assertSessionOwnership(sessionId, tenantId);
+      if (ownership !== 'ok') {
+        res.status(404).json({ success: false, error: 'Session not found' });
+        return;
+      }
 
       const session = await WhatsAppService.getSessionStatus(sessionId);
 
@@ -472,14 +654,26 @@ export class SessionController {
     }
   }
 
-  // Get analytics for dashboard integration
+  // Get analytics for dashboard integration (tenant-scoped)
   async getAnalytics(req: Request, res: Response): Promise<void> {
     try {
-      const { sessionId, startDate, endDate } = req.query;
-      const sessions = await WhatsAppService.getAllSessions();
+      const tenantId = this.requireTenant(req, res);
+      if (!tenantId) return;
 
-      // Mock analytics data for now
-      // In a real implementation, this would come from a database
+      const { sessionId } = req.query;
+
+      // If a sessionId is provided, verify it belongs to the tenant.
+      if (typeof sessionId === 'string' && sessionId) {
+        const ownership = await this.assertSessionOwnership(sessionId, tenantId);
+        if (ownership !== 'ok') {
+          res.status(404).json({ success: false, error: 'Session not found' });
+          return;
+        }
+      }
+
+      // Mock analytics data for now.
+      // TODO: replace with real per-tenant aggregates once metrics
+      // pipeline supports tenant tagging.
       const analytics = {
         totalSent: Math.floor(Math.random() * 100),
         totalReceived: Math.floor(Math.random() * 150),

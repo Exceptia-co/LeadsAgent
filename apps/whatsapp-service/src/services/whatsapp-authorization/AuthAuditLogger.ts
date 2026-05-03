@@ -169,16 +169,16 @@ export class AuthAuditLogger {
   }
 
   /**
-   * Obtener estadísticas de autorización
+   * Obtener estadísticas de autorización.
+   * PR5a-quater: tenantId required to forward to DatabaseService.
    */
-  public async getAuthorizationStats(
-    options: {
-      startDate?: Date;
-      endDate?: Date;
-      sessionId?: string;
-      includeDetailedBreakdown?: boolean;
-    } = {}
-  ): Promise<{
+  public async getAuthorizationStats(options: {
+    tenantId: string;
+    startDate?: Date;
+    endDate?: Date;
+    sessionId?: string;
+    includeDetailedBreakdown?: boolean;
+  }): Promise<{
     totalDecisions: number;
     allowedCount: number;
     blockedCount: number;
@@ -323,9 +323,11 @@ export class AuthAuditLogger {
   }
 
   /**
-   * Generate compliance report for security audits
+   * Generate compliance report for security audits.
+   * PR5a-quater: tenantId is required so the report scopes by tenant.
    */
   public async generateComplianceReport(options: {
+    tenantId: string;
     startDate: Date;
     endDate: Date;
     includePersonalData?: boolean;
@@ -354,6 +356,7 @@ export class AuthAuditLogger {
 
     try {
       const stats = await this.getAuthorizationStats({
+        tenantId: options.tenantId,
         startDate: options.startDate,
         endDate: options.endDate,
         includeDetailedBreakdown: true,

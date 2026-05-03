@@ -30,7 +30,11 @@ packages/**/.env
 *.db
 *.db-journal
 packages/db/prisma/dev.db
-packages/db/prisma/migrations/
+# Prisma migrations are schema history and must be versioned.
+!packages/db/prisma/migrations/
+!packages/db/prisma/migrations/**/
+!packages/db/prisma/migrations/**/migration.sql
+!packages/db/prisma/migrations/migration_lock.toml
 
 # Logs
 logs/
@@ -41,6 +45,7 @@ yarn-debug.log*
 yarn-error.log*
 apps/whatsapp-service/logs/
 apps/whatsapp-service/*.log
+.playwright-mcp/
 
 # WhatsApp specific (CRITICAL - contains sensitive session data)
 apps/whatsapp-service/sessions/

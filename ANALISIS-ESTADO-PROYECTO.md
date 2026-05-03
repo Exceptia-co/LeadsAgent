@@ -1,16 +1,16 @@
 # Informe de Estado Real — LeadsCRM
 
-**Fecha:** 2026-04-18 (v5 — tras cierre del PRD de estabilización)
-**Branch analizado:** `main` (HEAD `1eeb155` en el momento de este snapshot; último merge a prod PR #4 `78ae524`)
-**Método:** Auditoría `path:line` verificable + verificación live de Supabase, Hetzner, Vercel y el stack de Hetzner (SSH autorizado) + análisis del código tras los 58 commits que cerraron el PRD de estabilización.
+**Fecha:** 2026-05-01 (v6 — post double-init fix + B1 PR1 foundation schema)
+**Branch analizado:** `feature/b1-foundation-schema` (HEAD `364979a`; base `develop` actualizado a `730599e`)
+**Método:** Auditoría `path:line` verificable + checks locales (`prisma validate`, `db:generate`, `typecheck`, `test`, `build`, `lint`) + inspección de migration SQL additive-only. La información live de Supabase/Hetzner/Vercel se conserva del snapshot v5 salvo donde se indica explícitamente.
 
-> **Novedad v5:** Este informe reemplaza a v4 (que reflejaba el estado **antes** del PRD). El PRD de estabilización (Fases 0–5 + T0.4-ter) quedó 100% cerrado; v5 documenta el estado resultante, los follow-ups residuales y reemplaza las entradas de la tabla de gaps que ya no aplican. Las cifras de infra son un snapshot live del 2026-04-18.
+> **Novedad v6:** Además del MVP estabilizado de v5, el fix de double-init del whatsapp-service ya quedó mergeado a `develop` y la primera pieza de Fase B.1 quedó implementada en branch: schema foundation multi-tenant additive-only. No se ha aplicado la migration B1 a Supabase producción; el despliegue de DB se acumula para PR1+PR2+PR3 con backfill. El smoke local del 2026-05-01 confirmó que API/dashboard de esta rama no deben correr contra una DB sin esa migration: Prisma Client selecciona columnas nuevas y `/leads`/`/templates` devuelven 500.
 
 ---
 
 ## 1. Resumen Ejecutivo
 
-LeadsCRM es un CRM con automatización de WhatsApp en **estado MVP estabilizado y en producción**. El monorepo tiene 3 apps reales + docs + 3 packages compartidos (tras eliminar `@leadcrm/ui`). El flujo crítico (leads + WhatsApp + IA) es end-to-end funcional: recepción de mensaje → whitelist → lead/message persistidos atómicamente → pipeline IA (OpenRouter primario / Gemini fallback) → respuesta con rate limit por sesión. La **superficie de autenticación está cerrada**: Clerk JWT gate desde el usuario hasta la API Nest; HMAC SHA-256 con replay protection para el tráfico server-to-server hacia el whatsapp-service; guards aplicados en cada controller Nest sensible. Supabase no tiene advisors de seguridad abiertos (Postgres 17.6, upgrade cerró el advisor `vulnerable_postgres_version`); el firewall Hetzner pasó de 5 reglas `0.0.0.0/0` a 3 (SSH restringido al `/24` del operador; 3002 y 3003 cerrados). La persistencia de mensajes quedó unificada (57 huérfanos históricos backfilled; FK `whatsapp_conversations.message_id` poblada al 100%; columnas duplicadas `message_text`/`response_text` dropeadas). Los componentes muertos (Refactored, MigrationService, automation.service, @leadcrm/ui, `/public/leads`) fueron eliminados (~-4.350 líneas netas). El PRD v5.23 cerró T0.4-ter con middleware HMAC + helpers firma + 3 consumers firmando end-to-end. CI blocking `audit-infra` estable en 15/1/0/0 y `CI/CD - LeadsCRM` pasa verde con auto-format. Lo que queda es deuda menor (toggle `USE_DATABASE_REPOSITORIES` muerto, tabla `migrations` legacy vacía pero no dropeada en producción, 1 advisor residual sobre deprecation de Node 20 en GHA) y el siguiente estadio de producto (observabilidad, features nuevas).
+LeadsCRM es un CRM con automatización de WhatsApp en **estado MVP estabilizado y en producción**, con el primer PR técnico de multi-tenant ya preparado en branch. El flujo crítico (leads + WhatsApp + IA) es end-to-end funcional: recepción de mensaje → whitelist → lead/message persistidos atómicamente → pipeline IA (OpenRouter primario / Gemini fallback) → respuesta con rate limit por sesión. El bug de double-init del whatsapp-service quedó resuelto con lazy idempotent init y smoke runtime real. La **superficie de autenticación actual está cerrada**: Clerk JWT gate desde el usuario hasta la API Nest; HMAC SHA-256 con replay protection para tráfico server-to-server hacia el whatsapp-service; guards aplicados en cada controller Nest sensible. Multi-tenancy todavía no está activo en runtime ni en producción, pero la base de datos ya tiene una migration preparada: `Tenant`, `AiAgent`, `AiProduct`, `tenant_id` nullable, `ai_agent_id`, `agent_id` y `whatsapp_session_id`, sin drops/renames/NOT NULL. Lo que queda para activar multi-tenant real: Clerk Organizations/webhook, backfill, enforcement en Prisma/Nest, RLS secundaria y UI.
 
 ---
 
@@ -29,7 +29,7 @@ LeadsCRM es un CRM con automatización de WhatsApp en **estado MVP estabilizado 
 
 | Package | Función | Estado |
 |---------|---------|--------|
-| `@leadcrm/db` | Prisma schema + client | Usado por API, WhatsApp service, seed |
+| `@leadcrm/db` | Prisma schema + client | Usado por API, WhatsApp service, seed. En branch B1 ya incluye foundation multi-tenant additive-only |
 | `@leadcrm/config-eslint` | Config ESLint compartida | Activo |
 | `@leadcrm/config-ts` | Configs TypeScript base | Activo |
 | ~~`@leadcrm/ui`~~ | — | **Eliminado (T3.2)**; los 2 componentes usados (Alert, Toggle) viven ahora en `apps/dashboard/components/ui/` |
@@ -77,15 +77,15 @@ LeadsCRM es un CRM con automatización de WhatsApp en **estado MVP estabilizado 
 
 | Dominio | Estado | Notas clave |
 |---------|--------|-------------|
-| Auth + multi-tenancy | ✅ Single-user/admin operativo | Clerk webhook poblando `users` vía svix; single tenant (todos los authenticated ven el full set; per-user filtering diferido hasta Clerk users sync maduro) |
+| Auth + multi-tenancy | 🟡 Single-user/admin operativo + schema foundation listo | Clerk webhook poblando `users` vía svix; runtime sigue single tenant. Branch `feature/b1-foundation-schema` añade base Prisma multi-tenant sin enforcement ni backfill todavía |
 | Leads CRUD | ✅ Completo | Nest `LeadsController` con 7 endpoints (create/findAll/findOne/update/updateStatus/updateWhatsAppAuth/remove) + soft delete (`deletedAt`) |
 | Templates CRUD | ✅ Nuevo (T2.2) | Nest `TemplatesModule` con `ClerkAuthGuard`, DTOs `class-validator`, preview engine |
-| WhatsApp sessions | ✅ Persistencia + snapshots | `SessionManager` en `whatsapp-core/`, `SnapshotService` encriptado, reconexión automática con toggle |
+| WhatsApp sessions | ✅ Persistencia + snapshots | `SessionManager` en `whatsapp-core/`, `SnapshotService` encriptado, reconexión automática con toggle. Double-init resuelto en `develop`; schema B1 añade `tenant_id`/`ai_agent_id` nullable para futuro |
 | WhatsApp incoming + whitelist | ✅ | 4 etapas de filtrado, logging a `whatsapp_whitelist_logs` (383 filas, +356 desde v4) |
 | WhatsApp sending (API → service) | ✅ | `WhatsAppService.sendMessage` firma HMAC antes de POST al whatsapp-service |
 | WhatsApp proactive/bulk | ✅ | Rate limit por sesión (200/h), delay adaptativo 1/2/4× si uso >80%/>90%; bulk fail-closed |
 | Socket.IO | ✅ T2.3 fix aplicado | Mapeo `auth_failure → AUTH_INVALID` correcto; tipos `useSocket.ts` alineados con `types/index.ts` (ambos incluyen 6 estados) |
-| IA pipeline | ✅ Intacto | AIOrchestrator → Intent → Context → Knowledge → Response; cache Redis; 8 tests unitarios en `ai-thinking/__tests__/` |
+| IA pipeline | ✅ Intacto | AIOrchestrator → Intent → Context → Knowledge → Response; cache Redis; 8 tests unitarios en `ai-thinking/__tests__/`. Pendiente Fase B.2: parametrizar prompts/agentes y retirar branding hardcoded del runtime |
 | AutomationService "keyword rules" | 🗑️ Eliminado (T2.1) | El servicio era código muerto (nunca inyectado); eliminado junto con sus 234 líneas |
 | Dual-write `messages` ↔ `whatsapp_conversations` | ✅ Cerrado end-to-end | Writer unificado transaccional en `DatabaseService.saveConversation`; FK `message_id` poblada al 100%; readers via JOIN Prisma |
 | AI training interactions | ✅ Modelo Prisma ahora | `AiTrainingInteraction` añadido en T1.1 Phase A; writer sigue siendo `AILearningService` vía SQL raw (follow-up: migrarlo a Prisma) |
@@ -99,6 +99,8 @@ LeadsCRM es un CRM con automatización de WhatsApp en **estado MVP estabilizado 
 ## 5. Base de Datos (snapshot live 2026-04-18)
 
 ### Tablas en `public` (13, sin cambios vs v4 pero con contenidos distintos)
+
+> **Nota v6:** la tabla siguiente describe producción/Supabase del snapshot v5. En branch `feature/b1-foundation-schema`, el schema Prisma ya prepara el siguiente estado con `tenants`, `ai_agents`, `ai_products`, `tenant_id` nullable en tablas scopeadas, `ai_agent_id`, `agent_id` y `whatsapp_session_id`. Esa migration no se ha aplicado a producción.
 
 | Tabla | Cols | Filas | Δ vs v4 | Nota |
 |-------|------|-------|---------|------|
@@ -176,6 +178,9 @@ Historial de FKs pre-T4.1: las tres primeras eran `ON DELETE CASCADE` — se rel
 
 | Gap | Impacto | Detalle |
 |-----|---------|---------|
+| Multi-tenant runtime aún no activo | Alto | B1 PR1 solo preparó schema additive-only en branch. Faltan Clerk Organizations/webhook, backfill, Prisma extension/TenantContextGuard, RLS secundaria y UI |
+| Migration B1 no aplicada en prod | Alto | Deliberado: aplicar solo PR1 dejaría `tenant_id=NULL` sin Tenant real. Se aplica como combo PR1+PR2+PR3 con backfill |
+| Runtime B1 contra DB vieja | Alto | Confirmado en Playwright: `/dashboard/leads` carga shell pero `GET localhost:3003/leads` y `/templates` devuelven 500 porque la DB no tiene `tenant_id`. No usar Supabase prod para smoke de esta rama; preparar local/staging migrado |
 | Webhook Nest con header estático | ⚠️ Medio | `apps/api/src/whatsapp/whatsapp.controller.ts:45-54` — solo valida presencia del header `x-whatsapp-service`. Elevar a HMAC completo es follow-up técnico; la exposición real es baja porque el whatsapp-service ya no es alcanzable desde internet |
 | RLS deshabilitado con 0 policies | ⚠️ WARN aceptado | Opción C del PRD T0.1; reabrible si aparece segundo usuario, exposición PostgREST directa, o JWT Clerk↔Supabase |
 | Tabla `migrations` legacy vacía en prod | Bajo | Código ya no la referencia ni recrea; drop manual pendiente (`DROP TABLE public.migrations;`) |
@@ -184,6 +189,15 @@ Historial de FKs pre-T4.1: las tres primeras eran `ON DELETE CASCADE` — se rel
 | Node 20 deprecation en GHA | Bajo | `actions/checkout@v4`/`setup-node@v4`/`pnpm/action-setup@v2` corren en Node 20; GitHub fuerza Node 24 el 2026-06-02 |
 | ESLint warnings en whatsapp-service | Bajo | `any` types + unused vars; cleanup progresivo |
 | `project.live: false` en Vercel | Info | Merece investigación, pero el dominio sí responde |
+
+### Progreso v6 posterior al snapshot v5
+
+- **Double-init del whatsapp-service resuelto**: `fix/whatsapp-double-init` mergeado a `develop`; `WhatsAppService`/`WhatsAppServiceSimple` usan lazy idempotent init y se eliminaron scheduler legacy/zombie intervals.
+- **B1 PR1 foundation schema commiteado**: commit `364979a` en `feature/b1-foundation-schema`.
+- **Prisma migrations recuperadas en Git**: `.gitignore` ya no ignora `packages/db/prisma/migrations/`; se versionaron las migrations históricas y `20260501120000_b1_foundation_schema`.
+- **B1 schema es additive-only**: mantiene `Lead.phone @unique`, mantiene `whatsapp_conversations.session_id`, mantiene `ai_knowledge_base` sin rename y añade columnas nuevas nullable en paralelo.
+- **Smoke runtime B1 requiere DB migrada**: additive-only no significa app-backward-compatible con DB vieja; Prisma Client generado pide columnas nuevas por defecto.
+- **Checks verdes**: `prisma validate`, `pnpm db:generate`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm lint`.
 
 **Todos los gaps críticos de v4 están resueltos.**
 
@@ -235,7 +249,15 @@ Base en los 58 commits entre `2395d04` (v4 point-in-time) y `1eeb155` (HEAD actu
 
 ## 10. Pending / Next Phase
 
-Con el PRD de estabilización cerrado, las opciones de siguiente sprint agrupadas por categoría (ver última conversación): **producto/features**, **observabilidad (recomendada)**, **endurecimiento DX** (husky, branch protection, Node 24), **hygiene** (drop `migrations`, eliminar toggle muerto), **testing ampliado**. No hay "next PRD" definido todavía — a elegir por el PO.
+La siguiente fase activa ya está definida: **Fase B.1 multi-tenant**. Estado actual:
+
+- PR1 schema foundation: implementado y commiteado en branch.
+- PR2 pendiente: Clerk Organizations + webhook de organizaciones + metadata `tenant_id`.
+- PR3 pendiente: backfill `tenant_id`, `ai_agent_id`, `whatsapp_session_id` y creación de AiAgent default.
+- PR4 pendiente: enforcement (`TenantContextGuard`, Prisma extension, ESLint rule), `NOT NULL`, unicidad compuesta de `Lead.phone`, rename runtime-aware `ai_knowledge_base → ai_knowledge_items`.
+- PR5 pendiente: UI `/select-org` + `OrganizationSwitcher`.
+
+No aplicar la migration B1 a Supabase producción hasta coordinar PR1+PR2+PR3.
 
 ---
 

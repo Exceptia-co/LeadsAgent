@@ -87,9 +87,10 @@ export class ContextBuilder {
         }
       }
 
-      // 2. Obtener historial de conversación si no está presente
+      // 2. Obtener historial de conversación si no está presente.
+      // PR5a-bis: pass sessionId so the reader scopes by tenant.
       if (!enrichedContext.conversationHistory) {
-        const history = await this.fetchConversationHistory(context.phoneNumber);
+        const history = await this.fetchConversationHistory(context.phoneNumber, context.sessionId);
         enrichedContext.conversationHistory = history;
         dataSourcesUsed.push('conversation-history');
 
@@ -307,13 +308,18 @@ export class ContextBuilder {
   }
 
   /**
-   * Obtener historial de conversación
+   * Obtener historial de conversación.
+   * PR5a-bis: tenant-scoped via sessionId.
    */
-  private async fetchConversationHistory(phoneNumber: string): Promise<ConversationHistory[]> {
+  private async fetchConversationHistory(
+    phoneNumber: string,
+    sessionId?: string
+  ): Promise<ConversationHistory[]> {
     try {
       return await DatabaseService.getConversationHistory(
         phoneNumber,
-        this.config.maxContextMessages
+        this.config.maxContextMessages,
+        sessionId ? { sessionId } : undefined
       );
     } catch (error) {
       logger.warn('Error obteniendo historial de conversación:', error);

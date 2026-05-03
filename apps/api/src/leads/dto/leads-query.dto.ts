@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsIn, IsNumber } from 'class-validator';
+import { IsOptional, IsString, IsIn, IsInt, Min, Max } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { LeadStatus } from '@prisma/client';
@@ -27,7 +27,8 @@ export class LeadsQueryDto {
   })
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   page?: number;
 
   @ApiPropertyOptional({
@@ -37,6 +38,8 @@ export class LeadsQueryDto {
   })
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
+  @Min(1)
+  @Max(100)
   limit?: number;
 }

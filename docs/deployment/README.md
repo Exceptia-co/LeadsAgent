@@ -10,6 +10,7 @@ Guias de deploy y operaciones en produccion.
 | [monitoring.md](./monitoring.md) | Monitoreo y alertas |
 | [backup-recovery.md](./backup-recovery.md) | Backup y recovery |
 | [security-guide.md](./security-guide.md) | Seguridad y RLS |
+| [secrets-rotation.md](./secrets-rotation.md) | Runbook de rotacion de credenciales (con log de cada rotacion) |
 
 ## Infraestructura Actual
 

@@ -85,11 +85,13 @@ export class ContextEnricher {
         dayOfWeek: 'weekday',
       };
 
-      // Obtain conversation history if phone number is available
+      // Obtain conversation history if phone number is available.
+      // PR5a-bis: pass sessionId so the reader scopes by tenant.
       if (context.phoneNumber) {
         const history = await DatabaseService.getConversationHistory(
           context.phoneNumber,
-          10 // Last 10 messages
+          10, // Last 10 messages
+          context.sessionId ? { sessionId: context.sessionId } : undefined
         );
 
         enriched.messageHistory = history.map(h => ({

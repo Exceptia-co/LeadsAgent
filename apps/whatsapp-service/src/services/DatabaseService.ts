@@ -71,9 +71,20 @@ export interface Lead {
   updatedAt: Date;
 }
 
+// PR5a: in-memory cache for sessionId -> tenantId resolution. Keyed by
+// sessionId; null cached for sessions without tenantId yet (legacy
+// pre-backfill data) so we don't re-query every message. TTL is short
+// because backfill runs are visible immediately after expiration.
+interface SessionTenantCacheEntry {
+  tenantId: string | null;
+  expiresAt: number;
+}
+const SESSION_TENANT_CACHE_TTL_MS = 60_000;
+
 class DatabaseService {
   private pool: Pool | null = null;
   private prisma: PrismaClient | null = null;
+  private sessionTenantCache = new Map<string, SessionTenantCacheEntry>();
 
   constructor() {
     this.initializePool();
@@ -284,6 +295,41 @@ class DatabaseService {
   // filas quedan vinculadas al mismo leadId; si no, ambas con leadId=null.
   // Esto detiene la divergencia entre `messages` y `whatsapp_conversations`
   // para mensajes nuevos.
+  /**
+   * PR5a: resolve a WhatsApp session to its owning tenant. Caches both
+   * positive and negative results for SESSION_TENANT_CACHE_TTL_MS. Returns
+   * null if the session has no tenantId yet (typically pre-backfill data
+   * or a session created before B1.9 ran).
+   */
+  public async getSessionTenantId(sessionId: string): Promise<string | null> {
+    if (!this.prisma) return null;
+
+    const now = Date.now();
+    const cached = this.sessionTenantCache.get(sessionId);
+    if (cached && cached.expiresAt > now) {
+      return cached.tenantId;
+    }
+
+    const session = await this.prisma.whatsAppSession.findUnique({
+      where: { sessionId },
+      select: { tenantId: true },
+    });
+
+    const tenantId = session?.tenantId ?? null;
+    this.sessionTenantCache.set(sessionId, {
+      tenantId,
+      expiresAt: now + SESSION_TENANT_CACHE_TTL_MS,
+    });
+    return tenantId;
+  }
+
+  /**
+   * PR5a: test-only cache reset.
+   */
+  public resetSessionTenantCacheForTests(): void {
+    this.sessionTenantCache.clear();
+  }
+
   public async saveConversation(data: ConversationData): Promise<string | null> {
     logger.info('🔍 [UNIFIED-WRITE] saveConversation called:', {
       sessionId: data.sessionId,
@@ -316,9 +362,22 @@ class DatabaseService {
     }
 
     try {
+      // PR5a-bis (Codex finding #2): tenantId is REQUIRED to write. Tenantless
+      // writes were a regression — they reintroduced rows that PR5b NOT NULL
+      // would block, and they leaked across orgs. If the session has no
+      // tenantId yet, skip the write entirely; the operator must run B1.9
+      // backfill on whatsapp_sessions before runtime can persist messages.
+      const tenantId = await this.getSessionTenantId(data.sessionId);
+      if (!tenantId) {
+        logger.error(
+          `🚫 [UNIFIED-WRITE] session ${data.sessionId} has no tenantId — DROPPING message (no tenantless persistence). Run B1.9 backfill on whatsapp_sessions.`
+        );
+        return null;
+      }
+
       const normalizedPhone = data.phoneNumber.replace(/^\+/, '');
-      const lead = await this.prisma.lead.findUnique({
-        where: { phone: normalizedPhone },
+      const lead = await this.prisma.lead.findFirst({
+        where: { phone: normalizedPhone, tenantId },
         select: { id: true },
       });
 
@@ -326,6 +385,7 @@ class DatabaseService {
         const message = await tx.message.create({
           data: {
             leadId: lead?.id ?? null,
+            tenantId,
             content: canonicalContent,
             direction: isFromUser ? MessageDirection.INBOUND : MessageDirection.OUTBOUND,
             messageType: toPrismaMessageType(data.messageType),
@@ -336,6 +396,7 @@ class DatabaseService {
         const conversation = await tx.whatsAppConversation.create({
           data: {
             leadId: lead?.id ?? null,
+            tenantId,
             messageId: message.id,
             sessionId: data.sessionId,
             phoneNumber: data.phoneNumber,
@@ -380,14 +441,18 @@ class DatabaseService {
 
   // Obtener historial de conversación por número de teléfono.
   //
-  // T1.1-bis paso 3 (reader migration): ahora usa Prisma con include del
-  // message vinculado. Prefiere message_text/response_text legacy si están
-  // poblados; si no, cae a message.content via el FK. Esto hace que el
-  // reader funcione antes y después de que el paso 4 dropee los campos
-  // duplicados.
+  // T1.1-bis paso 3 (reader migration): usa Prisma con include del message
+  // vinculado.
+  //
+  // PR5a-bis (Codex finding #2): tenant scoping. Callers should pass
+  // `opts.tenantId` directly when known, or `opts.sessionId` so we can
+  // derive it. If neither is provided, the read falls back to phone-only
+  // (legacy behavior) and emits a WARN — this surfaces remaining
+  // unscoped call sites without breaking them mid-deploy.
   public async getConversationHistory(
     phoneNumber: string,
-    limit: number = 50
+    limit: number = 50,
+    opts?: { tenantId?: string; sessionId?: string }
   ): Promise<ConversationHistory[]> {
     if (!this.prisma) {
       logger.warn('No hay Prisma client disponible');
@@ -395,8 +460,16 @@ class DatabaseService {
     }
 
     try {
+      const tenantId =
+        opts?.tenantId ?? (opts?.sessionId ? await this.getSessionTenantId(opts.sessionId) : null);
+      if (!tenantId) {
+        logger.warn(
+          `[UNSCOPED-READ] getConversationHistory(${phoneNumber}) without tenantId/sessionId — falling back to global phone scope. Update caller to pass opts.tenantId or opts.sessionId.`
+        );
+      }
+
       const rows = await this.prisma.whatsAppConversation.findMany({
-        where: { phoneNumber },
+        where: tenantId ? { phoneNumber, tenantId } : { phoneNumber },
         orderBy: { createdAt: 'desc' },
         take: limit,
         include: { message: { select: { content: true, direction: true } } },
@@ -428,7 +501,12 @@ class DatabaseService {
     }
   }
 
-  // Obtener historial reciente para contexto de IA (últimos N mensajes)
+  // Obtener historial reciente para contexto de IA (últimos N mensajes).
+  //
+  // PR5a-bis (Codex finding #2): always derives tenantId from the session
+  // and filters by it. If the session has no tenant yet (legacy
+  // pre-backfill), returns [] rather than leaking cross-tenant context to
+  // the AI.
   public async getRecentContext(
     phoneNumber: string,
     sessionId: string,
@@ -443,8 +521,16 @@ class DatabaseService {
     }
 
     try {
+      const tenantId = await this.getSessionTenantId(sessionId);
+      if (!tenantId) {
+        logger.warn(
+          `[TENANT-SAFE] getRecentContext: session ${sessionId} has no tenantId — returning empty context (no cross-tenant leak)`
+        );
+        return [];
+      }
+
       const rows = await this.prisma.whatsAppConversation.findMany({
-        where: { phoneNumber, sessionId },
+        where: { phoneNumber, sessionId, tenantId },
         orderBy: { createdAt: 'asc' },
         take: limit,
         include: { message: { select: { content: true } } },
@@ -467,7 +553,13 @@ class DatabaseService {
   }
 
   // Obtener estadísticas de conversaciones
-  public async getStats(sessionId?: string): Promise<any> {
+  /**
+   * PR5a-quater (Codex review #3): tenantId is REQUIRED. Filtering only
+   * by sessionId let an attacker probe stats from another tenant by
+   * passing a known sessionId. Now we always filter by tenant_id; the
+   * sessionId is an additional filter inside the same tenant.
+   */
+  public async getStats(tenantId: string, sessionId?: string): Promise<any> {
     if (!this.pool) {
       return {
         totalConversations: 0,
@@ -477,16 +569,17 @@ class DatabaseService {
     }
 
     let query = `
-      SELECT 
+      SELECT
         COUNT(*) as total_conversations,
         COUNT(DISTINCT phone_number) as unique_contacts,
         COUNT(CASE WHEN ai_provider IS NOT NULL THEN 1 END) as ai_responses
       FROM whatsapp_conversations
+      WHERE tenant_id = $1::uuid
     `;
 
-    const values: any[] = [];
+    const values: any[] = [tenantId];
     if (sessionId) {
-      query += ' WHERE session_id = $1';
+      query += ' AND session_id = $2';
       values.push(sessionId);
     }
 
@@ -511,9 +604,14 @@ class DatabaseService {
     }
   }
 
-  // Buscar conversaciones por términos
+  /**
+   * PR5a-quater: tenantId is REQUIRED. sessionId is now optional but
+   * always filtered AFTER tenantId, so a sessionId from another tenant
+   * silently yields empty results.
+   */
   public async searchConversations(
     searchTerm: string,
+    tenantId: string,
     sessionId?: string,
     limit: number = 20
   ): Promise<ConversationHistory[]> {
@@ -528,6 +626,7 @@ class DatabaseService {
     try {
       const rows = await this.prisma.whatsAppConversation.findMany({
         where: {
+          tenantId,
           ...(sessionId ? { sessionId } : {}),
           OR: [
             { contactName: { contains: searchTerm, mode: 'insensitive' } },
@@ -590,15 +689,31 @@ class DatabaseService {
   }
 
   // Obtener todos los leads (con fallback a datos mockeados)
-  public async getAllLeads(): Promise<Lead[]> {
+  /**
+   * PR5a-quater (Codex review #2): tenant scoping. Callers that have a
+   * tenant context MUST pass `opts.tenantId` — the SQL filters by it.
+   *
+   * Callers without a tenant (a few legacy internal helpers like
+   * findLeadByPhone, plus dev scripts) get the legacy global view and a
+   * `[UNSCOPED-READ]` WARN so we can finish migrating them in
+   * follow-up PRs without breaking anything mid-deploy.
+   */
+  public async getAllLeads(opts?: { tenantId?: string }): Promise<Lead[]> {
+    const tenantId = opts?.tenantId;
+    if (!tenantId) {
+      logger.warn(
+        '[UNSCOPED-READ] getAllLeads() called without tenantId — returning global. Update caller to pass opts.tenantId.'
+      );
+    }
+
     // Intentar obtener leads de la base de datos real
     if (this.pool) {
       try {
         // Verificar si existe la tabla de leads
         const checkTableQuery = `
           SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' 
+            SELECT FROM information_schema.tables
+            WHERE table_schema = 'public'
             AND table_name = 'leads'
           );
         `;
@@ -607,16 +722,28 @@ class DatabaseService {
 
         if (tableExists.rows[0].exists) {
           // La tabla existe, obtener leads reales con estructura de Supabase
-          const query = `
-            SELECT 
-              id, name, phone, email, tags, status, mood_score, 
-              last_contact, assigned_to, source, whatsapp_authorized,
-              created_at, updated_at
-            FROM leads 
-            ORDER BY created_at DESC;
-          `;
+          const query = tenantId
+            ? `
+              SELECT
+                id, name, phone, email, tags, status, mood_score,
+                last_contact, assigned_to, source, whatsapp_authorized,
+                created_at, updated_at
+              FROM leads
+              WHERE tenant_id = $1::uuid
+              ORDER BY created_at DESC;
+            `
+            : `
+              SELECT
+                id, name, phone, email, tags, status, mood_score,
+                last_contact, assigned_to, source, whatsapp_authorized,
+                created_at, updated_at
+              FROM leads
+              ORDER BY created_at DESC;
+            `;
 
-          const result = await this.pool.query(query);
+          const result = tenantId
+            ? await this.pool.query(query, [tenantId])
+            : await this.pool.query(query);
           const realLeads = result.rows.map(row => ({
             id: row.id,
             name: row.name,
@@ -728,18 +855,30 @@ class DatabaseService {
     }
   }
 
-  // Find lead by ID
-  public async findLeadById(leadId: string): Promise<Lead | null> {
+  /**
+   * PR5a-quater (Codex review #3): tenant-scoped lookup.
+   *   - opts.tenantId provided -> WHERE id = $1 AND tenant_id = $2.
+   *     Cross-tenant id returns null (404 from caller).
+   *   - opts.tenantId omitted -> legacy global lookup, with WARN.
+   *     Used only by tests/scripts; HTTP routes always pass tenantId.
+   */
+  public async findLeadById(leadId: string, opts?: { tenantId?: string }): Promise<Lead | null> {
     if (!this.pool) {
       return null;
+    }
+    const tenantId = opts?.tenantId;
+    if (!tenantId) {
+      logger.warn(
+        `[UNSCOPED-READ] findLeadById(${leadId}) called without tenantId — global lookup. Update caller to pass opts.tenantId.`
+      );
     }
 
     try {
       // Check if the table exists first
       const checkTableQuery = `
         SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_schema = 'public' 
+          SELECT FROM information_schema.tables
+          WHERE table_schema = 'public'
           AND table_name = 'leads'
         );
       `;
@@ -747,16 +886,27 @@ class DatabaseService {
       const tableExists = await this.pool.query(checkTableQuery);
 
       if (tableExists.rows[0].exists) {
-        const query = `
-          SELECT 
-            id, name, phone, email, tags, status, mood_score, 
-            last_contact, assigned_to, source, whatsapp_authorized,
-            created_at, updated_at
-          FROM leads 
-          WHERE id = $1;
-        `;
+        const query = tenantId
+          ? `
+            SELECT
+              id, name, phone, email, tags, status, mood_score,
+              last_contact, assigned_to, source, whatsapp_authorized,
+              created_at, updated_at
+            FROM leads
+            WHERE id = $1 AND tenant_id = $2::uuid;
+          `
+          : `
+            SELECT
+              id, name, phone, email, tags, status, mood_score,
+              last_contact, assigned_to, source, whatsapp_authorized,
+              created_at, updated_at
+            FROM leads
+            WHERE id = $1;
+          `;
 
-        const result = await this.pool.query(query, [leadId]);
+        const result = tenantId
+          ? await this.pool.query(query, [leadId, tenantId])
+          : await this.pool.query(query, [leadId]);
 
         if (result.rows.length > 0) {
           const row = result.rows[0];
@@ -915,10 +1065,16 @@ class DatabaseService {
     return true;
   }
 
-  // Get recent conversations across all phone numbers
+  // Get recent conversations across all phone numbers.
+  //
+  // PR5a-bis (Codex finding #2): tenant scoping.
+  //   - sessionId provided -> derive tenantId from session, filter by both.
+  //   - sessionId omitted but opts.tenantId provided -> filter by tenantId only.
+  //   - neither provided -> WARN and fall back to global (legacy callers).
   public async getRecentConversations(
     sessionId?: string,
-    limit: number = 50
+    limit: number = 50,
+    opts?: { tenantId?: string }
   ): Promise<ConversationHistory[]> {
     if (!this.prisma) {
       logger.warn('No hay Prisma client disponible');
@@ -926,8 +1082,21 @@ class DatabaseService {
     }
 
     try {
+      const tenantId =
+        opts?.tenantId ?? (sessionId ? await this.getSessionTenantId(sessionId) : null);
+      if (!tenantId) {
+        logger.warn(
+          `[UNSCOPED-READ] getRecentConversations(${sessionId ?? 'no-session'}) without tenantId — falling back to global scope. Update caller to pass opts.tenantId or a tenant-bound sessionId.`
+        );
+      }
+
+      const where: Prisma.WhatsAppConversationWhereInput = {
+        ...(sessionId ? { sessionId } : {}),
+        ...(tenantId ? { tenantId } : {}),
+      };
+
       const rows = await this.prisma.whatsAppConversation.findMany({
-        where: sessionId ? { sessionId } : {},
+        where,
         orderBy: { createdAt: 'desc' },
         take: limit,
         include: { message: { select: { content: true, direction: true } } },
@@ -1024,22 +1193,27 @@ class DatabaseService {
   }
 
   // Obtener logs de whitelist con filtros
-  public async getWhitelistLogs(
-    options: {
-      limit?: number;
-      offset?: number;
-      phoneNumber?: string;
-      sessionId?: string;
-      decision?: 'ALLOWED' | 'BLOCKED';
-      startDate?: Date;
-      endDate?: Date;
-    } = {}
-  ): Promise<any[]> {
+  /**
+   * PR5a-quater: tenantId required. Was filtering by sessionId optional
+   * which let a caller probe whitelist decisions for any tenant by
+   * passing a sessionId.
+   */
+  public async getWhitelistLogs(options: {
+    tenantId: string;
+    limit?: number;
+    offset?: number;
+    phoneNumber?: string;
+    sessionId?: string;
+    decision?: 'ALLOWED' | 'BLOCKED';
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<any[]> {
     if (!this.pool) {
       return [];
     }
 
     const {
+      tenantId,
       limit = 50,
       offset = 0,
       phoneNumber,
@@ -1050,14 +1224,14 @@ class DatabaseService {
     } = options;
 
     let query = `
-      SELECT 
+      SELECT
         id, phone_number, session_id, decision, reason, created_by, created_at
       FROM whatsapp_whitelist_logs
-      WHERE 1=1
+      WHERE tenant_id = $1::uuid
     `;
 
-    const values: any[] = [];
-    let valueIndex = 1;
+    const values: any[] = [tenantId];
+    let valueIndex = 2;
 
     if (phoneNumber) {
       query += ` AND phone_number = $${valueIndex++}`;
@@ -1104,14 +1278,17 @@ class DatabaseService {
     }
   }
 
-  // Obtener estadísticas de whitelist
-  public async getWhitelistStats(
-    options: {
-      sessionId?: string;
-      startDate?: Date;
-      endDate?: Date;
-    } = {}
-  ): Promise<any> {
+  /**
+   * PR5a-quater: tenantId required. SQL filters whatsapp_whitelist_logs
+   * by tenant_id; sessionId/dates remain optional filters within the
+   * tenant scope.
+   */
+  public async getWhitelistStats(options: {
+    tenantId: string;
+    sessionId?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<any> {
     if (!this.pool) {
       return {
         totalDecisions: 0,
@@ -1123,20 +1300,20 @@ class DatabaseService {
       };
     }
 
-    const { sessionId, startDate, endDate } = options;
+    const { tenantId, sessionId, startDate, endDate } = options;
 
     let query = `
-      SELECT 
+      SELECT
         COUNT(*) as total_decisions,
         COUNT(CASE WHEN decision = 'ALLOWED' THEN 1 END) as allowed_count,
         COUNT(CASE WHEN decision = 'BLOCKED' THEN 1 END) as blocked_count,
         COUNT(DISTINCT phone_number) as unique_phones
       FROM whatsapp_whitelist_logs
-      WHERE 1=1
+      WHERE tenant_id = $1::uuid
     `;
 
-    const values: any[] = [];
-    let valueIndex = 1;
+    const values: any[] = [tenantId];
+    let valueIndex = 2;
 
     if (sessionId) {
       query += ` AND session_id = $${valueIndex++}`;
@@ -1188,8 +1365,18 @@ class DatabaseService {
   // NUEVOS MÉTODOS PARA CONVERSACIONES
   // ============================================
 
-  // Obtener conversaciones estructuradas con información de leads
-  public async getConversations(limit: number = 50, offset: number = 0): Promise<any[]> {
+  // Obtener conversaciones estructuradas con información de leads.
+  //
+  // PR5a-ter (Codex review #2): tenantId is REQUIRED. Both the inner
+  // whatsapp_conversations scan and the JOIN to leads filter by
+  // tenant_id, so a tenant only sees conversations and leads that
+  // belong to it. Mock fallback is also tenant-aware (returns empty for
+  // non-default tenants in dev).
+  public async getConversations(
+    tenantId: string,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<any[]> {
     if (!this.pool) {
       logger.warn('No hay conexión a base de datos para obtener conversaciones');
       return this.getMockConversations(limit, offset);
@@ -1200,6 +1387,8 @@ class DatabaseService {
       // `getAllLeads()` + `find()` por cada fila = escaneo O(N*M)).
       // T4.1: filtra leads soft-deleted.
       // T1.1-bis paso 4: el contenido canónico vive en messages.content.
+      // PR5a-ter: WHERE tenant_id added on both whatsapp_conversations
+      // scans and the leads JOIN.
       const query = `
         WITH latest_messages AS (
           SELECT DISTINCT ON (wc.phone_number)
@@ -1213,6 +1402,7 @@ class DatabaseService {
             wc.updated_at
           FROM whatsapp_conversations wc
           LEFT JOIN messages m ON m.id = wc.message_id
+          WHERE wc.tenant_id = $1::uuid
           ORDER BY wc.phone_number, wc.created_at DESC
         ),
         unread_counts AS (
@@ -1220,7 +1410,7 @@ class DatabaseService {
             phone_number,
             COUNT(*) as unread_count
           FROM whatsapp_conversations
-          WHERE is_from_user = true
+          WHERE is_from_user = true AND tenant_id = $1::uuid
           GROUP BY phone_number
         )
         SELECT
@@ -1234,13 +1424,14 @@ class DatabaseService {
         LEFT JOIN unread_counts uc ON lm.phone_number = uc.phone_number
         LEFT JOIN leads l
           ON l.deleted_at IS NULL
+          AND l.tenant_id = $1::uuid
           AND RIGHT(REGEXP_REPLACE(l.phone, '[^0-9]', '', 'g'), 10)
             = RIGHT(REGEXP_REPLACE(lm.phone_number, '[^0-9]', '', 'g'), 10)
         ORDER BY lm.created_at DESC
-        LIMIT $1 OFFSET $2;
+        LIMIT $2 OFFSET $3;
       `;
 
-      const result = await this.pool.query(query, [limit, offset]);
+      const result = await this.pool.query(query, [tenantId, limit, offset]);
 
       const conversations = result.rows.map(row => ({
         id: `conv_${row.phone_number}`,
@@ -1278,19 +1469,28 @@ class DatabaseService {
     }
   }
 
-  // Obtener conversación específica por ID
-  public async getConversationById(conversationId: string): Promise<any | null> {
+  // Obtener conversación específica por ID.
+  // PR5a-ter: tenant-scoped lead lookup; null on cross-tenant conv id.
+  public async getConversationById(conversationId: string, tenantId: string): Promise<any | null> {
+    if (!this.prisma) return null;
     try {
-      // Extraer número de teléfono del ID de conversación
       const phoneNumber = conversationId.replace('conv_', '');
-      const leads = await this.getAllLeads();
+      const conversationPhone = phoneNumber.replace(/[^0-9]/g, '').slice(-10);
 
-      // Buscar lead correspondiente
+      const leads = await this.prisma.lead.findMany({
+        where: { tenantId, deletedAt: null },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          status: true,
+        },
+      });
+
       const lead = leads.find(l => {
         if (!l.phone) return false;
         const leadPhone = l.phone.replace(/[^0-9]/g, '');
-        const conversationPhone = phoneNumber.replace(/[^0-9]/g, '');
-        return leadPhone.slice(-10) === conversationPhone.slice(-10);
+        return leadPhone.slice(-10) === conversationPhone;
       });
 
       if (!lead) {
@@ -1300,7 +1500,7 @@ class DatabaseService {
       return {
         id: conversationId,
         leadId: lead.id,
-        lead: lead,
+        lead,
       };
     } catch (error) {
       logger.error('Error obteniendo conversación por ID:', error);
@@ -1308,18 +1508,21 @@ class DatabaseService {
     }
   }
 
-  // Obtener mensajes de una conversación con paginación
+  // Obtener mensajes de una conversación con paginación.
+  //
+  // PR5a-ter (Codex review #2): tenantId required. SQL filters
+  // whatsapp_conversations.tenant_id so messages of another tenant with
+  // the same phone are never returned.
   public async getConversationMessages(
     conversationId: string,
+    tenantId: string,
     limit: number = 50,
     offset: number = 0
   ): Promise<{ conversation: any; messages?: any[] }> {
     try {
-      // Extraer número de teléfono del ID de conversación
       const phoneNumber = conversationId.replace('conv_', '');
 
-      // Obtener información de la conversación
-      const conversation = await this.getConversationById(conversationId);
+      const conversation = await this.getConversationById(conversationId, tenantId);
       if (!conversation) {
         return { conversation: null };
       }
@@ -1334,7 +1537,6 @@ class DatabaseService {
         };
       }
 
-      // Obtener mensajes de la base de datos (JOIN con messages tras T1.1-bis paso 4).
       const query = `
         SELECT
           wc.id, wc.session_id, wc.phone_number, wc.contact_name,
@@ -1342,12 +1544,12 @@ class DatabaseService {
           wc.message_type, wc.is_from_user, wc.created_at, wc.updated_at
         FROM whatsapp_conversations wc
         LEFT JOIN messages m ON m.id = wc.message_id
-        WHERE wc.phone_number = $1
+        WHERE wc.phone_number = $1 AND wc.tenant_id = $4::uuid
         ORDER BY wc.created_at ASC
         LIMIT $2 OFFSET $3;
       `;
 
-      const result = await this.pool.query(query, [phoneNumber, limit, offset]);
+      const result = await this.pool.query(query, [phoneNumber, limit, offset, tenantId]);
 
       // Convertir mensajes al formato esperado
       const messages = result.rows.map(row => ({
@@ -2091,8 +2293,11 @@ class DatabaseService {
   // MENSAJES PROACTIVOS
   // ============================================
 
-  // Crear mensaje proactivo
+  // Crear mensaje proactivo.
+  // PR5a-ter (Codex review #3): tenantId is REQUIRED. The route resolves
+  // it from the HMAC tenant header before calling this method.
   public async createProactiveMessage(data: {
+    tenantId: string;
     leadId: string;
     templateId?: string;
     sessionId?: string;
@@ -2107,12 +2312,13 @@ class DatabaseService {
 
     try {
       const query = `
-        INSERT INTO proactive_messages (lead_id, template_id, session_id, phone_number, content, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO proactive_messages (tenant_id, lead_id, template_id, session_id, phone_number, content, created_by)
+        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)
         RETURNING id;
       `;
 
       const values = [
+        data.tenantId,
         data.leadId,
         data.templateId || null,
         data.sessionId || null,
@@ -2182,34 +2388,38 @@ class DatabaseService {
   }
 
   // Obtener mensajes proactivos
-  public async getProactiveMessages(
-    options: {
-      leadId?: string;
-      status?: string;
-      limit?: number;
-      offset?: number;
-    } = {}
-  ): Promise<any[]> {
+  /**
+   * PR5a-ter (Codex review #3): tenant scoping. `tenantId` is REQUIRED;
+   * leaving it optional would re-open the global view that this PR
+   * specifically closes.
+   */
+  public async getProactiveMessages(options: {
+    tenantId: string;
+    leadId?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<any[]> {
     if (!this.pool) {
       return this.getMockProactiveMessages(options);
     }
 
     try {
-      const { leadId, status, limit = 50, offset = 0 } = options;
+      const { tenantId, leadId, status, limit = 50, offset = 0 } = options;
 
       let query = `
-        SELECT 
+        SELECT
           pm.id, pm.lead_id, pm.template_id, pm.session_id, pm.phone_number,
           pm.content, pm.status, pm.sent_at, pm.delivered_at, pm.error_message,
           pm.created_by, pm.created_at, pm.updated_at,
           mt.name as template_name
         FROM proactive_messages pm
         LEFT JOIN message_templates mt ON pm.template_id = mt.id
-        WHERE 1=1
+        WHERE pm.tenant_id = $1::uuid
       `;
 
-      const values: any[] = [];
-      let valueIndex = 1;
+      const values: any[] = [tenantId];
+      let valueIndex = 2;
 
       if (leadId) {
         query += ` AND pm.lead_id = $${valueIndex++}`;

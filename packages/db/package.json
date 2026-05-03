@@ -11,7 +11,8 @@
     "db:migrate:reset": "prisma migrate reset",
     "db:studio": "prisma studio",
     "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "db:seed:smoke": "tsx scripts/seed-smoke.ts"
   },
   "dependencies": {
     "@prisma/client": "6.15.0",

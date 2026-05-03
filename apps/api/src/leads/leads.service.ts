@@ -1,59 +1,114 @@
-import { Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { LeadsQueryDto } from './dto/leads-query.dto';
-import { LeadStatus } from '@prisma/client';
+import { Lead, LeadStatus, Prisma } from '@prisma/client';
 
 @Injectable()
 export class LeadsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(createLeadDto: CreateLeadDto) {
-    try {
-      // Limpiar el número de teléfono - remover el símbolo + si existe
-      const cleanedPhone = createLeadDto.phone.replace(/^\+/, '');
+  private cleanPhone(phone: string): string {
+    return phone.replace(/^\+/, '');
+  }
 
-      // Verificar si ya existe un lead con este número
+  private formatLeadForResponse(lead: Lead) {
+    return {
+      ...lead,
+      phone: lead.phone ? '+' + lead.phone : lead.phone,
+      score: lead.moodScore ? Number(lead.moodScore) : null,
+    };
+  }
+
+  private isPrismaError(error: unknown, code: string): boolean {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === code
+    );
+  }
+
+  /**
+   * PR5a-bis (Codex finding #3): atomic tenant-scoped mutate. Uses
+   * updateMany with composite where {id, tenantId, deletedAt: null}, one
+   * SQL statement — no TOCTOU window between an "exists" check and the
+   * actual UPDATE. Returns the affected count; callers convert 0 -> 404.
+   */
+  private async scopedUpdate(
+    id: string,
+    tenantId: string,
+    data: Prisma.LeadUpdateManyMutationInput,
+  ): Promise<number> {
+    const result = await this.prisma.lead.updateMany({
+      where: { id, tenantId, deletedAt: null },
+      data,
+    });
+    return result.count;
+  }
+
+  /**
+   * PR5a-bis: re-fetch the row after an atomic scopedUpdate so callers can
+   * format the response. Tenant-scoped lookup; returns null if not found.
+   */
+  private async fetchScopedLead(id: string, tenantId: string) {
+    return this.prisma.lead.findFirst({
+      where: { id, tenantId, deletedAt: null },
+    });
+  }
+
+  async create(createLeadDto: CreateLeadDto, tenantId: string) {
+    try {
+      const cleanedPhone = this.cleanPhone(createLeadDto.phone);
+
+      // PR5a: phone is still globally unique on the schema. Detecting the
+      // collision early gives a friendlier error than the P2002 thrown by
+      // Prisma. Until PR5b lifts the global unique into a composite
+      // (phone, tenant_id), this also doubles as cross-tenant collision
+      // detection — which is acceptable because the `phone` column is
+      // shared until then.
       const existingLead = await this.prisma.lead.findUnique({
         where: { phone: cleanedPhone },
       });
 
       if (existingLead) {
-        throw new Error('Ya existe un lead con este número de teléfono');
+        throw new ConflictException(
+          'Ya existe un lead con este número de teléfono',
+        );
       }
 
-      // Crear el lead con el teléfono limpio (sin +)
       const lead = await this.prisma.lead.create({
         data: {
           ...createLeadDto,
           phone: cleanedPhone,
+          tenantId,
         },
       });
 
-      // Devolver el lead con el formato de teléfono con +
-      return {
-        ...lead,
-        phone: lead.phone ? '+' + lead.phone : lead.phone,
-      };
+      return this.formatLeadForResponse(lead);
     } catch (error) {
-      // Re-lanzar el error para que sea manejado por el controlador
-      if (error.message === 'Ya existe un lead con este número de teléfono') {
-        throw error;
-      }
-      // Para errores de Prisma, proporcionar mensajes más amigables
-      if (error.code === 'P2002') {
-        throw new Error('Ya existe un lead con este número de teléfono');
+      if (this.isPrismaError(error, 'P2002')) {
+        throw new ConflictException(
+          'Ya existe un lead con este número de teléfono',
+        );
       }
       throw error;
     }
   }
 
-  async findAll(query: LeadsQueryDto, assignedUserId?: string) {
+  async findAll(
+    query: LeadsQueryDto,
+    tenantId: string,
+    assignedUserId?: string,
+  ) {
     const { page = 1, limit = 10, q, status } = query;
     const skip = (page - 1) * limit;
 
-    const where = {
+    const where: Prisma.LeadWhereInput = {
+      tenantId,
       // T4.1: soft delete — excluir leads marcados como deleted.
       deletedAt: null,
       ...(assignedUserId && { assignedTo: assignedUserId }),
@@ -76,19 +131,16 @@ export class LeadsService {
         include: {
           messages: {
             orderBy: { createdAt: 'desc' },
-            take: 1, // Get latest message
+            take: 1,
           },
         },
       }),
       this.prisma.lead.count({ where }),
     ]);
 
-    // Transform data to match frontend expectations
-    const transformedLeads = leads.map((lead) => ({
-      ...lead,
-      phone: lead.phone ? '+' + lead.phone : lead.phone, // Add + to phone number for display
-      score: lead.moodScore ? Number(lead.moodScore) : null, // Map moodScore to score for frontend and convert to number
-    }));
+    const transformedLeads = leads.map((lead) =>
+      this.formatLeadForResponse(lead),
+    );
 
     return {
       data: transformedLeads,
@@ -103,55 +155,62 @@ export class LeadsService {
     };
   }
 
-  async findOne(id: string) {
-    // T4.1: soft delete — treat a soft-deleted lead as not found.
+  async findOne(id: string, tenantId: string) {
+    // PR5a: tenant-scoped lookup. soft-deleted treated as not found (T4.1).
     const lead = await this.prisma.lead.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, tenantId, deletedAt: null },
     });
     if (!lead) {
-      throw new Error('Lead not found');
+      throw new NotFoundException('Lead not found');
     }
 
-    // Transform data to match frontend expectations
-    return {
-      ...lead,
-      phone: lead.phone ? '+' + lead.phone : lead.phone, // Add + to phone number for display
-      score: lead.moodScore ? Number(lead.moodScore) : null, // Map moodScore to score for frontend and convert to number
-    };
+    return this.formatLeadForResponse(lead);
   }
 
-  async update(id: string, updateLeadDto: UpdateLeadDto) {
-    // Si se está actualizando el teléfono, limpiarlo primero
-    if (updateLeadDto.phone) {
-      updateLeadDto.phone = updateLeadDto.phone.replace(/^\+/, '');
+  async update(id: string, updateLeadDto: UpdateLeadDto, tenantId: string) {
+    const data: UpdateLeadDto = {
+      ...updateLeadDto,
+      ...(updateLeadDto.phone
+        ? { phone: this.cleanPhone(updateLeadDto.phone) }
+        : {}),
+    };
+
+    try {
+      const count = await this.scopedUpdate(id, tenantId, data);
+      if (count === 0) {
+        throw new NotFoundException('Lead not found');
+      }
+
+      const lead = await this.fetchScopedLead(id, tenantId);
+      // count > 0 means the row exists, but soft-delete in flight could
+      // theoretically nullify the re-fetch — treat as 404 to be safe.
+      if (!lead) {
+        throw new NotFoundException('Lead not found');
+      }
+      return this.formatLeadForResponse(lead);
+    } catch (error) {
+      if (this.isPrismaError(error, 'P2002')) {
+        throw new ConflictException(
+          'Ya existe un lead con este número de teléfono',
+        );
+      }
+      throw error;
     }
-
-    const lead = await this.prisma.lead.update({
-      where: { id },
-      data: updateLeadDto,
-    });
-
-    // Devolver con el formato de teléfono con +
-    return {
-      ...lead,
-      phone: lead.phone ? '+' + lead.phone : lead.phone,
-    };
   }
 
-  async remove(id: string) {
-    // T4.1: soft delete — marcar `deleted_at` en vez de eliminar la fila.
-    // Las tablas relacionadas (messages, proactive_messages,
-    // whatsapp_conversations) tienen FK ON DELETE SET NULL, pero al usar
-    // soft delete los registros relacionados conservan su lead_id intacto.
-    return this.prisma.lead.update({
-      where: { id },
-      data: { deletedAt: new Date() },
+  async remove(id: string, tenantId: string) {
+    const count = await this.scopedUpdate(id, tenantId, {
+      deletedAt: new Date(),
     });
+    if (count === 0) {
+      throw new NotFoundException('Lead not found');
+    }
+    return { success: true, leadId: id };
   }
 
-  async getStats(assignedUserId?: string) {
-    // T4.1: soft delete — las estadísticas excluyen leads soft-deleted.
-    const where = {
+  async getStats(tenantId: string, assignedUserId?: string) {
+    const where: Prisma.LeadWhereInput = {
+      tenantId,
       deletedAt: null,
       ...(assignedUserId ? { assignedTo: assignedUserId } : {}),
     };
@@ -185,7 +244,6 @@ export class LeadsService {
       }),
     ]);
 
-    // Calculate average score, default to 0 if no leads have scores
     const averageScore = averageScoreData._avg.moodScore || 0;
 
     return {
@@ -201,24 +259,27 @@ export class LeadsService {
     };
   }
 
-  async updateStatus(id: string, status: LeadStatus) {
-    const lead = await this.prisma.lead.update({
-      where: { id },
-      data: { status },
-    });
-
-    // Devolver con el formato de teléfono con +
-    return {
-      ...lead,
-      phone: lead.phone ? '+' + lead.phone : lead.phone,
-    };
+  async updateStatus(id: string, status: LeadStatus, tenantId: string) {
+    const count = await this.scopedUpdate(id, tenantId, { status });
+    if (count === 0) {
+      throw new NotFoundException('Lead not found');
+    }
+    const lead = await this.fetchScopedLead(id, tenantId);
+    if (!lead) {
+      throw new NotFoundException('Lead not found');
+    }
+    return this.formatLeadForResponse(lead);
   }
 
-  async updateWhatsAppAuth(id: string, whatsappAuthorized: boolean) {
-    const lead = await this.prisma.lead.update({
-      where: { id },
-      data: { whatsappAuthorized },
-    });
+  async updateWhatsAppAuth(
+    id: string,
+    whatsappAuthorized: boolean,
+    tenantId: string,
+  ) {
+    const count = await this.scopedUpdate(id, tenantId, { whatsappAuthorized });
+    if (count === 0) {
+      throw new NotFoundException('Lead not found');
+    }
 
     return {
       success: true,

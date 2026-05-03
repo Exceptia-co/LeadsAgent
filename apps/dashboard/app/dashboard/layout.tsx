@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useUser, UserButton } from "@clerk/nextjs";
+import { OrganizationSwitcher, useUser, UserButton } from "@clerk/nextjs";
 import { clsx } from "clsx";
 import { ToastProvider } from "../../components/ui/toast";
 import { TemplateProvider } from "../../contexts/TemplateContext";
@@ -139,7 +139,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     );
                   })}
                 </nav>
-                <div className="p-4 border-t border-gray-100">
+                <div className="p-4 border-t border-gray-100 space-y-3">
+                  <OrganizationSwitcher
+                    hidePersonal={true}
+                    afterSelectOrganizationUrl="/dashboard"
+                    afterCreateOrganizationUrl="/dashboard"
+                    appearance={{
+                      elements: {
+                        organizationSwitcherTrigger:
+                          "w-full justify-start px-2 py-1.5 rounded hover:bg-gray-50",
+                      },
+                    }}
+                  />
                   <div className="flex items-center gap-3 px-2">
                     <UserButton
                       appearance={{
@@ -200,7 +211,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     );
                   })}
                 </nav>
-                <div className="p-4 border-t border-gray-100">
+                <div className="p-4 border-t border-gray-100 space-y-3">
+                  <OrganizationSwitcher
+                    hidePersonal={true}
+                    afterSelectOrganizationUrl="/dashboard"
+                    afterCreateOrganizationUrl="/dashboard"
+                    appearance={{
+                      elements: {
+                        organizationSwitcherTrigger:
+                          "w-full justify-start px-2 py-1.5 rounded hover:bg-gray-50",
+                      },
+                    }}
+                  />
                   <div className="flex items-center gap-3 px-2">
                     <UserButton
                       appearance={{
@@ -238,13 +260,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     </div>
                     <span className="text-lg font-bold text-gray-900">LeadsCRM</span>
                   </Link>
-                  <UserButton
-                    appearance={{
-                      elements: {
-                        avatarBox: "h-9 w-9",
-                      },
-                    }}
-                  />
+                  <div className="flex items-center gap-1 max-w-[180px]">
+                    <OrganizationSwitcher
+                      hidePersonal={true}
+                      afterSelectOrganizationUrl="/dashboard"
+                      afterCreateOrganizationUrl="/dashboard"
+                    />
+                    <UserButton
+                      appearance={{
+                        elements: {
+                          avatarBox: "h-9 w-9",
+                        },
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
               <main className="flex-1 p-4 lg:p-8">{children}</main>

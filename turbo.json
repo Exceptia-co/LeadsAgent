@@ -12,6 +12,8 @@
     "CORS_ORIGIN",
     "WEBHOOK_URL",
     "WHATSAPP_*",
+    "PUPPETEER_*",
+    "CHROME_EXECUTABLE_PATH",
     "AI_PROVIDER",
     "OPENROUTER_*",
     "OPENAI_API_KEY",
@@ -104,12 +106,21 @@
       "inputs": ["prisma/schema.prisma", ".env*"],
       "outputs": ["node_modules/.pnpm/**"]
     },
+    "db:generate:win": {
+      "cache": false,
+      "inputs": ["prisma/schema.prisma", ".env*"],
+      "outputs": ["node_modules/.pnpm/**"]
+    },
     "db:migrate:dev": {
       "cache": false
     },
     "db:studio": {
       "cache": false,
       "persistent": true
+    },
+    "db:seed:smoke": {
+      "cache": false,
+      "env": ["DATABASE_URL", "DIRECT_URL", "SMOKE_*"]
     },
     "db:migrate:reset": {
       "cache": false

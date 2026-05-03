@@ -3,6 +3,7 @@ import { WhatsAppController } from './whatsapp.controller';
 import { WhatsAppService } from './whatsapp.service';
 import { WhitelistService } from './whitelist.service';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
+import { TenantContextGuard } from '../auth/tenant-context.guard';
 import { HmacAuthGuard } from './hmac-auth.guard';
 
 // T5.2 — unit tests for the Nest webhook controller. Focuses on the event
@@ -30,6 +31,8 @@ describe('WhatsAppController', () => {
       ],
     })
       .overrideGuard(ClerkAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(TenantContextGuard)
       .useValue({ canActivate: () => true })
       .overrideGuard(HmacAuthGuard)
       .useValue({ canActivate: () => true })

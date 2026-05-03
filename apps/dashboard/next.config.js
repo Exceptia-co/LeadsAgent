@@ -2,13 +2,12 @@
 const nextConfig = {
   // Configuración para Next.js 14
   experimental: {
+    // Handle Clerk packages for Edge Runtime compatibility in Next.js 14.
+    serverComponentsExternalPackages: ['@clerk/backend', '@clerk/shared'],
     turbo: {
       // Configuración básica de Turbopack para Next.js 14
     },
   },
-
-  // Handle Clerk packages for Edge Runtime compatibility
-  serverExternalPackages: ['@clerk/backend', '@clerk/shared'],
 
   poweredByHeader: false,
 

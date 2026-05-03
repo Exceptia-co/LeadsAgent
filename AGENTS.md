@@ -20,7 +20,7 @@ Run order: review docs -> execute tasks -> document learnings.
 **Build & Test:**
 
 - `pnpm build` | `pnpm build:fast` | `pnpm build:production`
-- Single backend test: `cd apps/api && pnpm test -- --testNamePattern "Name|Regex"`
+- Single backend test: `cd apps/api && pnpm run test -- --testNamePattern "Name|Regex"`
 - Test watch (API): `cd apps/api && pnpm test:watch`
 - All tests: `pnpm test` | E2E: `pnpm test:e2e` | Coverage: `pnpm test:coverage`
 

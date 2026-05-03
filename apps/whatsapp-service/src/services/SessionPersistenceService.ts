@@ -6,6 +6,12 @@ import type { SnapshotData } from './auth-snapshot/types';
 export interface SessionPersistenceData {
   id?: string;
   sessionId: string;
+  /**
+   * PR5a-bis: tenant that owns this session. Required on the FIRST save
+   * (create path) so the row carries an owner. Subsequent updates do NOT
+   * overwrite tenantId — once set it's immutable from this service's POV.
+   */
+  tenantId?: string;
   name?: string;
   status: string;
   qrCode?: string;
@@ -55,6 +61,7 @@ export class SessionPersistenceService {
         },
         create: {
           sessionId: sessionData.sessionId,
+          tenantId: sessionData.tenantId ?? null,
           name: sessionData.name,
           status: sessionData.status,
           qrCode: sessionData.qrCode,
@@ -78,8 +85,12 @@ export class SessionPersistenceService {
   }
 
   /**
-   * Load all active sessions from the database
-   * @returns Promise<SessionPersistenceData[]> - Array of session data
+   * Load all active sessions from the database (tenant-agnostic).
+   *
+   * PR5a-bis: only callable from internal restoration on boot — the HTTP
+   * layer must use `loadActiveSessionsForTenant`. Kept tenant-agnostic
+   * because session restoration must hydrate every persisted session
+   * regardless of tenant.
    */
   async loadActiveSessions(): Promise<SessionPersistenceData[]> {
     try {
@@ -97,6 +108,48 @@ export class SessionPersistenceService {
     } catch (error) {
       logger.error('Error loading active sessions:', error);
       return [];
+    }
+  }
+
+  /**
+   * PR5a-bis (Codex finding #1): tenant-scoped variant for HTTP callers.
+   * Returns only the sessions owned by the caller's tenant. Sessions
+   * with tenantId=null are EXCLUDED — they're legacy pre-backfill rows
+   * that should not leak through any tenant view.
+   */
+  async loadActiveSessionsForTenant(tenantId: string): Promise<SessionPersistenceData[]> {
+    try {
+      const sessions = await this.prisma.whatsAppSession.findMany({
+        where: {
+          isActive: true,
+          tenantId,
+        },
+        orderBy: {
+          lastSeen: 'desc',
+        },
+      });
+      return sessions.map(this.mapToSessionData);
+    } catch (error) {
+      logger.error(`Error loading active sessions for tenant ${tenantId}:`, error);
+      return [];
+    }
+  }
+
+  /**
+   * PR5a-bis: returns the tenantId that owns a session, or null if the
+   * session row has no tenantId yet (pre-backfill). Used by SessionController
+   * to assert ownership before any session-scoped mutation.
+   */
+  async getSessionTenantId(sessionId: string): Promise<string | null> {
+    try {
+      const row = await this.prisma.whatsAppSession.findUnique({
+        where: { sessionId },
+        select: { tenantId: true },
+      });
+      return row?.tenantId ?? null;
+    } catch (error) {
+      logger.error(`Error reading tenantId for session ${sessionId}:`, error);
+      return null;
     }
   }
 
@@ -212,10 +265,14 @@ export class SessionPersistenceService {
   }
 
   /**
-   * Get session statistics
-   * @returns Promise<SessionStats> - Session statistics
+   * Get session statistics.
+   *
+   * PR5a-quinquies (Codex review #4): tenant scoping.
+   *  - tenantId provided  -> counts scoped to that tenant only.
+   *  - tenantId omitted   -> global counts (operator-only callers — the
+   *                          HTTP dashboard route always passes tenantId).
    */
-  async getSessionStats(): Promise<{
+  async getSessionStats(tenantId?: string): Promise<{
     total: number;
     active: number;
     connected: number;
@@ -223,12 +280,21 @@ export class SessionPersistenceService {
     disconnected: number;
   }> {
     try {
+      const baseWhere = tenantId ? { tenantId } : {};
       const [total, active, connected, connecting, disconnected] = await Promise.all([
-        this.prisma.whatsAppSession.count(),
-        this.prisma.whatsAppSession.count({ where: { isActive: true } }),
-        this.prisma.whatsAppSession.count({ where: { status: 'ready' } }),
-        this.prisma.whatsAppSession.count({ where: { status: 'connecting' } }),
-        this.prisma.whatsAppSession.count({ where: { status: 'disconnected' } }),
+        this.prisma.whatsAppSession.count({ where: baseWhere }),
+        this.prisma.whatsAppSession.count({
+          where: { ...baseWhere, isActive: true },
+        }),
+        this.prisma.whatsAppSession.count({
+          where: { ...baseWhere, status: 'ready' },
+        }),
+        this.prisma.whatsAppSession.count({
+          where: { ...baseWhere, status: 'connecting' },
+        }),
+        this.prisma.whatsAppSession.count({
+          where: { ...baseWhere, status: 'disconnected' },
+        }),
       ]);
 
       return { total, active, connected, connecting, disconnected };
@@ -269,6 +335,7 @@ export class SessionPersistenceService {
     return {
       id: dbSession.id,
       sessionId: dbSession.sessionId,
+      tenantId: dbSession.tenantId ?? undefined,
       name: dbSession.name,
       status: dbSession.status,
       qrCode: dbSession.qrCode,

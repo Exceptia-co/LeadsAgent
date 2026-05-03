@@ -1,4 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { WhitelistService } from './whitelist.service';
 import { signServiceRequest } from './service-auth';
@@ -20,41 +25,115 @@ interface WhatsAppMessage {
   fromMe: boolean;
 }
 
+interface SessionTenantCacheEntry {
+  tenantId: string | null;
+  expiresAt: number;
+}
+
+const SESSION_TENANT_CACHE_TTL_MS = 60_000;
+
 @Injectable()
 export class WhatsAppService {
   private readonly logger = new Logger(WhatsAppService.name);
+
+  // PR5a: lookup cache for sessionId -> tenantId. Single-process; moves to
+  // Redis when api goes multi-replica. Negative results (null tenantId) are
+  // also cached so we don't re-query for sessions that haven't been
+  // backfilled yet, but only for the same TTL — a backfill mid-flight will
+  // self-heal in ≤60s.
+  private static sessionTenantCache = new Map<
+    string,
+    SessionTenantCacheEntry
+  >();
 
   constructor(
     private prisma: PrismaService,
     private whitelistService: WhitelistService,
   ) {}
 
+  /**
+   * PR5a: resolve the tenant that owns a WhatsApp session. Returns null if
+   * the session has no tenantId yet (legacy data pre-backfill).
+   */
+  async getSessionTenantId(sessionId: string): Promise<string | null> {
+    const now = Date.now();
+    const cached = WhatsAppService.sessionTenantCache.get(sessionId);
+    if (cached && cached.expiresAt > now) {
+      return cached.tenantId;
+    }
+
+    const session = await this.prisma.whatsAppSession.findUnique({
+      where: { sessionId },
+      select: { tenantId: true },
+    });
+
+    const tenantId = session?.tenantId ?? null;
+    WhatsAppService.sessionTenantCache.set(sessionId, {
+      tenantId,
+      expiresAt: now + SESSION_TENANT_CACHE_TTL_MS,
+    });
+    return tenantId;
+  }
+
+  /**
+   * PR5a: enforce that the caller's tenant owns the WhatsApp session.
+   * Throws ForbiddenException otherwise. Used by user-initiated send flows
+   * (sendMessage controller) so a tenant can't enumerate sessionIds.
+   */
+  async assertSessionTenant(
+    sessionId: string,
+    tenantId: string,
+  ): Promise<void> {
+    const sessionTenantId = await this.getSessionTenantId(sessionId);
+    if (sessionTenantId === null) {
+      throw new NotFoundException('Session not found');
+    }
+    if (sessionTenantId !== tenantId) {
+      throw new ForbiddenException(
+        'Session does not belong to your organization',
+      );
+    }
+  }
+
+  static __resetCachesForTests(): void {
+    WhatsAppService.sessionTenantCache.clear();
+  }
+
   async handleIncomingMessage(
     sessionId: string,
     messageData: WhatsAppMessage,
   ): Promise<void> {
     try {
-      // Skip messages from self
       if (messageData.fromMe) {
         return;
       }
 
-      // Skip group messages for now
       if (messageData.isGroup) {
         this.logger.log('Skipping group message');
         return;
       }
 
-      // Extract phone number (remove @c.us suffix)
       const phoneNumber = messageData.from.replace('@c.us', '');
 
       this.logger.log(
         `Processing message from ${phoneNumber}: ${messageData.body.substring(0, 50)}...`,
       );
 
-      // 🔒 CRITICAL: Check whitelist authorization BEFORE creating any leads
+      // PR5a: resolve tenant from session BEFORE running whitelist or
+      // touching Lead/Message. Pre-backfill sessions return null and are
+      // dropped — we don't want to create cross-tenant orphans now that the
+      // schema has tenantId.
+      const tenantId = await this.getSessionTenantId(sessionId);
+      if (!tenantId) {
+        this.logger.warn(
+          `🚫 Session ${sessionId} has no tenantId — dropping message from ${phoneNumber}. Run B1.9 backfill.`,
+        );
+        return;
+      }
+
       const whitelistResult = await this.whitelistService.isNumberAuthorized(
         phoneNumber,
+        tenantId,
         sessionId,
         messageData.body,
       );
@@ -63,7 +142,6 @@ export class WhatsAppService {
         this.logger.warn(
           `🚫 Message from ${phoneNumber} BLOCKED by whitelist: ${whitelistResult.reason}`,
         );
-        // Exit early - DO NOT create lead or store message
         return;
       }
 
@@ -71,9 +149,10 @@ export class WhatsAppService {
         `✅ Message from ${phoneNumber} AUTHORIZED: ${whitelistResult.reason}`,
       );
 
-      // Find existing lead (whitelist check already verified this is safe)
-      let lead = await this.prisma.lead.findUnique({
-        where: { phone: phoneNumber },
+      // PR5a: tenant-scoped lead lookup. findFirst (not findUnique on phone)
+      // because PR5b will lift `phone @unique` to composite.
+      let lead = await this.prisma.lead.findFirst({
+        where: { phone: phoneNumber, tenantId },
         include: {
           messages: {
             orderBy: { createdAt: 'desc' },
@@ -82,30 +161,38 @@ export class WhatsAppService {
         },
       });
 
-      // Create lead ONLY if authorized and doesn't exist
       if (!lead) {
-        // Lead creation is now safe because whitelist was checked first
-        lead = await this.prisma.lead.create({
-          data: {
-            name: `Lead ${phoneNumber}`, // Default name, can be updated later
-            phone: phoneNumber,
-            status: LeadStatus.NUEVO,
-            whatsappAuthorized:
-              whitelistResult.leadInfo?.whatsappAuthorized ?? true, // Default to authorized if passed whitelist
-            source: 'whatsapp-inbound',
-          },
-          include: {
-            messages: true,
-          },
-        });
-
-        this.logger.log(`✅ Created new AUTHORIZED lead for ${phoneNumber}`);
+        // If the phone collides cross-tenant, the global unique on `phone`
+        // (still in place pre-PR5b) will throw P2002 — log it and bail; the
+        // operator can resolve the collision manually.
+        try {
+          lead = await this.prisma.lead.create({
+            data: {
+              name: `Lead ${phoneNumber}`,
+              phone: phoneNumber,
+              status: LeadStatus.NUEVO,
+              whatsappAuthorized:
+                whitelistResult.leadInfo?.whatsappAuthorized ?? true,
+              source: 'whatsapp-inbound',
+              tenantId,
+            },
+            include: {
+              messages: true,
+            },
+          });
+          this.logger.log(`✅ Created new AUTHORIZED lead for ${phoneNumber}`);
+        } catch (error) {
+          this.logger.error(
+            `Failed to create lead for ${phoneNumber} in tenant ${tenantId}: ${error.message}`,
+          );
+          return;
+        }
       }
 
-      // Store message - now safe because lead is authorized
       await this.prisma.message.create({
         data: {
           leadId: lead.id,
+          tenantId,
           content: messageData.body,
           messageType: MessageType.TEXT,
           direction: MessageDirection.INBOUND,
@@ -115,7 +202,6 @@ export class WhatsAppService {
         },
       });
 
-      // Update lead status and contact time
       if (lead.status === LeadStatus.NUEVO) {
         await this.prisma.lead.update({
           where: { id: lead.id },
@@ -125,7 +211,6 @@ export class WhatsAppService {
           },
         });
       } else {
-        // Just update last contact time
         await this.prisma.lead.update({
           where: { id: lead.id },
           data: { lastContact: new Date() },
@@ -206,7 +291,6 @@ export class WhatsAppService {
     }
   }
 
-  // Method to send message through WhatsApp service
   async sendMessage(
     sessionId: string,
     to: string,
@@ -223,10 +307,21 @@ export class WhatsAppService {
         return false;
       }
 
-      // T0.4-ter: firmar con HMAC el body exacto que enviamos para que
-      // verifyServiceSignature (whatsapp-service) pueda reconstruirlo.
+      // PR5a-bis: bind the session's tenantId into the HMAC payload so
+      // the whatsapp-service can authoritatively scope the send by tenant.
+      // If the session has no tenantId (legacy pre-backfill) we abort
+      // rather than send under an empty tenant claim — the receiver would
+      // reject it anyway, this just fails earlier with a clearer log.
+      const tenantId = await this.getSessionTenantId(sessionId);
+      if (!tenantId) {
+        this.logger.error(
+          `Cannot send via session ${sessionId}: session has no tenantId. Run B1.9 backfill.`,
+        );
+        return false;
+      }
+
       const body = JSON.stringify({ to, message });
-      const signedHeaders = signServiceRequest(body, secret);
+      const signedHeaders = signServiceRequest(body, secret, tenantId);
 
       const response = await fetch(
         `${whatsappServiceUrl}/api/sessions/${sessionId}/send`,
@@ -245,15 +340,27 @@ export class WhatsAppService {
       if (result.success) {
         this.logger.log(`Message sent successfully to ${to}`);
 
-        // Store outgoing message in database
-        const lead = await this.prisma.lead.findUnique({
-          where: { phone: to },
+        // PR5a: persist outbound message scoped to the session's tenant.
+        // Caller (controller) already validated tenant ownership via
+        // assertSessionTenant; we re-derive tenantId here from the session
+        // so the writer doesn't depend on caller plumbing.
+        const tenantId = await this.getSessionTenantId(sessionId);
+        if (!tenantId) {
+          this.logger.warn(
+            `Outbound to ${to} succeeded but session ${sessionId} has no tenantId — message not persisted`,
+          );
+          return true;
+        }
+
+        const lead = await this.prisma.lead.findFirst({
+          where: { phone: to, tenantId },
         });
 
         if (lead) {
           await this.prisma.message.create({
             data: {
               leadId: lead.id,
+              tenantId,
               content: message,
               messageType: MessageType.TEXT,
               direction: MessageDirection.OUTBOUND,
@@ -262,7 +369,6 @@ export class WhatsAppService {
             },
           });
 
-          // Update last contact time
           await this.prisma.lead.update({
             where: { id: lead.id },
             data: { lastContact: new Date() },

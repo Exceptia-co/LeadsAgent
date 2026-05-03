@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LeadsCRM is an AI-powered CRM with WhatsApp automation. Turborepo monorepo with pnpm workspace containing three main applications and shared packages.
+LeadsCRM is an AI-powered CRM with WhatsApp automation. Turborepo monorepo (pnpm workspace) with three apps and shared packages.
+
+The companion `AGENTS.md` is a ~80-line quick reference; `CLAUDE.md` (this file) is the canonical source of architectural and historical context. The detailed multi-tenant rollout plan lives in `PLAN-WHATSAPP-AGENT-MULTITENANT.md`; the post-stabilization snapshot lives in `ANALISIS-ESTADO-PROYECTO.md`.
 
 ## Commands
 
@@ -16,276 +18,247 @@ pnpm dev:dashboard         # Dashboard only (port 3001)
 pnpm dev:api               # API only (port 3003)
 pnpm dev:whatsapp          # WhatsApp service only (port 3002)
 
-# Docker (solo Redis — DB es Supabase cloud)
-docker compose up -d       # Start Redis
-docker compose down        # Stop Redis
+# Docker (only Redis — DB is Supabase cloud)
+docker compose up -d       # Start Redis on host port 6381 → container 6379
+docker compose down
 ```
 
 ### Build & Quality
 
 ```bash
-pnpm build                 # Full build with dependencies
-pnpm build:fast            # Parallel build without daemon
-pnpm lint                  # ESLint check
-pnpm lint:fix              # Auto-fix lint issues
-pnpm typecheck             # TypeScript validation
-pnpm format                # Prettier formatting
+pnpm build                 # Full build with dependency graph
+pnpm build:fast            # Parallel build, no daemon
+pnpm lint                  # ESLint
+pnpm lint:fix              # Auto-fix
+pnpm typecheck             # TS validation across all workspaces
+pnpm format                # Prettier write
 ```
 
 ### Testing
 
 ```bash
-pnpm test                  # Run all tests
-pnpm test:e2e              # E2E tests
+pnpm test                  # All tests (Jest in API + whatsapp-service)
+pnpm test:e2e              # E2E
 pnpm test:coverage         # Coverage reports
 
-# Single test (API)
-cd apps/api && pnpm test -- --testNamePattern "Name|Regex"
-cd apps/api && pnpm test:watch
+# Single test file/regex
+cd apps/api            && pnpm run test -- --testNamePattern "Name|Regex"
+cd apps/whatsapp-service && pnpm run test -- --testPathPattern "redis|hmac"
 ```
 
 ### Database
 
 ```bash
 pnpm db:generate           # Generate Prisma client (run after schema changes)
-pnpm db:generate:win       # Windows-specific generation
-pnpm db:migrate:dev        # Create migrations
+pnpm db:generate:win       # Windows-specific (PowerShell wrapper)
+pnpm db:migrate:dev        # Create migration
 pnpm db:studio             # Prisma Studio GUI
-pnpm db:reset              # Reset database
+pnpm db:reset              # Reset DB (⚠️ destructive)
 ```
 
 ### Maintenance
 
 ```bash
-pnpm clean:cache           # Clear Turborepo cache
-pnpm rebuild               # Full cleanup and rebuild
-pnpm whatsapp:cleanup-chrome  # Cleanup Chrome sessions
+pnpm clean:cache                    # Clear Turborepo + .next/dist caches
+pnpm rebuild                        # clean:cache + install + db:generate + build:fast
+pnpm whatsapp:cleanup-chrome        # Kill stale Puppeteer Chrome sessions
+pnpm whatsapp:cleanup-chrome-force  # Force-kill (use only after locked sessions)
+pnpm audit:infra                    # Run scripts/audit-infra.ts (Hetzner/Supabase/Vercel sanity check)
 ```
 
 ## Architecture
 
 ```
 apps/
-├── dashboard/             # Next.js 14 frontend (port 3001)
-├── api/                   # NestJS REST API (port 3003)
-├── whatsapp-service/      # Express + whatsapp-web.js (port 3002)
-└── docs/                  # Documentation site
+├── dashboard/             # Next.js 14 frontend (port 3001) — Clerk auth, SWR, Tailwind, Radix UI
+├── api/                   # NestJS 10 REST API (port 3003) — Clerk JWT, Prisma, Throttler
+├── whatsapp-service/      # Express + whatsapp-web.js (port 3002) — Puppeteer, Socket.IO, Redis
+└── docs/                  # Next.js docs site
 
 packages/
-├── db/                    # Prisma schema & client
-└── config-*/              # Shared ESLint/TypeScript configs
+├── db/                    # Prisma 6.15 schema & client — published as @leadcrm/db
+├── config-eslint/         # @leadcrm/config-eslint
+└── config-ts/             # @leadcrm/config-ts
 ```
 
-Note: `packages/ui` was removed in T3.2 — absorbed into `apps/dashboard/components/ui/` (Alert, Toggle). No new dependency on a shared UI package.
+`packages/ui` was removed in T3.2 (commit `04c1113`); the two components actually used (Alert, Toggle) live in `apps/dashboard/components/ui/`. The local artifact directory was cleaned up on 2026-05-01 — there is no shared UI package to reinstate.
 
 **Data Flow:**
 
 ```
-WhatsApp <-> WhatsApp Service <-> NestJS API <-> PostgreSQL
-                                       |
-                                 Next.js Dashboard
+WhatsApp ↔ WhatsApp Service ↔ NestJS API ↔ PostgreSQL (Supabase)
+                                    ↑
+                            Next.js Dashboard
 ```
 
-### Key Technologies
+The dashboard never talks directly to the whatsapp-service; every call is proxied through Next route handlers that sign requests with HMAC-SHA256 (see `apps/dashboard/app/api/**/route.ts` and `apps/api/src/whatsapp/service-auth.ts`). The whatsapp-service rejects any unsigned request with `500 "service auth misconfigured"` if the secret is missing.
 
-- **API**: NestJS 10, class-validator DTOs, Clerk JWT auth, Swagger docs
-- **Dashboard**: Next.js 14, Tailwind CSS, Radix UI, Clerk auth, SWR
-- **WhatsApp**: Express, whatsapp-web.js, Puppeteer, Redis caching, Winston logging
-- **Database**: PostgreSQL with Prisma 6.15, UUID primary keys
+### Workspace imports
 
-### Workspace Packages
-
-Use workspace imports: `@leadcrm/db`, `@leadcrm/config-eslint`, `@leadcrm/config-ts` (`@leadcrm/ui` was removed in T3.2).
+Use `@leadcrm/db`, `@leadcrm/config-eslint`, `@leadcrm/config-ts`. There is no shared `@leadcrm/ui`.
 
 ## Database Schema
 
-**Core Models:**
+Schema lives in `packages/db/prisma/schema.prisma`. Core models:
 
-- `Lead` - CRM entity with unique phone, WhatsApp authorization tracking
-- `Message` - Conversation history with direction (INBOUND/OUTBOUND) and status
-- `WhatsAppConversation` - Session tracking with AI provider info
-- `WhatsAppSession` - Session management with QR codes and reconnect logic
-- `ai_knowledge_base` - Knowledge base with categories and keywords
+- `Lead` — CRM entity, unique phone, `whatsapp_authorized` boolean, soft-delete (`deleted_at`)
+- `Message` — Conversation log with `direction` (INBOUND/OUTBOUND) and `status`
+- `WhatsAppConversation` — Session metadata; canonical link to `Message` is `message_id` FK (T1.1-bis unified the legacy dual-write)
+- `WhatsAppSession` — QR codes, reconnect state
+- `ai_knowledge_base` — Knowledge entries with category + keyword search
+- `ai_configuration` — Key/value config, used by `SystemPromptService` for runtime prompt overrides (cache + background refresh pattern)
 
-**Enums (Spanish domain):**
+**Spanish-domain enums:**
 
-- `LeadStatus`: NUEVO, CONTACTADO, QUALIFIED, GANADO, PERDIDO
-- `MessageDirection`: INBOUND, OUTBOUND
-- `MessageStatus`: PENDING, SENT, DELIVERED, READ, FAILED
+- `LeadStatus`: `NUEVO | CONTACTADO | QUALIFIED | GANADO | PERDIDO`
+- `MessageDirection`: `INBOUND | OUTBOUND`
+- `MessageStatus`: `PENDING | SENT | DELIVERED | READ | FAILED`
+
+UUIDs are primary keys throughout. Cascade was relaxed in T4.1 to support soft delete.
 
 ## Code Patterns
 
-### NestJS API
+### NestJS API (apps/api)
 
-- Module-based: AuthModule, LeadsModule, TemplatesModule (new, T2.2), WhatsAppModule, PrismaModule
-- Guards: `ClerkAuthGuard` at the class level on every sensitive controller
-- Decorators: `@CurrentUser()` for user context injection
-- Response format: `{ success: boolean, data?: any, error?: string }`
-- Outbound calls from API → whatsapp-service use `signServiceRequest()` (HMAC-SHA256 with `x-service-timestamp` + `x-service-signature`) — see `apps/api/src/whatsapp/service-auth.ts` and `WhatsAppService.sendMessage`
+- Modules: `AuthModule`, `LeadsModule`, `TemplatesModule`, `WhatsAppModule`, `ProactiveMessagesModule`, `PrismaModule`
+- `ClerkAuthGuard` is class-level on every sensitive controller; `@CurrentUser()` injects user context
+- Response shape: `{ success: boolean, data?: T, error?: string }`
+- Outbound calls API → whatsapp-service use `signServiceRequest()` with `x-service-timestamp` + `x-service-signature` (HMAC-SHA256). See `apps/api/src/whatsapp/service-auth.ts` and `WhatsAppService.sendMessage`
+- `app.module.ts` already loads `.env` via `ConfigModule.forRoot({ envFilePath: [process.cwd()/.env, ../../.env] })` — Nest reads root `.env` even when CWD is `apps/api/`
 
-### WhatsApp Service Path Aliases
+### WhatsApp Service (apps/whatsapp-service)
 
-```typescript
-("@/*",
-  "@/types/*",
-  "@/services/*",
-  "@/controllers/*",
-  "@/utils/*",
-  "@/config/*");
-```
+- TS path aliases (see `tsconfig.json`): `@/*`, `@/types/*`, `@/services/*`, `@/controllers/*`, `@/utils/*`, `@/config/*`, `@/middleware/*`, `@/routes/*`
+- AI thinking pipeline modularized at `src/services/ai-thinking/`: `CacheManager`, `IntentAnalyzer`, `ContextEnricher`, `ComplexityAnalyzer`, `KnowledgeRetriever`, `ResponseGenerator`, `StrategySelector`, `DecisionEngine`. Wired through `AIThinkingModuleFactory`
+- Env validation: `src/config/env.ts` with zod — fail-fast in production if `WHATSAPP_SERVICE_HMAC_SECRET` is missing, warnings in dev
+- Inbound message dedupe: Redis `SETNX whatsapp:dedup:{message.id}` with TTL 300s via `redisClient.setNX()` (fail-open: Redis error → treat as first-time). Reuse this primitive for any new dedupe flow
+- Group/broadcast filter: `@g.us` and `status@broadcast` JIDs are dropped before parsing
+- Typing indicator wraps the entire `processMessageWithAI` (start at handler entry, clear in `finally`) so the user sees "typing..." for the full ~5-6s LLM thinking window
+- The runtime stays alive on `uncaughtException` / `unhandledRejection` (no `process.exit(1)`) so a crash in one session doesn't kill the others
+- **Dev local con `PUPPETEER_HEADLESS=false`**: el Chrome de Puppeteer queda visible con DevTools abierto (`devtools = !isProduction && !headless` en `puppeteer.config.ts:103`). Cualquier interacción tuya con esa ventana (abrir DevTools, refrescar, scroll en panel de elementos) puede destruir el JS context y causar `Protocol error: Execution context was destroyed` en el siguiente `Client.sendMessage`. Para smoke runtime fiable: `PUPPETEER_HEADLESS=true pnpm dev` (la env var debe estar declarada en `turbo.json globalEnv` — ya incluida como `PUPPETEER_*`, ver patrón whitelist; también `dotenv.config()` no pisa env vars existentes, así que el override de shell gana sobre `.env`). Producción siempre es headless por `NODE_ENV=production`.
+
+### Dashboard (apps/dashboard)
+
+- Next.js 14 App Router, Clerk middleware in `middleware.ts`
+- Every WhatsApp consumer goes through `/api/**/route.ts` proxies that sign requests with `WHATSAPP_SERVICE_HMAC_SECRET` (T0.4-ter)
+- SWR for client-side data, Radix UI primitives, Tailwind with `tailwind-merge` + `clsx` (`cn` helper at `lib/utils.ts`)
+- Reads env from `apps/dashboard/.env.local` (Next convention)
 
 ### Naming Conventions
 
-- Variables/functions: `camelCase`
-- Classes/Components: `PascalCase`
+- Variables/functions: `camelCase` | Classes/Components: `PascalCase`
 - Files: `kebab-case.ts` or `PascalCase.tsx`
-- Backend tests: `*.spec.ts`
-- Frontend tests: `*.test.tsx`
-
-## State of the Project
-
-The stabilization PRD (`PRD-ESTABILIZACION.md`, v5.23) closed on 2026-04-18. All five phases + T0.4-ter are complete:
-
-- **Phase 0 — Security**: HMAC server-to-server auth, Clerk guards on every Nest controller, firewall Hetzner restricted (SSH /24, ports 3002/3003 closed), Postgres 17.6 upgrade.
-- **Phase 1 — Integrity**: dual-write unified (`whatsapp_conversations.message_id` FK + transactional writer + JOIN reader + backfill + drop of duplicate columns).
-- **Phase 2 — Wiring**: Socket.IO `auth_failure → AUTH_INVALID` fixed, Templates moved to Nest, rate limit per WhatsApp session (200/h).
-- **Phase 3 — Cleanup**: `WhatsAppServiceRefactored` + `@leadcrm/ui` removed (~−4,350 lines net).
-- **Phase 4 — Scalability**: soft delete, pagination, N+1 in `getConversations` eliminated via SQL JOIN.
-- **Phase 5 — Testing**: 22+ Jest unit tests across API + whatsapp-service.
-
-`ANALISIS-ESTADO-PROYECTO.md` v5 is the canonical snapshot of the post-stabilization state.
-
-The AIThinkingService modularization (formerly in branch `refactor/whatsapp-service`) is **complete** — the module lives at `apps/whatsapp-service/src/services/ai-thinking/` with CacheManager, IntentAnalyzer, ContextEnricher, ComplexityAnalyzer, KnowledgeRetriever, ResponseGenerator, StrategySelector, DecisionEngine. Integration with the rest of the service is via `AIThinkingModuleFactory`.
-
-### PLAN-WHATSAPP-AGENT-MULTITENANT (v7.1, en curso)
-
-El plan multi-tenant + agente IA configurable (`PLAN-WHATSAPP-AGENT-MULTITENANT.md`) pasó por 12 rondas de review y quedó aprobado para **ruta completa**. Se ejecuta por fases en branches separadas.
-
-**Fase A — Foundation hotfixes (completada 2026-04-19, branch `feature/foundation-hotfixes`)**:
-
-Los 10 cambios P0 aplicados + 1 hotfix tangencial:
-
-- **A5** — Validación zod de envs en bootstrap (`config/env.ts`). Fail-fast en producción si falta `WHATSAPP_SERVICE_HMAC_SECRET`; warnings en dev.
-- **A6** — Eliminado `process.exit(1)` en `uncaughtException`/`unhandledRejection`: el proceso sobrevive para no tumbar las demás sesiones.
-- **A1** — Deduplicación de mensajes entrantes con Redis `SETNX whatsapp:dedup:{message.id}` TTL 300s. Nuevo método `redisClient.setNX()` (fail-open: Redis error → trata como "primera vez").
-- **A2** — Filtro explícito de grupos (`@g.us`) y `status@broadcast` antes de parsear/responder.
-- **A3** — Typing indicator (`chat.sendStateTyping` + `clearState`) en `MessageHandler.sendResponseWithStrategy`. Apagado en `finally` incluso si el envío falla.
-- **A4** — Unificación de `saveConversation`: nueva helper `persistMessagePair()` paraleliza user msg + bot msg con `Promise.allSettled` y logging unificado. Sobre el modelo unified-write existente del PRD Fase 1.
-- **A7** — System prompt hardcoded movido a `ai_configuration` (key `system_prompt.default.es`) con cache in-memory + background refresh. Fallback al hardcoded si la key no está seedeada.
-- **A8** — Tests HMAC ampliados: body vacío, firma sin prefijo `sha256=`, prefijo distinto (`md5=`), timestamp malformado, timestamp en futuro excesivo.
-- **A9** — Test unitario de `redisClient.setNX` (primitive de dedupe): primera → true, segunda → false, Redis error → true (fail-open), secuencia típica.
-- **A10** — Este update a `CLAUDE.md`.
-- **A11 (hotfix descubierto en prueba móvil)** — `ResponseGenerator.ensureFinalQuestion` solo detectaba `?` ASCII. Cuando el LLM generaba `"¿...hoy"` sin cerrar, concatenaba otra pregunta. Fix: `/[?¿]/.test(content)`.
-- **A12 (optimización UX)** — `sendStateTyping()` movido al **inicio** del handler `processMessageWithAI` en vez de al final (`sendResponseWithStrategy`). Cubre visualmente todo el LLM thinking time (~10s) en vez de solo el último segundo.
-- **A13 (eliminación humanized delay)** — borradas las funciones `addHumanizedDelay` y `addHumanizedDelayEnhanced` (~70 líneas) de `MessageHandler`. Razón: el LLM ya aporta 6-11s de latencia real; añadir 5-6s artificiales simulaba humano redundantemente. El typing indicator (A12) cubre visualmente la espera. Ahorro: ~5-6s por mensaje. Latencia total baja de ~15-18s a **~5-6s** (medido en prueba del owner con "hola" → thinkingTime=4644ms + overhead = 5.35s). Si en Fase E7 llegan templates Tier-2 instantáneos, reintroducir delay con target-total (no sumado).
-- **A14 (bug A4 detectado y corregido en prueba del owner)** — `persistMessagePair` pasaba el contenido del bot en `messageText` con `responseText: undefined`. Pero `DatabaseService.saveConversation` usa `canonicalContent = isFromUser ? messageText : responseText`. Para `isFromUser=false`, el contenido del bot debe ir en `responseText`. El log warn `⚠️ [UNIFIED-WRITE] saveConversation called without canonical content — skipping message row` reveló que la respuesta del bot NO se estaba persistiendo. Fix: para el bot msg ahora `{ messageText: undefined, responseText: botResponseText, isFromUser: false }`.
-- **A15 (whitelist default abierta por coherencia con el producto)** — `AuthAuditLogger.ts:84` tenía `allowNewLeads: false`. Un número nuevo (`34644773622` en la prueba del owner) recibía log `🚫 Respuesta automática bloqueada... Número no autorizado - no cumple con criterios`. Para un SaaS de captación de leads la IA **debe responder a cualquier número que escriba**; un bot que solo responde a la whitelist pre-cargada no captaría leads. Default cambiado a `true`. Si algún cliente quisiera modo "support privado" (solo responde a conocidos), puede poner `WHATSAPP_ALLOW_NEW_LEADS=false` en su `.env`. Cuando lleguen los `AiAgent` configurables (Fase B), este flag pasará a la configuración por agente para permitir políticas distintas por cliente.
-- **A15-bis (segundo whitelist en API Nest también default-false)** — descubierto tras A15: `apps/api/src/whatsapp/whitelist.service.ts:119-120` tenía su propia evaluación independiente con `allowNewLeads = env === 'true'` (default `false` si env sin setear). Esto generaba un BLOCK adicional con razón `"Creación de leads nuevos deshabilitada"` **aunque A15 ya hubiera pasado en whatsapp-service**. Arquitectura actual: el whitelist se evalúa dos veces (una en whatsapp-service, otra en API Nest al procesar el message). Fix: invertir semántica a `env !== 'false'` (default `true`, cierre explícito). Coherente con A15. **Pendiente Fase C**: unificar las dos evaluaciones en un solo sitio para evitar tener que mantener ambas sincronizadas.
-- **A15-ter (env var `.env` explícita ganaba a ambos defaults)** — tras A15 + A15-bis el lead nuevo seguía bloqueado. Causa: `/.env` tenía `WHATSAPP_ALLOW_NEW_LEADS=false` explícito, que overrideaba los dos defaults de código. Cambiado a `=true` con comentario explicativo. Regla general: **env > DB config > hardcoded default**. Recomendación para Fase B: que `validateEnv()` (A5) imprima al boot el config de auth resuelto, así evitamos debugging de 30 min la próxima vez.
-
-### Deudas técnicas post-Fase A (detectadas pero no arregladas)
-
-Tres bugs tangenciales surgidos durante la verificación end-to-end del nuevo lead `34644773622` (2026-04-19). No son bloqueantes del MVP pero conviene cerrarlos en Fase B o C:
-
-- **T1. `messages` creadas con `lead_id=null` desde whatsapp-service**. `DatabaseService.saveConversation` no hace lookup al `Lead` antes de crear el `Message`; cuando el lead aún no existe (primer mensaje de un número nuevo), las filas quedan huérfanas. Los queries que hacen `JOIN leads ON messages.lead_id = leads.id` no las ven. Fix Fase B: saveConversation debe resolver/crear el `Lead` primero o aceptar un `leadId` explícito del caller.
-- **T2. Duplicación de `Message` entre whatsapp-service y API Nest**. Ambos persisten el mensaje entrante: whatsapp-service via `saveConversation` (sin leadId), API Nest via `prisma.message.create` en el webhook handler (con leadId). Resultado: **3 filas en `messages` para 2 mensajes reales** (user entrante duplicado + bot respuesta). Fix Fase C: decidir un owner único del write de `Message` (recomendado: API Nest tras recibir webhook) y que whatsapp-service solo escriba `whatsapp_conversations` con metadata.
-- **T3. Timestamp 1970 en messages de API Nest**. `new Date(messageData.timestamp)` en `apps/api/src/whatsapp/whatsapp.service.ts:114` interpreta un epoch en segundos como milisegundos (o viceversa), generando `created_at` en 1970. No rompe funcionalidad pero ensucia orderings por fecha. Fix Fase B: multiplicar por 1000 si el valor es menor a `1e12` (heurística segunda/milis).
-- **T4. API NestJS no lee `.env` automáticamente**. Descubierto 2026-04-20 al actualizar `WHATSAPP_ALLOW_NEW_LEADS` en prod (Hetzner): el whatsapp-service sí recogió el cambio porque hace `dotenv.config()` en `index.ts:26`, pero `leadcrm-api` no. El `.env` de `apps/api/` es cosmético hoy — las envs llegan al proceso Nest solo via la shell que arranca PM2. Workaround usado en prod: `export WHATSAPP_ALLOW_NEW_LEADS=true && pm2 restart leadcrm-api --update-env`. Frágil: ante reboot del VPS / `pm2 resurrect` / cron restart automático la env desaparece y el bug de whitelist vuelve. **Fix Fase B** (añadido como `B1.15`): `apps/api/src/app.module.ts` debe importar `ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] })`. Son ~3 líneas que transforman "env solo si la shell la exporta" en "env leída del `.env` igual que whatsapp-service".
-
-**Tests suite post-Fase A**: 15/15 pasan (6 HMAC originales + 5 edge cases nuevos + 4 redis.spec). Se borraron 9 suites `ai-thinking/__tests__/*` y `phase4-integration.test.ts` (22 tests pre-existentes rotos, consideradas deuda muerta).
-
-**Deudas técnicas conocidas post-Fase A (no bloqueantes)**:
-- **Doble init del whatsapp-service**: el log `"Initializing WhatsApp service implementation"` aparece 2 veces por arranque. El handler de mensajes solo se dispara una vez por evento (verificado), pero el logging sugiere doble instancia del facade vs simple. A investigar en Fase C.
-- **Dedupe secundario multi-device**: WhatsApp Linked Devices (`@lid`) puede entregar el mismo mensaje con `message.id` distintos. El dedupe por `message.id` no lo detecta. Fix futuro: dedupe secundario por `(from, body-hash, ±3s)` — considerar en Fase C.
-
-**Decisiones de arquitectura de Fase A que se mantienen en Fase B**:
-- `redisClient.setNX(key, value, ttlSeconds)` es la primitive pública para dedupe atómico. Reusarlo si hace falta dedupe en otros flujos.
-- `validateEnv()` en `apps/whatsapp-service/src/config/env.ts` es el contrato de envs requeridas. Extender el zod schema al añadir nuevas envs.
-- El pattern "cache in-memory + background refresh" de `SystemPromptService` es el modelo para cargar config desde DB sin volver async a los callers.
-
-### Punto de continuación (post-deploy Fase A, 2026-04-20)
-
-Si retomas el proyecto en una sesión futura, aquí está el estado exacto y el siguiente paso:
-
-**Estado en producción (Hetzner VPS 46.225.26.89)**:
-- `/opt/leadcrm/apps/whatsapp-service/.env` y `/opt/leadcrm/apps/api/.env` tienen `WHATSAPP_ALLOW_NEW_LEADS=true` (agregados 2026-04-20).
-- PM2 procesos `whatsapp-service` (id 0) y `leadcrm-api` (id 1) arrancan con esa env cargada tras restart con `--update-env`.
-- Captación automática de leads nuevos en producción: **operativa**. Cualquier número nuevo que escriba al WhatsApp conectado se crea como `Lead` con `whatsapp_authorized=true`.
-
-**Si el VPS se reinicia (reboot, crash, etc.)**:
-- `whatsapp-service` recarga el `.env` automáticamente via `dotenv.config()` → funciona OK.
-- `leadcrm-api` **NO lee** el `.env` — la env `WHATSAPP_ALLOW_NEW_LEADS=true` se perderá. Workaround manual tras cada reboot:
-  ```bash
-  ssh root@46.225.26.89 'export WHATSAPP_ALLOW_NEW_LEADS=true && pm2 restart leadcrm-api --update-env'
-  ```
-- Fix permanente = tarea **B1.15** (primera tarea de Fase B.1). Estimación <30 min.
-
-**⚠️ Deploy real del código Fase A a Hetzner está PENDIENTE** (2026-04-20):
-Hoy en prod Hetzner solo está actualizada la env var `WHATSAPP_ALLOW_NEW_LEADS=true` (editada vía SSH manual). El **código** de Fase A (A1 dedupe, A3 typing temprano, A13 humanized delay eliminado, A11 hotfix pregunta duplicada, etc.) **sigue siendo pre-Fase A**. Los bugs que arreglamos siguen ocurriendo en prod.
-
-Para deployar el código nuevo (hacer esto antes o junto con Fase B.1):
-```bash
-ssh root@46.225.26.89 '
-  set -e
-  cd /opt/leadcrm
-  git pull origin develop
-  pnpm install
-  pm2 restart all --update-env
-'
-```
-
-Efectos: downtime ~15-30s mientras reinstala deps + reinicia. Sesión WhatsApp `test` se desconecta brevemente y reconecta sola via LocalAuth. Verificar tras deploy: `pm2 logs whatsapp-service --lines 30` debe mostrar `Environment validated (NODE_ENV=production)` (A5 feature) y `[DEDUPE] Checking msgId=...` (A1) ante cualquier mensaje entrante.
-
-**Sobre Vercel**: el dashboard Next.js en `guatsapp.me` auto-deploya desde la "Production Branch" configurada en Vercel (suele ser `main`). Para que los cambios de `develop` lleguen a prod Vercel: `git checkout main && git merge develop && git push`. En Fase A no se tocó dashboard, así que mergear a main no cambia nada funcional — se puede diferir.
-
-**Próximo paso concreto cuando retomes**:
-1. `git checkout develop && git pull` (asegura estar al día)
-2. **(recomendado antes de Fase B)** deployar Fase A a Hetzner con el comando SSH de arriba — así prod se beneficia de los fixes
-3. `git checkout -b feature/b1-foundational-multitenancy`
-4. Empezar por **B1.15** (ver `PLAN-WHATSAPP-AGENT-MULTITENANT.md §5 Fase B.1`): `ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../../.env'] })` en `apps/api/src/app.module.ts`.
-5. Continuar con B1.1 (activar Clerk Organizations) → B1.1a (crear org real EscortsHub) → B1.1b (`/select-org` UI) → resto de Fase B.1.
-
-**Estado de documentos**:
-- `PLAN-WHATSAPP-AGENT-MULTITENANT.md` v7.3 — Fase A marcada ejecutada+deployed, B1.15 añadida con justificación
-- `CLAUDE.md` (este archivo) — 15 hotfixes de Fase A documentados + 4 deudas técnicas (T1-T4)
-- Git: PR #10 cerrado (merge commit `1fd9e95`), branch `feature/foundation-hotfixes` puede borrarse (local + remote) tras Fase B.1
-
-**Decisión de automatización de deploy (discutida 2026-04-20, decisión pospuesta para Fase C)**:
-Hoy el deploy a Hetzner es 100% manual (SSH + git pull + pm2 restart). Se valoraron 3 opciones:
-- (A) Seguir manual — control total, fricción real.
-- (B) `workflow_dispatch` (botón GitHub Actions) — recomendada para MVP, sin automatizar triggers pero sin typos SSH.
-- (C) Auto on push to main — estándar gitflow pero genera ~15-30s de caída de sesiones WhatsApp cada deploy por restart de Chromium.
-
-**Decisión actual**: seguir con Opción A hasta que llegue Fase C. En Fase C7 (ya existe como "Restart automático programado de workers") añadir **C0 — Workflow de deploy semi-auto**: `.github/workflows/deploy-hetzner.yml` con `workflow_dispatch`, secrets `HETZNER_SSH_KEY`, pasos `git pull + pnpm install + pm2 reload all` (reload, no restart, para reducir downtime). La Opción C queda vetada hasta que el whatsapp-service soporte zero-downtime deploy (blue-green o PM2 cluster mode con graceful reload).
+- Backend tests: `*.spec.ts` | Frontend tests: `*.test.tsx` (under `__tests__/`)
 
 ## Environment Variables
 
-Environment files:
+Files:
 
-- `.env` → Development (root, Supabase + Docker Redis)
-- `apps/dashboard/.env.local` → Next.js reads this; must contain `NEXT_PUBLIC_API_URL`, `CLERK_*`, and `WHATSAPP_SERVICE_HMAC_SECRET`
-- `apps/*/.env` → per-service overrides in production (on the Hetzner VPS: `/opt/leadcrm/apps/whatsapp-service/.env` and `/opt/leadcrm/apps/api/.env`)
-- `.env.production` → production defaults (Supabase + Hetzner)
-- `.env.example` → template (committed to repo)
+- `.env` — Development (root, Supabase + Docker Redis); read by both whatsapp-service (`dotenv.config()` in `index.ts`) and the Nest API (via `ConfigModule.forRoot`)
+- `apps/dashboard/.env.local` — Next.js reads only this file. Must contain `NEXT_PUBLIC_API_URL`, `CLERK_*`, and `WHATSAPP_SERVICE_HMAC_SECRET`
+- `apps/*/.env` — Production overrides on Hetzner VPS at `/opt/leadcrm/apps/{whatsapp-service,api}/.env`
+- `.env.production` — Production defaults
+- `.env.example` — Template (committed)
 
-**Critical env vars that, if missing, break the HMAC chain:**
+**Critical envs that break the HMAC chain if missing or mismatched:**
 
-- `WHATSAPP_SERVICE_HMAC_SECRET` (64 hex chars) — must be the **same** in Vercel (dashboard), on the Hetzner VPS (both apps' `.env`), and in every developer's local `.env`. Without it the whatsapp-service returns `500 "service auth misconfigured"` on signed requests, and the proxy in Next returns `500 "Proxy misconfigured: missing service auth secret"`.
-- `CLERK_WEBHOOK_SECRET` — required only by the dashboard's `/api/webhooks/clerk` route handler.
+- `WHATSAPP_SERVICE_HMAC_SECRET` (64 hex chars) — must be **identical** in Vercel (dashboard), Hetzner VPS (both apps' `.env`), and every developer's local `.env`. Without it: whatsapp-service returns `500 "service auth misconfigured"`, dashboard proxy returns `500 "Proxy misconfigured: missing service auth secret"`
+- `CLERK_WEBHOOK_SECRET` — required by `apps/dashboard/app/api/webhooks/clerk/route.ts`
+- `WHATSAPP_ALLOW_NEW_LEADS` — defaults to `true` in code (lead-capture mode). Set to `false` only for "private support" deployments. **Resolution order: env > DB config > hardcoded default**
 
 **Service Ports:**
-| Service | Port | URL |
-|------------|------|------------------------|
+
+| Service   | Port | URL                   |
+| --------- | ---- | --------------------- |
 | Dashboard | 3001 | http://localhost:3001 |
-| API | 3003 | http://localhost:3003 |
-| WhatsApp | 3002 | http://localhost:3002 |
-| Redis | 6381 | localhost:6381 |
+| API       | 3003 | http://localhost:3003 |
+| WhatsApp  | 3002 | http://localhost:3002 |
+| Redis     | 6381 | localhost:6381        |
 
 **Quick Start:**
 
 ```bash
 docker compose up -d       # Start Redis (DB is Supabase cloud)
-pnpm db:generate           # Generate Prisma client
-pnpm db:migrate:dev        # Run migrations
-pnpm dev                   # Start all services
+pnpm install
+pnpm db:generate
+pnpm dev
 ```
+
+## Project State
+
+The stabilization PRD (`PRD-ESTABILIZACION.md` v5.23) closed on 2026-04-18. All five phases + T0.4-ter shipped:
+
+- **Phase 0 — Security**: HMAC server-to-server auth, Clerk guards on every Nest controller, Hetzner firewall locked down (SSH /24, ports 3002/3003 closed externally), Postgres 17.6
+- **Phase 1 — Integrity**: Unified dual-write — `whatsapp_conversations.message_id` FK, transactional writer, JOIN reader, backfilled 58 orphans, dropped duplicate columns
+- **Phase 2 — Wiring**: Socket.IO `auth_failure → AUTH_INVALID`, Templates moved to Nest, per-session WhatsApp rate limit (200/h)
+- **Phase 3 — Cleanup**: `WhatsAppServiceRefactored` + `@leadcrm/ui` removed (~−4,350 LOC net)
+- **Phase 4 — Scalability**: Soft delete, pagination, N+1 in `getConversations` eliminated via SQL JOIN
+- **Phase 5 — Testing**: 22+ Jest unit tests across API + whatsapp-service
+
+The AIThinkingService modularization (formerly branch `refactor/whatsapp-service`) is complete; module lives at `apps/whatsapp-service/src/services/ai-thinking/`.
+
+### PLAN-WHATSAPP-AGENT-MULTITENANT (v7.3)
+
+The multi-tenant + configurable AI agent plan went through 12 review rounds and was approved for full execution in branches.
+
+**Phase A — Foundation hotfixes (merged 2026-04-19, PR #10, commit `1fd9e95`)**:
+
+15 changes shipped (A1–A15-ter); details and rationale in `PLAN-WHATSAPP-AGENT-MULTITENANT.md`. Architectural decisions kept post-Phase A:
+
+- `redisClient.setNX(key, value, ttlSeconds)` is the public primitive for atomic dedupe — reuse it for any new dedupe flow
+- `validateEnv()` in `apps/whatsapp-service/src/config/env.ts` is the env contract — extend the zod schema when adding new envs
+- "Cache in-memory + background refresh" (`SystemPromptService`) is the model for loading config from DB without making callers async
+- Typing indicator covers the full LLM thinking window (started at handler entry, cleared in `finally`) — no artificial humanized delay; total latency dropped from ~15-18s to ~5-6s
+- `WHATSAPP_ALLOW_NEW_LEADS` defaults to `true` — the bot must respond to any new number for lead capture to work
+
+### Known technical debt (not blocking)
+
+Tracked in `PLAN-WHATSAPP-AGENT-MULTITENANT.md`. Highlights:
+
+- **T1**: `Message` rows are created with `lead_id=null` from whatsapp-service when the lead doesn't yet exist. JOIN-based readers miss them. Fix scheduled for Phase B
+- **T2**: Both whatsapp-service and Nest API persist inbound messages, producing 3 `messages` rows for 2 real messages. Fix scheduled for Phase C: Nest API becomes sole owner; whatsapp-service writes only `whatsapp_conversations`
+- **T3**: `apps/api/src/whatsapp/whatsapp.service.ts:114` interprets WhatsApp epoch in seconds as milliseconds → `created_at` lands in 1970. Functional but messes up date ordering
+- **Whitelist evaluated twice**: once in whatsapp-service, once in Nest API. Defaults are in sync (`true`) but coupling is fragile. Phase C will unify
+- **Multi-device dedupe**: WhatsApp Linked Devices (`@lid`) can deliver the same message with different `message.id`. Current dedupe by `message.id` doesn't catch it. Future fix: secondary dedupe by `(from, body-hash, ±3s)`
+
+### Resolved: WhatsApp service double init (2026-05-01, branch `fix/whatsapp-double-init`)
+
+The "Initializing WhatsApp service implementation" log fired twice per boot because `WhatsAppService.ts` called `this.initialize()` fire-and-forget in its constructor and `index.ts` then awaited a second `initialize()` on the same singleton. Fixed with the **lazy idempotent init pattern** (`initialized` flag + `initializePromise` cache):
+
+- Constructor no longer triggers init; bootstrap is the only caller.
+- Concurrent calls share the same in-flight promise; resolved calls are no-ops; failed calls clear the promise so callers can retry.
+- Same pattern applied to `WhatsAppServiceSimple` for direct callers (e.g. tests).
+- Side-effect cleanup: `snapshotIntervalId` guarded against duplicate `setInterval`; alert callback registered with stable identity; `AlertManager.registerAlertCallback` dedupes by reference; `SessionHealthCheckService.offAlert` exposed and called in shutdown.
+- Legacy `SessionRecoveryService.scheduleHealthChecks` + `HealthMetrics.scheduleHealthChecks` + `HealthMetrics.updateSessionHealthMetadata` removed as zombie code: no consumer reads `metadata.lastHealthCheck` (verified across `apps/api`, `apps/dashboard`, `packages/db`); the active signals — Redis heartbeat (every 30s, TTL 120s) and reactive `lastHealthCheck` updates on session events — already cover the same need.
+- Boot order intentionally changed: `checkRedisConnection()` now runs **after** `redisClient.connect()` (the previous order was the accidental side-effect of the fire-and-forget race).
+
+The lazy idempotent init pattern (`initialized + initializePromise`) is the convention in this repo for singleton async init — reuse it when adding similar services.
+
+### Test suite status
+
+21/21 active tests pass (15 pre-existing — HMAC originals + edge cases + redis.spec — plus 4 init idempotency + 2 alert callback dedupe added with the double-init fix). 22 pre-existing tests in `ai-thinking/__tests__/*` and `phase4-integration.test.ts` were deleted as dead debt during Phase A.
+
+## Production deployment notes
+
+**Hetzner VPS (46.225.26.89)** runs both the API and whatsapp-service under PM2:
+
+- `whatsapp-service` (id 0) reads `/opt/leadcrm/apps/whatsapp-service/.env` via `dotenv.config()`
+- `leadcrm-api` (id 1) reads `/opt/leadcrm/apps/api/.env` and falls back to root `.env` via `ConfigModule.forRoot`
+
+**Manual deploy** (current process — automation deferred to Phase C):
+
+```bash
+ssh root@46.225.26.89 '
+  set -e
+  cd /opt/leadcrm
+  git pull origin develop   # or main once merged
+  pnpm install
+  pm2 restart all --update-env
+'
+```
+
+Effects: ~15-30s downtime while installing deps and restarting; the WhatsApp `test` session disconnects briefly and reconnects via LocalAuth. Verify with `pm2 logs whatsapp-service --lines 30` — should show `Environment validated (NODE_ENV=production)` and `[DEDUPE] Checking msgId=...` on inbound messages.
+
+**Vercel (dashboard at `guatsapp.me`)** auto-deploys from the configured Production Branch (typically `main`). To promote `develop` → prod: `git checkout main && git merge develop && git push`.
+
+**Phase C will add** `.github/workflows/deploy-hetzner.yml` with `workflow_dispatch` (semi-automatic deploy via GitHub Actions button), using `pm2 reload` (not restart) once the whatsapp-service supports zero-downtime reload. Auto-on-push-to-main is vetoed until then because each restart drops the WhatsApp Chromium session.

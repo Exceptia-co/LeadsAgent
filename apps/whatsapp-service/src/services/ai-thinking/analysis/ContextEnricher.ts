@@ -29,9 +29,11 @@ export class ContextEnricher implements IContextEnricher {
         dayOfWeek: 'weekday',
       };
 
-      // Obtener historial de conversación si hay número de teléfono
+      // Obtener historial de conversación si hay número de teléfono.
+      // PR5a-bis: pass sessionId so the reader can derive tenantId and
+      // scope the query — prevents cross-tenant context leak into the AI.
       if (context.phoneNumber) {
-        await this.enrichWithConversationHistory(enriched, context.phoneNumber);
+        await this.enrichWithConversationHistory(enriched, context.phoneNumber, context.sessionId);
         await this.enrichWithLeadProfile(enriched, context.phoneNumber);
       }
 
@@ -82,12 +84,14 @@ export class ContextEnricher implements IContextEnricher {
 
   private async enrichWithConversationHistory(
     enriched: EnrichedContext,
-    phoneNumber: string
+    phoneNumber: string,
+    sessionId?: string
   ): Promise<void> {
     try {
       const history = await DatabaseService.getConversationHistory(
         phoneNumber,
-        10 // Últimos 10 mensajes
+        10, // Últimos 10 mensajes
+        sessionId ? { sessionId } : undefined
       );
 
       enriched.messageHistory = history.map(h => ({
