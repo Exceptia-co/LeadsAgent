@@ -7,13 +7,43 @@ message drops.
 
 ---
 
+## Order of operations (READ FIRST)
+
+The HMAC contract is **breaking**: code post-PR5a expects
+`HMAC(timestamp.tenantId.body)`, code pre-PR5a expects `HMAC(timestamp.body)`.
+Once any of the three apps deploys the new code while the others are
+still on the old code, every cross-app request fails signature
+verification until the lagging app catches up.
+
+That makes the rollout sensitive to **what triggers a deploy**:
+
+- Vercel auto-deploys the dashboard on every push to `main`.
+- Hetzner is manual; nothing happens until somebody runs `pm2 restart`.
+- Supabase prod migrations and backfill are independent of either.
+
+The safe order is therefore:
+
+  pre-flight → migrations (Step 1) → backfill (Step 2) → pre-stage Hetzner build (Step 3) → merge `develop` → `main` (Step 4) → coordinated Vercel + Hetzner cutover (Step 4 cont.) → post-deploy smoke (Step 5)
+
+The merge to `main` is the **trigger** of the cutover and intentionally
+sits AFTER migrations + backfill. Do **not** merge to `main` during
+pre-flight — that flips Vercel to the new HMAC contract before the
+schema and data are ready, and before Hetzner can flip with it. Vercel's
+auto-deploy from `main` cannot be rolled back without a force-push or a
+revert PR, both of which extend the mismatch window.
+
+---
+
 ## Pre-flight
 
-- [ ] PR #11 merged to `develop`, `develop` merged to `main`. Vercel will auto-deploy the dashboard from `main` — do not skip this branch order.
+- [ ] PR #11 approved by reviewers and CI green on `feature/b1-pr5a-runtime-enforcement`. **Do NOT merge yet** — the merge happens in Step 4 after the database is ready.
+- [ ] If your team merges to `develop` at this point as a normal PR-approval step, that is fine — `develop` does not auto-deploy. Just keep `main` strictly behind until Step 4.
 - [ ] Hetzner VPS `46.225.26.89` SSH access verified.
-- [ ] Supabase prod project `yxjzsargboxnuwnbuzax` (CRMWhatsApp) accessible (MCP token or `supabase` CLI).
+- [ ] Supabase prod project `yxjzsargboxnuwnbuzax` (CRMWhatsApp) accessible via the `prisma` CLI from your local repo (DATABASE_URL/DIRECT_URL captured).
 - [ ] Clerk Production org "EscortsHub" created in `dashboard.clerk.com` (Production environment, not Development). Capture its `org_id` — it differs from the Development one.
 - [ ] HMAC secret rotated and propagated to all 3 surfaces (.env Hetzner, Vercel envs, dashboard developers' local .env). See `docs/deployment/secrets-rotation.md`.
+- [ ] Confirm `WHATSAPP_OPERATOR_HMAC_TENANT_ID` is **UNSET** on Hetzner. Operator endpoints stay locked.
+- [ ] Decide on the cutover window. Plan for a ~3-5 min total mismatch tolerance (see Step 4).
 
 ---
 
@@ -61,13 +91,18 @@ SELECT column_name FROM information_schema.columns
 -- Should return 1 row
 ```
 
+The schema is now compatible with both PR5a code (which writes
+`tenant_id`) and pre-PR5a code (which ignores the new nullable column).
+You are still safe to NOT have merged to `main` yet — production code is
+still pre-PR5a, the schema is compatible.
+
 ---
 
-## Step 2 — Backfill prod (BEFORE deploying any code)
+## Step 2 — Backfill prod (BEFORE merging to `main`)
 
-If the code is deployed first, the runtime drops every inbound WhatsApp
-message with `[UNIFIED-WRITE] session ... has no tenantId`. Backfill
-must come first.
+If the new code reaches production before backfill finishes, the runtime
+drops every inbound WhatsApp message with
+`[UNIFIED-WRITE] session ... has no tenantId`. Backfill must come first.
 
 ```bash
 # Same DATABASE_URL/DIRECT_URL as step 1.
@@ -111,52 +146,105 @@ Every row except possibly `ai_configuration` (intentionally NULL for
 global config) must show `null_t = 0`. Abort the deploy if any row
 shows >0.
 
+At this point the database is ready for the new code. The dashboard,
+API and whatsapp-service are still running pre-PR5a. **Production is
+intact** — old code reads/writes the new columns as null and the
+backfilled tenant_ids are simply ignored.
+
 ---
 
-## Step 3 — Deploy code coordinated
+## Step 3 — Pre-stage Hetzner build (no restart yet)
 
-The HMAC contract is **breaking**: `signature = HMAC(timestamp.tenantId.body)`
-across all 3 senders + 1 receiver. Deploy in this order:
+Build the new code on Hetzner so the cutover in Step 4 is just a
+`pm2 restart`, not a multi-minute rebuild. This step does **not** flip
+the running code yet — pm2 keeps serving the old build until the
+restart command in Step 4.
 
-1. Merge `develop` → `main`. Vercel auto-deploys the dashboard. Wait
-   for green build before continuing.
-2. SSH to Hetzner. Pull main and rebuild:
+```bash
+ssh root@46.225.26.89
+
+cd /opt/leadcrm
+# Capture the current commit so rollback knows what to revert to.
+git rev-parse HEAD > /tmp/leadcrm-pre-pr5a.sha
+
+# Pull the merged main only AFTER step 4 happens. For now, pre-stage from
+# develop (which already contains the PR5a stack but does not auto-deploy
+# Vercel). If your team mirrors main->develop, fetch develop instead.
+git fetch origin develop
+git checkout origin/develop -- .
+pnpm install --frozen-lockfile
+pnpm --filter @leadcrm/api build
+pnpm --filter @leadcrm/whatsapp-service build
+```
+
+Verify the new dist exists but the running pm2 process is still on the
+old code:
+
+```bash
+ls -la apps/api/dist/main.js apps/whatsapp-service/dist/index.js
+pm2 jlist | jq '.[] | {name, status, pid, uptime}'
+```
+
+Both `dist/` files should be freshly modified, but the pm2 `pid` and
+`uptime` fields should be unchanged from before this step. The running
+processes are still the pre-PR5a build.
+
+Stay logged in to Hetzner for Step 4.
+
+---
+
+## Step 4 — Merge to `main` and cutover Vercel + Hetzner together
+
+This is the breaking moment. Your goal is to flip both Vercel and
+Hetzner within ~30 seconds of each other so the HMAC mismatch window is
+small. WhatsApp inbounds during the window are queued by WhatsApp's own
+servers and delivered after the gap closes.
+
+In a single coordinated stretch:
+
+1. From your laptop, merge `develop` → `main`. Push.
    ```bash
-   ssh root@46.225.26.89
-   cd /opt/leadcrm
-   git fetch origin main && git reset --hard origin/main
-   pnpm install --frozen-lockfile
-   pnpm --filter @leadcrm/api build
-   pnpm --filter @leadcrm/whatsapp-service build
+   git checkout main
+   git merge --ff-only develop
+   git push origin main
    ```
-3. Restart both services in fast succession to minimize the HMAC mismatch
-   window:
+   Vercel starts building the dashboard immediately. Watch in
+   `vercel.com/dashboard` — note the build duration on previous deploys
+   (typically 2-3 min for this repo).
+
+2. While Vercel is building, watch the build log. As soon as the Vercel
+   "Ready" state is about to land (last 30s of the build), trigger the
+   Hetzner restart from the Hetzner SSH session you kept from Step 3:
    ```bash
    pm2 restart leadcrm-api whatsapp-service --update-env
    ```
-4. Watch the WhatsApp session reconnect:
-   ```bash
-   pm2 logs whatsapp-service --lines 50
-   ```
-   Expected: `Environment validated (NODE_ENV=production)`, then the
-   WhatsApp client reconnects within 30 seconds. WhatsApp messages sent
-   during the gap are queued by WhatsApp and delivered on reconnect.
+   This restarts both Hetzner services on the pre-staged build instantly
+   (~5s).
 
-Confirm `WHATSAPP_OPERATOR_HMAC_TENANT_ID` is **UNSET** in
-`/opt/leadcrm/apps/whatsapp-service/.env`:
+3. Watch the Vercel deploy go green. The dashboard now signs with the
+   new HMAC contract; Hetzner now verifies the new HMAC contract.
 
-```bash
-grep -c "^WHATSAPP_OPERATOR_HMAC_TENANT_ID" /opt/leadcrm/apps/whatsapp-service/.env
-# Must print 0
-```
+4. Confirm `pm2 logs whatsapp-service --lines 30` shows
+   `Environment validated (NODE_ENV=production)` and the WhatsApp client
+   reconnects within 30 seconds.
 
-This is intentional. `/ai/switch`, `/ai/test`, `PUT /system/variables*`,
-and `/sessions/health` return 403 without the env, blocking global
-mutations from any tenant.
+The mismatch window is bounded by the time between (Hetzner pm2 restart)
+and (Vercel deploy go-live). Aim for <60 seconds. WhatsApp messages sent
+during that window are NOT lost — WhatsApp's servers retry until they
+get a 200 from the inbound webhook, which kicks in once Hetzner is
+back.
+
+If you cannot watch Vercel build progress in real time, an even simpler
+ordering: push to `main`, immediately `pm2 restart` on Hetzner. Vercel
+takes 2-3 min to build; Hetzner restart takes ~5s. The dashboard is
+unavailable during the Vercel build (showing the previous deploy until
+the new one is ready), so any dashboard request that needs the new
+contract will be queued client-side or fail with a transient error
+that resolves on retry.
 
 ---
 
-## Step 4 — Post-deploy smoke
+## Step 5 — Post-deploy smoke
 
 From a fresh browser session against the production dashboard:
 
@@ -189,7 +277,7 @@ Expected:
 
 ---
 
-## Step 5 — Lock down
+## Step 6 — Lock down
 
 Once 30 minutes of clean logs pass and one real customer interaction has
 been validated, this PR's deploy is considered stable. Then:
@@ -202,18 +290,35 @@ been validated, this PR's deploy is considered stable. Then:
 
 ## Rollback
 
-If step 4 reveals data leak or runtime drops that backfill couldn't
+If Step 5 reveals data leak or runtime drops that backfill couldn't
 prevent, rollback in reverse:
 
-1. `pm2 stop whatsapp-service leadcrm-api` on Hetzner. Inbound WhatsApp
-   queues at the WhatsApp side.
-2. `git revert <merge-commit-of-PR-11>` on `main` and force-push to
-   trigger Vercel revert.
-3. SSH Hetzner: `cd /opt/leadcrm && git fetch && git reset --hard <pre-PR11-commit> && pnpm install && pnpm --filter @leadcrm/api build && pnpm --filter @leadcrm/whatsapp-service build && pm2 restart all --update-env`.
-4. The migrations applied in step 1 are **additive** (new nullable
+1. From the Hetzner SSH session, restart back onto the pre-PR5a build:
+   ```bash
+   PRE_SHA=$(cat /tmp/leadcrm-pre-pr5a.sha)
+   git checkout "$PRE_SHA" -- .
+   pnpm install --frozen-lockfile
+   pnpm --filter @leadcrm/api build
+   pnpm --filter @leadcrm/whatsapp-service build
+   pm2 restart leadcrm-api whatsapp-service --update-env
+   ```
+   Hetzner is back on the old HMAC contract within ~30 seconds.
+
+2. Revert the merge on the dashboard side:
+   ```bash
+   git checkout main
+   git revert -m 1 <merge-commit-sha-of-PR-11>
+   git push origin main
+   ```
+   Vercel auto-deploys the revert (2-3 min). The dashboard is back on
+   the old HMAC contract once the build lands.
+
+3. The migrations applied in Step 1 are **additive** (new nullable
    columns, new tables) and stay in place. They do not need to be rolled
    back; the old code ignores them.
-5. The `tenant_id` values populated in step 2 stay in place. They do not
+
+4. The `tenant_id` values populated in Step 2 stay in place. They do not
    harm the old code.
 
-After rollback, post-mortem before retry.
+After rollback, post-mortem before retry. Save the failing logs from
+`pm2 logs --lines 1000` for analysis.
