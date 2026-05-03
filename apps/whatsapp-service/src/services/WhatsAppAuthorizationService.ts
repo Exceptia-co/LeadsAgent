@@ -190,8 +190,8 @@ class WhatsAppAuthorizationService {
       // 2. Cargar configuración
       const config = await this.getConfiguration();
 
-      // 3. Buscar información del lead
-      const leadInfo = await this.leadValidator.findLeadInfo(normalizedPhone);
+      // 3. Buscar información del lead (B2.0: tenant-scoped when tenantId available)
+      const leadInfo = await this.leadValidator.findLeadInfo(normalizedPhone, normalizedContext.tenantId ? { tenantId: normalizedContext.tenantId } : undefined);
 
       // 4. Realizar evaluación de riesgos
       const riskAssessment = {

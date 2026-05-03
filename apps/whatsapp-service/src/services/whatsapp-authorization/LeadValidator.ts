@@ -28,14 +28,13 @@ export class LeadValidator {
   /**
    * Buscar información del lead asociado al número
    */
-  public async findLeadInfo(phoneNumber: string): Promise<Lead | null> {
+  public async findLeadInfo(phoneNumber: string, opts?: { tenantId?: string }): Promise<Lead | null> {
     try {
       logger.debug('🔍 Looking up lead information', { phoneNumber });
 
-      // Normalize phone number for consistent lookup
       const normalizedPhone = PhoneNumberService.normalizePhoneNumber(phoneNumber);
 
-      const lead = await DatabaseService.findLeadByPhone(normalizedPhone);
+      const lead = await DatabaseService.findLeadByPhone(normalizedPhone, opts?.tenantId ? { tenantId: opts.tenantId } : undefined);
 
       if (lead) {
         logger.debug('✅ Lead found', {
@@ -163,7 +162,7 @@ export class LeadValidator {
       lead
     ) {
       if (lead.whatsappAuthorized !== true) {
-        const updateResult = await this.updateLeadWhatsAppAuthorization(lead.id, true);
+        const updateResult = await this.updateLeadWhatsAppAuthorization(lead.id, true, context.tenantId ? { tenantId: context.tenantId } : undefined);
         if (updateResult.success) {
           leadUpdated = true;
           lead.whatsappAuthorized = true;
@@ -385,7 +384,7 @@ export class LeadValidator {
         phone: context.phoneNumber,
         source: context.leadSource || 'whatsapp',
         status: 'NUEVO',
-      });
+      }, context.tenantId ? { tenantId: context.tenantId } : undefined);
 
       if (lead) {
         return { success: true, lead };
@@ -403,13 +402,14 @@ export class LeadValidator {
 
   private async updateLeadWhatsAppAuthorization(
     leadId: string,
-    authorized: boolean
+    authorized: boolean,
+    opts?: { tenantId?: string }
   ): Promise<{
     success: boolean;
     error?: string;
   }> {
     try {
-      const result = await DatabaseService.updateLeadWhatsAppAuth(leadId, authorized);
+      const result = await DatabaseService.updateLeadWhatsAppAuth(leadId, authorized, opts);
       return { success: result };
     } catch (error) {
       logger.error('Error updating lead WhatsApp authorization:', error);

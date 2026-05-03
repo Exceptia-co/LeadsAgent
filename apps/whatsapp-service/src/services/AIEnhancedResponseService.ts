@@ -16,6 +16,7 @@ import QualityEvaluator from './ai-response/QualityEvaluator';
 export interface AIResponseContext {
   phoneNumber: string;
   sessionId: string;
+  tenantId?: string;
   userMessage: string;
   contactName?: string;
   lead?: Lead;

@@ -102,7 +102,7 @@ export class ContextEnricher {
         }));
 
         // Get lead profile if available
-        const leads = await DatabaseService.getAllLeads();
+        const leads = await DatabaseService.getAllLeads(context.tenantId ? { tenantId: context.tenantId } : undefined);
         enriched.leadProfile = leads.find(
           lead => lead.phone && lead.phone.includes(context.phoneNumber?.replace(/\D/g, '') || '')
         );

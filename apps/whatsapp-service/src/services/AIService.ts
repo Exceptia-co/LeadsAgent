@@ -29,6 +29,7 @@ export interface AIResponse {
 export interface MessageContext {
   from: string;
   sessionId: string;
+  tenantId?: string;
   conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
   phoneNumber?: string;
 }

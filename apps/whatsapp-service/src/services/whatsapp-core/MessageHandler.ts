@@ -163,10 +163,19 @@ export class MessageHandler {
       // Get phone number without WhatsApp suffix
       const phoneNumber = whatsappMessage.from.replace('@c.us', '');
 
+      // B2.0 follow-up: resolve tenantId once, propagate through context
+      const tenantId = await DatabaseService.getSessionTenantId(sessionId);
+      if (!tenantId) {
+        logger.warn(
+          `[TENANT-SAFE] processMessageWithAI: session ${sessionId} has no tenantId — AI pipeline will run with unscoped reads`,
+        );
+      }
+
       // Enhanced processing with structured thinking
       const thinkingResult = await AIThinkingService.processWithThinking(whatsappMessage.body, {
         from: whatsappMessage.from,
         sessionId: sessionId,
+        tenantId: tenantId ?? undefined,
         phoneNumber: phoneNumber,
       });
 
