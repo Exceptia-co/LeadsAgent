@@ -48,12 +48,28 @@ const TENANT_SCOPED_MODELS: Array<{
   { model: 'lead', tableName: 'leads', description: 'Leads' },
   { model: 'message', tableName: 'messages', description: 'Messages' },
   { model: 'whatsAppSession', tableName: 'whatsapp_sessions', description: 'WhatsApp sessions' },
-  { model: 'whatsAppConversation', tableName: 'whatsapp_conversations', description: 'WhatsApp conversations' },
-  { model: 'whatsAppWhitelistLog', tableName: 'whatsapp_whitelist_logs', description: 'Whitelist logs' },
+  {
+    model: 'whatsAppConversation',
+    tableName: 'whatsapp_conversations',
+    description: 'WhatsApp conversations',
+  },
+  {
+    model: 'whatsAppWhitelistLog',
+    tableName: 'whatsapp_whitelist_logs',
+    description: 'Whitelist logs',
+  },
   { model: 'messageTemplate', tableName: 'message_templates', description: 'Message templates' },
   { model: 'proactiveMessage', tableName: 'proactive_messages', description: 'Proactive messages' },
-  { model: 'aiTrainingInteraction', tableName: 'ai_training_interactions', description: 'AI training interactions' },
-  { model: 'ai_knowledge_base', tableName: 'ai_knowledge_base', description: 'Knowledge base items' },
+  {
+    model: 'aiTrainingInteraction',
+    tableName: 'ai_training_interactions',
+    description: 'AI training interactions',
+  },
+  {
+    model: 'ai_knowledge_base',
+    tableName: 'ai_knowledge_base',
+    description: 'Knowledge base items',
+  },
   // ai_configuration tiene tenant_id NULLABLE intencionalmente (configs globales con tenant_id IS NULL).
   // El backfill NO debe asignar tenant_id automáticamente — eso convertiría configs globales en tenant-specific.
   // Dejarla fuera del bucle de UPDATE.
@@ -138,10 +154,14 @@ async function findOrCreateTenant(
 ): Promise<{ id: string; created: boolean }> {
   const existing = await prisma.tenant.findUnique({ where: { clerkOrgId } });
   if (existing) {
-    console.log(`[Tenant] Found existing: ${existing.id} (clerkOrgId=${clerkOrgId}, name="${existing.name}")`);
+    console.log(
+      `[Tenant] Found existing: ${existing.id} (clerkOrgId=${clerkOrgId}, name="${existing.name}")`,
+    );
     return { id: existing.id, created: false };
   }
-  console.log(`[Tenant] No tenant for clerkOrgId=${clerkOrgId}. Plan: CREATE name="${tenantName}".`);
+  console.log(
+    `[Tenant] No tenant for clerkOrgId=${clerkOrgId}. Plan: CREATE name="${tenantName}".`,
+  );
   if (!apply) {
     return { id: '<dry-run-placeholder-uuid>', created: true };
   }
@@ -177,18 +197,12 @@ function printCountTable(counts: Record<string, { total: number; orphan: number 
   let totalAll = 0;
   let orphanAll = 0;
   for (const [tableName, { total, orphan }] of Object.entries(counts)) {
-    console.log(
-      tableName.padEnd(35) +
-        String(total).padStart(10) +
-        String(orphan).padStart(22),
-    );
+    console.log(tableName.padEnd(35) + String(total).padStart(10) + String(orphan).padStart(22));
     totalAll += total;
     orphanAll += orphan;
   }
   console.log('-'.repeat(67));
-  console.log(
-    'TOTAL'.padEnd(35) + String(totalAll).padStart(10) + String(orphanAll).padStart(22),
-  );
+  console.log('TOTAL'.padEnd(35) + String(totalAll).padStart(10) + String(orphanAll).padStart(22));
 }
 
 async function backfillTenantId(
@@ -203,7 +217,9 @@ async function backfillTenantId(
         `SELECT COUNT(*)::bigint AS count FROM "${m.tableName}" WHERE tenant_id IS NULL`,
       );
       planned[m.tableName] = Number(row[0].count);
-      console.log(`[Plan] UPDATE ${m.tableName} SET tenant_id='${tenantId}' WHERE tenant_id IS NULL  -- ${planned[m.tableName]} rows`);
+      console.log(
+        `[Plan] UPDATE ${m.tableName} SET tenant_id='${tenantId}' WHERE tenant_id IS NULL  -- ${planned[m.tableName]} rows`,
+      );
     } else {
       // $executeRawUnsafe returns count of affected rows directly (no RETURNING materialization).
       // Más eficiente para volúmenes grandes que RETURNING 1 + result.length.
@@ -241,7 +257,9 @@ async function backfillRelations(
       `SELECT COUNT(*)::bigint AS count FROM "whatsapp_sessions" WHERE ai_agent_id IS NULL AND tenant_id = $1::uuid`,
       tenantId,
     );
-    console.log(`[Plan] UPDATE whatsapp_sessions SET ai_agent_id='${agentId}' WHERE ai_agent_id IS NULL  -- ${Number(row[0].count)} rows`);
+    console.log(
+      `[Plan] UPDATE whatsapp_sessions SET ai_agent_id='${agentId}' WHERE ai_agent_id IS NULL  -- ${Number(row[0].count)} rows`,
+    );
   } else {
     const affected = await prisma.$executeRawUnsafe(
       `UPDATE "whatsapp_sessions" SET ai_agent_id = $1::uuid WHERE ai_agent_id IS NULL AND tenant_id = $2::uuid`,
@@ -257,7 +275,9 @@ async function backfillRelations(
       `SELECT COUNT(*)::bigint AS count FROM "ai_knowledge_base" WHERE agent_id IS NULL AND tenant_id = $1::uuid`,
       tenantId,
     );
-    console.log(`[Plan] UPDATE ai_knowledge_base SET agent_id='${agentId}' WHERE agent_id IS NULL  -- ${Number(row[0].count)} rows`);
+    console.log(
+      `[Plan] UPDATE ai_knowledge_base SET agent_id='${agentId}' WHERE agent_id IS NULL  -- ${Number(row[0].count)} rows`,
+    );
   } else {
     const affected = await prisma.$executeRawUnsafe(
       `UPDATE "ai_knowledge_base" SET agent_id = $1::uuid WHERE agent_id IS NULL AND tenant_id = $2::uuid`,
@@ -281,7 +301,9 @@ async function backfillRelations(
        WHERE c.whatsapp_session_id IS NULL
        AND EXISTS (SELECT 1 FROM "whatsapp_sessions" s WHERE s.session_id = c.session_id)`,
     );
-    console.log(`[Plan] UPDATE whatsapp_conversations.whatsapp_session_id JOIN whatsapp_sessions  -- ${Number(matchableRow[0].count)} matchable, ${Number(orphanRow[0].count)} orphan (no matching session_id)`);
+    console.log(
+      `[Plan] UPDATE whatsapp_conversations.whatsapp_session_id JOIN whatsapp_sessions  -- ${Number(matchableRow[0].count)} matchable, ${Number(orphanRow[0].count)} orphan (no matching session_id)`,
+    );
   } else {
     const affected = await prisma.$executeRawUnsafe(
       `UPDATE "whatsapp_conversations" c
@@ -290,7 +312,9 @@ async function backfillRelations(
        WHERE c.whatsapp_session_id IS NULL
        AND s.session_id = c.session_id`,
     );
-    console.log(`[Apply] UPDATE whatsapp_conversations.whatsapp_session_id: ${affected} rows updated`);
+    console.log(
+      `[Apply] UPDATE whatsapp_conversations.whatsapp_session_id: ${affected} rows updated`,
+    );
 
     // Reportar huérfanos restantes (no es error, es información)
     const orphanRow: Array<{ count: bigint }> = await prisma.$queryRawUnsafe(
@@ -298,7 +322,9 @@ async function backfillRelations(
     );
     const orphan = Number(orphanRow[0].count);
     if (orphan > 0) {
-      console.log(`[Apply] WARN: ${orphan} whatsapp_conversations rows still have NULL whatsapp_session_id (no matching whatsapp_sessions.session_id). Drop de session_id VARCHAR queda para PR5 — verificar antes.`);
+      console.log(
+        `[Apply] WARN: ${orphan} whatsapp_conversations rows still have NULL whatsapp_session_id (no matching whatsapp_sessions.session_id). Drop de session_id VARCHAR queda para PR5 — verificar antes.`,
+      );
     }
   }
 }
@@ -311,7 +337,9 @@ async function ensureDefaultAiAgent(
 ): Promise<string> {
   const existing = await prisma.aiAgent.findFirst({ where: { tenantId } });
   if (existing) {
-    console.log(`[AiAgent] Found existing for tenant ${tenantId}: ${existing.id} ("${existing.name}"). Skip create.`);
+    console.log(
+      `[AiAgent] Found existing for tenant ${tenantId}: ${existing.id} ("${existing.name}"). Skip create.`,
+    );
     return existing.id;
   }
   const defaultName = `${tenantName} Default`;
@@ -343,20 +371,19 @@ async function patchClerkMetadata(
     console.warn('[Clerk PATCH] CLERK_SECRET_KEY not set — skipping PATCH.');
     return;
   }
-  console.log(`[Clerk PATCH] Plan: PATCH https://api.clerk.com/v1/organizations/${clerkOrgId}/metadata with public_metadata={tenant_id:"${tenantId}"}`);
+  console.log(
+    `[Clerk PATCH] Plan: PATCH https://api.clerk.com/v1/organizations/${clerkOrgId}/metadata with public_metadata={tenant_id:"${tenantId}"}`,
+  );
   if (!apply) return;
 
-  const res = await fetch(
-    `https://api.clerk.com/v1/organizations/${clerkOrgId}/metadata`,
-    {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${secret}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ public_metadata: { tenant_id: tenantId } }),
+  const res = await fetch(`https://api.clerk.com/v1/organizations/${clerkOrgId}/metadata`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${secret}`,
+      'Content-Type': 'application/json',
     },
-  );
+    body: JSON.stringify({ public_metadata: { tenant_id: tenantId } }),
+  });
   if (!res.ok) {
     const body = await res.text();
     console.error(`[Clerk PATCH] FAILED: ${res.status} ${body}`);
@@ -418,7 +445,9 @@ async function main() {
     } else {
       console.log('\n=== DRY-RUN summary ===');
       const totalPlanned = Object.values(planned).reduce((a, b) => a + b, 0);
-      console.log(`Would UPDATE ${totalPlanned} rows total across ${Object.keys(planned).length} tables.`);
+      console.log(
+        `Would UPDATE ${totalPlanned} rows total across ${Object.keys(planned).length} tables.`,
+      );
     }
 
     // 7. PATCH Clerk metadata if requested

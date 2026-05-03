@@ -236,9 +236,9 @@ describe('LeadsService', () => {
     it('throws not-found when remove affects 0 rows (cross-tenant or missing)', async () => {
       prisma.lead.updateMany.mockResolvedValue({ count: 0 });
 
-      await expect(service.remove('lead-of-other-tenant', TENANT_B)).rejects.toThrow(
-        /not found/i,
-      );
+      await expect(
+        service.remove('lead-of-other-tenant', TENANT_B),
+      ).rejects.toThrow(/not found/i);
     });
   });
 

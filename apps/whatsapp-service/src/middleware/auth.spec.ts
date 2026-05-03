@@ -58,11 +58,11 @@ describe('verifyServiceSignature', () => {
 
   it('lets requests through when signature + tenantId header are valid', () => {
     const body = JSON.stringify({ hello: 'world' });
-    const { timestamp: ts, signature: sig, tenantId } = signServiceRequest(
-      body,
-      SECRET,
-      TENANT_VALID
-    );
+    const {
+      timestamp: ts,
+      signature: sig,
+      tenantId,
+    } = signServiceRequest(body, SECRET, TENANT_VALID);
     const { req, res, next, statusSpy } = buildReqRes({
       headers: {
         'x-service-timestamp': ts,
@@ -94,11 +94,11 @@ describe('verifyServiceSignature', () => {
   it('rejects with 401 when the body has been tampered with', () => {
     const originalBody = JSON.stringify({ hello: 'world' });
     const tamperedBody = JSON.stringify({ hello: 'mundo' });
-    const { timestamp: ts, signature: sig, tenantId } = signServiceRequest(
-      originalBody,
-      SECRET,
-      TENANT_VALID
-    );
+    const {
+      timestamp: ts,
+      signature: sig,
+      tenantId,
+    } = signServiceRequest(originalBody, SECRET, TENANT_VALID);
     const { req, res, next, statusSpy } = buildReqRes({
       headers: {
         'x-service-timestamp': ts,
@@ -119,11 +119,7 @@ describe('verifyServiceSignature', () => {
   it('rejects with 401 when the tenant header has been swapped', () => {
     const body = JSON.stringify({ hello: 'world' });
     const ATTACKER_TENANT = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
-    const { timestamp: ts, signature: sig } = signServiceRequest(
-      body,
-      SECRET,
-      TENANT_VALID
-    );
+    const { timestamp: ts, signature: sig } = signServiceRequest(body, SECRET, TENANT_VALID);
     const { req, res, next, statusSpy } = buildReqRes({
       headers: {
         'x-service-timestamp': ts,
@@ -162,11 +158,7 @@ describe('verifyServiceSignature', () => {
 
   it('rejects with 403 when tenantId is not a valid UUID', () => {
     const body = JSON.stringify({ hello: 'world' });
-    const { timestamp: ts, signature: sig } = signServiceRequest(
-      body,
-      SECRET,
-      'not-a-uuid'
-    );
+    const { timestamp: ts, signature: sig } = signServiceRequest(body, SECRET, 'not-a-uuid');
     const { req, res, next, statusSpy } = buildReqRes({
       headers: {
         'x-service-timestamp': ts,
@@ -236,11 +228,11 @@ describe('verifyServiceSignature', () => {
 
   it('lets GET requests with empty body through when signed correctly', () => {
     const body = '';
-    const { timestamp: ts, signature: sig, tenantId } = signServiceRequest(
-      body,
-      SECRET,
-      TENANT_VALID
-    );
+    const {
+      timestamp: ts,
+      signature: sig,
+      tenantId,
+    } = signServiceRequest(body, SECRET, TENANT_VALID);
     const { req, res, next, statusSpy } = buildReqRes({
       method: 'GET',
       path: '/api/sessions',
@@ -260,11 +252,11 @@ describe('verifyServiceSignature', () => {
 
   it('rejects with 401 when the signature lacks the sha256= prefix', () => {
     const body = JSON.stringify({ hello: 'world' });
-    const { timestamp: ts, signature: sig, tenantId } = signServiceRequest(
-      body,
-      SECRET,
-      TENANT_VALID
-    );
+    const {
+      timestamp: ts,
+      signature: sig,
+      tenantId,
+    } = signServiceRequest(body, SECRET, TENANT_VALID);
     const sigWithoutPrefix = sig.replace(/^sha256=/, '');
     const { req, res, next, statusSpy } = buildReqRes({
       headers: {
@@ -283,11 +275,11 @@ describe('verifyServiceSignature', () => {
 
   it('rejects with 401 when the signature uses a different algorithm prefix', () => {
     const body = JSON.stringify({ hello: 'world' });
-    const { timestamp: ts, signature: sig, tenantId } = signServiceRequest(
-      body,
-      SECRET,
-      TENANT_VALID
-    );
+    const {
+      timestamp: ts,
+      signature: sig,
+      tenantId,
+    } = signServiceRequest(body, SECRET, TENANT_VALID);
     const wrongAlgo = sig.replace(/^sha256=/, 'md5=');
     const { req, res, next, statusSpy } = buildReqRes({
       headers: {

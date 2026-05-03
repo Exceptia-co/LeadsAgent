@@ -100,8 +100,7 @@ describe('requireOperatorRole', () => {
 });
 
 describe('assertSessionOwnership / requireSessionOwnership', () => {
-  const getSessionTenantIdMock =
-    SessionPersistenceService.getSessionTenantId as jest.Mock;
+  const getSessionTenantIdMock = SessionPersistenceService.getSessionTenantId as jest.Mock;
 
   beforeEach(() => {
     getSessionTenantIdMock.mockReset();

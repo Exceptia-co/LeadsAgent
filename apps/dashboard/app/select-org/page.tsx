@@ -19,9 +19,7 @@ export default async function SelectOrgPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="max-w-md w-full">
-        <h1 className="text-2xl font-semibold mb-6 text-center">
-          Selecciona tu organización
-        </h1>
+        <h1 className="text-2xl font-semibold mb-6 text-center">Selecciona tu organización</h1>
         <OrgPicker />
       </div>
     </div>

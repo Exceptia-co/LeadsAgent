@@ -90,10 +90,7 @@ export class ContextBuilder {
       // 2. Obtener historial de conversación si no está presente.
       // PR5a-bis: pass sessionId so the reader scopes by tenant.
       if (!enrichedContext.conversationHistory) {
-        const history = await this.fetchConversationHistory(
-          context.phoneNumber,
-          context.sessionId
-        );
+        const history = await this.fetchConversationHistory(context.phoneNumber, context.sessionId);
         enrichedContext.conversationHistory = history;
         dataSourcesUsed.push('conversation-history');
 

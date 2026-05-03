@@ -39,11 +39,7 @@ export class ClerkOrganizationsController {
       );
     }
 
-    const event = this.verifyWebhook(
-      payload,
-      request.headers,
-      webhookSecret,
-    );
+    const event = this.verifyWebhook(payload, request.headers, webhookSecret);
 
     this.logger.log(`Clerk organization webhook received: ${event.type}`);
     const result = await this.clerkOrganizationsService.handleWebhook(event);

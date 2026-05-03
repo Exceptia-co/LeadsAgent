@@ -461,8 +461,7 @@ class DatabaseService {
 
     try {
       const tenantId =
-        opts?.tenantId ??
-        (opts?.sessionId ? await this.getSessionTenantId(opts.sessionId) : null);
+        opts?.tenantId ?? (opts?.sessionId ? await this.getSessionTenantId(opts.sessionId) : null);
       if (!tenantId) {
         logger.warn(
           `[UNSCOPED-READ] getConversationHistory(${phoneNumber}) without tenantId/sessionId — falling back to global phone scope. Update caller to pass opts.tenantId or opts.sessionId.`
@@ -863,10 +862,7 @@ class DatabaseService {
    *   - opts.tenantId omitted -> legacy global lookup, with WARN.
    *     Used only by tests/scripts; HTTP routes always pass tenantId.
    */
-  public async findLeadById(
-    leadId: string,
-    opts?: { tenantId?: string }
-  ): Promise<Lead | null> {
+  public async findLeadById(leadId: string, opts?: { tenantId?: string }): Promise<Lead | null> {
     if (!this.pool) {
       return null;
     }
@@ -1087,8 +1083,7 @@ class DatabaseService {
 
     try {
       const tenantId =
-        opts?.tenantId ??
-        (sessionId ? await this.getSessionTenantId(sessionId) : null);
+        opts?.tenantId ?? (sessionId ? await this.getSessionTenantId(sessionId) : null);
       if (!tenantId) {
         logger.warn(
           `[UNSCOPED-READ] getRecentConversations(${sessionId ?? 'no-session'}) without tenantId — falling back to global scope. Update caller to pass opts.tenantId or a tenant-bound sessionId.`
@@ -1203,18 +1198,16 @@ class DatabaseService {
    * which let a caller probe whitelist decisions for any tenant by
    * passing a sessionId.
    */
-  public async getWhitelistLogs(
-    options: {
-      tenantId: string;
-      limit?: number;
-      offset?: number;
-      phoneNumber?: string;
-      sessionId?: string;
-      decision?: 'ALLOWED' | 'BLOCKED';
-      startDate?: Date;
-      endDate?: Date;
-    }
-  ): Promise<any[]> {
+  public async getWhitelistLogs(options: {
+    tenantId: string;
+    limit?: number;
+    offset?: number;
+    phoneNumber?: string;
+    sessionId?: string;
+    decision?: 'ALLOWED' | 'BLOCKED';
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<any[]> {
     if (!this.pool) {
       return [];
     }
@@ -1290,14 +1283,12 @@ class DatabaseService {
    * by tenant_id; sessionId/dates remain optional filters within the
    * tenant scope.
    */
-  public async getWhitelistStats(
-    options: {
-      tenantId: string;
-      sessionId?: string;
-      startDate?: Date;
-      endDate?: Date;
-    }
-  ): Promise<any> {
+  public async getWhitelistStats(options: {
+    tenantId: string;
+    sessionId?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<any> {
     if (!this.pool) {
       return {
         totalDecisions: 0,
@@ -1480,10 +1471,7 @@ class DatabaseService {
 
   // Obtener conversación específica por ID.
   // PR5a-ter: tenant-scoped lead lookup; null on cross-tenant conv id.
-  public async getConversationById(
-    conversationId: string,
-    tenantId: string
-  ): Promise<any | null> {
+  public async getConversationById(conversationId: string, tenantId: string): Promise<any | null> {
     if (!this.prisma) return null;
     try {
       const phoneNumber = conversationId.replace('conv_', '');
@@ -2405,15 +2393,13 @@ class DatabaseService {
    * leaving it optional would re-open the global view that this PR
    * specifically closes.
    */
-  public async getProactiveMessages(
-    options: {
-      tenantId: string;
-      leadId?: string;
-      status?: string;
-      limit?: number;
-      offset?: number;
-    }
-  ): Promise<any[]> {
+  public async getProactiveMessages(options: {
+    tenantId: string;
+    leadId?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<any[]> {
     if (!this.pool) {
       return this.getMockProactiveMessages(options);
     }

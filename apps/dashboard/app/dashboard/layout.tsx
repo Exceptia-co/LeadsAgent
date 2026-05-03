@@ -146,7 +146,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     afterCreateOrganizationUrl="/dashboard"
                     appearance={{
                       elements: {
-                        organizationSwitcherTrigger: "w-full justify-start px-2 py-1.5 rounded hover:bg-gray-50",
+                        organizationSwitcherTrigger:
+                          "w-full justify-start px-2 py-1.5 rounded hover:bg-gray-50",
                       },
                     }}
                   />
@@ -217,7 +218,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     afterCreateOrganizationUrl="/dashboard"
                     appearance={{
                       elements: {
-                        organizationSwitcherTrigger: "w-full justify-start px-2 py-1.5 rounded hover:bg-gray-50",
+                        organizationSwitcherTrigger:
+                          "w-full justify-start px-2 py-1.5 rounded hover:bg-gray-50",
                       },
                     }}
                   />

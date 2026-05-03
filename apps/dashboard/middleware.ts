@@ -35,9 +35,7 @@ export default clerkMiddleware(async (auth, request) => {
     // Solo "/" llama auth() y redirige según orgId
     const { userId, orgId } = await auth();
     if (userId && nextUrl.pathname === "/") {
-      return NextResponse.redirect(
-        new URL(orgId ? "/dashboard" : "/select-org", request.url),
-      );
+      return NextResponse.redirect(new URL(orgId ? "/dashboard" : "/select-org", request.url));
     }
     return NextResponse.next();
   }

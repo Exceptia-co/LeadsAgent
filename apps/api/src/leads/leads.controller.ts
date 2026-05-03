@@ -89,10 +89,7 @@ export class LeadsController {
   @ApiOperation({ summary: 'Get a lead by ID' })
   @ApiResponse({ status: 200, description: 'Return the lead.' })
   @ApiResponse({ status: 404, description: 'Lead not found.' })
-  findOne(
-    @Param('id') id: string,
-    @CurrentUser() user: { tenantId?: string },
-  ) {
+  findOne(@Param('id') id: string, @CurrentUser() user: { tenantId?: string }) {
     return this.leadsService.findOne(id, user.tenantId!);
   }
 

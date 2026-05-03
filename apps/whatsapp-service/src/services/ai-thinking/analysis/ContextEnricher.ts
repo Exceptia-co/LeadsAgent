@@ -33,11 +33,7 @@ export class ContextEnricher implements IContextEnricher {
       // PR5a-bis: pass sessionId so the reader can derive tenantId and
       // scope the query — prevents cross-tenant context leak into the AI.
       if (context.phoneNumber) {
-        await this.enrichWithConversationHistory(
-          enriched,
-          context.phoneNumber,
-          context.sessionId
-        );
+        await this.enrichWithConversationHistory(enriched, context.phoneNumber, context.sessionId);
         await this.enrichWithLeadProfile(enriched, context.phoneNumber);
       }
 

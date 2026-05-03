@@ -20,11 +20,7 @@ import type { NextFunction, Request, Response } from 'express';
 import SessionPersistenceService from '../services/SessionPersistenceService';
 import { logger } from '../utils/logger';
 
-export function requireTenantContext(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void {
+export function requireTenantContext(req: Request, res: Response, next: NextFunction): void {
   if (!req.tenantId) {
     res.status(403).json({ success: false, error: 'tenant context required' });
     return;
@@ -100,11 +96,7 @@ export async function assertSessionOwnership(
  * because the dashboard signs with the user's tenantId, not the operator
  * sentinel.
  */
-export function requireOperatorRole(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void {
+export function requireOperatorRole(req: Request, res: Response, next: NextFunction): void {
   const operatorTenant = process.env.WHATSAPP_OPERATOR_HMAC_TENANT_ID?.trim();
   if (!operatorTenant) {
     res.status(403).json({
@@ -115,9 +107,7 @@ export function requireOperatorRole(
     return;
   }
   if (!req.tenantId || req.tenantId !== operatorTenant) {
-    res
-      .status(403)
-      .json({ success: false, error: 'operator role required' });
+    res.status(403).json({ success: false, error: 'operator role required' });
     return;
   }
   next();

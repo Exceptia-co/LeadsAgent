@@ -172,15 +172,13 @@ export class AuthAuditLogger {
    * Obtener estadísticas de autorización.
    * PR5a-quater: tenantId required to forward to DatabaseService.
    */
-  public async getAuthorizationStats(
-    options: {
-      tenantId: string;
-      startDate?: Date;
-      endDate?: Date;
-      sessionId?: string;
-      includeDetailedBreakdown?: boolean;
-    }
-  ): Promise<{
+  public async getAuthorizationStats(options: {
+    tenantId: string;
+    startDate?: Date;
+    endDate?: Date;
+    sessionId?: string;
+    includeDetailedBreakdown?: boolean;
+  }): Promise<{
     totalDecisions: number;
     allowedCount: number;
     blockedCount: number;

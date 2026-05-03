@@ -367,39 +367,35 @@ router.get('/conversations', requireTenantContext, async (req, res) => {
 // Obtener mensajes de una conversación específica.
 // PR5a-ter: tenant-scoped — getConversationMessages filters by tenantId
 // so a conversationId from another tenant returns 404.
-router.get(
-  '/conversations/:conversationId/messages',
-  requireTenantContext,
-  async (req, res) => {
-    try {
-      const { conversationId } = req.params;
-      const { limit = 50, offset = 0 } = req.query;
+router.get('/conversations/:conversationId/messages', requireTenantContext, async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { limit = 50, offset = 0 } = req.query;
 
-      const { default: DatabaseService } = await import('../services/DatabaseService');
-      const result = await DatabaseService.getConversationMessages(
-        conversationId,
-        req.tenantId!,
-        Number(limit),
-        Number(offset)
-      );
+    const { default: DatabaseService } = await import('../services/DatabaseService');
+    const result = await DatabaseService.getConversationMessages(
+      conversationId,
+      req.tenantId!,
+      Number(limit),
+      Number(offset)
+    );
 
-      if (!result.conversation) {
-        return res.status(404).json({
-          success: false,
-          error: 'Conversation not found',
-        });
-      }
-
-      res.json(result);
-    } catch (error) {
-      console.error('Error getting conversation messages:', error);
-      res.status(500).json({
+    if (!result.conversation) {
+      return res.status(404).json({
         success: false,
-        error: 'Error getting conversation messages',
+        error: 'Conversation not found',
       });
     }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error getting conversation messages:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error getting conversation messages',
+    });
   }
-);
+});
 
 // Enviar mensaje en una conversación específica.
 //
@@ -408,76 +404,61 @@ router.get(
 // it belongs to req.tenantId before sending. Without this, knowledge of
 // a sessionId would let a tenant send through another tenant's WhatsApp
 // session.
-router.post(
-  '/conversations/:conversationId/send',
-  requireTenantContext,
-  async (req, res) => {
-    try {
-      const { conversationId } = req.params;
-      const { sessionId, message } = req.body;
+router.post('/conversations/:conversationId/send', requireTenantContext, async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    const { sessionId, message } = req.body;
 
-      if (!sessionId || !message) {
-        return res.status(400).json({
-          success: false,
-          error: 'sessionId and message are required',
-        });
-      }
-
-      const ownsSession = await assertSessionOwnership(sessionId, req.tenantId!);
-      if (!ownsSession) {
-        return res
-          .status(404)
-          .json({ success: false, error: 'Session not found' });
-      }
-
-      // Verify the conversation also belongs to this tenant.
-      const { default: DatabaseService } = await import('../services/DatabaseService');
-      const conversation = await DatabaseService.getConversationById(
-        conversationId,
-        req.tenantId!
-      );
-      if (!conversation) {
-        return res
-          .status(404)
-          .json({ success: false, error: 'Conversation not found' });
-      }
-
-      // Extraer número de teléfono del ID de conversación
-      const phoneNumber = conversationId.replace('conv_', '');
-
-      // Importar el servicio de WhatsApp
-      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-
-      // Formatear número para WhatsApp
-      const formattedNumber = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
-
-      // Enviar mensaje
-      const result = await WhatsAppService.sendMessage(
-        sessionId,
-        formattedNumber,
-        message
-      );
-
-      if (result.success) {
-        res.json({
-          success: true,
-          messageId: result.messageId,
-        });
-      } else {
-        res.status(500).json({
-          success: false,
-          error: result.error || 'Failed to send message',
-        });
-      }
-    } catch (error) {
-      console.error('Error sending message in conversation:', error);
-      res.status(500).json({
+    if (!sessionId || !message) {
+      return res.status(400).json({
         success: false,
-        error: 'Error sending message',
+        error: 'sessionId and message are required',
       });
     }
+
+    const ownsSession = await assertSessionOwnership(sessionId, req.tenantId!);
+    if (!ownsSession) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+
+    // Verify the conversation also belongs to this tenant.
+    const { default: DatabaseService } = await import('../services/DatabaseService');
+    const conversation = await DatabaseService.getConversationById(conversationId, req.tenantId!);
+    if (!conversation) {
+      return res.status(404).json({ success: false, error: 'Conversation not found' });
+    }
+
+    // Extraer número de teléfono del ID de conversación
+    const phoneNumber = conversationId.replace('conv_', '');
+
+    // Importar el servicio de WhatsApp
+    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+
+    // Formatear número para WhatsApp
+    const formattedNumber = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
+
+    // Enviar mensaje
+    const result = await WhatsAppService.sendMessage(sessionId, formattedNumber, message);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        messageId: result.messageId,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error || 'Failed to send message',
+      });
+    }
+  } catch (error) {
+    console.error('Error sending message in conversation:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error sending message',
+    });
   }
-);
+});
 
 // Conversations management endpoints (legacy compat).
 //
@@ -491,14 +472,10 @@ router.get('/conversations/:phoneNumber', requireTenantContext, async (req, res)
     const { limit = 50, sessionId } = req.query;
 
     const { default: DatabaseService } = await import('../services/DatabaseService');
-    const history = await DatabaseService.getConversationHistory(
-      phoneNumber,
-      Number(limit),
-      {
-        tenantId: req.tenantId!,
-        sessionId: typeof sessionId === 'string' ? sessionId : undefined,
-      }
-    );
+    const history = await DatabaseService.getConversationHistory(phoneNumber, Number(limit), {
+      tenantId: req.tenantId!,
+      sessionId: typeof sessionId === 'string' ? sessionId : undefined,
+    });
 
     res.json({
       success: true,
@@ -529,11 +506,9 @@ router.post('/conversations', requireTenantContext, async (req, res) => {
         Number(limit)
       );
     } else {
-      conversations = await DatabaseService.getRecentConversations(
-        sessionId,
-        Number(limit),
-        { tenantId: req.tenantId! }
-      );
+      conversations = await DatabaseService.getRecentConversations(sessionId, Number(limit), {
+        tenantId: req.tenantId!,
+      });
     }
 
     res.json({
@@ -696,7 +671,9 @@ router.post('/proactive-messages', requireTenantContext, rateLimitBySession, asy
     const { PrismaClient } = await import('@leadcrm/db');
     // Reuse the singleton on DatabaseService rather than spawning a new
     // PrismaClient per request — see DatabaseService constructor.
-    const prismaClient = (DatabaseService as unknown as { prisma: InstanceType<typeof PrismaClient> }).prisma;
+    const prismaClient = (
+      DatabaseService as unknown as { prisma: InstanceType<typeof PrismaClient> }
+    ).prisma;
     if (!prismaClient) {
       return res.status(500).json({
         success: false,
@@ -896,164 +873,170 @@ router.post(
   requireTenantContext,
   rateLimitBySession,
   async (req, res) => {
-  try {
-    const { leadIds, templateId, sessionId, content, variables } = req.body;
+    try {
+      const { leadIds, templateId, sessionId, content, variables } = req.body;
 
-    if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Se requiere un array de leadIds',
-      });
-    }
-
-    if (!sessionId) {
-      return res.status(400).json({
-        success: false,
-        error: 'sessionId is required',
-      });
-    }
-
-    // PR5a-ter: session ownership before bulk loop
-    const ownsSession = await assertSessionOwnership(sessionId, req.tenantId!);
-    if (!ownsSession) {
-      return res.status(404).json({ success: false, error: 'Session not found' });
-    }
-
-    // T2.4: throttle adaptativo según uso actual de la cuota por sesión
-    const throttleCtx = (req as typeof req & { sessionThrottle?: SessionThrottleContext })
-      .sessionThrottle;
-    const baseDelayMs = 2000;
-    const adaptiveDelayMs = baseDelayMs * (throttleCtx?.throttleFactor ?? 1);
-    if (throttleCtx && throttleCtx.throttleFactor > 1) {
-      console.log(
-        `⚠️ Session ${throttleCtx.sessionId} at ${throttleCtx.usageAfter}/${throttleCtx.quota} → delay x${throttleCtx.throttleFactor}`
-      );
-    }
-
-    const results = {
-      success: 0,
-      failed: 0,
-      errors: [] as string[],
-    };
-
-    // Importar servicios
-    const { default: DatabaseService } = await import('../services/DatabaseService');
-    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-    // PR5a-ter: tenant-scoped Prisma client used for the per-lead lookup
-    // inside the loop (cross-tenant leadIds are silently skipped as
-    // "Lead no encontrado").
-    const prismaClient = (DatabaseService as unknown as {
-      prisma: { lead: { findFirst: (args: any) => Promise<any> } };
-    }).prisma;
-
-    // Procesar cada lead
-    for (const leadId of leadIds) {
-      try {
-        console.log(`🔄 Processing lead: ${leadId}`);
-
-        // PR5a-ter: tenant-scoped lookup (cross-tenant -> not found).
-        const lead = prismaClient
-          ? await prismaClient.lead.findFirst({
-              where: { id: leadId, tenantId: req.tenantId!, deletedAt: null },
-            })
-          : null;
-        if (!lead) {
-          console.log(`❌ Lead not found: ${leadId}`);
-          results.failed++;
-          results.errors.push(`Lead ${leadId}: Lead no encontrado`);
-          continue;
-        }
-
-        console.log(`📋 Lead found: ${lead.name} (${lead.phone})`);
-        let messageContent = content || '';
-
-        // Si se especifica un template, procesarlo
-        if (templateId) {
-          const template = await DatabaseService.getTemplate(templateId);
-          if (template) {
-            messageContent = template.content;
-          }
-        }
-
-        // SIEMPRE reemplazar variables usando el servicio mejorado
-        const leadVariables = {
-          nombre: lead.name || 'Usuario',
-          telefono: lead.phone,
-          email: lead.email || '',
-          estado: lead.status || '',
-          origen: lead.source || '',
-          ...variables, // Las variables custom sobrescriben las por defecto
-        };
-
-        // Usar el método de DatabaseService que incluye todas las variables (sistema + dinámicas)
-        messageContent = DatabaseService.replaceTemplateVariables(messageContent, leadVariables);
-
-        // Guardar el mensaje en la base de datos (PR5a-ter: tenantId required)
-        const proactiveMessageId = await DatabaseService.createProactiveMessage({
-          tenantId: req.tenantId!,
-          leadId,
-          templateId: templateId || undefined,
-          sessionId,
-          phoneNumber: lead.phone,
-          content: messageContent,
-          createdBy: 'system',
+      if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Se requiere un array de leadIds',
         });
+      }
 
-        // Enviar el mensaje vía WhatsApp
-        console.log(`📤 Sending message to: ${lead.phone} via session: ${sessionId}`);
-        console.log(`💬 Message content: ${messageContent.substring(0, 50)}...`);
+      if (!sessionId) {
+        return res.status(400).json({
+          success: false,
+          error: 'sessionId is required',
+        });
+      }
 
-        // Add delay (adaptive based on session quota usage — see T2.4)
-        if (leadIds.indexOf(leadId) > 0) {
-          console.log(`⏱️ Adding ${adaptiveDelayMs}ms delay to avoid rate limiting...`);
-          await new Promise(resolve => setTimeout(resolve, adaptiveDelayMs));
-        }
+      // PR5a-ter: session ownership before bulk loop
+      const ownsSession = await assertSessionOwnership(sessionId, req.tenantId!);
+      if (!ownsSession) {
+        return res.status(404).json({ success: false, error: 'Session not found' });
+      }
 
-        const sendResult = await WhatsAppService.sendMessage(sessionId, lead.phone, messageContent);
-
-        console.log(`📧 Message sent result for ${lead.phone}:`, sendResult);
-
-        if (sendResult.success && proactiveMessageId) {
-          await DatabaseService.updateProactiveMessageStatus(proactiveMessageId, 'sent');
-          results.success++;
-        } else {
-          if (proactiveMessageId) {
-            await DatabaseService.updateProactiveMessageStatus(
-              proactiveMessageId,
-              'failed',
-              sendResult.error || 'Error sending message via WhatsApp'
-            );
-          }
-          results.failed++;
-          results.errors.push(
-            `Lead ${leadId}: ${sendResult.error || 'Error enviando vía WhatsApp'}`
-          );
-        }
-      } catch (error) {
-        console.error(`Error processing lead ${leadId}:`, error);
-        results.failed++;
-        results.errors.push(
-          `Lead ${leadId}: ${error instanceof Error ? error.message : 'Error desconocido'}`
+      // T2.4: throttle adaptativo según uso actual de la cuota por sesión
+      const throttleCtx = (req as typeof req & { sessionThrottle?: SessionThrottleContext })
+        .sessionThrottle;
+      const baseDelayMs = 2000;
+      const adaptiveDelayMs = baseDelayMs * (throttleCtx?.throttleFactor ?? 1);
+      if (throttleCtx && throttleCtx.throttleFactor > 1) {
+        console.log(
+          `⚠️ Session ${throttleCtx.sessionId} at ${throttleCtx.usageAfter}/${throttleCtx.quota} → delay x${throttleCtx.throttleFactor}`
         );
       }
-    }
 
-    res.json({
-      success: true,
-      data: {
-        total: leadIds.length,
-        successful: results.success,
-        failed: results.failed,
-        errors: results.errors,
-      },
-    });
-  } catch (error) {
-    console.error('Error sending bulk proactive messages:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error sending bulk proactive messages',
-    });
-  }
+      const results = {
+        success: 0,
+        failed: 0,
+        errors: [] as string[],
+      };
+
+      // Importar servicios
+      const { default: DatabaseService } = await import('../services/DatabaseService');
+      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+      // PR5a-ter: tenant-scoped Prisma client used for the per-lead lookup
+      // inside the loop (cross-tenant leadIds are silently skipped as
+      // "Lead no encontrado").
+      const prismaClient = (
+        DatabaseService as unknown as {
+          prisma: { lead: { findFirst: (args: any) => Promise<any> } };
+        }
+      ).prisma;
+
+      // Procesar cada lead
+      for (const leadId of leadIds) {
+        try {
+          console.log(`🔄 Processing lead: ${leadId}`);
+
+          // PR5a-ter: tenant-scoped lookup (cross-tenant -> not found).
+          const lead = prismaClient
+            ? await prismaClient.lead.findFirst({
+                where: { id: leadId, tenantId: req.tenantId!, deletedAt: null },
+              })
+            : null;
+          if (!lead) {
+            console.log(`❌ Lead not found: ${leadId}`);
+            results.failed++;
+            results.errors.push(`Lead ${leadId}: Lead no encontrado`);
+            continue;
+          }
+
+          console.log(`📋 Lead found: ${lead.name} (${lead.phone})`);
+          let messageContent = content || '';
+
+          // Si se especifica un template, procesarlo
+          if (templateId) {
+            const template = await DatabaseService.getTemplate(templateId);
+            if (template) {
+              messageContent = template.content;
+            }
+          }
+
+          // SIEMPRE reemplazar variables usando el servicio mejorado
+          const leadVariables = {
+            nombre: lead.name || 'Usuario',
+            telefono: lead.phone,
+            email: lead.email || '',
+            estado: lead.status || '',
+            origen: lead.source || '',
+            ...variables, // Las variables custom sobrescriben las por defecto
+          };
+
+          // Usar el método de DatabaseService que incluye todas las variables (sistema + dinámicas)
+          messageContent = DatabaseService.replaceTemplateVariables(messageContent, leadVariables);
+
+          // Guardar el mensaje en la base de datos (PR5a-ter: tenantId required)
+          const proactiveMessageId = await DatabaseService.createProactiveMessage({
+            tenantId: req.tenantId!,
+            leadId,
+            templateId: templateId || undefined,
+            sessionId,
+            phoneNumber: lead.phone,
+            content: messageContent,
+            createdBy: 'system',
+          });
+
+          // Enviar el mensaje vía WhatsApp
+          console.log(`📤 Sending message to: ${lead.phone} via session: ${sessionId}`);
+          console.log(`💬 Message content: ${messageContent.substring(0, 50)}...`);
+
+          // Add delay (adaptive based on session quota usage — see T2.4)
+          if (leadIds.indexOf(leadId) > 0) {
+            console.log(`⏱️ Adding ${adaptiveDelayMs}ms delay to avoid rate limiting...`);
+            await new Promise(resolve => setTimeout(resolve, adaptiveDelayMs));
+          }
+
+          const sendResult = await WhatsAppService.sendMessage(
+            sessionId,
+            lead.phone,
+            messageContent
+          );
+
+          console.log(`📧 Message sent result for ${lead.phone}:`, sendResult);
+
+          if (sendResult.success && proactiveMessageId) {
+            await DatabaseService.updateProactiveMessageStatus(proactiveMessageId, 'sent');
+            results.success++;
+          } else {
+            if (proactiveMessageId) {
+              await DatabaseService.updateProactiveMessageStatus(
+                proactiveMessageId,
+                'failed',
+                sendResult.error || 'Error sending message via WhatsApp'
+              );
+            }
+            results.failed++;
+            results.errors.push(
+              `Lead ${leadId}: ${sendResult.error || 'Error enviando vía WhatsApp'}`
+            );
+          }
+        } catch (error) {
+          console.error(`Error processing lead ${leadId}:`, error);
+          results.failed++;
+          results.errors.push(
+            `Lead ${leadId}: ${error instanceof Error ? error.message : 'Error desconocido'}`
+          );
+        }
+      }
+
+      res.json({
+        success: true,
+        data: {
+          total: leadIds.length,
+          successful: results.success,
+          failed: results.failed,
+          errors: results.errors,
+        },
+      });
+    } catch (error) {
+      console.error('Error sending bulk proactive messages:', error);
+      res.status(500).json({
+        success: false,
+        error: 'Error sending bulk proactive messages',
+      });
+    }
   }
 );
 

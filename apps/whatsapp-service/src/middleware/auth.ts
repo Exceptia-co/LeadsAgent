@@ -25,8 +25,7 @@ import { logger } from '../utils/logger';
 
 const MAX_SIGNATURE_AGE_MS = 5 * 60 * 1000;
 const SIGNATURE_PREFIX = 'sha256=';
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const PUBLIC_PATH_PREFIXES = ['/health', '/api/health'];
 
@@ -63,9 +62,7 @@ export function verifyServiceSignature(req: Request, res: Response, next: NextFu
       return;
     }
 
-    const isPublicPath = PUBLIC_PATH_PREFIXES.some(prefix =>
-      req.path.startsWith(prefix)
-    );
+    const isPublicPath = PUBLIC_PATH_PREFIXES.some(prefix => req.path.startsWith(prefix));
     if (isPublicPath) {
       next();
       return;

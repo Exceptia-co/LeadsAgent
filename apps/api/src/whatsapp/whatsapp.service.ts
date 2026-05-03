@@ -41,7 +41,10 @@ export class WhatsAppService {
   // also cached so we don't re-query for sessions that haven't been
   // backfilled yet, but only for the same TTL — a backfill mid-flight will
   // self-heal in ≤60s.
-  private static sessionTenantCache = new Map<string, SessionTenantCacheEntry>();
+  private static sessionTenantCache = new Map<
+    string,
+    SessionTenantCacheEntry
+  >();
 
   constructor(
     private prisma: PrismaService,

@@ -30,7 +30,9 @@ export class ClerkOrganizationsService {
         return this.syncOrganization(event.data as ClerkOrganizationData);
 
       case 'organization.deleted':
-        return this.deleteOrganization(event.data as ClerkDeletedOrganizationData);
+        return this.deleteOrganization(
+          event.data as ClerkDeletedOrganizationData,
+        );
 
       default:
         this.logger.warn(`Unhandled Clerk organization event: ${event.type}`);

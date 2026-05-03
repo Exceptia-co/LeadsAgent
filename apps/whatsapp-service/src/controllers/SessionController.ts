@@ -38,9 +38,7 @@ export class SessionController {
     if (!req.tenantId) {
       // The HMAC middleware should have rejected this already; defense in
       // depth in case a route is mounted before the middleware.
-      res
-        .status(403)
-        .json({ success: false, error: 'tenant context required' });
+      res.status(403).json({ success: false, error: 'tenant context required' });
       return null;
     }
     return req.tenantId;
@@ -67,8 +65,7 @@ export class SessionController {
       // will compose it with tenantId). Returning 409 is friendlier than
       // letting WhatsAppService.createSession blow up on its uniqueness
       // check.
-      const existingOwner =
-        await SessionPersistenceService.getSessionTenantId(sessionId);
+      const existingOwner = await SessionPersistenceService.getSessionTenantId(sessionId);
       if (existingOwner !== null && existingOwner !== tenantId) {
         res.status(409).json({
           success: false,
@@ -109,9 +106,7 @@ export class SessionController {
 
       const ownership = await this.assertSessionOwnership(sessionId, tenantId);
       if (ownership !== 'ok') {
-        res
-          .status(404)
-          .json({ success: false, error: 'Session not found' });
+        res.status(404).json({ success: false, error: 'Session not found' });
         return;
       }
 
@@ -158,8 +153,7 @@ export class SessionController {
       // PR5a-bis: build the visible set from DB-by-tenant, then enrich
       // with in-memory state. The previous code returned in-memory
       // sessions globally — sessions of other tenants were leaking.
-      const persisted =
-        await SessionPersistenceService.loadActiveSessionsForTenant(tenantId);
+      const persisted = await SessionPersistenceService.loadActiveSessionsForTenant(tenantId);
       const memorySessions = await WhatsAppService.getAllSessions();
 
       const sessions = persisted.map(p => {
@@ -216,9 +210,7 @@ export class SessionController {
 
       const ownership = await this.assertSessionOwnership(sessionId, tenantId);
       if (ownership !== 'ok') {
-        res
-          .status(404)
-          .json({ success: false, error: 'Session not found' });
+        res.status(404).json({ success: false, error: 'Session not found' });
         return;
       }
 
@@ -247,9 +239,7 @@ export class SessionController {
 
       const ownership = await this.assertSessionOwnership(sessionId, tenantId);
       if (ownership !== 'ok') {
-        res
-          .status(404)
-          .json({ success: false, error: 'Session not found' });
+        res.status(404).json({ success: false, error: 'Session not found' });
         return;
       }
 
@@ -283,9 +273,7 @@ export class SessionController {
 
       const ownership = await this.assertSessionOwnership(sessionId, tenantId);
       if (ownership !== 'ok') {
-        res
-          .status(404)
-          .json({ success: false, error: 'Session not found' });
+        res.status(404).json({ success: false, error: 'Session not found' });
         return;
       }
 
@@ -342,9 +330,7 @@ export class SessionController {
 
       const ownership = await this.assertSessionOwnership(sessionId, tenantId);
       if (ownership !== 'ok') {
-        res
-          .status(404)
-          .json({ success: false, error: 'Session not found' });
+        res.status(404).json({ success: false, error: 'Session not found' });
         return;
       }
 
@@ -376,17 +362,14 @@ export class SessionController {
       const tenantId = this.requireTenant(req, res);
       if (!tenantId) return;
 
-      logger.info(
-        `🔄 Manual session restore requested for tenant ${tenantId}`
-      );
+      logger.info(`🔄 Manual session restore requested for tenant ${tenantId}`);
 
       // PR5a-bis: SessionRecoveryService.recoverAllSessions still
       // operates globally on boot. The tenant-scoped HTTP path here is
       // narrowed to the caller's sessions only. If we ever expose this
       // route to non-admin users, this scoping is what stops one tenant
       // from triggering reconnection loops on another tenant's sessions.
-      const tenantSessions =
-        await SessionPersistenceService.loadActiveSessionsForTenant(tenantId);
+      const tenantSessions = await SessionPersistenceService.loadActiveSessionsForTenant(tenantId);
 
       let recovered = 0;
       for (const s of tenantSessions) {
@@ -457,8 +440,7 @@ export class SessionController {
       const tenantId = this.requireTenant(req, res);
       if (!tenantId) return;
 
-      const sessions =
-        await SessionPersistenceService.loadActiveSessionsForTenant(tenantId);
+      const sessions = await SessionPersistenceService.loadActiveSessionsForTenant(tenantId);
 
       const backup = {
         timestamp: new Date().toISOString(),
@@ -518,18 +500,13 @@ export class SessionController {
       const memorySessions = await WhatsAppService.getAllSessions();
 
       const enhancedSessions = paginatedSessions.map(persistedSession => {
-        const memorySession = memorySessions.find(
-          m => m.id === persistedSession.sessionId
-        );
+        const memorySession = memorySessions.find(m => m.id === persistedSession.sessionId);
 
         return {
           ...persistedSession,
           inMemory: !!memorySession,
           memoryStatus: memorySession?.status || 'not_loaded',
-          syncStatus:
-            memorySession?.status === persistedSession.status
-              ? 'synced'
-              : 'out_of_sync',
+          syncStatus: memorySession?.status === persistedSession.status ? 'synced' : 'out_of_sync',
         };
       });
 
@@ -606,9 +583,7 @@ export class SessionController {
 
       const ownership = await this.assertSessionOwnership(sessionId, tenantId);
       if (ownership !== 'ok') {
-        res
-          .status(404)
-          .json({ success: false, error: 'Session not found' });
+        res.status(404).json({ success: false, error: 'Session not found' });
         return;
       }
 
@@ -644,9 +619,7 @@ export class SessionController {
 
       const ownership = await this.assertSessionOwnership(sessionId, tenantId);
       if (ownership !== 'ok') {
-        res
-          .status(404)
-          .json({ success: false, error: 'Session not found' });
+        res.status(404).json({ success: false, error: 'Session not found' });
         return;
       }
 
@@ -693,9 +666,7 @@ export class SessionController {
       if (typeof sessionId === 'string' && sessionId) {
         const ownership = await this.assertSessionOwnership(sessionId, tenantId);
         if (ownership !== 'ok') {
-          res
-            .status(404)
-            .json({ success: false, error: 'Session not found' });
+          res.status(404).json({ success: false, error: 'Session not found' });
           return;
         }
       }

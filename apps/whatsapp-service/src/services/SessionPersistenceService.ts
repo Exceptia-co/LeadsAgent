@@ -117,9 +117,7 @@ export class SessionPersistenceService {
    * with tenantId=null are EXCLUDED — they're legacy pre-backfill rows
    * that should not leak through any tenant view.
    */
-  async loadActiveSessionsForTenant(
-    tenantId: string
-  ): Promise<SessionPersistenceData[]> {
+  async loadActiveSessionsForTenant(tenantId: string): Promise<SessionPersistenceData[]> {
     try {
       const sessions = await this.prisma.whatsAppSession.findMany({
         where: {
@@ -132,10 +130,7 @@ export class SessionPersistenceService {
       });
       return sessions.map(this.mapToSessionData);
     } catch (error) {
-      logger.error(
-        `Error loading active sessions for tenant ${tenantId}:`,
-        error
-      );
+      logger.error(`Error loading active sessions for tenant ${tenantId}:`, error);
       return [];
     }
   }

@@ -38,7 +38,9 @@ describe('ClerkOrganizationsService', () => {
 
     service = new ClerkOrganizationsService(
       prisma as any,
-      { get: jest.fn().mockReturnValue('sk_test_123') } as unknown as ConfigService,
+      {
+        get: jest.fn().mockReturnValue('sk_test_123'),
+      } as unknown as ConfigService,
     );
   });
 
