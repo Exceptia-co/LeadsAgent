@@ -1,9 +1,9 @@
 # Plan: WhatsApp Agent Multi-Tenant + IA Configurable
 
 - **Fecha inicio:** 2026-04-19
-- **Última revisión:** 2026-05-03 (v7.6 — status update tras PR #11 merge + Clerk Production webhook configurado)
+- **Última revisión:** 2026-05-04 (v7.7 — B2.0 completado: tenant-scope en DB + pipeline IA/autorización)
 - **Estado del documento:** cerrado para ejecución. §§1–11 son la única fuente de verdad. Validado por Codex en 12 rondas de review + auto-crítica anti-overkill. Ruta de ejecución: **completa**
-- **Estado:** **Fase A desplegada + Fase B.1 deployada en producción**. PR #11 (commit `dcf81dd` = "feat(b1): multi-tenant foundation + runtime enforcement (PR1-PR5a combo)") mergeado a `main` 2026-05-02 + 4 follow-up Vercel-Prisma fixes. Tenant `EscortsHub` provisionado en Supabase prod (`923493fc-ffe9-49c6-9963-74e24eae0689` ↔ `org_3DDKQD4ThoPcwJnHC5mWTmrr5L3`); 731 filas backfilled. Clerk Production webhook configurado 2026-05-03 19:51 UTC con `CLERK_ORG_WEBHOOK_SECRET` en Hetzner; smoke real verde end-to-end con org `WebhookSmokeTest` (create + auto-update + delete). Items B.1 que quedan abiertos son destructive cleanups (PR5b) + JWT template (B1.2(a) Vía A) + Prisma extension global (B1.13) + ESLint rule (B1.14): los tres últimos son deuda técnica menor — PR5a optó por scoping manual per-service en vez de extension global. Detalles completos en `docs/deployment/multi-tenant-rollout.md`.
+- **Estado:** **Fase A desplegada + Fase B.1 deployada en producción + B2.0 completado (pendiente merge)**. B2.0 implementado en branch `feat/b2.0-tenant-scope-defense` (2 commits: `4c3eb8b` perimeter scoping + `ec928e2` pipeline threading). Scope: defense-in-depth en NestJS API lead/session updates, raw SQL templates/proactive/whitelist/training con tenantId obligatorio, pipeline IA/autorización con tenantId threaded desde sessionId a través de MessageContext → ContextEnricher/ContextBuilder/LeadValidator. Fix SQL injection en `cleanupOldTrainingInteractions`. 15 tests nuevos, API 45/45 + whatsapp-service 53/53 verdes. Siguiente tarea: B2.1 (SystemPromptService dinámico por agente). Items B.1 pendientes: destructive cleanups (PR5b) + B1.13/B1.14 (deuda menor). Detalles B.1 en `docs/deployment/multi-tenant-rollout.md`.
 - **Ruta seleccionada:** Completa (§§1–11)
 - **Owner:** Eduard S.
 - **Precede a:** `PRD-ESTABILIZACION.md` (cerrado 2026-04-18)
@@ -475,31 +475,16 @@ La fase se dividió tras revisión técnica (v5): era demasiado scope para una s
 
 #### Fase B.2 — Backend / runtime IA (2–3 días — aumentado por B2.0)
 
-- [ ] **B2.0.** **Refactor operaciones Prisma no cubiertas por extension** (ver §4.4 tabla de cobertura + §4.4 patrón transaccional). Archivos y cambios concretos:
-  - **Patrón obligatorio para services que HOY devuelven la entidad actualizada** (preserva contratos):
-    ```
-    1) row = findFirst({ where: { id, tenantId } })
-    2) si !row → throw new NotFoundException(404)
-    3) await updateMany({ where: { id, tenantId }, data })
-    4) updated = findFirst({ where: { id, tenantId } })   ← re-read
-    5) return updated   ← mismo contrato que update() antes
-    ```
-    Para `delete` que devolvía cuerpo: leer antes dentro de `$transaction`, luego `deleteMany` con `count===1`.
-  - `apps/api/src/leads/leads.service.ts`:
-    - Línea 18-20: `findUnique({where:{phone}})` → `findFirst({where:{phone, tenantId}})`
-    - Línea 129-131, 146-148, 205-206, 218-219: aplicar **patrón transaccional** (findFirst → updateMany → re-read) para no romper el contrato actual que devuelve el lead modificado
-  - `apps/api/src/whatsapp/whatsapp.service.ts`:
-    - Línea 75-77: `findUnique({where:{phone}})` → `findFirst({where:{phone, tenantId}})`
-    - Línea 120-121, 129-130: `update({where:{id:lead.id}})` → `updateMany({where:{id:lead.id, tenantId}})`
-  - `apps/api/src/templates/templates.service.ts`:
-    - Línea 25-27, 49-50, 64: `findUnique`/`update`/`delete` por `id` → `findFirst`/`updateMany`/`deleteMany` con `tenantId`
-  - `apps/whatsapp-service/src/services/DatabaseService.ts`: todas las queries raw con `this.pool.query(...)` añaden cláusula `AND tenant_id = $n` (B2.2 lo cubre para KB; aquí para las demás)
-  - Activar ESLint rule B1.14 en CI
+- [x] **B2.0.** **Tenant-scope en operaciones DB + pipeline IA/autorización** — completado en 2 commits en branch `feat/b2.0-tenant-scope-defense` (2026-05-04). Hallazgo: `leads.service.ts` y `templates.service.ts` ya estaban refactorizados por PR5a; el trabajo real fue en `whatsapp.service.ts` (NestJS) + `DatabaseService.ts` (raw SQL) + pipeline IA/autorización.
+  - **Commit 1** (`4c3eb8b`): defense-in-depth perimeter — NestJS API `lead.update` → `lead.updateMany` con tenantId (3 sites), `scopedSessionUpdate` helper para session lifecycle (3 handlers), DatabaseService raw SQL: templates/proactive con tenantId obligatorio en callers activos; whitelist/training con tenantId opcional y fallbacks legacy explícitos `[UNSCOPED-*]`. Fix SQL injection en `cleanupOldTrainingInteractions` (interpolación → parameterizado), 6 callers en routes actualizados, `AuthorizationContext` + `AuthAuditLogger` con tenantId, 15 tests nuevos.
+  - **Commit 2** (`ec928e2`): pipeline IA/autorización threading — `MessageContext` + `AIResponseContext` + tipos con `tenantId?: string`, `MessageHandler.processMessageWithAI` resuelve tenantId desde sessionId al inicio, `WhatsAppServiceSimple.checkPhoneNumberAllowedWithLog` resuelve tenantId para authorization pipeline, propagación a ambos `ContextEnricher` (`getAllLeads({tenantId})`), `ContextBuilder.fetchLeadData` (`findLeadByPhone(phone, {tenantId})`), `LeadValidator.findLeadInfo/createLeadFromAuthorization/updateLeadWhatsAppAuthorization` (todos con `{tenantId}` optional).
+  - **Status**: todos los calls a `getAllLeads()`/`findLeadByPhone()`/`createLead()`/`updateLeadWhatsAppAuth()` en el hot path ahora propagan tenantId. Sesiones legacy sin tenant obtienen warnings `[UNSCOPED-*]` sin romper. ESLint rule B1.14 sigue postponed (depende de B1.13).
+  - Tests: API 45/45, whatsapp-service 53/53, typecheck limpio.
 - [ ] **B2.1.** Refactor `SystemPromptService.buildSystemPrompt(aiAgentId, ctx)` con composición dinámica (capas 1–9 de §4.2)
 - [ ] **B2.2.** `DatabaseService.getKnowledgeBase(tenantId, aiAgentId, category?)` y `searchKnowledgeBase(tenantId, aiAgentId, query)`: **añadir parámetros obligatorios**; inyectar `WHERE tenant_id = $X AND ai_agent_id = $Y` en las queries SQL (líneas 1494-1637)
 - [ ] **B2.3.** `KnowledgeRetriever.retrieve(msg, intent, aiAgentId)`: propagar `aiAgentId` hasta `DatabaseService`
 - [ ] **B2.4.** `AIThinkingService.processWithThinking(msg, ctx)`: `ctx` lleva `aiAgentId` obligatorio; enriquece con `KnowledgeRetriever` scoped
-- [ ] **B2.5.** `EventDispatcher.onMessage`: al entrar un mensaje, lookup `sessionId → WhatsAppSession.tenant_id, ai_agent_id`. Pasar ambos a `MessageHandler.processMessageWithAI`
+- [ ] **B2.5.** `EventDispatcher.onMessage`: lookup `sessionId → WhatsAppSession.ai_agent_id` y pasar `aiAgentId` a `MessageHandler.processMessageWithAI`. **Nota**: la parte de `tenantId` ya fue absorbida por B2.0 commit 2 (`ec928e2`) — `MessageHandler` resuelve tenantId desde sessionId internamente. Solo queda cablear `aiAgentId` para el prompt dinámico
 - [ ] **B2.6.** `KnowledgeRetriever` extendido para filtrar también `AiProduct` por keywords/tags/rango de precio detectados → inyecta top-N al prompt (capa [6])
 - [ ] **B2.7.** Endpoints NestJS `GET/PUT /api/ai-agents/:agentId` + `GET /api/ai-agents` (protegidos por Clerk + TenantContextGuard)
 - [ ] **B2.8.** Endpoints NestJS CRUD `/api/ai-agents/:agentId/knowledge-items` y `/api/ai-agents/:agentId/products`
