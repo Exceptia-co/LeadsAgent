@@ -52,13 +52,26 @@ export class ClerkAuthGuard implements CanActivate {
       }
 
       // Agregar información del usuario al request.
-      // `org_id` is a Clerk built-in claim populated when the session has an
-      // active organization. Empty string is normalized to undefined so
-      // downstream guards can treat "no active org" uniformly.
-      const orgId = (payload as { org_id?: string }).org_id;
+      //
+      // Clerk session tokens have two shapes for the active-org claim:
+      //   v1 (legacy): top-level `org_id` string
+      //   v2 (current): nested `o.id` (with `o.rol`, `o.slg`)
+      //
+      // Production (May 2026) emits v2; the dev/test stubs we wrote
+      // against assumed v1. Read both so the guard works regardless of
+      // which version the upstream Clerk session token uses.
+      // Empty string is normalized to undefined so downstream guards can
+      // treat "no active org" uniformly.
+      const p = payload as {
+        org_id?: string;
+        o?: { id?: string };
+      };
+      const orgIdRaw = p.o?.id ?? p.org_id;
+      const orgId =
+        orgIdRaw && orgIdRaw.length > 0 ? orgIdRaw : undefined;
       request.user = {
         userId: payload.sub,
-        orgId: orgId && orgId.length > 0 ? orgId : undefined,
+        orgId,
       };
 
       return true;
