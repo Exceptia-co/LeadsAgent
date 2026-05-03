@@ -18,26 +18,40 @@ verification until the lagging app catches up.
 That makes the rollout sensitive to **what triggers a deploy**:
 
 - Vercel auto-deploys the dashboard on every push to `main`.
+- `develop` does NOT auto-deploy anywhere. Merging into `develop` is
+  safe at any point and is required for the pre-staging step.
 - Hetzner is manual; nothing happens until somebody runs `pm2 restart`.
 - Supabase prod migrations and backfill are independent of either.
 
 The safe order is therefore:
 
-  pre-flight → migrations (Step 1) → backfill (Step 2) → pre-stage Hetzner build (Step 3) → merge `develop` → `main` (Step 4) → coordinated Vercel + Hetzner cutover (Step 4 cont.) → post-deploy smoke (Step 5)
+  pre-flight → merge PR #11 into `develop` (safe — no auto-deploy) → migrations (Step 1) → backfill (Step 2) → pre-stage Hetzner build from `origin/develop` (Step 3) → merge `develop` → `main` + immediate `pm2 restart` Hetzner (Step 4 — the cutover) → post-deploy smoke (Step 5)
 
-The merge to `main` is the **trigger** of the cutover and intentionally
-sits AFTER migrations + backfill. Do **not** merge to `main` during
-pre-flight — that flips Vercel to the new HMAC contract before the
-schema and data are ready, and before Hetzner can flip with it. Vercel's
-auto-deploy from `main` cannot be rolled back without a force-push or a
-revert PR, both of which extend the mismatch window.
+Two distinct merges happen, each at a different gate:
+
+| Merge | When | Why |
+|---|---|---|
+| PR #11 → `develop` | Pre-flight (safe) | `develop` is the source for Hetzner pre-staging in Step 3. Without this merge, Step 3 pre-stages stale code and Step 4 deploys nothing new. |
+| `develop` → `main` | Step 4 (cutover) | This is what triggers Vercel to auto-deploy the dashboard with the new HMAC contract. Pair it with the Hetzner restart inside the same window. |
+
+Do **not** merge to `main` during pre-flight — that flips Vercel to the
+new HMAC contract before the schema and data are ready, and before
+Hetzner can flip with it. Vercel's auto-deploy from `main` cannot be
+rolled back without a force-push or a revert PR, both of which extend
+the mismatch window.
 
 ---
 
 ## Pre-flight
 
-- [ ] PR #11 approved by reviewers and CI green on `feature/b1-pr5a-runtime-enforcement`. **Do NOT merge yet** — the merge happens in Step 4 after the database is ready.
-- [ ] If your team merges to `develop` at this point as a normal PR-approval step, that is fine — `develop` does not auto-deploy. Just keep `main` strictly behind until Step 4.
+- [ ] PR #11 approved by reviewers and CI green on `feature/b1-pr5a-runtime-enforcement`.
+- [ ] **Merge PR #11 into `develop`** (NOT into `main` yet). `develop` does not auto-deploy anywhere; this merge is what makes the PR5a stack reachable for the Hetzner pre-stage in Step 3. Confirm:
+      ```bash
+      git fetch origin develop
+      git log --oneline origin/develop | head -5
+      # Top commit should reference PR #11 merge or contain commit 97b195d.
+      ```
+- [ ] **Do NOT merge `develop` → `main` yet** — that merge is Step 4 (cutover). Vercel watches `main`; flipping main now would deploy the new HMAC contract before the database is ready and before Hetzner can flip with it.
 - [ ] Hetzner VPS `46.225.26.89` SSH access verified.
 - [ ] Supabase prod project `yxjzsargboxnuwnbuzax` (CRMWhatsApp) accessible via the `prisma` CLI from your local repo (DATABASE_URL/DIRECT_URL captured).
 - [ ] Clerk Production org "EscortsHub" created in `dashboard.clerk.com` (Production environment, not Development). Capture its `org_id` — it differs from the Development one.
@@ -160,18 +174,30 @@ Build the new code on Hetzner so the cutover in Step 4 is just a
 the running code yet — pm2 keeps serving the old build until the
 restart command in Step 4.
 
+`origin/develop` is the source of truth here. Pre-flight already merged
+PR #11 into `develop`, so `origin/develop` contains the PR5a stack but
+no Vercel deploy was triggered (Vercel watches `main`, not `develop`).
+
 ```bash
 ssh root@46.225.26.89
 
 cd /opt/leadcrm
-# Capture the current commit so rollback knows what to revert to.
+# Capture the currently-running commit so rollback (Step 7) knows the
+# exact state to restore.
 git rev-parse HEAD > /tmp/leadcrm-pre-pr5a.sha
 
-# Pull the merged main only AFTER step 4 happens. For now, pre-stage from
-# develop (which already contains the PR5a stack but does not auto-deploy
-# Vercel). If your team mirrors main->develop, fetch develop instead.
+# Pull the merged develop (which now has PR #11 from pre-flight).
+# Do NOT touch main yet — that merge is Step 4.
 git fetch origin develop
 git checkout origin/develop -- .
+
+# Sanity check: the working tree should now contain the PR5a code.
+# Spot-check by grepping for the new HMAC tenant header that PR5a-bis
+# introduced:
+grep -q "x-service-tenant-id" apps/whatsapp-service/src/middleware/auth.ts \
+  && echo "✅ PR5a stack staged" \
+  || { echo "❌ aborting: develop is missing PR5a code"; exit 1; }
+
 pnpm install --frozen-lockfile
 pnpm --filter @leadcrm/api build
 pnpm --filter @leadcrm/whatsapp-service build
@@ -187,7 +213,25 @@ pm2 jlist | jq '.[] | {name, status, pid, uptime}'
 
 Both `dist/` files should be freshly modified, but the pm2 `pid` and
 `uptime` fields should be unchanged from before this step. The running
-processes are still the pre-PR5a build.
+processes are still the pre-PR5a build until Step 4's `pm2 restart`.
+
+> **Alternative — pre-stage from a specific PR sha** (use only if your
+> team policy forbids touching `develop` until a release boundary):
+>
+> Replace `git fetch origin develop && git checkout origin/develop -- .`
+> with:
+>
+> ```bash
+> # Replace <pr-sha> with the head commit of PR #11 (e.g. 97b195d).
+> git fetch origin <pr-sha>
+> git checkout <pr-sha> -- .
+> ```
+>
+> If you take this path, Step 4's `git merge --ff-only develop` must
+> instead merge that exact PR sha into `main` (e.g. `git merge --ff-only <pr-sha>`).
+> The two halves of the deploy must come from the same commit; pinning
+> via sha is the only way to guarantee that without going through
+> `develop`.
 
 Stay logged in to Hetzner for Step 4.
 
