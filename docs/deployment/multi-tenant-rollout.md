@@ -45,11 +45,13 @@ the mismatch window.
 ## Pre-flight
 
 - [ ] PR #11 approved by reviewers and CI green on `feature/b1-pr5a-runtime-enforcement`.
-- [ ] **Merge PR #11 into `develop`** (NOT into `main` yet). `develop` does not auto-deploy anywhere; this merge is what makes the PR5a stack reachable for the Hetzner pre-stage in Step 3. Confirm:
+- [ ] **Merge PR #11 into `develop`** (NOT into `main` yet). `develop` does not auto-deploy anywhere; this merge is what makes the PR5a stack reachable for the Hetzner pre-stage in Step 3. Confirm by checking that the PR head commit is now an ancestor of `origin/develop` (this works regardless of which round of follow-up commits the PR is at):
       ```bash
-      git fetch origin develop
-      git log --oneline origin/develop | head -5
-      # Top commit should reference PR #11 merge or contain commit 97b195d.
+      git fetch origin develop feature/b1-pr5a-runtime-enforcement
+      PR_HEAD=$(git rev-parse origin/feature/b1-pr5a-runtime-enforcement)
+      git merge-base --is-ancestor "$PR_HEAD" origin/develop \
+        && echo "✅ PR #11 head $PR_HEAD is in develop" \
+        || { echo "❌ PR #11 head $PR_HEAD is NOT yet in develop — merge it before continuing"; exit 1; }
       ```
 - [ ] **Do NOT merge `develop` → `main` yet** — that merge is Step 4 (cutover). Vercel watches `main`; flipping main now would deploy the new HMAC contract before the database is ready and before Hetzner can flip with it.
 - [ ] Hetzner VPS `46.225.26.89` SSH access verified.
@@ -215,23 +217,30 @@ Both `dist/` files should be freshly modified, but the pm2 `pid` and
 `uptime` fields should be unchanged from before this step. The running
 processes are still the pre-PR5a build until Step 4's `pm2 restart`.
 
-> **Alternative — pre-stage from a specific PR sha** (use only if your
-> team policy forbids touching `develop` until a release boundary):
+> **Alternative — pre-stage from the PR branch directly** (use only if
+> your team policy forbids touching `develop` until a release boundary):
 >
-> Replace `git fetch origin develop && git checkout origin/develop -- .`
-> with:
+> A bare `git fetch origin <sha>` fails on GitHub unless the SHA is
+> already advertised by a ref. Use one of these instead:
 >
 > ```bash
-> # Replace <pr-sha> with the head commit of PR #11 (e.g. 97b195d).
-> git fetch origin <pr-sha>
-> git checkout <pr-sha> -- .
+> # Option A — fetch the PR's head ref. This works on any GitHub PR
+> # without needing the branch to exist locally.
+> git fetch origin pull/11/head:pr-11
+> git checkout pr-11 -- .
+>
+> # Option B — fetch the feature branch directly.
+> git fetch origin feature/b1-pr5a-runtime-enforcement
+> git checkout origin/feature/b1-pr5a-runtime-enforcement -- .
 > ```
 >
-> If you take this path, Step 4's `git merge --ff-only develop` must
-> instead merge that exact PR sha into `main` (e.g. `git merge --ff-only <pr-sha>`).
-> The two halves of the deploy must come from the same commit; pinning
-> via sha is the only way to guarantee that without going through
-> `develop`.
+> If you take this path, Step 4 must merge that **same commit** into
+> `main`, not `develop`. Replace
+> `git merge --ff-only develop` with
+> `git merge --ff-only origin/feature/b1-pr5a-runtime-enforcement` (or
+> the local `pr-11` ref). The two halves of the deploy must come from
+> the same commit; pinning via the PR ref is the only way to guarantee
+> that without going through `develop`.
 
 Stay logged in to Hetzner for Step 4.
 
