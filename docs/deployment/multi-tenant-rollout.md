@@ -57,6 +57,13 @@ the mismatch window.
 - [ ] Hetzner VPS `46.225.26.89` SSH access verified.
 - [ ] Supabase prod project `yxjzsargboxnuwnbuzax` (CRMWhatsApp) accessible via the `prisma` CLI from your local repo (DATABASE_URL/DIRECT_URL captured).
 - [ ] Clerk Production org "EscortsHub" created in `dashboard.clerk.com` (Production environment, not Development). Capture its `org_id` — it differs from the Development one.
+- [ ] **Clerk Production webhook for `organization.*` events configured**:
+      - URL: `https://api.<your-domain>/api/webhooks/clerk/organizations`
+      - Subscribed events: `organization.created`, `organization.updated`, `organization.deleted` (only these three, no others).
+      - Capture the Signing Secret (`whsec_*`) and store it as `CLERK_ORG_WEBHOOK_SECRET` in `/opt/leadcrm/apps/<api>/.env` on Hetzner.
+      - **Note**: this is a *separate* secret from `CLERK_WEBHOOK_SECRET` — that one drives the user-events webhook (`/api/webhooks/clerk` in the Next dashboard, runs on Vercel). The org webhook handler runs in the Nest API on Hetzner; Vercel does not consume `CLERK_ORG_WEBHOOK_SECRET`.
+      - Without this step, new orgs created in Clerk Production never auto-create a `tenants` row, and any user belonging to a non-backfilled org receives `403 "Tenant not provisioned"`. EscortsHub specifically was bootstrapped manually during initial rollout, so it is not affected.
+      - Verification: `ssh hetzner 'grep "^CLERK_ORG_WEBHOOK_SECRET=" /opt/leadcrm/apps/api/.env'` returns a non-empty value, and `pm2 logs leadcrm-api` after restart shows route `Mapped {/api/webhooks/clerk/organizations, POST}` without `CLERK_ORG_WEBHOOK_SECRET is not configured` errors.
 - [ ] HMAC secret rotated and propagated to all 3 surfaces (.env Hetzner, Vercel envs, dashboard developers' local .env). See `docs/deployment/secrets-rotation.md`.
 - [ ] Confirm `WHATSAPP_OPERATOR_HMAC_TENANT_ID` is **UNSET** on Hetzner. Operator endpoints stay locked.
 - [ ] Decide on the cutover window. Plan for a ~3-5 min total mismatch tolerance (see Step 4).
@@ -64,6 +71,13 @@ the mismatch window.
 ---
 
 ## Step 1 — Apply migrations to Supabase prod
+
+*Executed: 2026-05-02. Variation from runbook: instead of `prisma migrate deploy`,
+the migration was applied via Supabase MCP `execute_sql` with the full SQL of
+the B1 foundation migration. This was a valid path because no fragments of
+that migration had been previously applied to prod, so the "no `IF NOT EXISTS`"
+caveat below did not bite. Future runs SHOULD prefer `prisma migrate deploy`
+to keep `_prisma_migrations` in sync.*
 
 > **DO NOT** use the Supabase MCP `apply_migration` tool to run these
 > migrations directly as raw SQL. The B1 migration file uses
@@ -248,6 +262,12 @@ Stay logged in to Hetzner for Step 4.
 
 ## Step 4 — Merge to `main` and cutover Vercel + Hetzner together
 
+*Executed: 2026-05-02. Variation from runbook: the merge used `git merge --no-ff`
+instead of `--ff-only` because `main` was already ahead of `develop` by accumulated
+merge commits from prior PRs (#6-#9), making fast-forward impossible. This is
+the standard merge style of this repo. Cutover sequence and risk profile are
+unchanged.*
+
 This is the breaking moment. Your goal is to flip both Vercel and
 Hetzner within ~30 seconds of each other so the HMAC mismatch window is
 small. WhatsApp inbounds during the window are queued by WhatsApp's own
@@ -375,3 +395,51 @@ prevent, rollback in reverse:
 
 After rollback, post-mortem before retry. Save the failing logs from
 `pm2 logs --lines 1000` for analysis.
+
+---
+
+## Scope and reusability
+
+This runbook is **one-shot for the initial PR1-PR5a multi-tenant foundation**.
+It is not the right entry point for adding a new tenant to a system that already
+has the multi-tenant stack live (no migrations to apply, no backfill needed —
+just create the Org in Clerk Production and let the configured webhook auto-create
+the `tenants` row). For that flow, see `docs/deployment/onboard-new-tenant.md`
+(TODO if not yet present).
+
+---
+
+## Observed behavior of `organization.deleted` (smoke 2026-05-03)
+
+The `organization.deleted` webhook handler executes
+`prisma.tenant.deleteMany({ where: { clerkOrgId } })` (`apps/api/src/clerk-webhooks/clerk-organizations.service.ts:79`).
+This is a **hard delete with no `try/catch`** — Prisma errors propagate as
+`InternalServerErrorException` (HTTP 500), triggering Svix retries.
+
+Smoke run on 2026-05-03 19:51-19:53 UTC:
+
+- Created a virgin test org `WebhookSmokeTest` in Clerk Production.
+- The handler created the `tenants` row in ~3 s (logs:
+  `Synced Clerk organization org_3DECW... to tenant d1405e3a-...`).
+- An automatic `organization.updated` followed because the handler
+  patches `public_metadata.tenant_id` back to Clerk; the second sync
+  was an idempotent no-op (Prisma `upsert` with the same fields).
+- Deleted the test org from Clerk. The handler emitted
+  `Deleted local tenant for Clerk organization org_3DECW...` and the
+  `tenants` row disappeared cleanly. No FK constraint involved because
+  the test org had no leads/messages/sessions associated.
+
+**Untested path** (do NOT exercise in prod): an org with FK references
+(real customer data) would likely trigger `P2003`/`P2014` on delete,
+since the schema defines `Tenant` foreign keys without `ON DELETE CASCADE`.
+Two viable resolutions for a future PR:
+
+1. Switch the handler to soft delete (set `deleted_at` on `tenants`,
+   propagate scoped reads to filter it out). Preserves customer data.
+2. Add `ON DELETE CASCADE` to all `tenant_id` FKs in the Prisma schema.
+   Aggressive — destroys customer data on org deletion. Only acceptable
+   if compliance requires hard delete on tenant offboarding.
+
+For now, deleting an org with associated data via the Clerk UI will fail
+the webhook with 500 + Svix retries. The Tenant row will remain orphaned
+in Supabase until manually reconciled.
