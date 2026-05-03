@@ -5,6 +5,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
+    "postinstall": "prisma generate || echo '[prisma generate] skipped (binary missing on this platform)'",
     "db:generate": "prisma generate",
     "db:generate:win": "powershell -ExecutionPolicy Bypass -File ./scripts/generate-windows.ps1",
     "db:migrate:dev": "prisma migrate dev",
