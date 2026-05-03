@@ -67,8 +67,7 @@ export class ClerkAuthGuard implements CanActivate {
         o?: { id?: string };
       };
       const orgIdRaw = p.o?.id ?? p.org_id;
-      const orgId =
-        orgIdRaw && orgIdRaw.length > 0 ? orgIdRaw : undefined;
+      const orgId = orgIdRaw && orgIdRaw.length > 0 ? orgIdRaw : undefined;
       request.user = {
         userId: payload.sub,
         orgId,
