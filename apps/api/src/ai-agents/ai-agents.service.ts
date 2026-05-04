@@ -55,7 +55,6 @@ export class AiAgentsService {
   }
 
   async findKnowledgeItems(tenantId: string, agentId: string) {
-    await this.assertAgentOwnership(tenantId, agentId);
     return this.prisma.ai_knowledge_base.findMany({
       where: { tenantId, agentId },
       orderBy: { priority: 'desc' },
@@ -118,7 +117,6 @@ export class AiAgentsService {
   // ── B2.8: Products ────────────────────────────────────────────
 
   async findProducts(tenantId: string, agentId: string) {
-    await this.assertAgentOwnership(tenantId, agentId);
     return this.prisma.aiProduct.findMany({
       where: { tenantId, agentId },
       orderBy: { createdAt: 'asc' },
@@ -169,6 +167,9 @@ export class AiAgentsService {
   }
 
   // ── B2.9: Preview ─────────────────────────────────────────────
+  // Renders a prompt preview from agent config without cross-app import
+  // of SystemPromptService (API and whatsapp-service are separate processes).
+  // Accepts minor drift from runtime prompt in exchange for independence.
 
   async previewPrompt(tenantId: string, agentId: string, message: string) {
     const agent = await this.findOne(tenantId, agentId);

@@ -465,10 +465,12 @@ class DatabaseService {
 
       if (opts?.keywords?.length) {
         const kwConditions = opts.keywords.map((kw) => {
-          values.push(`%${kw}%`);
+          const sanitized = kw.replace(/[%_\\]/g, '');
+          if (!sanitized) return null;
+          values.push(`%${sanitized}%`);
           return `(name ILIKE $${idx} OR description ILIKE $${idx++})`;
-        });
-        conditions.push(`(${kwConditions.join(' OR ')})`);
+        }).filter(Boolean);
+        if (kwConditions.length) conditions.push(`(${kwConditions.join(' OR ')})`);
       }
 
       if (opts?.tags?.length) {
