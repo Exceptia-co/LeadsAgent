@@ -1899,6 +1899,12 @@ class DatabaseService {
       return this.getDefaultKnowledgeBase();
     }
 
+    if (!opts?.tenantId || !opts?.agentId) {
+      logger.warn(
+        `[UNSCOPED-KB] getKnowledgeBase(${category ?? 'all'}) without ${!opts?.tenantId ? 'tenantId' : ''}${!opts?.tenantId && !opts?.agentId ? '+' : ''}${!opts?.agentId ? 'agentId' : ''} — returning global KB. Wire opts from context.`,
+      );
+    }
+
     try {
       const conditions = ['is_active = true'];
       const values: any[] = [];
@@ -1988,6 +1994,12 @@ class DatabaseService {
     query: string,
     opts?: { tenantId?: string; agentId?: string },
   ): Promise<any[]> {
+    if (!opts?.tenantId || !opts?.agentId) {
+      logger.warn(
+        `[UNSCOPED-KB] searchKnowledgeBase without ${!opts?.tenantId ? 'tenantId' : ''}${!opts?.tenantId && !opts?.agentId ? '+' : ''}${!opts?.agentId ? 'agentId' : ''} — searching global KB.`,
+      );
+    }
+
     if (!this.pool) {
       return this.getDefaultKnowledgeBase()
         .filter(
