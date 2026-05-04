@@ -163,11 +163,16 @@ export class MessageHandler {
       // Get phone number without WhatsApp suffix
       const phoneNumber = whatsappMessage.from.replace('@c.us', '');
 
-      // B2.0 follow-up: resolve tenantId once, propagate through context
-      const tenantId = await DatabaseService.getSessionTenantId(sessionId);
+      // B2.1: resolve tenantId + aiAgentId in a single query
+      const { tenantId, aiAgentId } = await DatabaseService.getSessionContext(sessionId);
       if (!tenantId) {
         logger.warn(
           `[TENANT-SAFE] processMessageWithAI: session ${sessionId} has no tenantId — AI pipeline will run with unscoped reads`,
+        );
+      }
+      if (!aiAgentId) {
+        logger.warn(
+          `[AGENT-SAFE] processMessageWithAI: session ${sessionId} has no aiAgentId — using legacy prompt`,
         );
       }
 
@@ -176,6 +181,7 @@ export class MessageHandler {
         from: whatsappMessage.from,
         sessionId: sessionId,
         tenantId: tenantId ?? undefined,
+        aiAgentId: aiAgentId ?? undefined,
         phoneNumber: phoneNumber,
       });
 
