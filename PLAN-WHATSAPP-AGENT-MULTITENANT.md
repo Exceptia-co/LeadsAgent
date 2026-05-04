@@ -488,7 +488,7 @@ La fase se dividió tras revisión técnica (v5): era demasiado scope para una s
   - `generateIntelligentFallback` recibe `opts?: {tenantId, aiAgentId}` y scopa KB search cuando disponible. En catch block crítico (sin context), KB search es global con warning `[UNSCOPED-KB]`
   - `getKnowledgeBase`/`searchKnowledgeBase` emiten warning `[UNSCOPED-KB]` cuando faltan tenantId/agentId
   - `aiAgentId` es **optional** en `MessageContext` (sesiones legacy sin agente asignado usan fallback legacy prompt). El sistema NO falla si falta — degrada gracefully
-- [ ] **B2.6.** `KnowledgeRetriever` extendido para filtrar también `AiProduct` por keywords/tags/rango de precio detectados → inyecta top-N al prompt (capa [6])
+- [x] **B2.6.** `KnowledgeRetriever` extendido para filtrar `AiProduct` por keywords/tags/precio — completado 2026-05-04 en 2 commits (`ca997c8` fix knowledgeData wiring bug + searchProducts, `8f15936` product-aware retrieval). **Bug fix incluido**: `AIThinkingService.generateContextualResponse` pasaba `[]` al ResponseGenerator en vez de los knowledgeData reales del retrieval (bug preexistente). `searchProducts(tenantId, agentId, {keywords, tags, maxPrice})` busca por ILIKE/tag intersection/price. `retrieveRelevantProducts` extrae keywords del mensaje, budget hint de entities/patrones ("barato"→maxPrice=100), y formatea productos como items con `type: 'product'`
 - [ ] **B2.7.** Endpoints NestJS `GET/PUT /api/ai-agents/:agentId` + `GET /api/ai-agents` (protegidos por Clerk + TenantContextGuard)
 - [ ] **B2.8.** Endpoints NestJS CRUD `/api/ai-agents/:agentId/knowledge-items` y `/api/ai-agents/:agentId/products`
 - [ ] **B2.9.** Endpoint Preview: `POST /api/ai-agents/:agentId/preview` — recibe mensaje test y devuelve respuesta sin enviar a WhatsApp
