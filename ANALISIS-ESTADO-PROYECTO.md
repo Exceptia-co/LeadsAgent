@@ -1,7 +1,7 @@
 # Informe de Estado Real — LeadsCRM
 
-**Fecha:** 2026-05-04 (v8 — B2.0 completado: tenant-scope DB + pipeline IA/autorización)
-**Branch analizado:** `feat/b2.0-tenant-scope-defense` (HEAD `6cd7f05` — 3 commits sobre `develop`)
+**Fecha:** 2026-05-04 (v9 — B2.0 + B2.1 completados: tenant-scope DB + prompt dinámico por agente)
+**Branch analizado:** `feat/b2.0-tenant-scope-defense` (HEAD `e49c759` — 8 commits sobre `develop`)
 **Método:** Auditoría `path:line` verificable + checks locales (`prisma validate`, `db:generate`, `typecheck`, `test`, `build`, `lint`) + verificación live Supabase MCP + Hetzner SSH + Clerk Dashboard (Chrome MCP) + smoke webhook E2E con org `WebhookSmokeTest` el 2026-05-03 19:51 UTC.
 
 > **Novedad v7:** Fase B.1 (multi-tenant foundation + runtime enforcement) cerrada en producción. PR #11 (commit `dcf81dd` = "feat(b1): multi-tenant foundation + runtime enforcement (PR1-PR5a combo)") mergeado a `main` 2026-05-02 con 4 follow-up merges de fixes Vercel-Prisma (binaryTargets, postinstall, externalize @prisma/client, JWT v2 shape). Migration B1 aplicada a Supabase prod via Supabase MCP `execute_sql`. Tenant `EscortsHub` provisionado (`923493fc-ffe9-49c6-9963-74e24eae0689` ↔ `org_3DDKQD4ThoPcwJnHC5mWTmrr5L3`); 731 filas backfilled. Clerk Production webhook para `organization.*` configurado 2026-05-03 19:51 UTC con `CLERK_ORG_WEBHOOK_SECRET` en Hetzner; smoke real verde end-to-end. Multi-tenancy ahora activo en runtime y en producción.
@@ -85,7 +85,7 @@ LeadsCRM es un CRM con automatización de WhatsApp en **estado MVP estabilizado 
 | WhatsApp sending (API → service) | ✅ | `WhatsAppService.sendMessage` firma HMAC antes de POST al whatsapp-service |
 | WhatsApp proactive/bulk | ✅ | Rate limit por sesión (200/h), delay adaptativo 1/2/4× si uso >80%/>90%; bulk fail-closed |
 | Socket.IO | ✅ T2.3 fix aplicado | Mapeo `auth_failure → AUTH_INVALID` correcto; tipos `useSocket.ts` alineados con `types/index.ts` (ambos incluyen 6 estados) |
-| IA pipeline | ✅ Tenant-scoped (B2.0) | AIOrchestrator → Intent → Context → Knowledge → Response; cache Redis. **B2.0 cerró la fuga cross-tenant**: `MessageHandler` resuelve `tenantId` desde `sessionId` al inicio del pipeline y lo propaga via `MessageContext` a `ContextEnricher` (ambos), `ContextBuilder`, `LeadValidator`. Todos los calls a `getAllLeads()`/`findLeadByPhone()`/`createLead()`/`updateLeadWhatsAppAuth()` ahora filtran por tenant cuando disponible. Pendiente B2.1: parametrizar prompts/agentes y retirar branding hardcoded |
+| IA pipeline | ✅ Tenant-scoped + prompt dinámico (B2.0+B2.1) | Tenant-scoped (B2.0): `MessageHandler` resuelve `tenantId` + `aiAgentId` via `getSessionContext()` en un solo query. **B2.1 prompt dinámico**: `SystemPromptService.buildAgentSystemPrompt()` compone prompt desde 10 capas (channel, persona, negocio, tono, instrucciones custom, knowledge, productos, goal, contexto, formato). `AIOrchestratorService` y `ResponseGenerator` delegan al prompt dinámico. Hardcoded EscortsHub eliminado de `getFormatInstructions`. Fallback legacy cuando `aiAgentId` es null |
 | AutomationService "keyword rules" | 🗑️ Eliminado (T2.1) | El servicio era código muerto (nunca inyectado); eliminado junto con sus 234 líneas |
 | Dual-write `messages` ↔ `whatsapp_conversations` | ✅ Cerrado end-to-end | Writer unificado transaccional en `DatabaseService.saveConversation`; FK `message_id` poblada al 100%; readers via JOIN Prisma |
 | AI training interactions | ✅ Modelo Prisma ahora | `AiTrainingInteraction` añadido en T1.1 Phase A; writer sigue siendo `AILearningService` vía SQL raw (follow-up: migrarlo a Prisma) |
@@ -260,8 +260,8 @@ Base en los 58 commits entre `2395d04` (v4 point-in-time) y `1eeb155` (HEAD actu
 
 **Fase B.1 multi-tenant CERRADA en producción** (PR #11 mergeado a main 2026-05-02; webhook Clerk Production configurado 2026-05-03 19:51 UTC; smoke E2E verde con `WebhookSmokeTest`). Detalles + post-mortem en `docs/deployment/multi-tenant-rollout.md`.
 
-**Siguiente tarea activa: B2.1 — SystemPromptService dinámico por agente**.
-B2.0 completado en branch `feat/b2.0-tenant-scope-defense` (2 commits, pendiente merge a `develop`). Quedan 8 sub-tareas B2.1–B2.9 documentadas en `PLAN-WHATSAPP-AGENT-MULTITENANT.md` §5: `SystemPromptService` parametrizado por agente + KB/product scoped por tenant+agent + endpoints CRUD agents + preview engine + retirada de branding hardcoded del runtime. B2.5 (`tenantId` en pipeline) ya fue absorbido por B2.0; solo queda cablear `aiAgentId`.
+**Siguiente tarea activa: B2.2 — Knowledge retrieval scoped por tenant + agent**.
+B2.0 + B2.1 completados en branch `feat/b2.0-tenant-scope-defense` (8 commits, pendiente merge). Quedan 7 sub-tareas B2.2–B2.9: KB/product retrieval scoped por tenant+agent, `KnowledgeRetriever` con agentId, endpoints CRUD agents/products/knowledge, preview engine. B2.5 (`tenantId` + `aiAgentId` en pipeline) absorbido por B2.0+B2.1.
 
 **Cleanup PR diferido: PR5b destructive** (B1.5 `@@unique([tenantId, phone])` + B1.7b rename `ai_knowledge_base → ai_knowledge_items`). Postponed hasta confirmar ≥1 semana de prod sin webhook fallidos ni regresiones, evitando coordinar destructive migrations con la estabilización de B.1.
 
