@@ -1,9 +1,9 @@
 # Plan: WhatsApp Agent Multi-Tenant + IA Configurable
 
 - **Fecha inicio:** 2026-04-19
-- **Última revisión:** 2026-05-04 (v7.9 — Fase B.2 completa: B2.0–B2.9 en branch `feat/b2.0-tenant-scope-defense`)
+- **Última revisión:** 2026-05-05 (v7.10 — Fase B.2 completa + review fixes + smoke local verde)
 - **Estado del documento:** cerrado para ejecución. §§1–11 son la única fuente de verdad. Validado por Codex en 12 rondas de review + auto-crítica anti-overkill. Ruta de ejecución: **completa**
-- **Estado:** **Fase A + B.1 desplegadas en producción. Fase B.2 completa en branch `feat/b2.0-tenant-scope-defense` (pendiente merge)**. B2.0–B2.9 implementados: tenant-scope DB + pipeline IA/autorización + prompt dinámico por agente + knowledge/product retrieval scoped + 13 endpoints CRUD NestJS + preview. Siguiente fase: B.3 (UI + E2E + RLS). Items B.1 pendientes: destructive cleanups (PR5b) + B1.13/B1.14 (deuda menor).
+- **Estado:** **Fase A + B.1 desplegadas en producción. Fase B.2 completa en branch `feat/b2.0-tenant-scope-defense` (19 commits, pendiente merge a `develop`)**. B2.0–B2.9 + review fixes (P1-P4). Smoke local 2026-05-05 verde (dashboard, leads, whatsapp, endpoints CRUD, tenant isolation). 115 tests (API 53 + WS 62). Siguiente fase: B.3 (UI + E2E + RLS). Items B.1 pendientes: destructive cleanups (PR5b) + B1.13/B1.14 (deuda menor).
 - **Ruta seleccionada:** Completa (§§1–11)
 - **Owner:** Eduard S.
 - **Precede a:** `PRD-ESTABILIZACION.md` (cerrado 2026-04-18)
