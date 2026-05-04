@@ -189,8 +189,11 @@ class AIThinkingService {
 
       const intentAnalysis = intentStep.data as IntentAnalysis;
 
-      // 4. PASO 2: RECUPERACIÓN DE CONOCIMIENTO RELEVANTE
-      const knowledgeStep = await this.performKnowledgeRetrieval(message, intentAnalysis);
+      // 4. PASO 2: RECUPERACIÓN DE CONOCIMIENTO RELEVANTE (B2.2: scoped by tenant+agent)
+      const knowledgeStep = await this.performKnowledgeRetrieval(message, intentAnalysis, {
+        tenantId: enrichedContext.tenantId,
+        aiAgentId: enrichedContext.aiAgentId,
+      });
       thoughtProcess.steps.push(knowledgeStep);
 
       // 5. PASO 3: ANÁLISIS DE CONTEXTO Y HISTORIAL
@@ -380,13 +383,13 @@ class AIThinkingService {
 
   private async performKnowledgeRetrieval(
     message: string,
-    intentAnalysis: IntentAnalysis
+    intentAnalysis: IntentAnalysis,
+    opts?: { tenantId?: string; aiAgentId?: string },
   ): Promise<ThinkingStep> {
     const stepStart = Date.now();
 
     try {
-      // Usar el nuevo servicio de recuperación de conocimiento
-      const relevantKnowledge = await this.knowledgeRetriever.retrieve(message, intentAnalysis);
+      const relevantKnowledge = await this.knowledgeRetriever.retrieve(message, intentAnalysis, opts);
 
       const content =
         relevantKnowledge.length > 0

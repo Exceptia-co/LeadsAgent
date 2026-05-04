@@ -1891,26 +1891,38 @@ class DatabaseService {
   // ============================================
 
   // Obtener knowledge base para contexto IA
-  public async getKnowledgeBase(category?: string): Promise<any[]> {
+  public async getKnowledgeBase(
+    category?: string,
+    opts?: { tenantId?: string; agentId?: string },
+  ): Promise<any[]> {
     if (!this.pool) {
       return this.getDefaultKnowledgeBase();
     }
 
     try {
-      let query = `
-        SELECT id, category, title, content, keywords, priority
-        FROM ai_knowledge_base
-        WHERE is_active = true
-      `;
-
+      const conditions = ['is_active = true'];
       const values: any[] = [];
+      let idx = 1;
 
+      if (opts?.tenantId) {
+        conditions.push(`tenant_id = $${idx++}::uuid`);
+        values.push(opts.tenantId);
+      }
+      if (opts?.agentId) {
+        conditions.push(`agent_id = $${idx++}::uuid`);
+        values.push(opts.agentId);
+      }
       if (category) {
-        query += ` AND category = $1`;
+        conditions.push(`category = $${idx++}`);
         values.push(category);
       }
 
-      query += ` ORDER BY priority DESC, created_at ASC`;
+      const query = `
+        SELECT id, category, title, content, keywords, priority
+        FROM ai_knowledge_base
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY priority DESC, created_at ASC
+      `;
 
       const result = await this.pool.query(query, values);
       return result.rows;
@@ -1972,8 +1984,10 @@ class DatabaseService {
     }
   }
 
-  // Buscar en knowledge base por keywords con scoring inteligente
-  public async searchKnowledgeBase(query: string): Promise<any[]> {
+  public async searchKnowledgeBase(
+    query: string,
+    opts?: { tenantId?: string; agentId?: string },
+  ): Promise<any[]> {
     if (!this.pool) {
       return this.getDefaultKnowledgeBase()
         .filter(
@@ -1985,35 +1999,44 @@ class DatabaseService {
     }
 
     try {
-      // Extraer palabras clave del query para mejor matching
       const queryWords = this.extractSearchKeywords(query);
       const searchTerms = [`%${query}%`, ...queryWords.map(word => `%${word}%`)];
 
+      // B2.2: dynamic tenant/agent scoping
+      const extraConditions: string[] = [];
+      const baseValues: any[] = [query, searchTerms];
+      let idx = 3;
+
+      if (opts?.tenantId) {
+        extraConditions.push(`AND tenant_id = $${idx++}::uuid`);
+        baseValues.push(opts.tenantId);
+      }
+      if (opts?.agentId) {
+        extraConditions.push(`AND agent_id = $${idx++}::uuid`);
+        baseValues.push(opts.agentId);
+      }
+
       const searchQuery = `
-        SELECT 
+        SELECT
           id, category, title, content, keywords, priority,
-          -- Calcular relevancia score
           (
-            -- Puntuación por match exacto en título (peso: 100)
             CASE WHEN title ILIKE $1 THEN 100 ELSE 0 END +
-            -- Puntuación por keywords coincidentes (peso: 80)
             (
-              SELECT COUNT(*) * 80 
-              FROM unnest(keywords) AS keyword 
+              SELECT COUNT(*) * 80
+              FROM unnest(keywords) AS keyword
               WHERE keyword ILIKE ANY($2::text[])
             ) +
-            -- Puntuación por match en contenido (peso: 30)
             CASE WHEN content ILIKE $1 THEN 30 ELSE 0 END +
-            -- Bonificación por prioridad (peso: prioridad * 5)
             (priority * 5)
           ) AS relevance_score
-        FROM ai_knowledge_base 
+        FROM ai_knowledge_base
         WHERE is_active = true
+          ${extraConditions.join('\n          ')}
           AND (
-            title ILIKE $1 OR 
+            title ILIKE $1 OR
             content ILIKE $1 OR
             EXISTS (
-              SELECT 1 FROM unnest(keywords) AS keyword 
+              SELECT 1 FROM unnest(keywords) AS keyword
               WHERE keyword ILIKE ANY($2::text[])
             )
           )
@@ -2021,7 +2044,7 @@ class DatabaseService {
         LIMIT 3;
       `;
 
-      const result = await this.pool.query(searchQuery, [query, searchTerms]);
+      const result = await this.pool.query(searchQuery, baseValues);
 
       // Agregar score calculado y filtrar por relevancia mínima
       return result.rows

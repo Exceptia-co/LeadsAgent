@@ -16,16 +16,19 @@ export class KnowledgeRetriever implements IKnowledgeRetriever {
     return KnowledgeRetriever.instance;
   }
 
-  public async retrieve(message: string, intentAnalysis: IntentAnalysis): Promise<any[]> {
+  public async retrieve(
+    message: string,
+    intentAnalysis: IntentAnalysis,
+    opts?: { tenantId?: string; aiAgentId?: string },
+  ): Promise<any[]> {
     try {
-      // Buscar conocimiento relevante en la base de datos
       let relevantKnowledge: any[] = [];
+      const scopeOpts = opts?.tenantId || opts?.aiAgentId
+        ? { tenantId: opts.tenantId, agentId: opts.aiAgentId }
+        : undefined;
 
-      // 1. Búsqueda basada en el mensaje
-      const messageBasedKnowledge = await this.searchKnowledgeBase(message);
-
-      // 2. Búsqueda basada en la intención y categoría
-      const intentBasedKnowledge = await this.getKnowledgeByCategory(intentAnalysis.category);
+      const messageBasedKnowledge = await this.searchKnowledgeBase(message, scopeOpts);
+      const intentBasedKnowledge = await this.getKnowledgeByCategory(intentAnalysis.category, scopeOpts);
 
       // 3. Combinar y filtrar conocimiento
       relevantKnowledge = [...messageBasedKnowledge, ...intentBasedKnowledge]
@@ -55,18 +58,18 @@ export class KnowledgeRetriever implements IKnowledgeRetriever {
     }
   }
 
-  public async searchKnowledgeBase(query: string): Promise<any[]> {
+  public async searchKnowledgeBase(query: string, opts?: { tenantId?: string; agentId?: string }): Promise<any[]> {
     try {
-      return await DatabaseService.searchKnowledgeBase(query);
+      return await DatabaseService.searchKnowledgeBase(query, opts);
     } catch (error) {
       logger.warn('Failed to search knowledge base:', error);
       return [];
     }
   }
 
-  public async getKnowledgeByCategory(category: string): Promise<any[]> {
+  public async getKnowledgeByCategory(category: string, opts?: { tenantId?: string; agentId?: string }): Promise<any[]> {
     try {
-      return await DatabaseService.getKnowledgeBase(category);
+      return await DatabaseService.getKnowledgeBase(category, opts);
     } catch (error) {
       logger.warn('Failed to get knowledge by category:', error);
       return [];
