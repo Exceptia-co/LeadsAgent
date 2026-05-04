@@ -43,6 +43,7 @@ export interface ResponseOptions {
   useCase?: 'onboarding' | 'sales' | 'support' | 'retention';
   language?: 'es' | 'en';
   enableFallback?: boolean;
+  systemPromptOverride?: string;
 }
 
 /**
@@ -265,6 +266,10 @@ export class AIOrchestratorService {
     context?: MessageContext,
     options?: ResponseOptions
   ): Promise<string> {
+    if (options?.systemPromptOverride) {
+      return options.systemPromptOverride;
+    }
+
     if (options?.useCase) {
       return this.promptService.getPromptForUseCase(options.useCase, context);
     }

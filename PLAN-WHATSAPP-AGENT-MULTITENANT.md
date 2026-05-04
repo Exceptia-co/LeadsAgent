@@ -3,7 +3,7 @@
 - **Fecha inicio:** 2026-04-19
 - **Última revisión:** 2026-05-04 (v7.8 — B2.0 + B2.1 completados en branch `feat/b2.0-tenant-scope-defense`)
 - **Estado del documento:** cerrado para ejecución. §§1–11 son la única fuente de verdad. Validado por Codex en 12 rondas de review + auto-crítica anti-overkill. Ruta de ejecución: **completa**
-- **Estado:** **Fase A desplegada + Fase B.1 deployada en producción + B2.0 completado (pendiente merge)**. B2.0 implementado en branch `feat/b2.0-tenant-scope-defense` (2 commits: `4c3eb8b` perimeter scoping + `ec928e2` pipeline threading). Scope: defense-in-depth en NestJS API lead/session updates, raw SQL templates/proactive/whitelist/training con tenantId obligatorio, pipeline IA/autorización con tenantId threaded desde sessionId a través de MessageContext → ContextEnricher/ContextBuilder/LeadValidator. Fix SQL injection en `cleanupOldTrainingInteractions`. 15 tests nuevos, API 45/45 + whatsapp-service 53/53 verdes. Siguiente tarea: B2.1 (SystemPromptService dinámico por agente). Items B.1 pendientes: destructive cleanups (PR5b) + B1.13/B1.14 (deuda menor). Detalles B.1 en `docs/deployment/multi-tenant-rollout.md`.
+- **Estado:** **Fase A desplegada + Fase B.1 deployada en producción + B2.0 + B2.1 completados (pendiente merge)**. Branch `feat/b2.0-tenant-scope-defense`: B2.0 (tenant-scope DB + pipeline) + B2.1 (prompt dinámico por agente). Siguiente tarea: B2.2 (knowledge retrieval scoped). Items B.1 pendientes: destructive cleanups (PR5b) + B1.13/B1.14 (deuda menor). Detalles B.1 en `docs/deployment/multi-tenant-rollout.md`.
 - **Ruta seleccionada:** Completa (§§1–11)
 - **Owner:** Eduard S.
 - **Precede a:** `PRD-ESTABILIZACION.md` (cerrado 2026-04-18)

@@ -106,10 +106,10 @@ export class ResponseGenerator {
         );
       }
 
-      // 2. Build contextual prompt
-      await this.buildContextualPrompt(intentAnalysis, strategy, knowledgeData, context);
+      // 2. Build contextual prompt with agent + thinking overlays
+      const contextualPrompt = await this.buildContextualPrompt(intentAnalysis, strategy, knowledgeData, context);
 
-      // 3. Generate AI response
+      // 3. Generate AI response — pass contextual prompt as system prompt override
       const aiResponse = await AIService.generateResponse(message, {
         ...context,
         conversationHistory:
@@ -117,7 +117,7 @@ export class ResponseGenerator {
             role: m.isFromUser ? 'user' : ('assistant' as 'user' | 'assistant'),
             content: m.message,
           })) || [],
-      });
+      }, contextualPrompt);
 
       if (!aiResponse.success || !aiResponse.content) {
         throw new Error(aiResponse.error || 'Failed to generate response');
@@ -372,9 +372,9 @@ export class ResponseGenerator {
       return text;
     }
 
-    // For greetings, use fixed template
+    // For greetings, use generic truncation (agent-specific greeting comes from the LLM)
     if (intent === 'saludo' || intent === 'greeting') {
-      return '¡Hola! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte?';
+      return '¡Hola! 👋 ¿En qué puedo ayudarte?';
     }
 
     // For other cases, truncate intelligently
