@@ -1,9 +1,9 @@
 # Plan: WhatsApp Agent Multi-Tenant + IA Configurable
 
 - **Fecha inicio:** 2026-04-19
-- **Última revisión:** 2026-05-04 (v7.8 — B2.0 + B2.1 completados en branch `feat/b2.0-tenant-scope-defense`)
+- **Última revisión:** 2026-05-04 (v7.9 — Fase B.2 completa: B2.0–B2.9 en branch `feat/b2.0-tenant-scope-defense`)
 - **Estado del documento:** cerrado para ejecución. §§1–11 son la única fuente de verdad. Validado por Codex en 12 rondas de review + auto-crítica anti-overkill. Ruta de ejecución: **completa**
-- **Estado:** **Fase A desplegada + Fase B.1 deployada en producción + B2.0 + B2.1 completados (pendiente merge)**. Branch `feat/b2.0-tenant-scope-defense`: B2.0 (tenant-scope DB + pipeline) + B2.1 (prompt dinámico por agente). Siguiente tarea: B2.2 (knowledge retrieval scoped). Items B.1 pendientes: destructive cleanups (PR5b) + B1.13/B1.14 (deuda menor). Detalles B.1 en `docs/deployment/multi-tenant-rollout.md`.
+- **Estado:** **Fase A + B.1 desplegadas en producción. Fase B.2 completa en branch `feat/b2.0-tenant-scope-defense` (pendiente merge)**. B2.0–B2.9 implementados: tenant-scope DB + pipeline IA/autorización + prompt dinámico por agente + knowledge/product retrieval scoped + 13 endpoints CRUD NestJS + preview. Siguiente fase: B.3 (UI + E2E + RLS). Items B.1 pendientes: destructive cleanups (PR5b) + B1.13/B1.14 (deuda menor).
 - **Ruta seleccionada:** Completa (§§1–11)
 - **Owner:** Eduard S.
 - **Precede a:** `PRD-ESTABILIZACION.md` (cerrado 2026-04-18)
@@ -489,9 +489,7 @@ La fase se dividió tras revisión técnica (v5): era demasiado scope para una s
   - `getKnowledgeBase`/`searchKnowledgeBase` emiten warning `[UNSCOPED-KB]` cuando faltan tenantId/agentId
   - `aiAgentId` es **optional** en `MessageContext` (sesiones legacy sin agente asignado usan fallback legacy prompt). El sistema NO falla si falta — degrada gracefully
 - [x] **B2.6.** `KnowledgeRetriever` extendido para filtrar `AiProduct` por keywords/tags/precio — completado 2026-05-04 en 2 commits (`ca997c8` fix knowledgeData wiring bug + searchProducts, `8f15936` product-aware retrieval). **Bug fix incluido**: `AIThinkingService.generateContextualResponse` pasaba `[]` al ResponseGenerator en vez de los knowledgeData reales del retrieval (bug preexistente). `searchProducts(tenantId, agentId, {keywords, tags, maxPrice})` busca por ILIKE/tag intersection/price. `retrieveRelevantProducts` extrae keywords del mensaje, budget hint de entities/patrones ("barato"→maxPrice=100), y formatea productos como items con `type: 'product'`
-- [ ] **B2.7.** Endpoints NestJS `GET/PUT /api/ai-agents/:agentId` + `GET /api/ai-agents` (protegidos por Clerk + TenantContextGuard)
-- [ ] **B2.8.** Endpoints NestJS CRUD `/api/ai-agents/:agentId/knowledge-items` y `/api/ai-agents/:agentId/products`
-- [ ] **B2.9.** Endpoint Preview: `POST /api/ai-agents/:agentId/preview` — recibe mensaje test y devuelve respuesta sin enviar a WhatsApp
+- [x] **B2.7+B2.8+B2.9.** NestJS CRUD + Preview — completado 2026-05-04 commit `47ebe02`. `AiAgentsModule` con 13 endpoints: 3 agent CRUD (GET list/detail, PUT update), 4 knowledge-items (CRUD nested), 4 products (CRUD nested), 1 preview. Todos scoped por `ClerkAuthGuard` + `TenantContextGuard`, `assertAgentOwnership` antes de ops nested, patrón `updateMany`/`deleteMany` con `{id, tenantId}`. Preview renderiza prompt desde config del agent sin cross-app import (construye preview independiente en el API)
 
 **Criterio de salida B.2:** el prompt se construye dinámicamente por agente, el retrieval filtra por tenant+agente, el preview funciona end-to-end sin enviar a WhatsApp.
 
