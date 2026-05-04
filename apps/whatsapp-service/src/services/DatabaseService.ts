@@ -71,20 +71,56 @@ export interface Lead {
   updatedAt: Date;
 }
 
-// PR5a: in-memory cache for sessionId -> tenantId resolution. Keyed by
-// sessionId; null cached for sessions without tenantId yet (legacy
-// pre-backfill data) so we don't re-query every message. TTL is short
-// because backfill runs are visible immediately after expiration.
-interface SessionTenantCacheEntry {
+// B2.1: session context cache — resolves sessionId → { tenantId, aiAgentId }
+// in a single query. Expanded from PR5a's tenantId-only cache.
+interface SessionContextCacheEntry {
   tenantId: string | null;
+  aiAgentId: string | null;
   expiresAt: number;
 }
-const SESSION_TENANT_CACHE_TTL_MS = 60_000;
+const SESSION_CONTEXT_CACHE_TTL_MS = 60_000;
+
+// B2.1: agent data projection (avoids coupling SystemPromptService to Prisma types)
+export interface AiAgentData {
+  id: string;
+  businessName: string;
+  industry: string | null;
+  websiteUrl: string | null;
+  businessHours: any;
+  personaName: string | null;
+  tone: string;
+  language: string;
+  customInstructions: string | null;
+  responseMaxWords: number | null;
+  allowEmojis: boolean;
+  primaryGoal: string;
+  goalCtaUrl: string | null;
+  goalDescription: string | null;
+  enableStructuredExtraction: boolean;
+}
+
+export interface AiProductData {
+  id: string;
+  name: string;
+  description: string | null;
+  priceMin: number | null;
+  priceMax: number | null;
+  url: string | null;
+  tags: string[];
+}
+
+interface AgentCacheEntry {
+  agent: AiAgentData;
+  products: AiProductData[];
+  expiresAt: number;
+}
+const AGENT_CACHE_TTL_MS = 60_000;
 
 class DatabaseService {
   private pool: Pool | null = null;
   private prisma: PrismaClient | null = null;
-  private sessionTenantCache = new Map<string, SessionTenantCacheEntry>();
+  private sessionContextCache = new Map<string, SessionContextCacheEntry>();
+  private agentCache = new Map<string, AgentCacheEntry>();
 
   constructor() {
     this.initializePool();
@@ -296,38 +332,122 @@ class DatabaseService {
   // Esto detiene la divergencia entre `messages` y `whatsapp_conversations`
   // para mensajes nuevos.
   /**
-   * PR5a: resolve a WhatsApp session to its owning tenant. Caches both
-   * positive and negative results for SESSION_TENANT_CACHE_TTL_MS. Returns
-   * null if the session has no tenantId yet (typically pre-backfill data
-   * or a session created before B1.9 ran).
+   * B2.1: resolve sessionId → { tenantId, aiAgentId } in a single query.
+   * Caches both positive and negative results for 60s.
    */
-  public async getSessionTenantId(sessionId: string): Promise<string | null> {
-    if (!this.prisma) return null;
+  public async getSessionContext(sessionId: string): Promise<{ tenantId: string | null; aiAgentId: string | null }> {
+    if (!this.prisma) return { tenantId: null, aiAgentId: null };
 
     const now = Date.now();
-    const cached = this.sessionTenantCache.get(sessionId);
+    const cached = this.sessionContextCache.get(sessionId);
     if (cached && cached.expiresAt > now) {
-      return cached.tenantId;
+      return { tenantId: cached.tenantId, aiAgentId: cached.aiAgentId };
     }
 
     const session = await this.prisma.whatsAppSession.findUnique({
       where: { sessionId },
-      select: { tenantId: true },
+      select: { tenantId: true, aiAgentId: true },
     });
 
-    const tenantId = session?.tenantId ?? null;
-    this.sessionTenantCache.set(sessionId, {
-      tenantId,
-      expiresAt: now + SESSION_TENANT_CACHE_TTL_MS,
-    });
-    return tenantId;
+    const entry: SessionContextCacheEntry = {
+      tenantId: session?.tenantId ?? null,
+      aiAgentId: session?.aiAgentId ?? null,
+      expiresAt: now + SESSION_CONTEXT_CACHE_TTL_MS,
+    };
+    this.sessionContextCache.set(sessionId, entry);
+    return { tenantId: entry.tenantId, aiAgentId: entry.aiAgentId };
   }
 
   /**
-   * PR5a: test-only cache reset.
+   * Backward-compatible wrapper — delegates to getSessionContext.
    */
-  public resetSessionTenantCacheForTests(): void {
-    this.sessionTenantCache.clear();
+  public async getSessionTenantId(sessionId: string): Promise<string | null> {
+    const { tenantId } = await this.getSessionContext(sessionId);
+    return tenantId;
+  }
+
+  public async getSessionAiAgentId(sessionId: string): Promise<string | null> {
+    const { aiAgentId } = await this.getSessionContext(sessionId);
+    return aiAgentId;
+  }
+
+  public resetSessionCacheForTests(): void {
+    this.sessionContextCache.clear();
+    this.agentCache.clear();
+  }
+
+  // B2.1: fetch agent config + active products in one Prisma query.
+  // Filters by tenantId + agentId (defense-in-depth from B2.0).
+  public async getAiAgentWithProducts(
+    tenantId: string,
+    agentId: string,
+  ): Promise<{ agent: AiAgentData; products: AiProductData[] } | null> {
+    const cacheKey = `${tenantId}:${agentId}`;
+    const now = Date.now();
+    const cached = this.agentCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return { agent: cached.agent, products: cached.products };
+    }
+
+    if (!this.prisma) return null;
+
+    const row = await this.prisma.aiAgent.findFirst({
+      where: { id: agentId, tenantId },
+      include: { products: { where: { active: true }, orderBy: { createdAt: 'asc' } } },
+    });
+    if (!row) return null;
+
+    const agent: AiAgentData = {
+      id: row.id,
+      businessName: row.businessName,
+      industry: row.industry,
+      websiteUrl: row.websiteUrl,
+      businessHours: row.businessHours,
+      personaName: row.personaName,
+      tone: row.tone,
+      language: row.language,
+      customInstructions: row.customInstructions,
+      responseMaxWords: row.responseMaxWords,
+      allowEmojis: row.allowEmojis,
+      primaryGoal: row.primaryGoal,
+      goalCtaUrl: row.goalCtaUrl,
+      goalDescription: row.goalDescription,
+      enableStructuredExtraction: row.enableStructuredExtraction,
+    };
+
+    const products: AiProductData[] = (row.products ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      priceMin: p.priceMin ? Number(p.priceMin) : null,
+      priceMax: p.priceMax ? Number(p.priceMax) : null,
+      url: p.url,
+      tags: p.tags ?? [],
+    }));
+
+    this.agentCache.set(cacheKey, { agent, products, expiresAt: now + AGENT_CACHE_TTL_MS });
+    return { agent, products };
+  }
+
+  public async getKnowledgeItemsByAgent(
+    tenantId: string,
+    agentId: string,
+    limit = 10,
+  ): Promise<Array<{ id: string; category: string; title: string; content: string; keywords: string[]; priority: number | null }>> {
+    if (!this.prisma) return [];
+
+    const items = await this.prisma.ai_knowledge_base.findMany({
+      where: { tenantId, agentId, is_active: true },
+      orderBy: { priority: 'desc' },
+      take: limit,
+      select: { id: true, category: true, title: true, content: true, keywords: true, priority: true },
+    });
+
+    return items;
+  }
+
+  public invalidateAgentCache(tenantId: string, agentId: string): void {
+    this.agentCache.delete(`${tenantId}:${agentId}`);
   }
 
   public async saveConversation(data: ConversationData): Promise<string | null> {
