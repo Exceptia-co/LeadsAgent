@@ -450,6 +450,61 @@ class DatabaseService {
     this.agentCache.delete(`${tenantId}:${agentId}`);
   }
 
+  // B2.6: search products by keyword/tag/price relevance for the thinking pipeline.
+  public async searchProducts(
+    tenantId: string,
+    agentId: string,
+    opts?: { keywords?: string[]; tags?: string[]; maxPrice?: number },
+  ): Promise<AiProductData[]> {
+    if (!this.pool) return [];
+
+    try {
+      const conditions = ['tenant_id = $1::uuid', 'agent_id = $2::uuid', 'active = true'];
+      const values: any[] = [tenantId, agentId];
+      let idx = 3;
+
+      if (opts?.keywords?.length) {
+        const kwConditions = opts.keywords.map((kw) => {
+          values.push(`%${kw}%`);
+          return `(name ILIKE $${idx} OR description ILIKE $${idx++})`;
+        });
+        conditions.push(`(${kwConditions.join(' OR ')})`);
+      }
+
+      if (opts?.tags?.length) {
+        values.push(opts.tags);
+        conditions.push(`tags && $${idx++}::text[]`);
+      }
+
+      if (opts?.maxPrice != null) {
+        values.push(opts.maxPrice);
+        conditions.push(`price_min <= $${idx++}`);
+      }
+
+      const query = `
+        SELECT id, name, description, price_min, price_max, url, tags
+        FROM ai_products
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY created_at ASC
+        LIMIT 3;
+      `;
+
+      const result = await this.pool.query(query, values);
+      return result.rows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        priceMin: r.price_min ? Number(r.price_min) : null,
+        priceMax: r.price_max ? Number(r.price_max) : null,
+        url: r.url,
+        tags: r.tags ?? [],
+      }));
+    } catch (error) {
+      logger.error('Error searching products:', error);
+      return [];
+    }
+  }
+
   public async saveConversation(data: ConversationData): Promise<string | null> {
     logger.info('🔍 [UNIFIED-WRITE] saveConversation called:', {
       sessionId: data.sessionId,

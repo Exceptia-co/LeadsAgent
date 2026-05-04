@@ -226,7 +226,8 @@ class AIThinkingService {
           message,
           enrichedContext,
           intentAnalysis,
-          thoughtProcess.responseStrategy
+          thoughtProcess.responseStrategy,
+          knowledgeStep.data ?? [],
         );
         thoughtProcess.steps.push(responseStep);
         aiResponse = responseStep.data as AIResponse;
@@ -720,18 +721,18 @@ class AIThinkingService {
     message: string,
     context: EnrichedContext,
     intentAnalysis: IntentAnalysis,
-    strategy: ResponseStrategy
+    strategy: ResponseStrategy,
+    knowledgeData: any[],
   ): Promise<ThinkingStep> {
     const stepStart = Date.now();
 
     try {
-      // Use the advanced ResponseGenerator service
       const generationResult = await this.responseGenerator.generateContextualResponse(
         message,
         context,
-        intentAnalysis as any, // Compatible with IntentAnalysisExtended
+        intentAnalysis as any,
         strategy,
-        [] // Knowledge data will be handled by ResponseGenerator internally if needed
+        knowledgeData,
       );
 
       return {
