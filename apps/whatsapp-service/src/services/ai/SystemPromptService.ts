@@ -8,6 +8,7 @@
 import { logger } from '../../utils/logger';
 import { aiConfig } from '../../config/enhanced-ai.config';
 import type { MessageContext } from './interfaces/IIntentAnalysis';
+import type { AiAgentData, AiProductData } from '../DatabaseService';
 
 /**
  * Prompt types for different scenarios
@@ -118,6 +119,177 @@ export class SystemPromptService {
     }
 
     return this.generateSystemPrompt(context);
+  }
+
+  /**
+   * B2.1: compose system prompt dynamically from AiAgent config, products,
+   * and knowledge items. Falls back to legacy hardcoded prompt when
+   * aiAgentId is null or agent not found.
+   */
+  public async buildAgentSystemPrompt(
+    aiAgentId: string | null | undefined,
+    context?: MessageContext,
+  ): Promise<string> {
+    if (!aiAgentId || !context?.tenantId) {
+      return this.generateSystemPrompt(context);
+    }
+
+    try {
+      const { default: DatabaseService } = await import('../DatabaseService');
+      const result = await DatabaseService.getAiAgentWithProducts(context.tenantId, aiAgentId);
+      if (!result) {
+        logger.warn(`[PROMPT] Agent ${aiAgentId} not found for tenant ${context.tenantId} — legacy fallback`);
+        return this.generateSystemPrompt(context);
+      }
+
+      const { agent, products } = result;
+      const knowledgeItems = await DatabaseService.getKnowledgeItemsByAgent(context.tenantId, aiAgentId, 10);
+      const lang = agent.language || 'es';
+
+      const layers = [
+        this.buildChannelGuidelines(lang),
+        this.buildPersonaLayer(agent),
+        this.buildBusinessLayer(agent),
+        this.buildToneLayer(agent),
+        this.buildCustomInstructionsLayer(agent),
+        this.buildKnowledgeLayer(knowledgeItems),
+        this.buildProductsLayer(products),
+        this.buildGoalLayer(agent),
+        context ? this.buildDynamicContextLayer(context, agent) : '',
+        this.buildOutputFormatLayer(agent),
+      ].filter(Boolean);
+
+      return this.truncatePrompt(layers.join('\n\n'));
+    } catch (err) {
+      logger.error(`[PROMPT] Error building agent prompt for ${aiAgentId}:`, err);
+      return this.generateSystemPrompt(context);
+    }
+  }
+
+  // ── Layer builders ────────────────────────────────────────────────
+
+  private buildChannelGuidelines(lang: string): string {
+    if (lang === 'en') {
+      return [
+        'CHANNEL RULES (WhatsApp):',
+        '- Keep responses under 60-80 words',
+        '- Conversational tone, no tables or long lists',
+        '- Always end with ONE follow-up question',
+        '- Answer ONLY what was asked',
+      ].join('\n');
+    }
+    return [
+      'REGLAS DEL CANAL (WhatsApp):',
+      '- Respuestas máximo 60-80 palabras',
+      '- Tono conversacional, sin tablas ni listas largas',
+      '- Siempre termina con UNA pregunta de seguimiento',
+      '- Responde SOLO lo que se preguntó',
+    ].join('\n');
+  }
+
+  private buildPersonaLayer(agent: AiAgentData): string {
+    const persona = agent.personaName || 'Asistente';
+    return `Eres ${persona}, asistente virtual de ${agent.businessName}.`;
+  }
+
+  private buildBusinessLayer(agent: AiAgentData): string {
+    const parts: string[] = [];
+    if (agent.industry) parts.push(`Sector: ${agent.industry}.`);
+    if (agent.websiteUrl) parts.push(`Web: ${agent.websiteUrl}`);
+    if (agent.businessHours) {
+      try {
+        const hours = typeof agent.businessHours === 'string'
+          ? JSON.parse(agent.businessHours)
+          : agent.businessHours;
+        const days = Object.entries(hours)
+          .filter(([, v]) => v && (v as string[]).length > 0)
+          .map(([k, v]) => `${k}: ${(v as string[]).join(', ')}`)
+          .join(' | ');
+        if (days) parts.push(`Horario: ${days}`);
+      } catch { /* ignore malformed hours */ }
+    }
+    return parts.length > 0 ? `INFORMACIÓN DEL NEGOCIO:\n${parts.join('\n')}` : '';
+  }
+
+  private buildToneLayer(agent: AiAgentData): string {
+    const toneMap: Record<string, string> = {
+      FORMAL: 'Usa registro formal (usted). Sin emojis. Lenguaje preciso y cortés.',
+      CASUAL: 'Usa registro informal (tú). Emojis moderados. Lenguaje cercano.',
+      FRIENDLY: 'Usa registro cercano y amigable (tú). Emojis bienvenidos. Tono cálido y empático.',
+      TECHNICAL: 'Usa lenguaje técnico preciso. Sin emojis. Enfócate en datos y especificaciones.',
+    };
+    const instruction = toneMap[agent.tone] || toneMap['FRIENDLY'];
+    return `TONO: ${instruction}`;
+  }
+
+  private buildCustomInstructionsLayer(agent: AiAgentData): string {
+    if (!agent.customInstructions) return '';
+    const sanitized = agent.customInstructions.substring(0, 2000).trim();
+    if (!sanitized) return '';
+    return `INSTRUCCIONES DEL NEGOCIO (seguir dentro de los límites éticos):\n${sanitized}`;
+  }
+
+  private buildKnowledgeLayer(
+    items: Array<{ title: string; content: string; category: string }>,
+  ): string {
+    if (!items.length) return '';
+    const lines = items.map((item, i) => `${i + 1}. [${item.category}] ${item.title}: ${item.content}`);
+    return `INFORMACIÓN CLAVE:\n${lines.join('\n')}`;
+  }
+
+  private buildProductsLayer(products: AiProductData[]): string {
+    if (!products.length) return '';
+    const lines = products.map((p) => {
+      let line = `- ${p.name}`;
+      if (p.description) line += `: ${p.description}`;
+      if (p.priceMin != null) {
+        line += p.priceMax != null && p.priceMax !== p.priceMin
+          ? ` (${p.priceMin}–${p.priceMax})`
+          : ` (${p.priceMin})`;
+      }
+      if (p.url) line += ` → ${p.url}`;
+      return line;
+    });
+    return `PRODUCTOS/SERVICIOS:\n${lines.join('\n')}`;
+  }
+
+  private buildGoalLayer(agent: AiAgentData): string {
+    const goalMap: Record<string, string> = {
+      REGISTER: 'Guiar al usuario hacia el registro.',
+      PURCHASE: 'Guiar al usuario hacia la compra.',
+      MEETING: 'Guiar al usuario a agendar una reunión.',
+      CONTACT: 'Facilitar que el usuario contacte al equipo.',
+      CUSTOM: agent.goalDescription || 'Asistir al usuario según las instrucciones del negocio.',
+    };
+    const goal = goalMap[agent.primaryGoal] || goalMap['CONTACT'];
+    let layer = `OBJETIVO PRINCIPAL: ${goal}`;
+    if (agent.goalCtaUrl) layer += `\nEnlace de acción: ${agent.goalCtaUrl}`;
+    if (agent.goalDescription && agent.primaryGoal !== 'CUSTOM') {
+      layer += `\n${agent.goalDescription}`;
+    }
+    layer += '\nSi el usuario necesita ayuda humana, sugiérele contactar al equipo directamente.';
+    return layer;
+  }
+
+  private buildDynamicContextLayer(context: MessageContext, agent: AiAgentData): string {
+    const parts: string[] = ['CONTEXTO ACTUAL:'];
+    if (context.phoneNumber) parts.push(`- Usuario: ${context.phoneNumber}`);
+    if (context.conversationHistory?.length) {
+      parts.push(`- Mensajes previos: ${context.conversationHistory.length}`);
+    }
+    const hour = new Date().getHours();
+    const timeOfDay = hour < 12 ? 'mañana' : hour < 18 ? 'tarde' : 'noche';
+    parts.push(`- Momento: ${timeOfDay}`);
+    parts.push(`- Idioma: ${agent.language || 'es'}`);
+    return parts.join('\n');
+  }
+
+  private buildOutputFormatLayer(agent: AiAgentData): string {
+    const maxWords = agent.responseMaxWords || 80;
+    const parts = [`FORMATO DE RESPUESTA:`, `- Máximo ${maxWords} palabras`];
+    if (!agent.allowEmojis) parts.push('- NO usar emojis');
+    parts.push('- Terminar siempre con una pregunta relevante');
+    return parts.join('\n');
   }
 
   /**
