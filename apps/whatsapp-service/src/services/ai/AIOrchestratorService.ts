@@ -190,8 +190,8 @@ export class AIOrchestratorService {
         throw new Error('No AI provider available');
       }
 
-      // Generate appropriate system prompt
-      const systemPrompt = this.generateSystemPrompt(intentAnalysis, context, options);
+      // B2.1: async prompt — dynamic per agent when available
+      const systemPrompt = await this.generateSystemPromptAsync(intentAnalysis, context, options);
 
       // Generate response
       logger.debug(`🤖 Generating AI response with ${provider.name}`);
@@ -257,13 +257,14 @@ export class AIOrchestratorService {
   }
 
   /**
-   * Generate system prompt based on context and options
+   * B2.1: async prompt generation — uses dynamic agent prompt when aiAgentId
+   * is available, falls back to legacy for specialized paths.
    */
-  private generateSystemPrompt(
+  private async generateSystemPromptAsync(
     intentAnalysis: IntentAnalysis,
     context?: MessageContext,
     options?: ResponseOptions
-  ): string {
+  ): Promise<string> {
     if (options?.useCase) {
       return this.promptService.getPromptForUseCase(options.useCase, context);
     }
@@ -272,12 +273,11 @@ export class AIOrchestratorService {
       return this.promptService.generateLocalizedPrompt(options.language, context);
     }
 
-    // Use specialized prompts for certain intents
     if (intentAnalysis.intent === 'soporte_tecnico') {
       return this.promptService.generateSpecializedPrompt('technical_support', context);
     }
 
-    return this.promptService.generateSystemPrompt(context);
+    return this.promptService.buildAgentSystemPrompt(context?.aiAgentId, context);
   }
 
   /**
