@@ -10,6 +10,10 @@ const sharedRedisOptions = {
   lazyConnect: true,
   connectTimeout: 10000,
   commandTimeout: 5000,
+  // TCP keepalive: el bridge de Docker Desktop en WSL2 corta conexiones
+  // idle ~60s. Sin esto, el socket de pub/sub queda colgado, el OS lo
+  // cierra con RST e ioredis loguea ECONNRESET en loop. 30s deja margen.
+  keepAlive: 30000,
 };
 
 function buildRedisClient(): Redis {

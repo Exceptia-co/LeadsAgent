@@ -6,6 +6,8 @@
     "build": "turbo run build",
     "build:fast": "turbo run build --parallel --no-daemon",
     "build:production": "NODE_ENV=production turbo run build --parallel",
+    "dev:clean": "npx -y kill-port@2 3001 3002 3003",
+    "predev": "pnpm dev:clean",
     "dev": "turbo run dev",
     "dev:dashboard": "turbo run dev --filter=@leadcrm/dashboard",
     "dev:api": "turbo run dev --filter=@leadcrm/api",

@@ -185,6 +185,8 @@ pnpm db:generate
 pnpm dev
 ```
 
+`pnpm dev` runs a `predev` hook that kills any process on ports 3001/3002/3003 first (via `pnpm dev:clean` → `npx kill-port`). If you have another legitimate service on those ports, run it elsewhere or skip the hook with `pnpm exec turbo run dev`.
+
 ## Project State
 
 The stabilization PRD (`PRD-ESTABILIZACION.md` v5.23) closed on 2026-04-18. All five phases + T0.4-ter shipped:

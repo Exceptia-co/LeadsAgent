@@ -20,4 +20,9 @@ module.exports = {
       useESM: false,
     },
   },
+  // Pragmatic: los specs son unitarios mockeados, pero el singleton
+  // DatabaseService abre Pool en su constructor y ese handle leak hace
+  // que Jest fuerce el cierre con warning. Revisitar (globalTeardown)
+  // cuando se introduzcan tests de integración con Redis/Prisma reales.
+  forceExit: true,
 };
