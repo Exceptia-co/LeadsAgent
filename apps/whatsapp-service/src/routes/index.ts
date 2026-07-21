@@ -998,7 +998,11 @@ router.post(
           console.log(`📧 Message sent result for ${lead.phone}:`, sendResult);
 
           if (sendResult.success && proactiveMessageId) {
-            await DatabaseService.updateProactiveMessageStatus(req.tenantId!, proactiveMessageId, 'sent');
+            await DatabaseService.updateProactiveMessageStatus(
+              req.tenantId!,
+              proactiveMessageId,
+              'sent'
+            );
             results.success++;
           } else {
             if (proactiveMessageId) {

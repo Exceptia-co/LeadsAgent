@@ -65,10 +65,18 @@ class AIService {
   /**
    * Generate response using the orchestrator (backward compatible)
    */
-  public async generateResponse(message: string, context?: MessageContext, systemPromptOverride?: string): Promise<AIResponse> {
+  public async generateResponse(
+    message: string,
+    context?: MessageContext,
+    systemPromptOverride?: string
+  ): Promise<AIResponse> {
     try {
       const options = systemPromptOverride ? { systemPromptOverride } : undefined;
-      const enhancedResponse = await this.orchestrator.generateOptimizedResponse(message, context, options);
+      const enhancedResponse = await this.orchestrator.generateOptimizedResponse(
+        message,
+        context,
+        options
+      );
 
       // Convert enhanced response to backward compatible format
       return {

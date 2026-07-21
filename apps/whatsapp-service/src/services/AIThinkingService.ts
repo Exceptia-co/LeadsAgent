@@ -227,7 +227,7 @@ class AIThinkingService {
           enrichedContext,
           intentAnalysis,
           thoughtProcess.responseStrategy,
-          knowledgeStep.data ?? [],
+          knowledgeStep.data ?? []
         );
         thoughtProcess.steps.push(responseStep);
         aiResponse = responseStep.data as AIResponse;
@@ -385,12 +385,16 @@ class AIThinkingService {
   private async performKnowledgeRetrieval(
     message: string,
     intentAnalysis: IntentAnalysis,
-    opts?: { tenantId?: string; aiAgentId?: string },
+    opts?: { tenantId?: string; aiAgentId?: string }
   ): Promise<ThinkingStep> {
     const stepStart = Date.now();
 
     try {
-      const relevantKnowledge = await this.knowledgeRetriever.retrieve(message, intentAnalysis, opts);
+      const relevantKnowledge = await this.knowledgeRetriever.retrieve(
+        message,
+        intentAnalysis,
+        opts
+      );
 
       const content =
         relevantKnowledge.length > 0
@@ -722,7 +726,7 @@ class AIThinkingService {
     context: EnrichedContext,
     intentAnalysis: IntentAnalysis,
     strategy: ResponseStrategy,
-    knowledgeData: any[],
+    knowledgeData: any[]
   ): Promise<ThinkingStep> {
     const stepStart = Date.now();
 
@@ -732,7 +736,7 @@ class AIThinkingService {
         context,
         intentAnalysis as any,
         strategy,
-        knowledgeData,
+        knowledgeData
       );
 
       return {

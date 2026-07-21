@@ -23,7 +23,7 @@ The patch (`patches/whatsapp-web.js@1.34.6.patch`) fixes a race condition in `Cl
 
 **Why this blocks the bump:**
 
-1. **Upstream refactored the target API in 1.34.7.** The hook moved from `window.AuthStore.AppState.on('change:hasSynced', …)` → `window.require('WAWebSocketModel').Socket.on('change:hasSynced', …)`. This aligns with the changelog item *"remove all mentions of window.Store"* — they're decoupling from the legacy `Store` and moving to `WAWeb*` modules.
+1. **Upstream refactored the target API in 1.34.7.** The hook moved from `window.AuthStore.AppState.on('change:hasSynced', …)` → `window.require('WAWebSocketModel').Socket.on('change:hasSynced', …)`. This aligns with the changelog item _"remove all mentions of window.Store"_ — they're decoupling from the legacy `Store` and moving to `WAWeb*` modules.
 2. **The race condition is still present in 1.34.7.** Verified by fetching `https://unpkg.com/whatsapp-web.js@1.34.7/src/Client.js`: upstream still registers the listener without checking `hasSynced` first.
 3. **The patch as-written will not apply.** Its diff context targets `AuthStore.AppState` lines that no longer exist in 1.34.7 → `pnpm install` will fail with `ERR_PNPM_PATCH_NOT_APPLIED`.
 4. **Dropping the patch is not safe.** It would reintroduce the original race in production (silent auth-timeout hangs).
@@ -32,7 +32,7 @@ Net: this is a **30-minute manual job to regenerate the patch against 1.34.7**, 
 
 ---
 
-## Why the bump is *desirable* (but not urgent)
+## Why the bump is _desirable_ (but not urgent)
 
 Patch release (semver-safe). 1.34.7 includes fixes that touch our pain points:
 

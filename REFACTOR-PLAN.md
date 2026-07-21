@@ -82,8 +82,8 @@ El orden no sigue el documento original, sino el impacto real verificado: primer
     lazyConnect: true,
     connectTimeout: 10000,
     commandTimeout: 5000,
-    keepAlive: 30000,            // ← TCP keepalive cada 30s para sobrevivir
-                                 //   al timeout idle del bridge WSL/Docker
+    keepAlive: 30000, // ← TCP keepalive cada 30s para sobrevivir
+    //   al timeout idle del bridge WSL/Docker
   };
   ```
 - **Por qué funciona:** El bridge de red de Docker Desktop en WSL2 corta conexiones TCP idle (~60s típico). Sin keepalive, el socket de pub/sub queda colgado, el OS lo cierra con RST, y ioredis lo loguea como `ECONNRESET` antes de reconectar. Con keepalive activo, el kernel envía paquetes de mantenimiento cada 30s y la conexión nunca queda idle el suficiente tiempo como para que el bridge la mate.
@@ -149,6 +149,7 @@ Todos los fixes son independientes (ninguno bloquea a otro), pero el orden recom
 6. **Fix 5** (S, P2) — añade conveniencia DX
 
 Esfuerzo total estimado: ~2 horas para los 6 fixes, agrupables en 1-2 commits temáticos:
+
 - Commit "fix: dev ergonomics" → Fixes 3, 4, 5, 6
 - Commit "fix: tenant resolution + leads pagination" → Fixes 1, 2
 

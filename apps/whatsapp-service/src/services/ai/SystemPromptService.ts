@@ -128,7 +128,7 @@ export class SystemPromptService {
    */
   public async buildAgentSystemPrompt(
     aiAgentId: string | null | undefined,
-    context?: MessageContext,
+    context?: MessageContext
   ): Promise<string> {
     if (!aiAgentId || !context?.tenantId) {
       return this.generateNeutralFallbackPrompt();
@@ -138,12 +138,18 @@ export class SystemPromptService {
       const { default: DatabaseService } = await import('../DatabaseService');
       const result = await DatabaseService.getAiAgentWithProducts(context.tenantId, aiAgentId);
       if (!result) {
-        logger.warn(`[PROMPT] Agent ${aiAgentId} not found for tenant ${context.tenantId} — neutral fallback`);
+        logger.warn(
+          `[PROMPT] Agent ${aiAgentId} not found for tenant ${context.tenantId} — neutral fallback`
+        );
         return this.generateNeutralFallbackPrompt();
       }
 
       const { agent, products } = result;
-      const knowledgeItems = await DatabaseService.getKnowledgeItemsByAgent(context.tenantId, aiAgentId, 10);
+      const knowledgeItems = await DatabaseService.getKnowledgeItemsByAgent(
+        context.tenantId,
+        aiAgentId,
+        10
+      );
       const lang = agent.language || 'es';
 
       const layers = [
@@ -198,15 +204,18 @@ export class SystemPromptService {
     if (agent.websiteUrl) parts.push(`Web: ${agent.websiteUrl}`);
     if (agent.businessHours) {
       try {
-        const hours = typeof agent.businessHours === 'string'
-          ? JSON.parse(agent.businessHours)
-          : agent.businessHours;
+        const hours =
+          typeof agent.businessHours === 'string'
+            ? JSON.parse(agent.businessHours)
+            : agent.businessHours;
         const days = Object.entries(hours)
           .filter(([, v]) => v && (v as string[]).length > 0)
           .map(([k, v]) => `${k}: ${(v as string[]).join(', ')}`)
           .join(' | ');
         if (days) parts.push(`Horario: ${days}`);
-      } catch { /* ignore malformed hours */ }
+      } catch {
+        /* ignore malformed hours */
+      }
     }
     return parts.length > 0 ? `INFORMACIÓN DEL NEGOCIO:\n${parts.join('\n')}` : '';
   }
@@ -230,22 +239,25 @@ export class SystemPromptService {
   }
 
   private buildKnowledgeLayer(
-    items: Array<{ title: string; content: string; category: string }>,
+    items: Array<{ title: string; content: string; category: string }>
   ): string {
     if (!items.length) return '';
-    const lines = items.map((item, i) => `${i + 1}. [${item.category}] ${item.title}: ${item.content}`);
+    const lines = items.map(
+      (item, i) => `${i + 1}. [${item.category}] ${item.title}: ${item.content}`
+    );
     return `INFORMACIÓN CLAVE:\n${lines.join('\n')}`;
   }
 
   private buildProductsLayer(products: AiProductData[]): string {
     if (!products.length) return '';
-    const lines = products.map((p) => {
+    const lines = products.map(p => {
       let line = `- ${p.name}`;
       if (p.description) line += `: ${p.description}`;
       if (p.priceMin != null) {
-        line += p.priceMax != null && p.priceMax !== p.priceMin
-          ? ` (${p.priceMin}–${p.priceMax})`
-          : ` (${p.priceMin})`;
+        line +=
+          p.priceMax != null && p.priceMax !== p.priceMin
+            ? ` (${p.priceMin}–${p.priceMax})`
+            : ` (${p.priceMin})`;
       }
       if (p.url) line += ` → ${p.url}`;
       return line;

@@ -19,16 +19,20 @@ export class KnowledgeRetriever implements IKnowledgeRetriever {
   public async retrieve(
     message: string,
     intentAnalysis: IntentAnalysis,
-    opts?: { tenantId?: string; aiAgentId?: string },
+    opts?: { tenantId?: string; aiAgentId?: string }
   ): Promise<any[]> {
     try {
       let relevantKnowledge: any[] = [];
-      const scopeOpts = opts?.tenantId || opts?.aiAgentId
-        ? { tenantId: opts.tenantId, agentId: opts.aiAgentId }
-        : undefined;
+      const scopeOpts =
+        opts?.tenantId || opts?.aiAgentId
+          ? { tenantId: opts.tenantId, agentId: opts.aiAgentId }
+          : undefined;
 
       const messageBasedKnowledge = await this.searchKnowledgeBase(message, scopeOpts);
-      const intentBasedKnowledge = await this.getKnowledgeByCategory(intentAnalysis.category, scopeOpts);
+      const intentBasedKnowledge = await this.getKnowledgeByCategory(
+        intentAnalysis.category,
+        scopeOpts
+      );
 
       relevantKnowledge = [...messageBasedKnowledge, ...intentBasedKnowledge]
         .filter((item, index, self) => index === self.findIndex(t => t.id === item.id))
@@ -61,7 +65,10 @@ export class KnowledgeRetriever implements IKnowledgeRetriever {
     }
   }
 
-  public async searchKnowledgeBase(query: string, opts?: { tenantId?: string; agentId?: string }): Promise<any[]> {
+  public async searchKnowledgeBase(
+    query: string,
+    opts?: { tenantId?: string; agentId?: string }
+  ): Promise<any[]> {
     try {
       return await DatabaseService.searchKnowledgeBase(query, opts);
     } catch (error) {
@@ -70,7 +77,10 @@ export class KnowledgeRetriever implements IKnowledgeRetriever {
     }
   }
 
-  public async getKnowledgeByCategory(category: string, opts?: { tenantId?: string; agentId?: string }): Promise<any[]> {
+  public async getKnowledgeByCategory(
+    category: string,
+    opts?: { tenantId?: string; agentId?: string }
+  ): Promise<any[]> {
     try {
       return await DatabaseService.getKnowledgeBase(category, opts);
     } catch (error) {
@@ -266,7 +276,7 @@ export class KnowledgeRetriever implements IKnowledgeRetriever {
   private async retrieveRelevantProducts(
     message: string,
     intentAnalysis: IntentAnalysis,
-    scopeOpts?: { tenantId?: string; agentId?: string },
+    scopeOpts?: { tenantId?: string; agentId?: string }
   ): Promise<any[]> {
     if (!scopeOpts?.tenantId || !scopeOpts?.agentId) return [];
 
@@ -274,7 +284,22 @@ export class KnowledgeRetriever implements IKnowledgeRetriever {
       const lowerMsg = message.toLowerCase();
 
       // Extract keywords from message (words ≥3 chars, no stopwords)
-      const stopwords = new Set(['que', 'los', 'las', 'una', 'con', 'por', 'para', 'del', 'más', 'como', 'esto', 'esta', 'son', 'hay']);
+      const stopwords = new Set([
+        'que',
+        'los',
+        'las',
+        'una',
+        'con',
+        'por',
+        'para',
+        'del',
+        'más',
+        'como',
+        'esto',
+        'esta',
+        'son',
+        'hay',
+      ]);
       const keywords = lowerMsg
         .split(/\s+/)
         .map(w => w.replace(/[^a-záéíóúñü]/g, ''))
@@ -288,29 +313,39 @@ export class KnowledgeRetriever implements IKnowledgeRetriever {
         const priceMatch = message.match(/(\d+)\s*(?:€|euros?|dollars?|\$)/i);
         if (priceMatch) maxPrice = Number(priceMatch[1]);
       }
-      if (lowerMsg.includes('barato') || lowerMsg.includes('económico') || lowerMsg.includes('cheap')) {
+      if (
+        lowerMsg.includes('barato') ||
+        lowerMsg.includes('económico') ||
+        lowerMsg.includes('cheap')
+      ) {
         maxPrice = maxPrice ?? 100;
       }
 
       // Extract tags from intent entities
       const tags = intentAnalysis.entities?.productTags
-        ? (Array.isArray(intentAnalysis.entities.productTags) ? intentAnalysis.entities.productTags : [intentAnalysis.entities.productTags])
+        ? Array.isArray(intentAnalysis.entities.productTags)
+          ? intentAnalysis.entities.productTags
+          : [intentAnalysis.entities.productTags]
         : undefined;
 
-      const products = await DatabaseService.searchProducts(
-        scopeOpts.tenantId,
-        scopeOpts.agentId,
-        { keywords: keywords.length > 0 ? keywords : undefined, tags, maxPrice },
-      );
+      const products = await DatabaseService.searchProducts(scopeOpts.tenantId, scopeOpts.agentId, {
+        keywords: keywords.length > 0 ? keywords : undefined,
+        tags,
+        maxPrice,
+      });
 
       return products.map(p => ({
         id: p.id,
         title: p.name,
         content: [
           p.description,
-          p.priceMin != null ? `Precio: ${p.priceMin}${p.priceMax && p.priceMax !== p.priceMin ? `–${p.priceMax}` : ''}` : null,
+          p.priceMin != null
+            ? `Precio: ${p.priceMin}${p.priceMax && p.priceMax !== p.priceMin ? `–${p.priceMax}` : ''}`
+            : null,
           p.url ? `Más info: ${p.url}` : null,
-        ].filter(Boolean).join('. '),
+        ]
+          .filter(Boolean)
+          .join('. '),
         category: 'producto',
         type: 'product',
       }));

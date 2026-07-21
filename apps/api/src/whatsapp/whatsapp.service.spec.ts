@@ -39,7 +39,14 @@ describe('WhatsAppService tenant-scope', () => {
       providers: [
         WhatsAppService,
         { provide: PrismaService, useValue: prisma },
-        { provide: WhitelistService, useValue: { isNumberAuthorized: jest.fn().mockResolvedValue({ allowed: true, reason: 'test' }) } },
+        {
+          provide: WhitelistService,
+          useValue: {
+            isNumberAuthorized: jest
+              .fn()
+              .mockResolvedValue({ allowed: true, reason: 'test' }),
+          },
+        },
       ],
     }).compile();
 
@@ -49,7 +56,9 @@ describe('WhatsAppService tenant-scope', () => {
 
   describe('handleIncomingMessage — lead.updateMany with tenantId', () => {
     beforeEach(() => {
-      prisma.whatsAppSession.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+      prisma.whatsAppSession.findUnique.mockResolvedValue({
+        tenantId: TENANT_ID,
+      });
     });
 
     it('uses updateMany with tenantId when lead status is NUEVO', async () => {
@@ -107,9 +116,13 @@ describe('WhatsAppService tenant-scope', () => {
 
   describe('handleSessionAuthenticated — scoped session update', () => {
     it('uses updateMany with tenantId when session has tenant', async () => {
-      prisma.whatsAppSession.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+      prisma.whatsAppSession.findUnique.mockResolvedValue({
+        tenantId: TENANT_ID,
+      });
 
-      await service.handleSessionAuthenticated(SESSION_ID, { number: '+5491155556666' });
+      await service.handleSessionAuthenticated(SESSION_ID, {
+        number: '+5491155556666',
+      });
 
       expect(prisma.whatsAppSession.updateMany).toHaveBeenCalledWith({
         where: { sessionId: SESSION_ID, tenantId: TENANT_ID },
@@ -133,7 +146,9 @@ describe('WhatsAppService tenant-scope', () => {
 
   describe('handleSessionDisconnected — scoped session update', () => {
     it('uses updateMany with tenantId when session has tenant', async () => {
-      prisma.whatsAppSession.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+      prisma.whatsAppSession.findUnique.mockResolvedValue({
+        tenantId: TENANT_ID,
+      });
 
       await service.handleSessionDisconnected(SESSION_ID, { reason: 'logout' });
 
@@ -146,9 +161,14 @@ describe('WhatsAppService tenant-scope', () => {
 
   describe('handleStatusChange — scoped session update', () => {
     it('uses updateMany with tenantId when session has tenant', async () => {
-      prisma.whatsAppSession.findUnique.mockResolvedValue({ tenantId: TENANT_ID });
+      prisma.whatsAppSession.findUnique.mockResolvedValue({
+        tenantId: TENANT_ID,
+      });
 
-      await service.handleStatusChange(SESSION_ID, { status: 'auth_failure', message: 'expired' });
+      await service.handleStatusChange(SESSION_ID, {
+        status: 'auth_failure',
+        message: 'expired',
+      });
 
       expect(prisma.whatsAppSession.updateMany).toHaveBeenCalledWith({
         where: { sessionId: SESSION_ID, tenantId: TENANT_ID },

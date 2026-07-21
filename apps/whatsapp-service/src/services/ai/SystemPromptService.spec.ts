@@ -51,8 +51,24 @@ function makeAgent(overrides?: Partial<AiAgentData>): AiAgentData {
 
 function makeProducts(): AiProductData[] {
   return [
-    { id: 'p1', name: 'Plan Basic', description: 'Entry plan', priceMin: 10, priceMax: 10, url: null, tags: [] },
-    { id: 'p2', name: 'Plan Pro', description: 'Advanced', priceMin: 50, priceMax: 100, url: 'https://test.com/pro', tags: ['popular'] },
+    {
+      id: 'p1',
+      name: 'Plan Basic',
+      description: 'Entry plan',
+      priceMin: 10,
+      priceMax: 10,
+      url: null,
+      tags: [],
+    },
+    {
+      id: 'p2',
+      name: 'Plan Pro',
+      description: 'Advanced',
+      priceMin: 50,
+      priceMax: 100,
+      url: 'https://test.com/pro',
+      tags: ['popular'],
+    },
   ];
 }
 
@@ -72,7 +88,10 @@ describe('SystemPromptService.buildAgentSystemPrompt', () => {
   });
 
   it('returns neutral prompt when tenantId is missing', async () => {
-    const result = await service.buildAgentSystemPrompt(AGENT_ID, { from: 'test', sessionId: 's1' });
+    const result = await service.buildAgentSystemPrompt(AGENT_ID, {
+      from: 'test',
+      sessionId: 's1',
+    });
     expect(result).toContain('asistente virtual profesional');
     expect(result).not.toContain('EscortsHub');
     expect(mockGetAiAgentWithProducts).not.toHaveBeenCalled();
@@ -85,7 +104,9 @@ describe('SystemPromptService.buildAgentSystemPrompt', () => {
     mockGetKnowledgeItemsByAgent.mockResolvedValue([]);
 
     const result = await service.buildAgentSystemPrompt(AGENT_ID, {
-      from: 'test', sessionId: 's1', tenantId: TENANT_ID,
+      from: 'test',
+      sessionId: 's1',
+      tenantId: TENANT_ID,
     });
 
     expect(result).toContain('TestBusiness');
@@ -99,11 +120,20 @@ describe('SystemPromptService.buildAgentSystemPrompt', () => {
   it('includes knowledge items in prompt', async () => {
     mockGetAiAgentWithProducts.mockResolvedValue({ agent: makeAgent(), products: [] });
     mockGetKnowledgeItemsByAgent.mockResolvedValue([
-      { id: 'k1', category: 'faq', title: 'Horarios', content: 'Lunes a viernes 9-18', keywords: [], priority: 1 },
+      {
+        id: 'k1',
+        category: 'faq',
+        title: 'Horarios',
+        content: 'Lunes a viernes 9-18',
+        keywords: [],
+        priority: 1,
+      },
     ]);
 
     const result = await service.buildAgentSystemPrompt(AGENT_ID, {
-      from: 'test', sessionId: 's1', tenantId: TENANT_ID,
+      from: 'test',
+      sessionId: 's1',
+      tenantId: TENANT_ID,
     });
 
     expect(result).toContain('Horarios');
@@ -111,11 +141,16 @@ describe('SystemPromptService.buildAgentSystemPrompt', () => {
   });
 
   it('uses FORMAL tone instructions', async () => {
-    mockGetAiAgentWithProducts.mockResolvedValue({ agent: makeAgent({ tone: 'FORMAL' }), products: [] });
+    mockGetAiAgentWithProducts.mockResolvedValue({
+      agent: makeAgent({ tone: 'FORMAL' }),
+      products: [],
+    });
     mockGetKnowledgeItemsByAgent.mockResolvedValue([]);
 
     const result = await service.buildAgentSystemPrompt(AGENT_ID, {
-      from: 'test', sessionId: 's1', tenantId: TENANT_ID,
+      from: 'test',
+      sessionId: 's1',
+      tenantId: TENANT_ID,
     });
 
     expect(result).toContain('usted');
@@ -130,7 +165,9 @@ describe('SystemPromptService.buildAgentSystemPrompt', () => {
     mockGetKnowledgeItemsByAgent.mockResolvedValue([]);
 
     const result = await service.buildAgentSystemPrompt(AGENT_ID, {
-      from: 'test', sessionId: 's1', tenantId: TENANT_ID,
+      from: 'test',
+      sessionId: 's1',
+      tenantId: TENANT_ID,
     });
 
     expect(result).toContain('registro');
@@ -146,7 +183,9 @@ describe('SystemPromptService.buildAgentSystemPrompt', () => {
     mockGetKnowledgeItemsByAgent.mockResolvedValue([]);
 
     const result = await service.buildAgentSystemPrompt(AGENT_ID, {
-      from: 'test', sessionId: 's1', tenantId: TENANT_ID,
+      from: 'test',
+      sessionId: 's1',
+      tenantId: TENANT_ID,
     });
 
     const match = result.match(/INSTRUCCIONES DEL NEGOCIO[^\n]*\n([\s\S]*?)(?:\n\n|$)/);
@@ -159,7 +198,9 @@ describe('SystemPromptService.buildAgentSystemPrompt', () => {
     mockGetAiAgentWithProducts.mockResolvedValue(null);
 
     const result = await service.buildAgentSystemPrompt(AGENT_ID, {
-      from: 'test', sessionId: 's1', tenantId: TENANT_ID,
+      from: 'test',
+      sessionId: 's1',
+      tenantId: TENANT_ID,
     });
 
     expect(result).toContain('asistente virtual profesional');
@@ -174,7 +215,9 @@ describe('SystemPromptService.buildAgentSystemPrompt', () => {
     mockGetKnowledgeItemsByAgent.mockResolvedValue([]);
 
     const result = await service.buildAgentSystemPrompt(AGENT_ID, {
-      from: 'test', sessionId: 's1', tenantId: TENANT_ID,
+      from: 'test',
+      sessionId: 's1',
+      tenantId: TENANT_ID,
     });
 
     expect(result).toContain('NO usar emojis');

@@ -46,7 +46,13 @@ describe('AiAgentsService', () => {
 
   describe('findOne — tenant scoping', () => {
     it('returns agent when tenant matches', async () => {
-      const agent = { id: AGENT_ID, tenantId: TENANT_ID, name: 'Test', products: [], _count: {} };
+      const agent = {
+        id: AGENT_ID,
+        tenantId: TENANT_ID,
+        name: 'Test',
+        products: [],
+        _count: {},
+      };
       prisma.aiAgent.findFirst.mockResolvedValue(agent);
 
       const result = await service.findOne(TENANT_ID, AGENT_ID);
@@ -70,7 +76,10 @@ describe('AiAgentsService', () => {
   describe('update — tenant scoping', () => {
     it('uses updateMany with tenantId in WHERE', async () => {
       prisma.aiAgent.updateMany.mockResolvedValue({ count: 1 });
-      prisma.aiAgent.findFirst.mockResolvedValue({ id: AGENT_ID, tenantId: TENANT_ID });
+      prisma.aiAgent.findFirst.mockResolvedValue({
+        id: AGENT_ID,
+        tenantId: TENANT_ID,
+      });
 
       await service.update(TENANT_ID, AGENT_ID, { businessName: 'New Name' });
 

@@ -17,7 +17,13 @@ export class AiAgentsService {
     return this.prisma.aiAgent.findMany({
       where: { tenantId },
       include: {
-        _count: { select: { products: true, knowledgeBaseItems: true, whatsappSessions: true } },
+        _count: {
+          select: {
+            products: true,
+            knowledgeBaseItems: true,
+            whatsappSessions: true,
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -28,7 +34,9 @@ export class AiAgentsService {
       where: { id: agentId, tenantId },
       include: {
         products: { where: { active: true }, orderBy: { createdAt: 'asc' } },
-        _count: { select: { knowledgeBaseItems: true, whatsappSessions: true } },
+        _count: {
+          select: { knowledgeBaseItems: true, whatsappSessions: true },
+        },
       },
     });
     if (!agent) throw new NotFoundException('Agent not found');
@@ -100,7 +108,8 @@ export class AiAgentsService {
         updated_at: new Date(),
       },
     });
-    if (result.count === 0) throw new NotFoundException('Knowledge item not found');
+    if (result.count === 0)
+      throw new NotFoundException('Knowledge item not found');
     return this.prisma.ai_knowledge_base.findFirst({
       where: { id: itemId, tenantId, agentId },
     });
@@ -111,7 +120,8 @@ export class AiAgentsService {
     const result = await this.prisma.ai_knowledge_base.deleteMany({
       where: { id: itemId, tenantId, agentId },
     });
-    if (result.count === 0) throw new NotFoundException('Knowledge item not found');
+    if (result.count === 0)
+      throw new NotFoundException('Knowledge item not found');
   }
 
   // ── B2.8: Products ────────────────────────────────────────────
@@ -123,7 +133,11 @@ export class AiAgentsService {
     });
   }
 
-  async createProduct(tenantId: string, agentId: string, data: CreateProductDto) {
+  async createProduct(
+    tenantId: string,
+    agentId: string,
+    data: CreateProductDto,
+  ) {
     await this.assertAgentOwnership(tenantId, agentId);
     return this.prisma.aiProduct.create({
       data: {
@@ -201,12 +215,14 @@ export class AiAgentsService {
       agent.industry ? `Sector: ${agent.industry}.` : null,
       agent.websiteUrl ? `Web: ${agent.websiteUrl}` : null,
       `Tono: ${toneMap[agent.tone] || toneMap['FRIENDLY']}`,
-      agent.customInstructions ? `Instrucciones: ${agent.customInstructions.substring(0, 500)}` : null,
+      agent.customInstructions
+        ? `Instrucciones: ${agent.customInstructions.substring(0, 500)}`
+        : null,
       knowledgeItems.length > 0
         ? `Conocimiento (${knowledgeItems.length} items):\n${knowledgeItems.map((k, i) => `${i + 1}. [${k.category}] ${k.title}`).join('\n')}`
         : null,
       agent.products.length > 0
-        ? `Productos (${agent.products.length}):\n${agent.products.map(p => `- ${p.name}${p.priceMin ? ` (${p.priceMin})` : ''}`).join('\n')}`
+        ? `Productos (${agent.products.length}):\n${agent.products.map((p) => `- ${p.name}${p.priceMin ? ` (${p.priceMin})` : ''}`).join('\n')}`
         : null,
       `Objetivo: ${goalMap[agent.primaryGoal] || goalMap['CONTACT']}`,
       agent.goalCtaUrl ? `CTA: ${agent.goalCtaUrl}` : null,

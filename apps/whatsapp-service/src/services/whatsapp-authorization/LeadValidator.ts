@@ -28,7 +28,10 @@ export class LeadValidator {
   /**
    * Buscar información del lead asociado al número
    */
-  public async findLeadInfo(phoneNumber: string, opts?: { tenantId?: string }): Promise<Lead | null> {
+  public async findLeadInfo(
+    phoneNumber: string,
+    opts?: { tenantId?: string }
+  ): Promise<Lead | null> {
     try {
       logger.debug('🔍 Looking up lead information', { phoneNumber });
 
@@ -174,7 +177,11 @@ export class LeadValidator {
           );
           return { leadCreated, leadUpdated, lead };
         }
-        const updateResult = await this.updateLeadWhatsAppAuthorization(lead.id, true, context.tenantId);
+        const updateResult = await this.updateLeadWhatsAppAuthorization(
+          lead.id,
+          true,
+          context.tenantId
+        );
         if (updateResult.success) {
           leadUpdated = true;
           lead.whatsappAuthorized = true;
@@ -399,12 +406,15 @@ export class LeadValidator {
     }
 
     try {
-      const lead = await DatabaseService.createLead({
-        name: context.contactName || null,
-        phone: context.phoneNumber,
-        source: context.leadSource || 'whatsapp',
-        status: 'NUEVO',
-      }, { tenantId: context.tenantId });
+      const lead = await DatabaseService.createLead(
+        {
+          name: context.contactName || null,
+          phone: context.phoneNumber,
+          source: context.leadSource || 'whatsapp',
+          status: 'NUEVO',
+        },
+        { tenantId: context.tenantId }
+      );
 
       if (lead) {
         return { success: true, lead };
