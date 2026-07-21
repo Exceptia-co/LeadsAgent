@@ -203,16 +203,16 @@ export class WhatsAppService {
       });
 
       if (lead.status === LeadStatus.NUEVO) {
-        await this.prisma.lead.update({
-          where: { id: lead.id },
+        await this.prisma.lead.updateMany({
+          where: { id: lead.id, tenantId, deletedAt: null },
           data: {
             status: LeadStatus.CONTACTADO,
             lastContact: new Date(),
           },
         });
       } else {
-        await this.prisma.lead.update({
-          where: { id: lead.id },
+        await this.prisma.lead.updateMany({
+          where: { id: lead.id, tenantId, deletedAt: null },
           data: { lastContact: new Date() },
         });
       }
@@ -223,20 +223,38 @@ export class WhatsAppService {
     }
   }
 
+  private async scopedSessionUpdate(
+    sessionId: string,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    const tenantId = await this.getSessionTenantId(sessionId);
+    if (tenantId) {
+      await this.prisma.whatsAppSession.updateMany({
+        where: { sessionId, tenantId },
+        data,
+      });
+    } else {
+      this.logger.warn(
+        `Session ${sessionId} has no tenantId — using unscoped update (pre-backfill legacy)`,
+      );
+      await this.prisma.whatsAppSession.update({
+        where: { sessionId },
+        data,
+      });
+    }
+  }
+
   async handleSessionAuthenticated(
     sessionId: string,
     data: any,
   ): Promise<void> {
     this.logger.log(`Session ${sessionId} authenticated successfully`);
     try {
-      await this.prisma.whatsAppSession.update({
-        where: { sessionId },
-        data: {
-          status: 'authenticated',
-          lastSeen: new Date(),
-          lastError: null,
-          connectedNumber: data?.number ?? undefined,
-        },
+      await this.scopedSessionUpdate(sessionId, {
+        status: 'authenticated',
+        lastSeen: new Date(),
+        lastError: null,
+        connectedNumber: data?.number ?? undefined,
       });
     } catch (error) {
       this.logger.error(
@@ -249,13 +267,10 @@ export class WhatsAppService {
   async handleSessionDisconnected(sessionId: string, data: any): Promise<void> {
     this.logger.log(`Session ${sessionId} disconnected: ${data?.reason}`);
     try {
-      await this.prisma.whatsAppSession.update({
-        where: { sessionId },
-        data: {
-          status: data?.authInvalidated ? 'auth_failure' : 'disconnected',
-          lastSeen: new Date(),
-          lastError: data?.reason ?? null,
-        },
+      await this.scopedSessionUpdate(sessionId, {
+        status: data?.authInvalidated ? 'auth_failure' : 'disconnected',
+        lastSeen: new Date(),
+        lastError: data?.reason ?? null,
       });
     } catch (error) {
       this.logger.error(
@@ -272,16 +287,13 @@ export class WhatsAppService {
       return;
     }
     try {
-      await this.prisma.whatsAppSession.update({
-        where: { sessionId },
-        data: {
-          status: nextStatus,
-          lastSeen: new Date(),
-          lastError:
-            nextStatus === 'auth_failure'
-              ? (data?.message ?? data?.reason ?? 'auth_failure')
-              : null,
-        },
+      await this.scopedSessionUpdate(sessionId, {
+        status: nextStatus,
+        lastSeen: new Date(),
+        lastError:
+          nextStatus === 'auth_failure'
+            ? (data?.message ?? data?.reason ?? 'auth_failure')
+            : null,
       });
     } catch (error) {
       this.logger.error(
@@ -369,8 +381,8 @@ export class WhatsAppService {
             },
           });
 
-          await this.prisma.lead.update({
-            where: { id: lead.id },
+          await this.prisma.lead.updateMany({
+            where: { id: lead.id, tenantId, deletedAt: null },
             data: { lastContact: new Date() },
           });
         }

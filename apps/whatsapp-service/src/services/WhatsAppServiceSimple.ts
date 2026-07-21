@@ -452,10 +452,14 @@ class WhatsAppServiceSimple {
 
       logger.debug(`🔍 Checking authorization for phone number: ${phoneNumber} (modular)`);
 
-      // Use the enhanced authorization service
+      // B2.0 follow-up: resolve tenantId for authorization pipeline scoping
+      const { default: DatabaseServiceMod } = await import('./DatabaseService');
+      const tenantId = await DatabaseServiceMod.getSessionTenantId(sessionId);
+
       const authorizationResult = await WhatsAppAuthorizationService.authorize({
         phoneNumber,
         sessionId,
+        tenantId: tenantId ?? undefined,
         messagePreview,
         timestamp: new Date(),
       });

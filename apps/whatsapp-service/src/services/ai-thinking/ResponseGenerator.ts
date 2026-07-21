@@ -106,10 +106,10 @@ export class ResponseGenerator {
         );
       }
 
-      // 2. Build contextual prompt
-      await this.buildContextualPrompt(intentAnalysis, strategy, knowledgeData, context);
+      // 2. Build contextual prompt with agent + thinking overlays
+      const contextualPrompt = await this.buildContextualPrompt(intentAnalysis, strategy, knowledgeData, context);
 
-      // 3. Generate AI response
+      // 3. Generate AI response — pass contextual prompt as system prompt override
       const aiResponse = await AIService.generateResponse(message, {
         ...context,
         conversationHistory:
@@ -117,7 +117,7 @@ export class ResponseGenerator {
             role: m.isFromUser ? 'user' : ('assistant' as 'user' | 'assistant'),
             content: m.message,
           })) || [],
-      });
+      }, contextualPrompt);
 
       if (!aiResponse.success || !aiResponse.content) {
         throw new Error(aiResponse.error || 'Failed to generate response');
@@ -273,37 +273,35 @@ export class ResponseGenerator {
     intentAnalysis: IntentAnalysisExtended,
     strategy: ResponseStrategy,
     knowledgeData: KnowledgeItem[],
-    _context: EnrichedContext
+    context: EnrichedContext
   ): Promise<string> {
     try {
-      let systemPrompt = (await DatabaseService.getAIConfiguration('system_prompt')) || '';
+      // B2.1: delegate base prompt to SystemPromptService (agent-aware)
+      const { SystemPromptService } = await import('../ai/SystemPromptService');
+      const promptService = new SystemPromptService();
+      let systemPrompt = await promptService.buildAgentSystemPrompt(
+        context.aiAgentId ?? null,
+        context,
+      );
 
-      // Add critical instruction for brevity
-      systemPrompt += `\n\n🎯 INSTRUCCIÓN CRÍTICA: RESPUESTA CONVERSACIONAL BREVE\n`;
-      systemPrompt += `LÍMITE ABSOLUTO: 60 palabras máximo. Formato WhatsApp natural. `;
-      systemPrompt += `Responde SOLO lo preguntado + una pregunta final.\n\n`;
-
-      // Add intent context
-      systemPrompt += `CONTEXTO ACTUAL:\n`;
+      // Thinking pipeline overlays (complementary to agent prompt)
+      systemPrompt += `\n\nANÁLISIS DEL MENSAJE:\n`;
       systemPrompt += `Intención: ${intentAnalysis.intent} (${(intentAnalysis.confidence * 100).toFixed(1)}%)\n`;
       systemPrompt += `Sentimiento: ${intentAnalysis.sentiment}\n`;
       systemPrompt += `Urgencia: ${intentAnalysis.urgency}\n`;
 
-      // Add strategy context
       systemPrompt += `\nESTRATEGIA DE RESPUESTA:\n`;
       systemPrompt += `Tono: ${strategy.tone}\n`;
       systemPrompt += `Longitud: ${strategy.length}\n`;
       systemPrompt += `Prioridad: ${strategy.priority}\n`;
 
-      // Add knowledge if available
       if (knowledgeData.length > 0) {
-        systemPrompt += `\nCONOCIMIENTO RELEVANTE:\n`;
+        systemPrompt += `\nCONOCIMIENTO RELEVANTE ADICIONAL:\n`;
         knowledgeData.forEach((knowledge, index) => {
           systemPrompt += `${index + 1}. ${knowledge.title}: ${knowledge.content}\n`;
         });
       }
 
-      // Add format instructions based on intent
       systemPrompt += this.getFormatInstructions(intentAnalysis.intent);
 
       return systemPrompt;
@@ -313,19 +311,16 @@ export class ResponseGenerator {
     }
   }
 
-  /**
-   * Get format instructions based on intent
-   */
   private getFormatInstructions(intent: string): string {
     const instructions: Record<string, string> = {
       consulta_precio:
-        '\n📝 FORMATO PRECIO: Paquete Plus (500 HUB/300€) = mejor precio. [1 producto específico]. ¿Te interesa? MAX 40 palabras.',
+        '\n📝 FORMATO: Menciona el producto más relevante con precio. Pregunta si le interesa. MAX 40 palabras.',
       pricing_inquiry:
-        '\n📝 FORMATO PRECIO: Paquete Plus (500 HUB/300€) = mejor precio. [1 producto específico]. ¿Te interesa? MAX 40 palabras.',
+        '\n📝 FORMATO: Menciona el producto más relevante con precio. Pregunta si le interesa. MAX 40 palabras.',
       registro:
-        '\n📝 FORMATO REGISTRO: "Gratis en https://www.escortshub.net/es/sign-up. Solo pagas productos que actives. ¿Te ayudo?" MAX 25 palabras.',
+        '\n📝 FORMATO: Indica que el registro es gratuito con el enlace correspondiente. MAX 25 palabras.',
       default:
-        '\n📝 FORMATO GENERAL: Respuesta directa en 30-40 palabras + pregunta final. Nada más.',
+        '\n📝 FORMATO: Respuesta directa en 30-40 palabras + pregunta final.',
     };
 
     return instructions[intent] || instructions['default'];
@@ -377,9 +372,9 @@ export class ResponseGenerator {
       return text;
     }
 
-    // For greetings, use fixed template
+    // For greetings, use generic truncation (agent-specific greeting comes from the LLM)
     if (intent === 'saludo' || intent === 'greeting') {
-      return '¡Hola! 👋 Soy tu asistente de EscortsHub.net. ¿En qué puedo ayudarte?';
+      return '¡Hola! 👋 ¿En qué puedo ayudarte?';
     }
 
     // For other cases, truncate intelligently

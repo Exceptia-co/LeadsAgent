@@ -34,7 +34,7 @@ export class ContextEnricher implements IContextEnricher {
       // scope the query — prevents cross-tenant context leak into the AI.
       if (context.phoneNumber) {
         await this.enrichWithConversationHistory(enriched, context.phoneNumber, context.sessionId);
-        await this.enrichWithLeadProfile(enriched, context.phoneNumber);
+        await this.enrichWithLeadProfile(enriched, context.phoneNumber, context.tenantId);
       }
 
       // Añadir contexto temporal
@@ -114,10 +114,11 @@ export class ContextEnricher implements IContextEnricher {
 
   private async enrichWithLeadProfile(
     enriched: EnrichedContext,
-    phoneNumber: string
+    phoneNumber: string,
+    tenantId?: string
   ): Promise<void> {
     try {
-      const leads = await DatabaseService.getAllLeads();
+      const leads = await DatabaseService.getAllLeads({ tenantId });
       const normalizedPhone = phoneNumber.replace(/\D/g, '');
 
       enriched.leadProfile = leads.find(lead => lead.phone && lead.phone.includes(normalizedPhone));

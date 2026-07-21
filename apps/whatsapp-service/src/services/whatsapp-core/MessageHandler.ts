@@ -163,10 +163,25 @@ export class MessageHandler {
       // Get phone number without WhatsApp suffix
       const phoneNumber = whatsappMessage.from.replace('@c.us', '');
 
+      // B2.1: resolve tenantId + aiAgentId in a single query
+      const { tenantId, aiAgentId } = await DatabaseService.getSessionContext(sessionId);
+      if (!tenantId) {
+        logger.warn(
+          `[TENANT-SAFE] processMessageWithAI: session ${sessionId} has no tenantId — AI pipeline will run with unscoped reads`,
+        );
+      }
+      if (!aiAgentId) {
+        logger.warn(
+          `[AGENT-SAFE] processMessageWithAI: session ${sessionId} has no aiAgentId — using legacy prompt`,
+        );
+      }
+
       // Enhanced processing with structured thinking
       const thinkingResult = await AIThinkingService.processWithThinking(whatsappMessage.body, {
         from: whatsappMessage.from,
         sessionId: sessionId,
+        tenantId: tenantId ?? undefined,
+        aiAgentId: aiAgentId ?? undefined,
         phoneNumber: phoneNumber,
       });
 
@@ -289,7 +304,8 @@ export class MessageHandler {
           try {
             const intelligentFallback = await this.generateIntelligentFallback(
               originalMessage,
-              phoneNumber
+              phoneNumber,
+              { tenantId: tenantId ?? undefined, aiAgentId: aiAgentId ?? undefined },
             );
             await originalMessage.reply(intelligentFallback);
 
@@ -331,11 +347,12 @@ export class MessageHandler {
       // Get phone number for fallback (define it here since it's in catch block)
       const phoneNumber = whatsappMessage.from.replace('@c.us', '');
 
-      // Send intelligent fallback message on critical error
+      // Critical error fallback — tenantId/aiAgentId unavailable (declared in try block).
+      // KB search here is intentionally unscoped; the warning will fire from DatabaseService.
       try {
         const intelligentFallback = await this.generateIntelligentFallback(
           originalMessage,
-          phoneNumber
+          phoneNumber,
         );
         await originalMessage.reply(intelligentFallback);
       } catch (replyError) {
@@ -601,19 +618,21 @@ export class MessageHandler {
    */
   private async generateIntelligentFallback(
     originalMessage: Message,
-    phoneNumber: string
+    phoneNumber: string,
+    opts?: { tenantId?: string; aiAgentId?: string },
   ): Promise<string> {
     try {
       logger.info(`🔍 Generating intelligent fallback for ${phoneNumber}`);
 
-      // Import services
       const { default: DatabaseService } = await import('../DatabaseService');
       const { default: AIService } = await import('../AIService');
 
       const messageText = originalMessage.body || '';
 
-      // Search knowledge base for relevant information
-      const knowledgeResults = await DatabaseService.searchKnowledgeBase(messageText);
+      const kbOpts = opts?.tenantId || opts?.aiAgentId
+        ? { tenantId: opts.tenantId, agentId: opts.aiAgentId }
+        : undefined;
+      const knowledgeResults = await DatabaseService.searchKnowledgeBase(messageText, kbOpts);
 
       if (knowledgeResults.length > 0) {
         logger.info(`📚 Found ${knowledgeResults.length} relevant knowledge base entries`);

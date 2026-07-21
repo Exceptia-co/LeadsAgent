@@ -747,7 +747,7 @@ router.post('/proactive-messages', requireTenantContext, rateLimitBySession, asy
       if (uuidRegex.test(templateId)) {
         validTemplateId = templateId;
         // Incrementar contador de uso del template
-        await DatabaseService.incrementTemplateUsage(templateId);
+        await DatabaseService.incrementTemplateUsage(req.tenantId!, templateId);
       } else {
         console.log(`⚠️ Invalid template ID format: ${templateId}, treating as custom content`);
       }
@@ -827,7 +827,7 @@ router.post('/proactive-messages', requireTenantContext, rateLimitBySession, asy
 
     if (sendResult.success) {
       // Actualizar estado a enviado
-      await DatabaseService.updateProactiveMessageStatus(proactiveMessageId, 'sent');
+      await DatabaseService.updateProactiveMessageStatus(req.tenantId!, proactiveMessageId, 'sent');
 
       res.status(201).json({
         success: true,
@@ -845,6 +845,7 @@ router.post('/proactive-messages', requireTenantContext, rateLimitBySession, asy
     } else {
       // Actualizar estado a fallido
       await DatabaseService.updateProactiveMessageStatus(
+        req.tenantId!,
         proactiveMessageId,
         'failed',
         sendResult.error || 'Unknown error'
@@ -948,7 +949,7 @@ router.post(
 
           // Si se especifica un template, procesarlo
           if (templateId) {
-            const template = await DatabaseService.getTemplate(templateId);
+            const template = await DatabaseService.getTemplate(req.tenantId!, templateId);
             if (template) {
               messageContent = template.content;
             }
@@ -997,11 +998,12 @@ router.post(
           console.log(`📧 Message sent result for ${lead.phone}:`, sendResult);
 
           if (sendResult.success && proactiveMessageId) {
-            await DatabaseService.updateProactiveMessageStatus(proactiveMessageId, 'sent');
+            await DatabaseService.updateProactiveMessageStatus(req.tenantId!, proactiveMessageId, 'sent');
             results.success++;
           } else {
             if (proactiveMessageId) {
               await DatabaseService.updateProactiveMessageStatus(
+                req.tenantId!,
                 proactiveMessageId,
                 'failed',
                 sendResult.error || 'Error sending message via WhatsApp'

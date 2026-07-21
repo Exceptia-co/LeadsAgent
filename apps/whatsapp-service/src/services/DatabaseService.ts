@@ -71,20 +71,56 @@ export interface Lead {
   updatedAt: Date;
 }
 
-// PR5a: in-memory cache for sessionId -> tenantId resolution. Keyed by
-// sessionId; null cached for sessions without tenantId yet (legacy
-// pre-backfill data) so we don't re-query every message. TTL is short
-// because backfill runs are visible immediately after expiration.
-interface SessionTenantCacheEntry {
+// B2.1: session context cache — resolves sessionId → { tenantId, aiAgentId }
+// in a single query. Expanded from PR5a's tenantId-only cache.
+interface SessionContextCacheEntry {
   tenantId: string | null;
+  aiAgentId: string | null;
   expiresAt: number;
 }
-const SESSION_TENANT_CACHE_TTL_MS = 60_000;
+const SESSION_CONTEXT_CACHE_TTL_MS = 60_000;
+
+// B2.1: agent data projection (avoids coupling SystemPromptService to Prisma types)
+export interface AiAgentData {
+  id: string;
+  businessName: string;
+  industry: string | null;
+  websiteUrl: string | null;
+  businessHours: any;
+  personaName: string | null;
+  tone: string;
+  language: string;
+  customInstructions: string | null;
+  responseMaxWords: number | null;
+  allowEmojis: boolean;
+  primaryGoal: string;
+  goalCtaUrl: string | null;
+  goalDescription: string | null;
+  enableStructuredExtraction: boolean;
+}
+
+export interface AiProductData {
+  id: string;
+  name: string;
+  description: string | null;
+  priceMin: number | null;
+  priceMax: number | null;
+  url: string | null;
+  tags: string[];
+}
+
+interface AgentCacheEntry {
+  agent: AiAgentData;
+  products: AiProductData[];
+  expiresAt: number;
+}
+const AGENT_CACHE_TTL_MS = 60_000;
 
 class DatabaseService {
   private pool: Pool | null = null;
   private prisma: PrismaClient | null = null;
-  private sessionTenantCache = new Map<string, SessionTenantCacheEntry>();
+  private sessionContextCache = new Map<string, SessionContextCacheEntry>();
+  private agentCache = new Map<string, AgentCacheEntry>();
 
   constructor() {
     this.initializePool();
@@ -296,38 +332,179 @@ class DatabaseService {
   // Esto detiene la divergencia entre `messages` y `whatsapp_conversations`
   // para mensajes nuevos.
   /**
-   * PR5a: resolve a WhatsApp session to its owning tenant. Caches both
-   * positive and negative results for SESSION_TENANT_CACHE_TTL_MS. Returns
-   * null if the session has no tenantId yet (typically pre-backfill data
-   * or a session created before B1.9 ran).
+   * B2.1: resolve sessionId → { tenantId, aiAgentId } in a single query.
+   * Caches both positive and negative results for 60s.
    */
-  public async getSessionTenantId(sessionId: string): Promise<string | null> {
-    if (!this.prisma) return null;
+  public async getSessionContext(sessionId: string): Promise<{ tenantId: string | null; aiAgentId: string | null }> {
+    if (!this.prisma) return { tenantId: null, aiAgentId: null };
 
     const now = Date.now();
-    const cached = this.sessionTenantCache.get(sessionId);
+    const cached = this.sessionContextCache.get(sessionId);
     if (cached && cached.expiresAt > now) {
-      return cached.tenantId;
+      return { tenantId: cached.tenantId, aiAgentId: cached.aiAgentId };
     }
 
     const session = await this.prisma.whatsAppSession.findUnique({
       where: { sessionId },
-      select: { tenantId: true },
+      select: { tenantId: true, aiAgentId: true },
     });
 
-    const tenantId = session?.tenantId ?? null;
-    this.sessionTenantCache.set(sessionId, {
-      tenantId,
-      expiresAt: now + SESSION_TENANT_CACHE_TTL_MS,
-    });
-    return tenantId;
+    const entry: SessionContextCacheEntry = {
+      tenantId: session?.tenantId ?? null,
+      aiAgentId: session?.aiAgentId ?? null,
+      expiresAt: now + SESSION_CONTEXT_CACHE_TTL_MS,
+    };
+    this.sessionContextCache.set(sessionId, entry);
+    return { tenantId: entry.tenantId, aiAgentId: entry.aiAgentId };
   }
 
   /**
-   * PR5a: test-only cache reset.
+   * Backward-compatible wrapper — delegates to getSessionContext.
    */
-  public resetSessionTenantCacheForTests(): void {
-    this.sessionTenantCache.clear();
+  public async getSessionTenantId(sessionId: string): Promise<string | null> {
+    const { tenantId } = await this.getSessionContext(sessionId);
+    return tenantId;
+  }
+
+  public async getSessionAiAgentId(sessionId: string): Promise<string | null> {
+    const { aiAgentId } = await this.getSessionContext(sessionId);
+    return aiAgentId;
+  }
+
+  public resetSessionCacheForTests(): void {
+    this.sessionContextCache.clear();
+    this.agentCache.clear();
+  }
+
+  // B2.1: fetch agent config + active products in one Prisma query.
+  // Filters by tenantId + agentId (defense-in-depth from B2.0).
+  public async getAiAgentWithProducts(
+    tenantId: string,
+    agentId: string,
+  ): Promise<{ agent: AiAgentData; products: AiProductData[] } | null> {
+    const cacheKey = `${tenantId}:${agentId}`;
+    const now = Date.now();
+    const cached = this.agentCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return { agent: cached.agent, products: cached.products };
+    }
+
+    if (!this.prisma) return null;
+
+    const row = await this.prisma.aiAgent.findFirst({
+      where: { id: agentId, tenantId },
+      include: { products: { where: { active: true }, orderBy: { createdAt: 'asc' } } },
+    });
+    if (!row) return null;
+
+    const agent: AiAgentData = {
+      id: row.id,
+      businessName: row.businessName,
+      industry: row.industry,
+      websiteUrl: row.websiteUrl,
+      businessHours: row.businessHours,
+      personaName: row.personaName,
+      tone: row.tone,
+      language: row.language,
+      customInstructions: row.customInstructions,
+      responseMaxWords: row.responseMaxWords,
+      allowEmojis: row.allowEmojis,
+      primaryGoal: row.primaryGoal,
+      goalCtaUrl: row.goalCtaUrl,
+      goalDescription: row.goalDescription,
+      enableStructuredExtraction: row.enableStructuredExtraction,
+    };
+
+    const products: AiProductData[] = (row.products ?? []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      priceMin: p.priceMin ? Number(p.priceMin) : null,
+      priceMax: p.priceMax ? Number(p.priceMax) : null,
+      url: p.url,
+      tags: p.tags ?? [],
+    }));
+
+    this.agentCache.set(cacheKey, { agent, products, expiresAt: now + AGENT_CACHE_TTL_MS });
+    return { agent, products };
+  }
+
+  public async getKnowledgeItemsByAgent(
+    tenantId: string,
+    agentId: string,
+    limit = 10,
+  ): Promise<Array<{ id: string; category: string; title: string; content: string; keywords: string[]; priority: number | null }>> {
+    if (!this.prisma) return [];
+
+    const items = await this.prisma.ai_knowledge_base.findMany({
+      where: { tenantId, agentId, is_active: true },
+      orderBy: { priority: 'desc' },
+      take: limit,
+      select: { id: true, category: true, title: true, content: true, keywords: true, priority: true },
+    });
+
+    return items;
+  }
+
+  public invalidateAgentCache(tenantId: string, agentId: string): void {
+    this.agentCache.delete(`${tenantId}:${agentId}`);
+  }
+
+  // B2.6: search products by keyword/tag/price relevance for the thinking pipeline.
+  public async searchProducts(
+    tenantId: string,
+    agentId: string,
+    opts?: { keywords?: string[]; tags?: string[]; maxPrice?: number },
+  ): Promise<AiProductData[]> {
+    if (!this.pool) return [];
+
+    try {
+      const conditions = ['tenant_id = $1::uuid', 'agent_id = $2::uuid', 'active = true'];
+      const values: any[] = [tenantId, agentId];
+      let idx = 3;
+
+      if (opts?.keywords?.length) {
+        const kwConditions = opts.keywords.map((kw) => {
+          const sanitized = kw.replace(/[%_\\]/g, '');
+          if (!sanitized) return null;
+          values.push(`%${sanitized}%`);
+          return `(name ILIKE $${idx} OR description ILIKE $${idx++})`;
+        }).filter(Boolean);
+        if (kwConditions.length) conditions.push(`(${kwConditions.join(' OR ')})`);
+      }
+
+      if (opts?.tags?.length) {
+        values.push(opts.tags);
+        conditions.push(`tags && $${idx++}::text[]`);
+      }
+
+      if (opts?.maxPrice != null) {
+        values.push(opts.maxPrice);
+        conditions.push(`price_min <= $${idx++}`);
+      }
+
+      const query = `
+        SELECT id, name, description, price_min, price_max, url, tags
+        FROM ai_products
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY created_at ASC
+        LIMIT 3;
+      `;
+
+      const result = await this.pool.query(query, values);
+      return result.rows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        priceMin: r.price_min ? Number(r.price_min) : null,
+        priceMax: r.price_max ? Number(r.price_max) : null,
+        url: r.url,
+        tags: r.tags ?? [],
+      }));
+    } catch (error) {
+      logger.error('Error searching products:', error);
+      return [];
+    }
   }
 
   public async saveConversation(data: ConversationData): Promise<string | null> {
@@ -698,12 +875,11 @@ class DatabaseService {
    * `[UNSCOPED-READ]` WARN so we can finish migrating them in
    * follow-up PRs without breaking anything mid-deploy.
    */
-  public async getAllLeads(opts?: { tenantId?: string }): Promise<Lead[]> {
+  public async getAllLeads(opts: { tenantId: string }): Promise<Lead[]> {
     const tenantId = opts?.tenantId;
     if (!tenantId) {
-      logger.warn(
-        '[UNSCOPED-READ] getAllLeads() called without tenantId — returning global. Update caller to pass opts.tenantId.'
-      );
+      logger.error('[REFUSED] getAllLeads() called without tenantId — returning [].');
+      return [];
     }
 
     // Intentar obtener leads de la base de datos real
@@ -722,8 +898,7 @@ class DatabaseService {
 
         if (tableExists.rows[0].exists) {
           // La tabla existe, obtener leads reales con estructura de Supabase
-          const query = tenantId
-            ? `
+          const query = `
               SELECT
                 id, name, phone, email, tags, status, mood_score,
                 last_contact, assigned_to, source, whatsapp_authorized,
@@ -731,19 +906,9 @@ class DatabaseService {
               FROM leads
               WHERE tenant_id = $1::uuid
               ORDER BY created_at DESC;
-            `
-            : `
-              SELECT
-                id, name, phone, email, tags, status, mood_score,
-                last_contact, assigned_to, source, whatsapp_authorized,
-                created_at, updated_at
-              FROM leads
-              ORDER BY created_at DESC;
             `;
 
-          const result = tenantId
-            ? await this.pool.query(query, [tenantId])
-            : await this.pool.query(query);
+          const result = await this.pool.query(query, [tenantId]);
           const realLeads = result.rows.map(row => ({
             id: row.id,
             name: row.name,
@@ -764,81 +929,34 @@ class DatabaseService {
           return realLeads;
         }
       } catch (error) {
-        logger.warn('Error obteniendo leads de la base de datos, usando datos mockeados:', error);
+        logger.error('Error obteniendo leads de la base de datos:', error);
+        return [];
       }
     }
 
-    // Fallback: devolver leads mockeados para desarrollo
-    const mockLeads: Lead[] = [
-      {
-        id: '1',
-        name: 'Juan Pérez',
-        phone: '+5491123456789',
-        email: 'juan@example.com',
-        tags: ['interesado', 'productos'],
-        status: 'NUEVO',
-        moodScore: 8.5,
-        source: 'website',
-        whatsappAuthorized: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      {
-        id: '2',
-        name: 'María García',
-        phone: '+5491187654321',
-        email: 'maria@example.com',
-        tags: ['información', 'precios'],
-        status: 'QUALIFIED',
-        moodScore: 9.2,
-        source: 'referral',
-        whatsappAuthorized: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      {
-        id: '3',
-        name: 'Carlos López',
-        phone: '+5491155443322',
-        email: 'carlos@example.com',
-        tags: ['automatización', 'urgente'],
-        status: 'NUEVO',
-        moodScore: 7.8,
-        source: 'social_media',
-        whatsappAuthorized: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      {
-        id: '4',
-        name: 'Ana Martínez',
-        phone: '+5491166778899',
-        email: 'ana@example.com',
-        tags: ['chatbots', 'negocio'],
-        status: 'GANADO',
-        moodScore: 9.5,
-        source: 'website',
-        whatsappAuthorized: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    ];
-
-    logger.info(`🔧 Usando ${mockLeads.length} leads mockeados para desarrollo`);
-    return mockLeads;
+    return [];
   }
 
-  // Check if a lead with similar phone number already exists
-  public async findLeadByPhone(phoneNumber: string): Promise<Lead | null> {
+  // Check if a lead with similar phone number already exists.
+  // B2.0-fix: tenantId REQUIRED — no unscoped reads.
+  public async findLeadByPhone(phoneNumber: string, opts: { tenantId: string }): Promise<Lead | null> {
+    // FIX D: guardia ANTES de tocar opts — callers JS pueden pasar undefined
+    // aunque la firma TS lo prohíba.
+    const tenantId = opts?.tenantId;
+    if (!tenantId) {
+      logger.error(
+        `[REFUSED] findLeadByPhone(${phoneNumber}) without tenantId — cross-tenant read blocked.`,
+      );
+      return null;
+    }
+
     if (!this.pool) {
       return null;
     }
 
     try {
-      // Get all leads to check for duplicates
-      const allLeads = await this.getAllLeads();
+      const allLeads = await this.getAllLeads({ tenantId });
 
-      // Use PhoneNumberService to find equivalent phone numbers
       for (const lead of allLeads) {
         if (lead.phone && PhoneNumberService.arePhoneNumbersEquivalent(phoneNumber, lead.phone)) {
           logger.info(
@@ -935,25 +1053,32 @@ class DatabaseService {
     }
   }
 
-  // Create a new lead
+  // Create a new lead.
+  // B2.0-fix: tenantId REQUIRED — no unscoped inserts.
   public async createLead(leadData: {
     name?: string | null;
     email?: string | null;
     phone: string;
     status?: 'NUEVO' | 'CONTACTADO' | 'QUALIFIED' | 'GANADO' | 'PERDIDO';
     source?: string;
-  }): Promise<Lead | null> {
+  }, opts: { tenantId: string }): Promise<Lead | null> {
+    const tenantId = opts?.tenantId;
+    if (!tenantId) {
+      logger.error(
+        `[REFUSED] createLead(${leadData.phone}) without tenantId — cross-tenant write blocked.`,
+      );
+      return null;
+    }
+
     if (!this.pool) {
       logger.warn('No database connection available, cannot create lead');
       return null;
     }
 
     try {
-      // Normalize the phone number before processing
       const normalizedPhone = PhoneNumberService.normalizePhoneNumber(leadData.phone);
 
-      // Check if a lead with this phone number already exists
-      const existingLead = await this.findLeadByPhone(normalizedPhone);
+      const existingLead = await this.findLeadByPhone(normalizedPhone, { tenantId });
       if (existingLead) {
         logger.warn(
           `⚠️ Lead with phone number ${leadData.phone} (normalized: ${normalizedPhone}) already exists with ID: ${existingLead.id}`
@@ -962,11 +1087,11 @@ class DatabaseService {
           `Duplicate phone number: A lead with phone ${leadData.phone} already exists`
         );
       }
-      // Check if leads table exists
+
       const checkTableQuery = `
         SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_schema = 'public' 
+          SELECT FROM information_schema.tables
+          WHERE table_schema = 'public'
           AND table_name = 'leads'
         );
       `;
@@ -978,23 +1103,23 @@ class DatabaseService {
         return null;
       }
 
-      // Insert new lead using Supabase schema column names
       const query = `
-        INSERT INTO leads (
-          name, email, phone, status, source, whatsapp_authorized, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        RETURNING 
-          id, name, email, phone, status, source, whatsapp_authorized, 
-          mood_score, last_contact, assigned_to, created_at, updated_at;
-      `;
+          INSERT INTO leads (
+            tenant_id, name, email, phone, status, source, whatsapp_authorized, created_at, updated_at
+          ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          RETURNING
+            id, name, email, phone, status, source, whatsapp_authorized,
+            mood_score, last_contact, assigned_to, created_at, updated_at;
+        `;
 
       const values = [
+        tenantId,
         leadData.name || null,
         leadData.email || null,
-        normalizedPhone, // Use normalized phone number
+        normalizedPhone,
         leadData.status || 'NUEVO',
         leadData.source || 'manual',
-        true, // Default to WhatsApp authorized
+        true,
       ];
 
       const result = await this.pool.query(query, values);
@@ -1029,21 +1154,34 @@ class DatabaseService {
     }
   }
 
-  // Update lead WhatsApp authorization status
+  // Update lead WhatsApp authorization status.
+  // B2.0: tenantId optional — scoped when present, global with warning when absent.
   public async updateLeadWhatsAppAuth(
     leadId: string,
-    whatsappAuthorized: boolean
+    whatsappAuthorized: boolean,
+    opts: { tenantId: string }
   ): Promise<boolean> {
+    // FIX D: acceso opcional — callers JS pueden pasar undefined aunque la firma TS lo prohíba.
+    const tenantId = opts?.tenantId;
+    if (!tenantId) {
+      logger.error(
+        `[REFUSED] updateLeadWhatsAppAuth(${leadId}) without tenantId — cross-tenant write blocked.`,
+      );
+      return false;
+    }
+
     if (this.pool) {
       try {
         const query = `
-          UPDATE leads 
-          SET "whatsappAuthorized" = $1, "updatedAt" = CURRENT_TIMESTAMP
-          WHERE id = $2
-          RETURNING id;
-        `;
+            UPDATE leads
+            SET whatsapp_authorized = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2 AND tenant_id = $3::uuid
+            RETURNING id;
+          `;
 
-        const result = await this.pool.query(query, [whatsappAuthorized, leadId]);
+        const values = [whatsappAuthorized, leadId, tenantId];
+
+        const result = await this.pool.query(query, values);
 
         if (result.rows.length > 0) {
           logger.info(`✅ Lead ${leadId} WhatsApp authorization updated to: ${whatsappAuthorized}`);
@@ -1058,7 +1196,6 @@ class DatabaseService {
       }
     }
 
-    // For mock data, we can't actually update, so just log and return true
     logger.info(
       `🔧 Mock update: Lead ${leadId} WhatsApp authorization would be set to: ${whatsappAuthorized}`
     );
@@ -1130,6 +1267,7 @@ class DatabaseService {
 
   // Registrar decisión de whitelist en logs
   public async logWhitelistDecision(data: {
+    tenantId?: string;
     phoneNumber: string;
     sessionId?: string;
     decision: 'ALLOWED' | 'BLOCKED';
@@ -1147,28 +1285,56 @@ class DatabaseService {
       return null;
     }
 
-    // ✅ FIXED: Use 'decision' field (NOT 'action') and ensure NOT NULL
-    const query = `
-      INSERT INTO whatsapp_whitelist_logs (
-        phone_number, session_id, decision, reason, lead_id, lead_name,
-        message_preview, ai_provider, ip_address, user_agent, created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      RETURNING id;
-    `;
+    if (!data.tenantId) {
+      logger.warn(
+        `[UNSCOPED-WRITE] logWhitelistDecision(${data.phoneNumber}) without tenantId — inserting without tenant_id. TODO B2.0 follow-up: wire tenantId through authorization context.`,
+      );
+    }
 
-    const values = [
-      data.phoneNumber,
-      data.sessionId || null,
-      data.decision, // ✅ This will never be null - REQUIRED field
-      data.reason || null,
-      data.leadId || null,
-      data.leadName || null,
-      data.messagePreview ? data.messagePreview.substring(0, 200) : null, // Limit preview length
-      data.aiProvider || null,
-      data.ipAddress || null,
-      data.userAgent || null,
-      data.createdBy || 'whatsapp-service',
-    ];
+    const query = data.tenantId
+      ? `
+        INSERT INTO whatsapp_whitelist_logs (
+          tenant_id, phone_number, session_id, decision, reason, lead_id, lead_name,
+          message_preview, ai_provider, ip_address, user_agent, created_by
+        ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        RETURNING id;
+      `
+      : `
+        INSERT INTO whatsapp_whitelist_logs (
+          phone_number, session_id, decision, reason, lead_id, lead_name,
+          message_preview, ai_provider, ip_address, user_agent, created_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING id;
+      `;
+
+    const values = data.tenantId
+      ? [
+          data.tenantId,
+          data.phoneNumber,
+          data.sessionId || null,
+          data.decision,
+          data.reason || null,
+          data.leadId || null,
+          data.leadName || null,
+          data.messagePreview ? data.messagePreview.substring(0, 200) : null,
+          data.aiProvider || null,
+          data.ipAddress || null,
+          data.userAgent || null,
+          data.createdBy || 'whatsapp-service',
+        ]
+      : [
+          data.phoneNumber,
+          data.sessionId || null,
+          data.decision,
+          data.reason || null,
+          data.leadId || null,
+          data.leadName || null,
+          data.messagePreview ? data.messagePreview.substring(0, 200) : null,
+          data.aiProvider || null,
+          data.ipAddress || null,
+          data.userAgent || null,
+          data.createdBy || 'whatsapp-service',
+        ];
 
     try {
       const result = await this.pool.query(query, values);
@@ -1577,10 +1743,11 @@ class DatabaseService {
   // Crear o actualizar conversación
   public async createOrUpdateConversation(
     leadId: string,
-    sessionId: string
+    sessionId: string,
+    tenantId: string
   ): Promise<string | null> {
     try {
-      const leads = await this.getAllLeads();
+      const leads = await this.getAllLeads({ tenantId });
       const lead = leads.find(l => l.id === leadId);
 
       if (!lead?.phone) {
@@ -1693,26 +1860,44 @@ class DatabaseService {
   // ============================================
 
   // Obtener knowledge base para contexto IA
-  public async getKnowledgeBase(category?: string): Promise<any[]> {
+  public async getKnowledgeBase(
+    category?: string,
+    opts?: { tenantId?: string; agentId?: string },
+  ): Promise<any[]> {
     if (!this.pool) {
       return this.getDefaultKnowledgeBase();
     }
 
+    if (!opts?.tenantId || !opts?.agentId) {
+      logger.warn(
+        `[UNSCOPED-KB] getKnowledgeBase(${category ?? 'all'}) without ${!opts?.tenantId ? 'tenantId' : ''}${!opts?.tenantId && !opts?.agentId ? '+' : ''}${!opts?.agentId ? 'agentId' : ''} — returning global KB. Wire opts from context.`,
+      );
+    }
+
     try {
-      let query = `
-        SELECT id, category, title, content, keywords, priority
-        FROM ai_knowledge_base
-        WHERE is_active = true
-      `;
-
+      const conditions = ['is_active = true'];
       const values: any[] = [];
+      let idx = 1;
 
+      if (opts?.tenantId) {
+        conditions.push(`tenant_id = $${idx++}::uuid`);
+        values.push(opts.tenantId);
+      }
+      if (opts?.agentId) {
+        conditions.push(`agent_id = $${idx++}::uuid`);
+        values.push(opts.agentId);
+      }
       if (category) {
-        query += ` AND category = $1`;
+        conditions.push(`category = $${idx++}`);
         values.push(category);
       }
 
-      query += ` ORDER BY priority DESC, created_at ASC`;
+      const query = `
+        SELECT id, category, title, content, keywords, priority
+        FROM ai_knowledge_base
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY priority DESC, created_at ASC
+      `;
 
       const result = await this.pool.query(query, values);
       return result.rows;
@@ -1774,8 +1959,16 @@ class DatabaseService {
     }
   }
 
-  // Buscar en knowledge base por keywords con scoring inteligente
-  public async searchKnowledgeBase(query: string): Promise<any[]> {
+  public async searchKnowledgeBase(
+    query: string,
+    opts?: { tenantId?: string; agentId?: string },
+  ): Promise<any[]> {
+    if (!opts?.tenantId || !opts?.agentId) {
+      logger.warn(
+        `[UNSCOPED-KB] searchKnowledgeBase without ${!opts?.tenantId ? 'tenantId' : ''}${!opts?.tenantId && !opts?.agentId ? '+' : ''}${!opts?.agentId ? 'agentId' : ''} — searching global KB.`,
+      );
+    }
+
     if (!this.pool) {
       return this.getDefaultKnowledgeBase()
         .filter(
@@ -1787,35 +1980,44 @@ class DatabaseService {
     }
 
     try {
-      // Extraer palabras clave del query para mejor matching
       const queryWords = this.extractSearchKeywords(query);
       const searchTerms = [`%${query}%`, ...queryWords.map(word => `%${word}%`)];
 
+      // B2.2: dynamic tenant/agent scoping
+      const extraConditions: string[] = [];
+      const baseValues: any[] = [query, searchTerms];
+      let idx = 3;
+
+      if (opts?.tenantId) {
+        extraConditions.push(`AND tenant_id = $${idx++}::uuid`);
+        baseValues.push(opts.tenantId);
+      }
+      if (opts?.agentId) {
+        extraConditions.push(`AND agent_id = $${idx++}::uuid`);
+        baseValues.push(opts.agentId);
+      }
+
       const searchQuery = `
-        SELECT 
+        SELECT
           id, category, title, content, keywords, priority,
-          -- Calcular relevancia score
           (
-            -- Puntuación por match exacto en título (peso: 100)
             CASE WHEN title ILIKE $1 THEN 100 ELSE 0 END +
-            -- Puntuación por keywords coincidentes (peso: 80)
             (
-              SELECT COUNT(*) * 80 
-              FROM unnest(keywords) AS keyword 
+              SELECT COUNT(*) * 80
+              FROM unnest(keywords) AS keyword
               WHERE keyword ILIKE ANY($2::text[])
             ) +
-            -- Puntuación por match en contenido (peso: 30)
             CASE WHEN content ILIKE $1 THEN 30 ELSE 0 END +
-            -- Bonificación por prioridad (peso: prioridad * 5)
             (priority * 5)
           ) AS relevance_score
-        FROM ai_knowledge_base 
+        FROM ai_knowledge_base
         WHERE is_active = true
+          ${extraConditions.join('\n          ')}
           AND (
-            title ILIKE $1 OR 
+            title ILIKE $1 OR
             content ILIKE $1 OR
             EXISTS (
-              SELECT 1 FROM unnest(keywords) AS keyword 
+              SELECT 1 FROM unnest(keywords) AS keyword
               WHERE keyword ILIKE ANY($2::text[])
             )
           )
@@ -1823,7 +2025,7 @@ class DatabaseService {
         LIMIT 3;
       `;
 
-      const result = await this.pool.query(searchQuery, [query, searchTerms]);
+      const result = await this.pool.query(searchQuery, baseValues);
 
       // Agregar score calculado y filtrar por relevancia mínima
       return result.rows
@@ -2047,7 +2249,7 @@ class DatabaseService {
   // ============================================
 
   // Obtener todos los templates
-  public async getMessageTemplates(category?: string, activeOnly = true): Promise<any[]> {
+  public async getMessageTemplates(tenantId: string, category?: string, activeOnly = true): Promise<any[]> {
     if (!this.pool) {
       return this.getDefaultTemplates();
     }
@@ -2061,6 +2263,9 @@ class DatabaseService {
       const conditions: string[] = [];
       const values: any[] = [];
       let valueIndex = 1;
+
+      conditions.push(`tenant_id = $${valueIndex++}::uuid`);
+      values.push(tenantId);
 
       if (activeOnly) {
         conditions.push('is_active = true');
@@ -2096,9 +2301,8 @@ class DatabaseService {
   }
 
   // Get a single template by ID
-  public async getTemplate(templateId: string): Promise<any | null> {
+  public async getTemplate(tenantId: string, templateId: string): Promise<any | null> {
     if (!this.pool) {
-      // Return from default templates if no database connection
       const defaultTemplates = this.getDefaultTemplates();
       return defaultTemplates.find(template => template.id === templateId) || null;
     }
@@ -2106,11 +2310,11 @@ class DatabaseService {
     try {
       const query = `
         SELECT id, name, category, subject, content, variables, usage_count, is_active, created_at
-        FROM message_templates 
-        WHERE id = $1;
+        FROM message_templates
+        WHERE id = $1 AND tenant_id = $2::uuid;
       `;
 
-      const result = await this.pool.query(query, [templateId]);
+      const result = await this.pool.query(query, [templateId, tenantId]);
 
       if (result.rows.length > 0) {
         return result.rows[0];
@@ -2129,6 +2333,7 @@ class DatabaseService {
 
   // Crear un nuevo template
   public async createMessageTemplate(data: {
+    tenantId: string;
     name: string;
     category: string;
     subject?: string;
@@ -2143,12 +2348,13 @@ class DatabaseService {
 
     try {
       const query = `
-        INSERT INTO message_templates (name, category, subject, content, variables, created_by)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO message_templates (tenant_id, name, category, subject, content, variables, created_by)
+        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)
         RETURNING id;
       `;
 
       const values = [
+        data.tenantId,
         data.name,
         data.category,
         data.subject || null,
@@ -2170,6 +2376,7 @@ class DatabaseService {
 
   // Actualizar template
   public async updateMessageTemplate(
+    tenantId: string,
     id: string,
     updates: {
       name?: string;
@@ -2220,12 +2427,12 @@ class DatabaseService {
       }
 
       setParts.push(`updated_at = CURRENT_TIMESTAMP`);
-      values.push(id); // Para el WHERE
+      values.push(id, tenantId);
 
       const query = `
-        UPDATE message_templates 
+        UPDATE message_templates
         SET ${setParts.join(', ')}
-        WHERE id = $${valueIndex}
+        WHERE id = $${valueIndex++} AND tenant_id = $${valueIndex}::uuid
         RETURNING id;
       `;
 
@@ -2245,15 +2452,15 @@ class DatabaseService {
   }
 
   // Eliminar template
-  public async deleteMessageTemplate(id: string): Promise<boolean> {
+  public async deleteMessageTemplate(tenantId: string, id: string): Promise<boolean> {
     if (!this.pool) {
       logger.info(`Mock template deleted: ${id}`);
       return true;
     }
 
     try {
-      const query = `DELETE FROM message_templates WHERE id = $1 RETURNING id;`;
-      const result = await this.pool.query(query, [id]);
+      const query = `DELETE FROM message_templates WHERE id = $1 AND tenant_id = $2::uuid RETURNING id;`;
+      const result = await this.pool.query(query, [id, tenantId]);
 
       if (result.rows.length > 0) {
         logger.info(`✅ Template eliminado: ${id}`);
@@ -2269,19 +2476,19 @@ class DatabaseService {
   }
 
   // Incrementar contador de uso de template
-  public async incrementTemplateUsage(id: string): Promise<boolean> {
+  public async incrementTemplateUsage(tenantId: string, id: string): Promise<boolean> {
     if (!this.pool) {
       return true;
     }
 
     try {
       const query = `
-        UPDATE message_templates 
+        UPDATE message_templates
         SET usage_count = usage_count + 1, updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1;
+        WHERE id = $1 AND tenant_id = $2::uuid;
       `;
 
-      await this.pool.query(query, [id]);
+      await this.pool.query(query, [id, tenantId]);
       return true;
     } catch (error) {
       logger.error('Error incrementando uso de template:', error);
@@ -2340,6 +2547,7 @@ class DatabaseService {
 
   // Actualizar estado de mensaje proactivo
   public async updateProactiveMessageStatus(
+    tenantId: string,
     id: string,
     status: 'pending' | 'sent' | 'delivered' | 'failed',
     errorMessage?: string
@@ -2351,7 +2559,7 @@ class DatabaseService {
 
     try {
       let query = `
-        UPDATE proactive_messages 
+        UPDATE proactive_messages
         SET status = $1, updated_at = CURRENT_TIMESTAMP
       `;
 
@@ -2369,8 +2577,8 @@ class DatabaseService {
         values.push(errorMessage);
       }
 
-      query += ` WHERE id = $${valueIndex} RETURNING id;`;
-      values.push(id);
+      query += ` WHERE id = $${valueIndex++} AND tenant_id = $${valueIndex}::uuid RETURNING id;`;
+      values.push(id, tenantId);
 
       const result = await this.pool.query(query, values);
 
@@ -2937,7 +3145,7 @@ class DatabaseService {
   }
 
   // Obtener estadísticas de entrenamiento
-  public async getTrainingStats(): Promise<{
+  public async getTrainingStats(tenantId?: string): Promise<{
     totalInteractions: number;
     averageSuccessScore: number;
     interactionsLast7Days: number;
@@ -2955,25 +3163,32 @@ class DatabaseService {
     }
 
     try {
+      const tenantFilter = tenantId ? 'WHERE tenant_id = $1::uuid' : '';
+      const recentTenantFilter = tenantId
+        ? 'WHERE created_at >= NOW() - INTERVAL \'7 days\' AND tenant_id = $1::uuid'
+        : 'WHERE created_at >= NOW() - INTERVAL \'7 days\'';
+      const values = tenantId ? [tenantId] : [];
+
       const query = `
         WITH recent_interactions AS (
-          SELECT success_score 
-          FROM ai_training_interactions 
-          WHERE created_at >= NOW() - INTERVAL '7 days'
+          SELECT success_score
+          FROM ai_training_interactions
+          ${recentTenantFilter}
         ),
         all_stats AS (
-          SELECT 
+          SELECT
             COUNT(*) as total_interactions,
             AVG(success_score) as avg_success_score
           FROM ai_training_interactions
+          ${tenantFilter}
         ),
         recent_stats AS (
-          SELECT 
+          SELECT
             COUNT(*) as recent_interactions,
             AVG(success_score) as avg_recent_success
           FROM recent_interactions
         )
-        SELECT 
+        SELECT
           COALESCE(a.total_interactions, 0) as total_interactions,
           COALESCE(a.avg_success_score, 0) as avg_success_score,
           COALESCE(r.recent_interactions, 0) as recent_interactions,
@@ -2982,7 +3197,7 @@ class DatabaseService {
         CROSS JOIN recent_stats r;
       `;
 
-      const result = await this.pool.query(query);
+      const result = await this.pool.query(query, values);
       const stats = result.rows[0];
 
       return {
@@ -3006,32 +3221,40 @@ class DatabaseService {
 
   // Buscar patrones en interacciones de entrenamiento
   public async searchTrainingInteractions(
-    searchQuery: string,
+    tenantId?: string,
+    searchQuery?: string,
     minSuccessScore?: number,
     limit: number = 100
   ): Promise<TrainingInteraction[]> {
-    if (!this.pool) {
+    if (!this.pool || !searchQuery) {
       return [];
     }
 
     try {
-      let query = `
-        SELECT 
-          id, user_message, ai_response, knowledge_base_ids_used,
-          success_score, context_data, feedback_metrics, created_at
-        FROM ai_training_interactions 
-        WHERE to_tsvector('spanish', user_message) @@ plainto_tsquery('spanish', $1)
-      `;
-
+      const conditions: string[] = [
+        `to_tsvector('spanish', user_message) @@ plainto_tsquery('spanish', $1)`,
+      ];
       const values: any[] = [searchQuery];
       let valueIndex = 2;
 
+      if (tenantId) {
+        conditions.push(`tenant_id = $${valueIndex++}::uuid`);
+        values.push(tenantId);
+      }
+
       if (minSuccessScore !== undefined) {
-        query += ` AND success_score >= $${valueIndex++}`;
+        conditions.push(`success_score >= $${valueIndex++}`);
         values.push(minSuccessScore);
       }
 
-      query += ` ORDER BY success_score DESC, created_at DESC LIMIT $${valueIndex}`;
+      const query = `
+        SELECT
+          id, user_message, ai_response, knowledge_base_ids_used,
+          success_score, context_data, feedback_metrics, created_at
+        FROM ai_training_interactions
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY success_score DESC, created_at DESC LIMIT $${valueIndex}
+      `;
       values.push(limit);
 
       const result = await this.pool.query(query, values);
@@ -3053,19 +3276,27 @@ class DatabaseService {
   }
 
   // Eliminar interacciones de entrenamiento antiguas (limpieza de datos)
-  public async cleanupOldTrainingInteractions(daysOld: number = 90): Promise<number> {
+  public async cleanupOldTrainingInteractions(tenantId?: string, daysOld: number = 90): Promise<number> {
     if (!this.pool) {
       return 0;
     }
 
     try {
+      const conditions = [`created_at < NOW() - INTERVAL '1 day' * $1`];
+      const values: any[] = [daysOld];
+
+      if (tenantId) {
+        conditions.push(`tenant_id = $2::uuid`);
+        values.push(tenantId);
+      }
+
       const query = `
-        DELETE FROM ai_training_interactions 
-        WHERE created_at < NOW() - INTERVAL '${daysOld} days'
+        DELETE FROM ai_training_interactions
+        WHERE ${conditions.join(' AND ')}
         RETURNING id;
       `;
 
-      const result = await this.pool.query(query);
+      const result = await this.pool.query(query, values);
       const deletedCount = result.rows.length;
 
       if (deletedCount > 0) {

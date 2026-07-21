@@ -48,9 +48,15 @@ export async function resolveActiveTenantId(): Promise<string | null> {
   });
 
   const tenantId = tenant?.id ?? null;
-  tenantCache.set(orgId, {
-    tenantId,
-    expiresAt: now + TENANT_CACHE_TTL_MS,
-  });
+  // Don't cache negatives: a null result during the webhook race (org just
+  // created in Clerk, organization.created webhook hasn't created the
+  // Tenant row yet) would otherwise lock the user out for the full TTL.
+  // Hit Postgres on each request during the gap (~1-3s typical) instead.
+  if (tenantId !== null) {
+    tenantCache.set(orgId, {
+      tenantId,
+      expiresAt: now + TENANT_CACHE_TTL_MS,
+    });
+  }
   return tenantId;
 }

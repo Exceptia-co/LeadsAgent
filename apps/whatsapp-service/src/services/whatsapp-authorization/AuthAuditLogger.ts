@@ -43,6 +43,7 @@ export class AuthAuditLogger {
       });
 
       await DatabaseService.logWhitelistDecision({
+        tenantId: context.tenantId,
         phoneNumber: context.phoneNumber,
         sessionId: context.sessionId,
         decision: decision.decision,

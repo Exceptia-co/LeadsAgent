@@ -16,33 +16,39 @@ export class KnowledgeRetriever implements IKnowledgeRetriever {
     return KnowledgeRetriever.instance;
   }
 
-  public async retrieve(message: string, intentAnalysis: IntentAnalysis): Promise<any[]> {
+  public async retrieve(
+    message: string,
+    intentAnalysis: IntentAnalysis,
+    opts?: { tenantId?: string; aiAgentId?: string },
+  ): Promise<any[]> {
     try {
-      // Buscar conocimiento relevante en la base de datos
       let relevantKnowledge: any[] = [];
+      const scopeOpts = opts?.tenantId || opts?.aiAgentId
+        ? { tenantId: opts.tenantId, agentId: opts.aiAgentId }
+        : undefined;
 
-      // 1. Búsqueda basada en el mensaje
-      const messageBasedKnowledge = await this.searchKnowledgeBase(message);
+      const messageBasedKnowledge = await this.searchKnowledgeBase(message, scopeOpts);
+      const intentBasedKnowledge = await this.getKnowledgeByCategory(intentAnalysis.category, scopeOpts);
 
-      // 2. Búsqueda basada en la intención y categoría
-      const intentBasedKnowledge = await this.getKnowledgeByCategory(intentAnalysis.category);
-
-      // 3. Combinar y filtrar conocimiento
       relevantKnowledge = [...messageBasedKnowledge, ...intentBasedKnowledge]
         .filter((item, index, self) => index === self.findIndex(t => t.id === item.id))
-        .slice(0, 5); // Limitar a 5 elementos más relevantes
+        .slice(0, 5);
 
-      // 4. Ordenar por relevancia si es posible
       relevantKnowledge = this.sortByRelevance(relevantKnowledge, message, intentAnalysis);
 
-      logger.debug('Knowledge retrieval completed:', {
+      // B2.6: also retrieve relevant products scoped by tenant+agent
+      const productItems = await this.retrieveRelevantProducts(message, intentAnalysis, scopeOpts);
+
+      const combined = [...relevantKnowledge, ...productItems];
+
+      logger.debug('Knowledge + product retrieval completed:', {
         message: message.substring(0, 50),
         intent: intentAnalysis.intent,
-        category: intentAnalysis.category,
-        foundItems: relevantKnowledge.length,
+        knowledgeItems: relevantKnowledge.length,
+        productItems: productItems.length,
       });
 
-      return relevantKnowledge;
+      return combined;
     } catch (error) {
       logger.error('Error in knowledge retrieval:', error);
 
@@ -55,18 +61,18 @@ export class KnowledgeRetriever implements IKnowledgeRetriever {
     }
   }
 
-  public async searchKnowledgeBase(query: string): Promise<any[]> {
+  public async searchKnowledgeBase(query: string, opts?: { tenantId?: string; agentId?: string }): Promise<any[]> {
     try {
-      return await DatabaseService.searchKnowledgeBase(query);
+      return await DatabaseService.searchKnowledgeBase(query, opts);
     } catch (error) {
       logger.warn('Failed to search knowledge base:', error);
       return [];
     }
   }
 
-  public async getKnowledgeByCategory(category: string): Promise<any[]> {
+  public async getKnowledgeByCategory(category: string, opts?: { tenantId?: string; agentId?: string }): Promise<any[]> {
     try {
-      return await DatabaseService.getKnowledgeBase(category);
+      return await DatabaseService.getKnowledgeBase(category, opts);
     } catch (error) {
       logger.warn('Failed to get knowledge by category:', error);
       return [];
@@ -254,5 +260,63 @@ export class KnowledgeRetriever implements IKnowledgeRetriever {
         return false;
       }
     });
+  }
+
+  // B2.6: retrieve products relevant to the user's message/intent
+  private async retrieveRelevantProducts(
+    message: string,
+    intentAnalysis: IntentAnalysis,
+    scopeOpts?: { tenantId?: string; agentId?: string },
+  ): Promise<any[]> {
+    if (!scopeOpts?.tenantId || !scopeOpts?.agentId) return [];
+
+    try {
+      const lowerMsg = message.toLowerCase();
+
+      // Extract keywords from message (words ≥3 chars, no stopwords)
+      const stopwords = new Set(['que', 'los', 'las', 'una', 'con', 'por', 'para', 'del', 'más', 'como', 'esto', 'esta', 'son', 'hay']);
+      const keywords = lowerMsg
+        .split(/\s+/)
+        .map(w => w.replace(/[^a-záéíóúñü]/g, ''))
+        .filter(w => w.length >= 3 && !stopwords.has(w));
+
+      // Extract budget hint from entities or message patterns
+      let maxPrice: number | undefined;
+      if (intentAnalysis.entities?.budget) {
+        maxPrice = Number(intentAnalysis.entities.budget);
+      } else {
+        const priceMatch = message.match(/(\d+)\s*(?:€|euros?|dollars?|\$)/i);
+        if (priceMatch) maxPrice = Number(priceMatch[1]);
+      }
+      if (lowerMsg.includes('barato') || lowerMsg.includes('económico') || lowerMsg.includes('cheap')) {
+        maxPrice = maxPrice ?? 100;
+      }
+
+      // Extract tags from intent entities
+      const tags = intentAnalysis.entities?.productTags
+        ? (Array.isArray(intentAnalysis.entities.productTags) ? intentAnalysis.entities.productTags : [intentAnalysis.entities.productTags])
+        : undefined;
+
+      const products = await DatabaseService.searchProducts(
+        scopeOpts.tenantId,
+        scopeOpts.agentId,
+        { keywords: keywords.length > 0 ? keywords : undefined, tags, maxPrice },
+      );
+
+      return products.map(p => ({
+        id: p.id,
+        title: p.name,
+        content: [
+          p.description,
+          p.priceMin != null ? `Precio: ${p.priceMin}${p.priceMax && p.priceMax !== p.priceMin ? `–${p.priceMax}` : ''}` : null,
+          p.url ? `Más info: ${p.url}` : null,
+        ].filter(Boolean).join('. '),
+        category: 'producto',
+        type: 'product',
+      }));
+    } catch (error) {
+      logger.warn('Failed to retrieve relevant products:', error);
+      return [];
+    }
   }
 }

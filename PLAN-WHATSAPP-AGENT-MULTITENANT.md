@@ -1,9 +1,9 @@
 # Plan: WhatsApp Agent Multi-Tenant + IA Configurable
 
 - **Fecha inicio:** 2026-04-19
-- **Última revisión:** 2026-05-03 (v7.6 — status update tras PR #11 merge + Clerk Production webhook configurado)
+- **Última revisión:** 2026-05-05 (v7.10 — Fase B.2 completa + review fixes + smoke local verde)
 - **Estado del documento:** cerrado para ejecución. §§1–11 son la única fuente de verdad. Validado por Codex en 12 rondas de review + auto-crítica anti-overkill. Ruta de ejecución: **completa**
-- **Estado:** **Fase A desplegada + Fase B.1 deployada en producción**. PR #11 (commit `dcf81dd` = "feat(b1): multi-tenant foundation + runtime enforcement (PR1-PR5a combo)") mergeado a `main` 2026-05-02 + 4 follow-up Vercel-Prisma fixes. Tenant `EscortsHub` provisionado en Supabase prod (`923493fc-ffe9-49c6-9963-74e24eae0689` ↔ `org_3DDKQD4ThoPcwJnHC5mWTmrr5L3`); 731 filas backfilled. Clerk Production webhook configurado 2026-05-03 19:51 UTC con `CLERK_ORG_WEBHOOK_SECRET` en Hetzner; smoke real verde end-to-end con org `WebhookSmokeTest` (create + auto-update + delete). Items B.1 que quedan abiertos son destructive cleanups (PR5b) + JWT template (B1.2(a) Vía A) + Prisma extension global (B1.13) + ESLint rule (B1.14): los tres últimos son deuda técnica menor — PR5a optó por scoping manual per-service en vez de extension global. Detalles completos en `docs/deployment/multi-tenant-rollout.md`.
+- **Estado:** **Fase A + B.1 desplegadas en producción. Fase B.2 completa en branch `feat/b2.0-tenant-scope-defense` (19 commits, pendiente merge a `develop`)**. B2.0–B2.9 + review fixes (P1-P4). Smoke local 2026-05-05 verde (dashboard, leads, whatsapp, endpoints CRUD, tenant isolation). 115 tests (API 53 + WS 62). Siguiente fase: B.3 (UI + E2E + RLS). Items B.1 pendientes: destructive cleanups (PR5b) + B1.13/B1.14 (deuda menor).
 - **Ruta seleccionada:** Completa (§§1–11)
 - **Owner:** Eduard S.
 - **Precede a:** `PRD-ESTABILIZACION.md` (cerrado 2026-04-18)
@@ -475,35 +475,21 @@ La fase se dividió tras revisión técnica (v5): era demasiado scope para una s
 
 #### Fase B.2 — Backend / runtime IA (2–3 días — aumentado por B2.0)
 
-- [ ] **B2.0.** **Refactor operaciones Prisma no cubiertas por extension** (ver §4.4 tabla de cobertura + §4.4 patrón transaccional). Archivos y cambios concretos:
-  - **Patrón obligatorio para services que HOY devuelven la entidad actualizada** (preserva contratos):
-    ```
-    1) row = findFirst({ where: { id, tenantId } })
-    2) si !row → throw new NotFoundException(404)
-    3) await updateMany({ where: { id, tenantId }, data })
-    4) updated = findFirst({ where: { id, tenantId } })   ← re-read
-    5) return updated   ← mismo contrato que update() antes
-    ```
-    Para `delete` que devolvía cuerpo: leer antes dentro de `$transaction`, luego `deleteMany` con `count===1`.
-  - `apps/api/src/leads/leads.service.ts`:
-    - Línea 18-20: `findUnique({where:{phone}})` → `findFirst({where:{phone, tenantId}})`
-    - Línea 129-131, 146-148, 205-206, 218-219: aplicar **patrón transaccional** (findFirst → updateMany → re-read) para no romper el contrato actual que devuelve el lead modificado
-  - `apps/api/src/whatsapp/whatsapp.service.ts`:
-    - Línea 75-77: `findUnique({where:{phone}})` → `findFirst({where:{phone, tenantId}})`
-    - Línea 120-121, 129-130: `update({where:{id:lead.id}})` → `updateMany({where:{id:lead.id, tenantId}})`
-  - `apps/api/src/templates/templates.service.ts`:
-    - Línea 25-27, 49-50, 64: `findUnique`/`update`/`delete` por `id` → `findFirst`/`updateMany`/`deleteMany` con `tenantId`
-  - `apps/whatsapp-service/src/services/DatabaseService.ts`: todas las queries raw con `this.pool.query(...)` añaden cláusula `AND tenant_id = $n` (B2.2 lo cubre para KB; aquí para las demás)
-  - Activar ESLint rule B1.14 en CI
-- [ ] **B2.1.** Refactor `SystemPromptService.buildSystemPrompt(aiAgentId, ctx)` con composición dinámica (capas 1–9 de §4.2)
-- [ ] **B2.2.** `DatabaseService.getKnowledgeBase(tenantId, aiAgentId, category?)` y `searchKnowledgeBase(tenantId, aiAgentId, query)`: **añadir parámetros obligatorios**; inyectar `WHERE tenant_id = $X AND ai_agent_id = $Y` en las queries SQL (líneas 1494-1637)
-- [ ] **B2.3.** `KnowledgeRetriever.retrieve(msg, intent, aiAgentId)`: propagar `aiAgentId` hasta `DatabaseService`
-- [ ] **B2.4.** `AIThinkingService.processWithThinking(msg, ctx)`: `ctx` lleva `aiAgentId` obligatorio; enriquece con `KnowledgeRetriever` scoped
-- [ ] **B2.5.** `EventDispatcher.onMessage`: al entrar un mensaje, lookup `sessionId → WhatsAppSession.tenant_id, ai_agent_id`. Pasar ambos a `MessageHandler.processMessageWithAI`
-- [ ] **B2.6.** `KnowledgeRetriever` extendido para filtrar también `AiProduct` por keywords/tags/rango de precio detectados → inyecta top-N al prompt (capa [6])
-- [ ] **B2.7.** Endpoints NestJS `GET/PUT /api/ai-agents/:agentId` + `GET /api/ai-agents` (protegidos por Clerk + TenantContextGuard)
-- [ ] **B2.8.** Endpoints NestJS CRUD `/api/ai-agents/:agentId/knowledge-items` y `/api/ai-agents/:agentId/products`
-- [ ] **B2.9.** Endpoint Preview: `POST /api/ai-agents/:agentId/preview` — recibe mensaje test y devuelve respuesta sin enviar a WhatsApp
+- [x] **B2.0.** **Tenant-scope en operaciones DB + pipeline IA/autorización** — completado en 2 commits en branch `feat/b2.0-tenant-scope-defense` (2026-05-04). Hallazgo: `leads.service.ts` y `templates.service.ts` ya estaban refactorizados por PR5a; el trabajo real fue en `whatsapp.service.ts` (NestJS) + `DatabaseService.ts` (raw SQL) + pipeline IA/autorización.
+  - **Commit 1** (`4c3eb8b`): defense-in-depth perimeter — NestJS API `lead.update` → `lead.updateMany` con tenantId (3 sites), `scopedSessionUpdate` helper para session lifecycle (3 handlers), DatabaseService raw SQL: templates/proactive con tenantId obligatorio en callers activos; whitelist/training con tenantId opcional y fallbacks legacy explícitos `[UNSCOPED-*]`. Fix SQL injection en `cleanupOldTrainingInteractions` (interpolación → parameterizado), 6 callers en routes actualizados, `AuthorizationContext` + `AuthAuditLogger` con tenantId, 15 tests nuevos.
+  - **Commit 2** (`ec928e2`): pipeline IA/autorización threading — `MessageContext` + `AIResponseContext` + tipos con `tenantId?: string`, `MessageHandler.processMessageWithAI` resuelve tenantId desde sessionId al inicio, `WhatsAppServiceSimple.checkPhoneNumberAllowedWithLog` resuelve tenantId para authorization pipeline, propagación a ambos `ContextEnricher` (`getAllLeads({tenantId})`), `ContextBuilder.fetchLeadData` (`findLeadByPhone(phone, {tenantId})`), `LeadValidator.findLeadInfo/createLeadFromAuthorization/updateLeadWhatsAppAuthorization` (todos con `{tenantId}` optional).
+  - **Status**: todos los calls a `getAllLeads()`/`findLeadByPhone()`/`createLead()`/`updateLeadWhatsAppAuth()` en el hot path ahora propagan tenantId. Sesiones legacy sin tenant obtienen warnings `[UNSCOPED-*]` sin romper. ESLint rule B1.14 sigue postponed (depende de B1.13).
+  - Tests: API 45/45, whatsapp-service 53/53, typecheck limpio.
+- [x] **B2.1.** Refactor `SystemPromptService.buildAgentSystemPrompt(aiAgentId, ctx)` con composición dinámica — completado 2026-05-04 en 4 commits (`6cc79b8` data layer, `d343cd1` interfaces+wiring, `fc15a0a` 10 layer builders, `5434cf2` callers+cleanup EscortsHub). Session context cache expandido a `{ tenantId, aiAgentId }` (1 query). `AIOrchestratorService` y `ResponseGenerator` delegan al prompt dinámico. `getFormatInstructions` limpio de hardcoded EscortsHub. 9 tests nuevos en `SystemPromptService.spec.ts`. Fallback legacy cuando `aiAgentId` es null
+- [x] **B2.2+B2.3.** Knowledge retrieval scoped por tenant+agent — completado 2026-05-04 commit `56d3133`. `getKnowledgeBase(category, {tenantId, agentId})` y `searchKnowledgeBase(query, {tenantId, agentId})` añaden `WHERE tenant_id AND agent_id` cuando presentes. `KnowledgeRetriever.retrieve(msg, intent, {tenantId, aiAgentId})` propaga opts a ambos métodos. `AIThinkingService.performKnowledgeRetrieval` pasa `enrichedContext.tenantId/aiAgentId`. Backward compatible (opts optional)
+- [x] **B2.4+B2.5.** Pipeline threading + hardening — absorbidos progresivamente por B2.0 commit 2 (`ec928e2`), B2.1 commit `d343cd1`, y hardening commit (2026-05-04). Estado final:
+  - `MessageHandler.processMessageWithAI` resuelve `{ tenantId, aiAgentId }` via `getSessionContext()` (1 query) y pasa ambos en `MessageContext`
+  - `AIThinkingService.processWithThinking` recibe `aiAgentId` via context; `performKnowledgeRetrieval` lo propaga a `KnowledgeRetriever.retrieve(msg, intent, {tenantId, aiAgentId})`
+  - `generateIntelligentFallback` recibe `opts?: {tenantId, aiAgentId}` y scopa KB search cuando disponible. En catch block crítico (sin context), KB search es global con warning `[UNSCOPED-KB]`
+  - `getKnowledgeBase`/`searchKnowledgeBase` emiten warning `[UNSCOPED-KB]` cuando faltan tenantId/agentId
+  - `aiAgentId` es **optional** en `MessageContext` (sesiones legacy sin agente asignado usan fallback legacy prompt). El sistema NO falla si falta — degrada gracefully
+- [x] **B2.6.** `KnowledgeRetriever` extendido para filtrar `AiProduct` por keywords/tags/precio — completado 2026-05-04 en 2 commits (`ca997c8` fix knowledgeData wiring bug + searchProducts, `8f15936` product-aware retrieval). **Bug fix incluido**: `AIThinkingService.generateContextualResponse` pasaba `[]` al ResponseGenerator en vez de los knowledgeData reales del retrieval (bug preexistente). `searchProducts(tenantId, agentId, {keywords, tags, maxPrice})` busca por ILIKE/tag intersection/price. `retrieveRelevantProducts` extrae keywords del mensaje, budget hint de entities/patrones ("barato"→maxPrice=100), y formatea productos como items con `type: 'product'`
+- [x] **B2.7+B2.8+B2.9.** NestJS CRUD + Preview — completado 2026-05-04 commit `47ebe02`. `AiAgentsModule` con 13 endpoints: 3 agent CRUD (GET list/detail, PUT update), 4 knowledge-items (CRUD nested), 4 products (CRUD nested), 1 preview. Todos scoped por `ClerkAuthGuard` + `TenantContextGuard`, `assertAgentOwnership` antes de ops nested, patrón `updateMany`/`deleteMany` con `{id, tenantId}`. Preview renderiza prompt desde config del agent sin cross-app import (construye preview independiente en el API)
 
 **Criterio de salida B.2:** el prompt se construye dinámicamente por agente, el retrieval filtra por tenant+agente, el preview funciona end-to-end sin enviar a WhatsApp.
 

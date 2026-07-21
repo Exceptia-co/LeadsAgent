@@ -11,6 +11,7 @@ import { AuthModule } from './auth/auth.module';
 import { TemplatesModule } from './templates/templates.module';
 import { resolve } from 'path';
 import { ClerkWebhooksModule } from './clerk-webhooks/clerk-webhooks.module';
+import { AiAgentsModule } from './ai-agents/ai-agents.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { ClerkWebhooksModule } from './clerk-webhooks/clerk-webhooks.module';
     LeadsModule,
     TemplatesModule,
     WhatsAppModule,
+    AiAgentsModule,
     ClerkWebhooksModule,
   ],
   controllers: [AppController],

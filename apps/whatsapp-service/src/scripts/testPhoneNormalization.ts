@@ -156,7 +156,7 @@ async function testDuplicatePrevention(): Promise<void> {
         phone: testNumbers[0],
         email: 'test@example.com',
         source: 'test_script',
-      });
+      }, { tenantId: '00000000-0000-0000-0000-000000000000' });
 
       if (firstLead) {
         console.log(`   ✅ Lead creado exitosamente con ID: ${firstLead.id}`);
@@ -180,7 +180,7 @@ async function testDuplicatePrevention(): Promise<void> {
           phone: testNumbers[i],
           email: `test${i}@example.com`,
           source: 'test_script',
-        });
+        }, { tenantId: '00000000-0000-0000-0000-000000000000' });
 
         if (duplicateLead) {
           console.log(
@@ -197,7 +197,7 @@ async function testDuplicatePrevention(): Promise<void> {
     }
 
     // Verificar que solo existe un lead en la base de datos con esos números
-    const allLeads = await DatabaseService.getAllLeads();
+    const allLeads = await DatabaseService.getAllLeads({ tenantId: '00000000-0000-0000-0000-000000000000' });
     const testLeads = allLeads.filter(lead => {
       return testNumbers.some(testNum =>
         PhoneNumberService.arePhoneNumbersEquivalent(testNum, lead.phone || '')

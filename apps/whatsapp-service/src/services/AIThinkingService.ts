@@ -189,8 +189,11 @@ class AIThinkingService {
 
       const intentAnalysis = intentStep.data as IntentAnalysis;
 
-      // 4. PASO 2: RECUPERACIÓN DE CONOCIMIENTO RELEVANTE
-      const knowledgeStep = await this.performKnowledgeRetrieval(message, intentAnalysis);
+      // 4. PASO 2: RECUPERACIÓN DE CONOCIMIENTO RELEVANTE (B2.2: scoped by tenant+agent)
+      const knowledgeStep = await this.performKnowledgeRetrieval(message, intentAnalysis, {
+        tenantId: enrichedContext.tenantId,
+        aiAgentId: enrichedContext.aiAgentId,
+      });
       thoughtProcess.steps.push(knowledgeStep);
 
       // 5. PASO 3: ANÁLISIS DE CONTEXTO Y HISTORIAL
@@ -223,7 +226,8 @@ class AIThinkingService {
           message,
           enrichedContext,
           intentAnalysis,
-          thoughtProcess.responseStrategy
+          thoughtProcess.responseStrategy,
+          knowledgeStep.data ?? [],
         );
         thoughtProcess.steps.push(responseStep);
         aiResponse = responseStep.data as AIResponse;
@@ -380,13 +384,13 @@ class AIThinkingService {
 
   private async performKnowledgeRetrieval(
     message: string,
-    intentAnalysis: IntentAnalysis
+    intentAnalysis: IntentAnalysis,
+    opts?: { tenantId?: string; aiAgentId?: string },
   ): Promise<ThinkingStep> {
     const stepStart = Date.now();
 
     try {
-      // Usar el nuevo servicio de recuperación de conocimiento
-      const relevantKnowledge = await this.knowledgeRetriever.retrieve(message, intentAnalysis);
+      const relevantKnowledge = await this.knowledgeRetriever.retrieve(message, intentAnalysis, opts);
 
       const content =
         relevantKnowledge.length > 0
@@ -717,18 +721,18 @@ class AIThinkingService {
     message: string,
     context: EnrichedContext,
     intentAnalysis: IntentAnalysis,
-    strategy: ResponseStrategy
+    strategy: ResponseStrategy,
+    knowledgeData: any[],
   ): Promise<ThinkingStep> {
     const stepStart = Date.now();
 
     try {
-      // Use the advanced ResponseGenerator service
       const generationResult = await this.responseGenerator.generateContextualResponse(
         message,
         context,
-        intentAnalysis as any, // Compatible with IntentAnalysisExtended
+        intentAnalysis as any,
         strategy,
-        [] // Knowledge data will be handled by ResponseGenerator internally if needed
+        knowledgeData,
       );
 
       return {

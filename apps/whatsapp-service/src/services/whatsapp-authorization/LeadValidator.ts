@@ -28,14 +28,18 @@ export class LeadValidator {
   /**
    * Buscar información del lead asociado al número
    */
-  public async findLeadInfo(phoneNumber: string): Promise<Lead | null> {
+  public async findLeadInfo(phoneNumber: string, opts?: { tenantId?: string }): Promise<Lead | null> {
     try {
       logger.debug('🔍 Looking up lead information', { phoneNumber });
 
-      // Normalize phone number for consistent lookup
       const normalizedPhone = PhoneNumberService.normalizePhoneNumber(phoneNumber);
+      const tenantId = opts?.tenantId;
+      if (!tenantId) {
+        logger.warn('[SKIP] findLeadInfo without tenantId — cross-tenant read prevented');
+        return null;
+      }
 
-      const lead = await DatabaseService.findLeadByPhone(normalizedPhone);
+      const lead = await DatabaseService.findLeadByPhone(normalizedPhone, { tenantId });
 
       if (lead) {
         logger.debug('✅ Lead found', {
@@ -163,7 +167,14 @@ export class LeadValidator {
       lead
     ) {
       if (lead.whatsappAuthorized !== true) {
-        const updateResult = await this.updateLeadWhatsAppAuthorization(lead.id, true);
+        // B2.0-fix (FIX C): sin tenantId no hay scoping — no tocar el lead.
+        if (!context.tenantId) {
+          logger.warn(
+            `[SKIP] WhatsApp auth update for lead ${lead.id} without tenantId — update blocked.`
+          );
+          return { leadCreated, leadUpdated, lead };
+        }
+        const updateResult = await this.updateLeadWhatsAppAuthorization(lead.id, true, context.tenantId);
         if (updateResult.success) {
           leadUpdated = true;
           lead.whatsappAuthorized = true;
@@ -379,13 +390,21 @@ export class LeadValidator {
     lead?: Lead;
     error?: string;
   }> {
+    // B2.0-fix (FIX C): sin tenantId no hay scoping posible — no crear el lead.
+    if (!context.tenantId) {
+      logger.warn(
+        `[SKIP] createLeadFromAuthorization(${context.phoneNumber}) without tenantId — lead not created.`
+      );
+      return { success: false, error: 'Missing tenant context — lead creation blocked' };
+    }
+
     try {
       const lead = await DatabaseService.createLead({
         name: context.contactName || null,
         phone: context.phoneNumber,
         source: context.leadSource || 'whatsapp',
         status: 'NUEVO',
-      });
+      }, { tenantId: context.tenantId });
 
       if (lead) {
         return { success: true, lead };
@@ -403,13 +422,14 @@ export class LeadValidator {
 
   private async updateLeadWhatsAppAuthorization(
     leadId: string,
-    authorized: boolean
+    authorized: boolean,
+    tenantId: string
   ): Promise<{
     success: boolean;
     error?: string;
   }> {
     try {
-      const result = await DatabaseService.updateLeadWhatsAppAuth(leadId, authorized);
+      const result = await DatabaseService.updateLeadWhatsAppAuth(leadId, authorized, { tenantId });
       return { success: result };
     } catch (error) {
       logger.error('Error updating lead WhatsApp authorization:', error);

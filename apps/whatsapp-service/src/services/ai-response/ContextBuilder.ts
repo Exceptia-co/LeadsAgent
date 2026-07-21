@@ -77,7 +77,7 @@ export class ContextBuilder {
     try {
       // 1. Enriquecer información del lead si no existe
       if (!enrichedContext.lead) {
-        const lead = await this.fetchLeadData(context.phoneNumber);
+        const lead = await this.fetchLeadData(context.phoneNumber, context.tenantId);
         if (lead) {
           enrichedContext.lead = lead;
           enrichedContext.contactName = enrichedContext.contactName || lead.name || undefined;
@@ -298,9 +298,10 @@ export class ContextBuilder {
   /**
    * Obtener información del lead desde la base de datos
    */
-  private async fetchLeadData(phoneNumber: string): Promise<Lead | null> {
+  private async fetchLeadData(phoneNumber: string, tenantId?: string): Promise<Lead | null> {
     try {
-      return await DatabaseService.findLeadByPhone(phoneNumber);
+      if (!tenantId) return null;
+      return await DatabaseService.findLeadByPhone(phoneNumber, { tenantId });
     } catch (error) {
       logger.warn('Error obteniendo datos del lead:', error);
       return null;
