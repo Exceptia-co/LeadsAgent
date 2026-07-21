@@ -65,14 +65,16 @@ describe('SystemPromptService.buildAgentSystemPrompt', () => {
     service = new SystemPromptService();
   });
 
-  it('returns legacy prompt when aiAgentId is null', async () => {
+  it('returns neutral prompt when aiAgentId is null', async () => {
     const result = await service.buildAgentSystemPrompt(null, { from: 'test', sessionId: 's1' });
-    expect(result).toContain('EscortsHub');
+    expect(result).toContain('asistente virtual profesional');
+    expect(result).not.toContain('EscortsHub');
   });
 
-  it('returns legacy prompt when tenantId is missing', async () => {
+  it('returns neutral prompt when tenantId is missing', async () => {
     const result = await service.buildAgentSystemPrompt(AGENT_ID, { from: 'test', sessionId: 's1' });
-    expect(result).toContain('EscortsHub');
+    expect(result).toContain('asistente virtual profesional');
+    expect(result).not.toContain('EscortsHub');
     expect(mockGetAiAgentWithProducts).not.toHaveBeenCalled();
   });
 
@@ -153,14 +155,15 @@ describe('SystemPromptService.buildAgentSystemPrompt', () => {
     expect(result).not.toContain('A'.repeat(2001));
   });
 
-  it('falls back to legacy prompt when agent not found', async () => {
+  it('falls back to neutral prompt when agent not found', async () => {
     mockGetAiAgentWithProducts.mockResolvedValue(null);
 
     const result = await service.buildAgentSystemPrompt(AGENT_ID, {
       from: 'test', sessionId: 's1', tenantId: TENANT_ID,
     });
 
-    expect(result).toContain('EscortsHub');
+    expect(result).toContain('asistente virtual profesional');
+    expect(result).not.toContain('EscortsHub');
   });
 
   it('hides emojis when allowEmojis is false', async () => {

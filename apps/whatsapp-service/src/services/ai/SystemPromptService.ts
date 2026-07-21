@@ -131,15 +131,15 @@ export class SystemPromptService {
     context?: MessageContext,
   ): Promise<string> {
     if (!aiAgentId || !context?.tenantId) {
-      return this.generateSystemPrompt(context);
+      return this.generateNeutralFallbackPrompt();
     }
 
     try {
       const { default: DatabaseService } = await import('../DatabaseService');
       const result = await DatabaseService.getAiAgentWithProducts(context.tenantId, aiAgentId);
       if (!result) {
-        logger.warn(`[PROMPT] Agent ${aiAgentId} not found for tenant ${context.tenantId} — legacy fallback`);
-        return this.generateSystemPrompt(context);
+        logger.warn(`[PROMPT] Agent ${aiAgentId} not found for tenant ${context.tenantId} — neutral fallback`);
+        return this.generateNeutralFallbackPrompt();
       }
 
       const { agent, products } = result;
@@ -162,7 +162,7 @@ export class SystemPromptService {
       return this.truncatePrompt(layers.join('\n\n'));
     } catch (err) {
       logger.error(`[PROMPT] Error building agent prompt for ${aiAgentId}:`, err);
-      return this.generateSystemPrompt(context);
+      return this.generateNeutralFallbackPrompt();
     }
   }
 
@@ -303,14 +303,14 @@ export class SystemPromptService {
     if (this.cachedBasePrompt) {
       return this.cachedBasePrompt;
     }
-    return this.getHardcodedBasePrompt();
+    return this.generateNeutralFallbackPrompt();
   }
 
   /**
-   * Hardcoded fallback — también seedea la tabla `ai_configuration` cuando
-   * se ejecute el script de setup post-deploy.
+   * Legacy prompt — kept only for seeding `ai_configuration` via setup scripts.
+   * NOT called at runtime; use generateNeutralFallbackPrompt() for all fallback paths.
    */
-  private getHardcodedBasePrompt(): string {
+  public getLegacySeedPrompt(): string {
     return `
 Eres un asistente virtual profesional de ${this.promptConfig.platform}, la plataforma líder de escorts en España. Tu misión es ayudar a los usuarios con información sobre nuestros productos de manera BREVE, NATURAL y CONVERSACIONAL.
 
@@ -366,6 +366,78 @@ Menciona solo:
   }
 
   /**
+   * B2.1-fix: Neutral fallback prompt — tenant-agnostic, no branding, no prices.
+   * Used when aiAgentId is null, tenantId missing, or any error in buildAgentSystemPrompt.
+   * Replaces the hardcoded EscortsHub fallback that leaked to all tenants.
+   * B2.0-fix (FIX A): covers ALL languages — the English path must never fall
+   * back to branded content either.
+   */
+  private generateNeutralFallbackPrompt(language: 'es' | 'en' = 'es'): string {
+    if (language === 'en') {
+      return `
+You are a professional virtual assistant. Your mission is to help users with information in a BRIEF, NATURAL, and CONVERSATIONAL manner.
+
+🎯 **FUNDAMENTAL RESPONSE RULES:**
+- **MANDATORY BREVITY**: Maximum 60-80 words per response
+- **NO LONG TABLES OR LISTS**: Essential information only
+- **CONVERSATIONAL**: Like a natural WhatsApp message
+- **ONE FINAL QUESTION**: To keep the conversation flowing
+
+📱 **RESPONSE TYPES:**
+
+**GREETINGS ("hello", "hi", etc.):**
+MAXIMUM 2 LINES. Reply with a friendly greeting and offer help.
+
+**INQUIRIES:**
+Answer with the information you have available. If you don't have enough information, say so honestly and suggest contacting the team.
+
+🚫 **FORBIDDEN:**
+- Long tables
+- Full price lists
+- More than 80 words
+- Multiple sections
+- Unsolicited information
+- Making up prices, brands, or data you don't have
+
+🎯 **ALWAYS ASK AT THE END:**
+- How else can I help you?
+- Do you need any additional information?
+- Would you like me to explain anything specific?
+    `;
+    }
+    return `
+Eres un asistente virtual profesional. Tu misión es ayudar a los usuarios con información de manera BREVE, NATURAL y CONVERSACIONAL.
+
+🎯 **REGLAS FUNDAMENTALES DE RESPUESTA:**
+- **BREVEDAD OBLIGATORIA**: Respuestas máximo 60-80 palabras
+- **SIN TABLAS NI LISTAS LARGAS**: Solo información esencial
+- **CONVERSACIONAL**: Como mensaje de WhatsApp natural
+- **UNA PREGUNTA FINAL**: Para mantener la conversación
+
+📱 **TIPOS DE RESPUESTA:**
+
+**SALUDOS ("hola", "buenas", etc.):**
+MÁXIMO 2 LÍNEAS. Responde con un saludo cordial y ofrece ayuda.
+
+**CONSULTAS:**
+Responde con la información que tengas disponible. Si no tienes información suficiente, indícalo honestamente y sugiere contactar al equipo.
+
+🚫 **PROHIBIDO:**
+- Tablas extensas
+- Listas de todos los precios
+- Más de 80 palabras
+- Múltiples secciones
+- Información no solicitada
+- Inventar precios, marcas o datos que no tengas
+
+🎯 **SIEMPRE PREGUNTA AL FINAL:**
+- ¿En qué más puedo ayudarte?
+- ¿Necesitas información adicional?
+- ¿Quieres que te explique algo específico?
+    `;
+  }
+
+  /**
    * Build context section from message context
    */
   private buildContextSection(context: MessageContext): string {
@@ -387,7 +459,7 @@ Menciona solo:
       contextSection += `- Idioma preferido: ${context.userLanguage}\n`;
     }
 
-    contextSection += '- Plataforma: EscortsHub WhatsApp\n';
+    contextSection += '- Plataforma: WhatsApp\n';
     contextSection += '- Objetivo: Convertir en cliente registrado';
 
     return contextSection;
@@ -489,7 +561,7 @@ Formato de respuesta JSON:
    */
   private getTechnicalSupportPrompt(context?: MessageContext): string {
     return `
-Eres el asistente técnico de EscortsHub.net. Tu especialidad es resolver problemas técnicos de manera rápida y efectiva.
+Eres un asistente técnico profesional. Tu especialidad es resolver problemas técnicos de manera rápida y efectiva.
 
 🔧 **ENFOQUE TÉCNICO:**
 - Identifica el problema específico
@@ -517,44 +589,18 @@ Eres el asistente técnico de EscortsHub.net. Tu especialidad es resolver proble
   }
 
   /**
-   * Get English version of the prompt
+   * Get English version of the prompt.
+   * B2.0-fix (FIX A): delegates to the neutral fallback — the previous
+   * hardcoded EscortsHub prompt leaked branding to all tenants on the 'en' path.
    */
   private getEnglishPrompt(context?: MessageContext): string {
-    return `
-You are a professional virtual assistant for ${this.promptConfig.platform}, Spain's leading escort platform. Your mission is to help users with product information in a BRIEF, NATURAL, and CONVERSATIONAL manner.
+    let prompt = this.generateNeutralFallbackPrompt('en');
 
-🎯 **FUNDAMENTAL RESPONSE RULES:**
-- **MANDATORY BREVITY**: Maximum 60-80 words per response
-- **NO LONG TABLES OR LISTS**: Essential information only
-- **CONVERSATIONAL**: Like a natural WhatsApp message
-- **ONE FINAL QUESTION**: To keep the conversation flowing
+    if (this.promptConfig.includeContext && context) {
+      prompt += this.buildContextSection(context);
+    }
 
-📱 **RESPONSE TYPES:**
-
-**GREETINGS ("hello", "hi", etc.):**
-MAXIMUM 2 LINES. Example:
-"Hello! 👋 I'm your EscortsHub.net assistant. How can I help you today?"
-
-**PRICE INQUIRIES:**
-Mention only:
-- Plus Package: 500 HUB for €300 (€0.60/coin) - BEST PRICE
-- 1-2 relevant products with prices
-- Ask what interests them most
-
-**PRODUCT INQUIRIES:**
-- 1-2 line product description
-- Basic price with Plus Package
-- Ask if they need more info
-
-**REGISTRATION:**
-"Registration is FREE at https://www.escortshub.net/es/sign-up. You only pay for activated products. Need help with any step?"
-
-✅ **KEY INFORMATION:**
-- EscortsHub.net - Leading platform
-- HUB coin system
-- Plus Package: best price (€0.60/coin)
-- FREE registration
-- 24/7 support`;
+    return this.truncatePrompt(prompt);
   }
 
   /**

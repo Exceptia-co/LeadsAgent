@@ -73,6 +73,27 @@ class WhatsAppAuthorizationService {
   public async authorize(
     context: import('./whatsapp-authorization/RuleEngine').AuthorizationContext
   ): Promise<import('./whatsapp-authorization/RuleEngine').AuthorizationDecision> {
+    // B2.0-fix (FIX B): fail-closed sin tenant. Este guard debe vivir AQUÍ,
+    // antes de authorizeModular — su catch aplica política fail-open (ALLOWED)
+    // y anularía cualquier rechazo interno.
+    if (!context.tenantId) {
+      logger.error(
+        `[REFUSED] authorize(${context.phoneNumber}) without tenantId — blocked before RuleEngine (fail-closed).`,
+        { sessionId: context.sessionId }
+      );
+      return {
+        decision: 'BLOCKED',
+        reason: 'Missing tenant context — blocked by fail-closed policy',
+        confidence: 1.0,
+        metadata: {
+          isKnownLead: false,
+          hasWhatsAppAuth: false,
+          riskFactors: ['missing-tenant-context'],
+          allowanceFactors: [],
+        },
+      };
+    }
+
     logger.debug('🔄 Using modular authorization components');
     return await this.authorizeModular(context);
   }

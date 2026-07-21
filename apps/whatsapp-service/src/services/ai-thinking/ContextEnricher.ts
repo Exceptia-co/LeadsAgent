@@ -101,11 +101,13 @@ export class ContextEnricher {
           isFromUser: h.isFromUser,
         }));
 
-        // Get lead profile if available
-        const leads = await DatabaseService.getAllLeads(context.tenantId ? { tenantId: context.tenantId } : undefined);
-        enriched.leadProfile = leads.find(
-          lead => lead.phone && lead.phone.includes(context.phoneNumber?.replace(/\D/g, '') || '')
-        );
+        // Get lead profile if available (tenantId required for scoped read)
+        if (context.tenantId) {
+          const leads = await DatabaseService.getAllLeads({ tenantId: context.tenantId });
+          enriched.leadProfile = leads.find(
+            lead => lead.phone && lead.phone.includes(context.phoneNumber?.replace(/\D/g, '') || '')
+          );
+        }
       }
 
       // Add temporal context

@@ -300,7 +300,8 @@ export class ContextBuilder {
    */
   private async fetchLeadData(phoneNumber: string, tenantId?: string): Promise<Lead | null> {
     try {
-      return await DatabaseService.findLeadByPhone(phoneNumber, tenantId ? { tenantId } : undefined);
+      if (!tenantId) return null;
+      return await DatabaseService.findLeadByPhone(phoneNumber, { tenantId });
     } catch (error) {
       logger.warn('Error obteniendo datos del lead:', error);
       return null;

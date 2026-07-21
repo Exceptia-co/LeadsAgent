@@ -875,12 +875,11 @@ class DatabaseService {
    * `[UNSCOPED-READ]` WARN so we can finish migrating them in
    * follow-up PRs without breaking anything mid-deploy.
    */
-  public async getAllLeads(opts?: { tenantId?: string }): Promise<Lead[]> {
+  public async getAllLeads(opts: { tenantId: string }): Promise<Lead[]> {
     const tenantId = opts?.tenantId;
     if (!tenantId) {
-      logger.warn(
-        '[UNSCOPED-READ] getAllLeads() called without tenantId — returning global. Update caller to pass opts.tenantId.'
-      );
+      logger.error('[REFUSED] getAllLeads() called without tenantId — returning [].');
+      return [];
     }
 
     // Intentar obtener leads de la base de datos real
@@ -899,8 +898,7 @@ class DatabaseService {
 
         if (tableExists.rows[0].exists) {
           // La tabla existe, obtener leads reales con estructura de Supabase
-          const query = tenantId
-            ? `
+          const query = `
               SELECT
                 id, name, phone, email, tags, status, mood_score,
                 last_contact, assigned_to, source, whatsapp_authorized,
@@ -908,19 +906,9 @@ class DatabaseService {
               FROM leads
               WHERE tenant_id = $1::uuid
               ORDER BY created_at DESC;
-            `
-            : `
-              SELECT
-                id, name, phone, email, tags, status, mood_score,
-                last_contact, assigned_to, source, whatsapp_authorized,
-                created_at, updated_at
-              FROM leads
-              ORDER BY created_at DESC;
             `;
 
-          const result = tenantId
-            ? await this.pool.query(query, [tenantId])
-            : await this.pool.query(query);
+          const result = await this.pool.query(query, [tenantId]);
           const realLeads = result.rows.map(row => ({
             id: row.id,
             name: row.name,
@@ -941,86 +929,33 @@ class DatabaseService {
           return realLeads;
         }
       } catch (error) {
-        logger.warn('Error obteniendo leads de la base de datos, usando datos mockeados:', error);
+        logger.error('Error obteniendo leads de la base de datos:', error);
+        return [];
       }
     }
 
-    // Fallback: devolver leads mockeados para desarrollo
-    const mockLeads: Lead[] = [
-      {
-        id: '1',
-        name: 'Juan Pérez',
-        phone: '+5491123456789',
-        email: 'juan@example.com',
-        tags: ['interesado', 'productos'],
-        status: 'NUEVO',
-        moodScore: 8.5,
-        source: 'website',
-        whatsappAuthorized: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      {
-        id: '2',
-        name: 'María García',
-        phone: '+5491187654321',
-        email: 'maria@example.com',
-        tags: ['información', 'precios'],
-        status: 'QUALIFIED',
-        moodScore: 9.2,
-        source: 'referral',
-        whatsappAuthorized: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      {
-        id: '3',
-        name: 'Carlos López',
-        phone: '+5491155443322',
-        email: 'carlos@example.com',
-        tags: ['automatización', 'urgente'],
-        status: 'NUEVO',
-        moodScore: 7.8,
-        source: 'social_media',
-        whatsappAuthorized: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      {
-        id: '4',
-        name: 'Ana Martínez',
-        phone: '+5491166778899',
-        email: 'ana@example.com',
-        tags: ['chatbots', 'negocio'],
-        status: 'GANADO',
-        moodScore: 9.5,
-        source: 'website',
-        whatsappAuthorized: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    ];
-
-    logger.info(`🔧 Usando ${mockLeads.length} leads mockeados para desarrollo`);
-    return mockLeads;
+    return [];
   }
 
   // Check if a lead with similar phone number already exists.
-  // B2.0: tenantId optional — scoped when present, global with warning when absent.
-  public async findLeadByPhone(phoneNumber: string, opts?: { tenantId?: string }): Promise<Lead | null> {
+  // B2.0-fix: tenantId REQUIRED — no unscoped reads.
+  public async findLeadByPhone(phoneNumber: string, opts: { tenantId: string }): Promise<Lead | null> {
+    // FIX D: guardia ANTES de tocar opts — callers JS pueden pasar undefined
+    // aunque la firma TS lo prohíba.
+    const tenantId = opts?.tenantId;
+    if (!tenantId) {
+      logger.error(
+        `[REFUSED] findLeadByPhone(${phoneNumber}) without tenantId — cross-tenant read blocked.`,
+      );
+      return null;
+    }
+
     if (!this.pool) {
       return null;
     }
 
-    const tenantId = opts?.tenantId;
-    if (!tenantId) {
-      logger.warn(
-        `[UNSCOPED-READ] findLeadByPhone(${phoneNumber}) without tenantId — scanning global leads. TODO B2.0 follow-up: wire tenantId through authorization/IA pipeline.`,
-      );
-    }
-
     try {
-      const allLeads = await this.getAllLeads(tenantId ? { tenantId } : undefined);
+      const allLeads = await this.getAllLeads({ tenantId });
 
       for (const lead of allLeads) {
         if (lead.phone && PhoneNumberService.arePhoneNumbersEquivalent(phoneNumber, lead.phone)) {
@@ -1119,30 +1054,31 @@ class DatabaseService {
   }
 
   // Create a new lead.
-  // B2.0: tenantId optional — scoped when present, global with warning when absent.
+  // B2.0-fix: tenantId REQUIRED — no unscoped inserts.
   public async createLead(leadData: {
     name?: string | null;
     email?: string | null;
     phone: string;
     status?: 'NUEVO' | 'CONTACTADO' | 'QUALIFIED' | 'GANADO' | 'PERDIDO';
     source?: string;
-  }, opts?: { tenantId?: string }): Promise<Lead | null> {
+  }, opts: { tenantId: string }): Promise<Lead | null> {
+    const tenantId = opts?.tenantId;
+    if (!tenantId) {
+      logger.error(
+        `[REFUSED] createLead(${leadData.phone}) without tenantId — cross-tenant write blocked.`,
+      );
+      return null;
+    }
+
     if (!this.pool) {
       logger.warn('No database connection available, cannot create lead');
       return null;
     }
 
-    const tenantId = opts?.tenantId;
-    if (!tenantId) {
-      logger.warn(
-        `[UNSCOPED-WRITE] createLead(${leadData.phone}) without tenantId — inserting without tenant_id. TODO B2.0 follow-up: wire tenantId through pipeline.`,
-      );
-    }
-
     try {
       const normalizedPhone = PhoneNumberService.normalizePhoneNumber(leadData.phone);
 
-      const existingLead = await this.findLeadByPhone(normalizedPhone, tenantId ? { tenantId } : undefined);
+      const existingLead = await this.findLeadByPhone(normalizedPhone, { tenantId });
       if (existingLead) {
         logger.warn(
           `⚠️ Lead with phone number ${leadData.phone} (normalized: ${normalizedPhone}) already exists with ID: ${existingLead.id}`
@@ -1167,42 +1103,24 @@ class DatabaseService {
         return null;
       }
 
-      const query = tenantId
-        ? `
+      const query = `
           INSERT INTO leads (
             tenant_id, name, email, phone, status, source, whatsapp_authorized, created_at, updated_at
           ) VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           RETURNING
             id, name, email, phone, status, source, whatsapp_authorized,
             mood_score, last_contact, assigned_to, created_at, updated_at;
-        `
-        : `
-          INSERT INTO leads (
-            name, email, phone, status, source, whatsapp_authorized, created_at, updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-          RETURNING
-            id, name, email, phone, status, source, whatsapp_authorized,
-            mood_score, last_contact, assigned_to, created_at, updated_at;
         `;
 
-      const values = tenantId
-        ? [
-            tenantId,
-            leadData.name || null,
-            leadData.email || null,
-            normalizedPhone,
-            leadData.status || 'NUEVO',
-            leadData.source || 'manual',
-            true,
-          ]
-        : [
-            leadData.name || null,
-            leadData.email || null,
-            normalizedPhone,
-            leadData.status || 'NUEVO',
-            leadData.source || 'manual',
-            true,
-          ];
+      const values = [
+        tenantId,
+        leadData.name || null,
+        leadData.email || null,
+        normalizedPhone,
+        leadData.status || 'NUEVO',
+        leadData.source || 'manual',
+        true,
+      ];
 
       const result = await this.pool.query(query, values);
 
@@ -1241,34 +1159,27 @@ class DatabaseService {
   public async updateLeadWhatsAppAuth(
     leadId: string,
     whatsappAuthorized: boolean,
-    opts?: { tenantId?: string }
+    opts: { tenantId: string }
   ): Promise<boolean> {
-    if (this.pool) {
-      const tenantId = opts?.tenantId;
-      if (!tenantId) {
-        logger.warn(
-          `[UNSCOPED-WRITE] updateLeadWhatsAppAuth(${leadId}) without tenantId — global update. TODO B2.0 follow-up: wire tenantId through pipeline.`,
-        );
-      }
+    // FIX D: acceso opcional — callers JS pueden pasar undefined aunque la firma TS lo prohíba.
+    const tenantId = opts?.tenantId;
+    if (!tenantId) {
+      logger.error(
+        `[REFUSED] updateLeadWhatsAppAuth(${leadId}) without tenantId — cross-tenant write blocked.`,
+      );
+      return false;
+    }
 
+    if (this.pool) {
       try {
-        const query = tenantId
-          ? `
+        const query = `
             UPDATE leads
-            SET "whatsappAuthorized" = $1, "updatedAt" = CURRENT_TIMESTAMP
+            SET whatsapp_authorized = $1, updated_at = CURRENT_TIMESTAMP
             WHERE id = $2 AND tenant_id = $3::uuid
-            RETURNING id;
-          `
-          : `
-            UPDATE leads
-            SET "whatsappAuthorized" = $1, "updatedAt" = CURRENT_TIMESTAMP
-            WHERE id = $2
             RETURNING id;
           `;
 
-        const values = tenantId
-          ? [whatsappAuthorized, leadId, tenantId]
-          : [whatsappAuthorized, leadId];
+        const values = [whatsappAuthorized, leadId, tenantId];
 
         const result = await this.pool.query(query, values);
 
@@ -1832,10 +1743,11 @@ class DatabaseService {
   // Crear o actualizar conversación
   public async createOrUpdateConversation(
     leadId: string,
-    sessionId: string
+    sessionId: string,
+    tenantId: string
   ): Promise<string | null> {
     try {
-      const leads = await this.getAllLeads();
+      const leads = await this.getAllLeads({ tenantId });
       const lead = leads.find(l => l.id === leadId);
 
       if (!lead?.phone) {

@@ -118,7 +118,7 @@ export class ContextEnricher implements IContextEnricher {
     tenantId?: string
   ): Promise<void> {
     try {
-      const leads = await DatabaseService.getAllLeads(tenantId ? { tenantId } : undefined);
+      const leads = await DatabaseService.getAllLeads({ tenantId });
       const normalizedPhone = phoneNumber.replace(/\D/g, '');
 
       enriched.leadProfile = leads.find(lead => lead.phone && lead.phone.includes(normalizedPhone));

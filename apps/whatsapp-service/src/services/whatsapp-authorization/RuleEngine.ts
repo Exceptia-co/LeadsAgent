@@ -78,6 +78,19 @@ export class RuleEngine {
     const riskFactors: string[] = [];
     const allowanceFactors: string[] = [];
 
+    // REGLA -1: tenantId obligatorio — sin tenant no podemos resolver el lead correctamente
+    if (!context.tenantId) {
+      riskFactors.push('tenant-not-resolved');
+      return this.createDecision(
+        'BLOCKED',
+        'tenant-not-resolved',
+        1.0,
+        null,
+        riskFactors,
+        allowanceFactors
+      );
+    }
+
     logger.debug('🔐 Evaluating authorization rules', {
       phoneNumber: context.phoneNumber,
       hasLead: !!leadInfo,

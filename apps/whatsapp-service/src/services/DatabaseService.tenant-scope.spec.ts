@@ -184,19 +184,11 @@ describe('findLeadByPhone — tenant-scoped', () => {
     expect(params[0]).toBe(TENANT_ID);
   });
 
-  it('calls getAllLeads without tenant filter when tenantId is omitted', async () => {
-    mockQuery
-      .mockResolvedValueOnce({ rows: [{ exists: true }] })
-      .mockResolvedValueOnce({ rows: [] });
+  it('refuses without tenantId — returns null and never queries (fail-closed)', async () => {
+    const result = await DatabaseService.findLeadByPhone('+5491155556666', undefined as any);
 
-    await DatabaseService.findLeadByPhone('+5491155556666');
-
-    const allLeadsCalls = mockQuery.mock.calls.filter(([sql]: [string]) =>
-      sql.includes('FROM leads')
-    );
-    expect(allLeadsCalls.length).toBeGreaterThan(0);
-    const [sql] = allLeadsCalls[0];
-    expect(sql).not.toContain('tenant_id');
+    expect(result).toBeNull();
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
 
@@ -236,12 +228,10 @@ describe('updateLeadWhatsAppAuth — tenant-scoped', () => {
     expect(params).toContain(TENANT_ID);
   });
 
-  it('omits tenant_id from WHERE when tenantId is not provided', async () => {
-    mockQuery.mockResolvedValue({ rows: [{ id: ITEM_ID }] });
+  it('refuses without tenantId — returns false and never queries (fail-closed)', async () => {
+    const result = await DatabaseService.updateLeadWhatsAppAuth(ITEM_ID, true, undefined as any);
 
-    await DatabaseService.updateLeadWhatsAppAuth(ITEM_ID, true);
-
-    const [sql] = mockQuery.mock.calls[0];
-    expect(sql).not.toContain('tenant_id');
+    expect(result).toBe(false);
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
