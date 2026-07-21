@@ -1,41 +1,66 @@
-import { IsString, IsOptional, IsBoolean, IsInt, IsArray, MaxLength, Min } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  IsInt,
+  IsArray,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class CreateKnowledgeItemDto {
-  @IsString() @MaxLength(100)
+  @IsString()
+  @MaxLength(100)
   category: string;
 
-  @IsString() @MaxLength(255)
+  @IsString()
+  @MaxLength(255)
   title: string;
 
   @IsString()
   content: string;
 
-  @IsOptional() @IsArray() @IsString({ each: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   keywords?: string[];
 
-  @IsOptional() @IsInt() @Min(0)
+  @IsOptional()
+  @IsInt()
+  @Min(0)
   priority?: number;
 
-  @IsOptional() @IsBoolean()
+  @IsOptional()
+  @IsBoolean()
   isActive?: boolean;
 }
 
 export class UpdateKnowledgeItemDto {
-  @IsOptional() @IsString() @MaxLength(100)
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
   category?: string;
 
-  @IsOptional() @IsString() @MaxLength(255)
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
   title?: string;
 
-  @IsOptional() @IsString()
+  @IsOptional()
+  @IsString()
   content?: string;
 
-  @IsOptional() @IsArray() @IsString({ each: true })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   keywords?: string[];
 
-  @IsOptional() @IsInt() @Min(0)
+  @IsOptional()
+  @IsInt()
+  @Min(0)
   priority?: number;
 
-  @IsOptional() @IsBoolean()
+  @IsOptional()
+  @IsBoolean()
   isActive?: boolean;
 }

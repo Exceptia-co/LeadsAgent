@@ -107,17 +107,26 @@ export class ResponseGenerator {
       }
 
       // 2. Build contextual prompt with agent + thinking overlays
-      const contextualPrompt = await this.buildContextualPrompt(intentAnalysis, strategy, knowledgeData, context);
+      const contextualPrompt = await this.buildContextualPrompt(
+        intentAnalysis,
+        strategy,
+        knowledgeData,
+        context
+      );
 
       // 3. Generate AI response — pass contextual prompt as system prompt override
-      const aiResponse = await AIService.generateResponse(message, {
-        ...context,
-        conversationHistory:
-          context.messageHistory?.map(m => ({
-            role: m.isFromUser ? 'user' : ('assistant' as 'user' | 'assistant'),
-            content: m.message,
-          })) || [],
-      }, contextualPrompt);
+      const aiResponse = await AIService.generateResponse(
+        message,
+        {
+          ...context,
+          conversationHistory:
+            context.messageHistory?.map(m => ({
+              role: m.isFromUser ? 'user' : ('assistant' as 'user' | 'assistant'),
+              content: m.message,
+            })) || [],
+        },
+        contextualPrompt
+      );
 
       if (!aiResponse.success || !aiResponse.content) {
         throw new Error(aiResponse.error || 'Failed to generate response');
@@ -281,7 +290,7 @@ export class ResponseGenerator {
       const promptService = new SystemPromptService();
       let systemPrompt = await promptService.buildAgentSystemPrompt(
         context.aiAgentId ?? null,
-        context,
+        context
       );
 
       // Thinking pipeline overlays (complementary to agent prompt)
@@ -319,8 +328,7 @@ export class ResponseGenerator {
         '\n📝 FORMATO: Menciona el producto más relevante con precio. Pregunta si le interesa. MAX 40 palabras.',
       registro:
         '\n📝 FORMATO: Indica que el registro es gratuito con el enlace correspondiente. MAX 25 palabras.',
-      default:
-        '\n📝 FORMATO: Respuesta directa en 30-40 palabras + pregunta final.',
+      default: '\n📝 FORMATO: Respuesta directa en 30-40 palabras + pregunta final.',
     };
 
     return instructions[intent] || instructions['default'];

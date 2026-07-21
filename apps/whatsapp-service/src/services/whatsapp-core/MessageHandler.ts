@@ -167,12 +167,12 @@ export class MessageHandler {
       const { tenantId, aiAgentId } = await DatabaseService.getSessionContext(sessionId);
       if (!tenantId) {
         logger.warn(
-          `[TENANT-SAFE] processMessageWithAI: session ${sessionId} has no tenantId — AI pipeline will run with unscoped reads`,
+          `[TENANT-SAFE] processMessageWithAI: session ${sessionId} has no tenantId — AI pipeline will run with unscoped reads`
         );
       }
       if (!aiAgentId) {
         logger.warn(
-          `[AGENT-SAFE] processMessageWithAI: session ${sessionId} has no aiAgentId — using legacy prompt`,
+          `[AGENT-SAFE] processMessageWithAI: session ${sessionId} has no aiAgentId — using legacy prompt`
         );
       }
 
@@ -305,7 +305,7 @@ export class MessageHandler {
             const intelligentFallback = await this.generateIntelligentFallback(
               originalMessage,
               phoneNumber,
-              { tenantId: tenantId ?? undefined, aiAgentId: aiAgentId ?? undefined },
+              { tenantId: tenantId ?? undefined, aiAgentId: aiAgentId ?? undefined }
             );
             await originalMessage.reply(intelligentFallback);
 
@@ -352,7 +352,7 @@ export class MessageHandler {
       try {
         const intelligentFallback = await this.generateIntelligentFallback(
           originalMessage,
-          phoneNumber,
+          phoneNumber
         );
         await originalMessage.reply(intelligentFallback);
       } catch (replyError) {
@@ -619,7 +619,7 @@ export class MessageHandler {
   private async generateIntelligentFallback(
     originalMessage: Message,
     phoneNumber: string,
-    opts?: { tenantId?: string; aiAgentId?: string },
+    opts?: { tenantId?: string; aiAgentId?: string }
   ): Promise<string> {
     try {
       logger.info(`🔍 Generating intelligent fallback for ${phoneNumber}`);
@@ -629,9 +629,10 @@ export class MessageHandler {
 
       const messageText = originalMessage.body || '';
 
-      const kbOpts = opts?.tenantId || opts?.aiAgentId
-        ? { tenantId: opts.tenantId, agentId: opts.aiAgentId }
-        : undefined;
+      const kbOpts =
+        opts?.tenantId || opts?.aiAgentId
+          ? { tenantId: opts.tenantId, agentId: opts.aiAgentId }
+          : undefined;
       const knowledgeResults = await DatabaseService.searchKnowledgeBase(messageText, kbOpts);
 
       if (knowledgeResults.length > 0) {

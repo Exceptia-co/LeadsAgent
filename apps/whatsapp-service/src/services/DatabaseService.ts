@@ -335,7 +335,9 @@ class DatabaseService {
    * B2.1: resolve sessionId → { tenantId, aiAgentId } in a single query.
    * Caches both positive and negative results for 60s.
    */
-  public async getSessionContext(sessionId: string): Promise<{ tenantId: string | null; aiAgentId: string | null }> {
+  public async getSessionContext(
+    sessionId: string
+  ): Promise<{ tenantId: string | null; aiAgentId: string | null }> {
     if (!this.prisma) return { tenantId: null, aiAgentId: null };
 
     const now = Date.now();
@@ -380,7 +382,7 @@ class DatabaseService {
   // Filters by tenantId + agentId (defense-in-depth from B2.0).
   public async getAiAgentWithProducts(
     tenantId: string,
-    agentId: string,
+    agentId: string
   ): Promise<{ agent: AiAgentData; products: AiProductData[] } | null> {
     const cacheKey = `${tenantId}:${agentId}`;
     const now = Date.now();
@@ -415,7 +417,7 @@ class DatabaseService {
       enableStructuredExtraction: row.enableStructuredExtraction,
     };
 
-    const products: AiProductData[] = (row.products ?? []).map((p) => ({
+    const products: AiProductData[] = (row.products ?? []).map(p => ({
       id: p.id,
       name: p.name,
       description: p.description,
@@ -432,15 +434,31 @@ class DatabaseService {
   public async getKnowledgeItemsByAgent(
     tenantId: string,
     agentId: string,
-    limit = 10,
-  ): Promise<Array<{ id: string; category: string; title: string; content: string; keywords: string[]; priority: number | null }>> {
+    limit = 10
+  ): Promise<
+    Array<{
+      id: string;
+      category: string;
+      title: string;
+      content: string;
+      keywords: string[];
+      priority: number | null;
+    }>
+  > {
     if (!this.prisma) return [];
 
     const items = await this.prisma.ai_knowledge_base.findMany({
       where: { tenantId, agentId, is_active: true },
       orderBy: { priority: 'desc' },
       take: limit,
-      select: { id: true, category: true, title: true, content: true, keywords: true, priority: true },
+      select: {
+        id: true,
+        category: true,
+        title: true,
+        content: true,
+        keywords: true,
+        priority: true,
+      },
     });
 
     return items;
@@ -454,7 +472,7 @@ class DatabaseService {
   public async searchProducts(
     tenantId: string,
     agentId: string,
-    opts?: { keywords?: string[]; tags?: string[]; maxPrice?: number },
+    opts?: { keywords?: string[]; tags?: string[]; maxPrice?: number }
   ): Promise<AiProductData[]> {
     if (!this.pool) return [];
 
@@ -464,12 +482,14 @@ class DatabaseService {
       let idx = 3;
 
       if (opts?.keywords?.length) {
-        const kwConditions = opts.keywords.map((kw) => {
-          const sanitized = kw.replace(/[%_\\]/g, '');
-          if (!sanitized) return null;
-          values.push(`%${sanitized}%`);
-          return `(name ILIKE $${idx} OR description ILIKE $${idx++})`;
-        }).filter(Boolean);
+        const kwConditions = opts.keywords
+          .map(kw => {
+            const sanitized = kw.replace(/[%_\\]/g, '');
+            if (!sanitized) return null;
+            values.push(`%${sanitized}%`);
+            return `(name ILIKE $${idx} OR description ILIKE $${idx++})`;
+          })
+          .filter(Boolean);
         if (kwConditions.length) conditions.push(`(${kwConditions.join(' OR ')})`);
       }
 
@@ -939,13 +959,16 @@ class DatabaseService {
 
   // Check if a lead with similar phone number already exists.
   // B2.0-fix: tenantId REQUIRED — no unscoped reads.
-  public async findLeadByPhone(phoneNumber: string, opts: { tenantId: string }): Promise<Lead | null> {
+  public async findLeadByPhone(
+    phoneNumber: string,
+    opts: { tenantId: string }
+  ): Promise<Lead | null> {
     // FIX D: guardia ANTES de tocar opts — callers JS pueden pasar undefined
     // aunque la firma TS lo prohíba.
     const tenantId = opts?.tenantId;
     if (!tenantId) {
       logger.error(
-        `[REFUSED] findLeadByPhone(${phoneNumber}) without tenantId — cross-tenant read blocked.`,
+        `[REFUSED] findLeadByPhone(${phoneNumber}) without tenantId — cross-tenant read blocked.`
       );
       return null;
     }
@@ -1055,17 +1078,20 @@ class DatabaseService {
 
   // Create a new lead.
   // B2.0-fix: tenantId REQUIRED — no unscoped inserts.
-  public async createLead(leadData: {
-    name?: string | null;
-    email?: string | null;
-    phone: string;
-    status?: 'NUEVO' | 'CONTACTADO' | 'QUALIFIED' | 'GANADO' | 'PERDIDO';
-    source?: string;
-  }, opts: { tenantId: string }): Promise<Lead | null> {
+  public async createLead(
+    leadData: {
+      name?: string | null;
+      email?: string | null;
+      phone: string;
+      status?: 'NUEVO' | 'CONTACTADO' | 'QUALIFIED' | 'GANADO' | 'PERDIDO';
+      source?: string;
+    },
+    opts: { tenantId: string }
+  ): Promise<Lead | null> {
     const tenantId = opts?.tenantId;
     if (!tenantId) {
       logger.error(
-        `[REFUSED] createLead(${leadData.phone}) without tenantId — cross-tenant write blocked.`,
+        `[REFUSED] createLead(${leadData.phone}) without tenantId — cross-tenant write blocked.`
       );
       return null;
     }
@@ -1165,7 +1191,7 @@ class DatabaseService {
     const tenantId = opts?.tenantId;
     if (!tenantId) {
       logger.error(
-        `[REFUSED] updateLeadWhatsAppAuth(${leadId}) without tenantId — cross-tenant write blocked.`,
+        `[REFUSED] updateLeadWhatsAppAuth(${leadId}) without tenantId — cross-tenant write blocked.`
       );
       return false;
     }
@@ -1287,7 +1313,7 @@ class DatabaseService {
 
     if (!data.tenantId) {
       logger.warn(
-        `[UNSCOPED-WRITE] logWhitelistDecision(${data.phoneNumber}) without tenantId — inserting without tenant_id. TODO B2.0 follow-up: wire tenantId through authorization context.`,
+        `[UNSCOPED-WRITE] logWhitelistDecision(${data.phoneNumber}) without tenantId — inserting without tenant_id. TODO B2.0 follow-up: wire tenantId through authorization context.`
       );
     }
 
@@ -1862,7 +1888,7 @@ class DatabaseService {
   // Obtener knowledge base para contexto IA
   public async getKnowledgeBase(
     category?: string,
-    opts?: { tenantId?: string; agentId?: string },
+    opts?: { tenantId?: string; agentId?: string }
   ): Promise<any[]> {
     if (!this.pool) {
       return this.getDefaultKnowledgeBase();
@@ -1870,7 +1896,7 @@ class DatabaseService {
 
     if (!opts?.tenantId || !opts?.agentId) {
       logger.warn(
-        `[UNSCOPED-KB] getKnowledgeBase(${category ?? 'all'}) without ${!opts?.tenantId ? 'tenantId' : ''}${!opts?.tenantId && !opts?.agentId ? '+' : ''}${!opts?.agentId ? 'agentId' : ''} — returning global KB. Wire opts from context.`,
+        `[UNSCOPED-KB] getKnowledgeBase(${category ?? 'all'}) without ${!opts?.tenantId ? 'tenantId' : ''}${!opts?.tenantId && !opts?.agentId ? '+' : ''}${!opts?.agentId ? 'agentId' : ''} — returning global KB. Wire opts from context.`
       );
     }
 
@@ -1961,11 +1987,11 @@ class DatabaseService {
 
   public async searchKnowledgeBase(
     query: string,
-    opts?: { tenantId?: string; agentId?: string },
+    opts?: { tenantId?: string; agentId?: string }
   ): Promise<any[]> {
     if (!opts?.tenantId || !opts?.agentId) {
       logger.warn(
-        `[UNSCOPED-KB] searchKnowledgeBase without ${!opts?.tenantId ? 'tenantId' : ''}${!opts?.tenantId && !opts?.agentId ? '+' : ''}${!opts?.agentId ? 'agentId' : ''} — searching global KB.`,
+        `[UNSCOPED-KB] searchKnowledgeBase without ${!opts?.tenantId ? 'tenantId' : ''}${!opts?.tenantId && !opts?.agentId ? '+' : ''}${!opts?.agentId ? 'agentId' : ''} — searching global KB.`
       );
     }
 
@@ -2249,7 +2275,11 @@ class DatabaseService {
   // ============================================
 
   // Obtener todos los templates
-  public async getMessageTemplates(tenantId: string, category?: string, activeOnly = true): Promise<any[]> {
+  public async getMessageTemplates(
+    tenantId: string,
+    category?: string,
+    activeOnly = true
+  ): Promise<any[]> {
     if (!this.pool) {
       return this.getDefaultTemplates();
     }
@@ -3165,8 +3195,8 @@ class DatabaseService {
     try {
       const tenantFilter = tenantId ? 'WHERE tenant_id = $1::uuid' : '';
       const recentTenantFilter = tenantId
-        ? 'WHERE created_at >= NOW() - INTERVAL \'7 days\' AND tenant_id = $1::uuid'
-        : 'WHERE created_at >= NOW() - INTERVAL \'7 days\'';
+        ? "WHERE created_at >= NOW() - INTERVAL '7 days' AND tenant_id = $1::uuid"
+        : "WHERE created_at >= NOW() - INTERVAL '7 days'";
       const values = tenantId ? [tenantId] : [];
 
       const query = `
@@ -3276,7 +3306,10 @@ class DatabaseService {
   }
 
   // Eliminar interacciones de entrenamiento antiguas (limpieza de datos)
-  public async cleanupOldTrainingInteractions(tenantId?: string, daysOld: number = 90): Promise<number> {
+  public async cleanupOldTrainingInteractions(
+    tenantId?: string,
+    daysOld: number = 90
+  ): Promise<number> {
     if (!this.pool) {
       return 0;
     }

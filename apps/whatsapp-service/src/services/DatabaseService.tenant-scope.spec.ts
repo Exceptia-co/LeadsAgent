@@ -199,12 +199,23 @@ describe('createLead — tenant-scoped', () => {
       .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ exists: true }] })
       .mockResolvedValueOnce({
-        rows: [{ id: ITEM_ID, name: 'Test', phone: '+5491155556666', status: 'NUEVO', source: 'manual', whatsapp_authorized: true, created_at: new Date(), updated_at: new Date() }],
+        rows: [
+          {
+            id: ITEM_ID,
+            name: 'Test',
+            phone: '+5491155556666',
+            status: 'NUEVO',
+            source: 'manual',
+            whatsapp_authorized: true,
+            created_at: new Date(),
+            updated_at: new Date(),
+          },
+        ],
       });
 
     await DatabaseService.createLead(
       { phone: '+5491155556666', name: 'Test' },
-      { tenantId: TENANT_ID },
+      { tenantId: TENANT_ID }
     );
 
     const insertCalls = mockQuery.mock.calls.filter(([sql]: [string]) =>

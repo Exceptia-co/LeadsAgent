@@ -104,6 +104,7 @@
 **Ninguno de estos 8 issues fue causado o empeorado por los cambios de Fase B2.** Todos existen en la rama `develop` sin los commits de B2. Fueron detectados durante el smoke test local de B2 porque es la primera vez que se hace un smoke completo con Chrome MCP + network monitoring + logs en esta sesión.
 
 Los cambios de B2 (19 commits, +2191 líneas) pasaron el smoke sin regresiones:
+
 - Dashboard, Leads, WhatsApp Manager cargan correctamente
 - Endpoints B2.7-B2.9 (ai-agents CRUD) responden 200/201
 - Tenant isolation verificada (Testing = 0 leads, EscortsHub = 13)

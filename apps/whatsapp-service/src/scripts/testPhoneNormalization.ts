@@ -151,12 +151,15 @@ async function testDuplicatePrevention(): Promise<void> {
     console.log(`\n1️⃣ Creando lead con número: "${testNumbers[0]}"`);
 
     try {
-      const firstLead = await DatabaseService.createLead({
-        name: 'Usuario de Prueba',
-        phone: testNumbers[0],
-        email: 'test@example.com',
-        source: 'test_script',
-      }, { tenantId: '00000000-0000-0000-0000-000000000000' });
+      const firstLead = await DatabaseService.createLead(
+        {
+          name: 'Usuario de Prueba',
+          phone: testNumbers[0],
+          email: 'test@example.com',
+          source: 'test_script',
+        },
+        { tenantId: '00000000-0000-0000-0000-000000000000' }
+      );
 
       if (firstLead) {
         console.log(`   ✅ Lead creado exitosamente con ID: ${firstLead.id}`);
@@ -175,12 +178,15 @@ async function testDuplicatePrevention(): Promise<void> {
       console.log(`\n${i + 1}️⃣ Intentando crear lead duplicado con número: "${testNumbers[i]}"`);
 
       try {
-        const duplicateLead = await DatabaseService.createLead({
-          name: `Usuario Duplicado ${i}`,
-          phone: testNumbers[i],
-          email: `test${i}@example.com`,
-          source: 'test_script',
-        }, { tenantId: '00000000-0000-0000-0000-000000000000' });
+        const duplicateLead = await DatabaseService.createLead(
+          {
+            name: `Usuario Duplicado ${i}`,
+            phone: testNumbers[i],
+            email: `test${i}@example.com`,
+            source: 'test_script',
+          },
+          { tenantId: '00000000-0000-0000-0000-000000000000' }
+        );
 
         if (duplicateLead) {
           console.log(
@@ -197,7 +203,9 @@ async function testDuplicatePrevention(): Promise<void> {
     }
 
     // Verificar que solo existe un lead en la base de datos con esos números
-    const allLeads = await DatabaseService.getAllLeads({ tenantId: '00000000-0000-0000-0000-000000000000' });
+    const allLeads = await DatabaseService.getAllLeads({
+      tenantId: '00000000-0000-0000-0000-000000000000',
+    });
     const testLeads = allLeads.filter(lead => {
       return testNumbers.some(testNum =>
         PhoneNumberService.arePhoneNumbersEquivalent(testNum, lead.phone || '')

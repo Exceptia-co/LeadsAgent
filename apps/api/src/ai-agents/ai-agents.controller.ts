@@ -68,7 +68,11 @@ export class AiAgentsController {
     @Body() dto: CreateKnowledgeItemDto,
     @CurrentUser() user: { tenantId?: string },
   ) {
-    const data = await this.service.createKnowledgeItem(user.tenantId!, agentId, dto);
+    const data = await this.service.createKnowledgeItem(
+      user.tenantId!,
+      agentId,
+      dto,
+    );
     return { success: true, data };
   }
 
@@ -79,7 +83,12 @@ export class AiAgentsController {
     @Body() dto: UpdateKnowledgeItemDto,
     @CurrentUser() user: { tenantId?: string },
   ) {
-    const data = await this.service.updateKnowledgeItem(user.tenantId!, agentId, itemId, dto);
+    const data = await this.service.updateKnowledgeItem(
+      user.tenantId!,
+      agentId,
+      itemId,
+      dto,
+    );
     return { success: true, data };
   }
 
@@ -121,7 +130,12 @@ export class AiAgentsController {
     @Body() dto: UpdateProductDto,
     @CurrentUser() user: { tenantId?: string },
   ) {
-    const data = await this.service.updateProduct(user.tenantId!, agentId, productId, dto);
+    const data = await this.service.updateProduct(
+      user.tenantId!,
+      agentId,
+      productId,
+      dto,
+    );
     return { success: true, data };
   }
 
@@ -143,7 +157,11 @@ export class AiAgentsController {
     @Body('message') message: string,
     @CurrentUser() user: { tenantId?: string },
   ) {
-    const data = await this.service.previewPrompt(user.tenantId!, agentId, message || 'Hola');
+    const data = await this.service.previewPrompt(
+      user.tenantId!,
+      agentId,
+      message || 'Hola',
+    );
     return { success: true, data };
   }
 }
