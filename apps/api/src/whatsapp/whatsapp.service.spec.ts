@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { WhatsAppService } from './whatsapp.service';
+import { WhatsAppService, toMessageDate } from './whatsapp.service';
 import { WhitelistService } from './whitelist.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LeadStatus } from '@prisma/client';
@@ -178,5 +178,33 @@ describe('WhatsAppService tenant-scope', () => {
         }),
       });
     });
+  });
+});
+
+describe('toMessageDate', () => {
+  // whatsapp-web.js sends Unix seconds; new Date() reads bare numbers as ms.
+  it('treats a seconds timestamp as seconds', () => {
+    const seconds = 1787000000; // 2026-08-17
+    expect(toMessageDate(seconds).getTime()).toBe(seconds * 1000);
+  });
+
+  it('leaves a milliseconds timestamp alone', () => {
+    const ms = 1787000000000;
+    expect(toMessageDate(ms).getTime()).toBe(ms);
+  });
+
+  it('accepts a numeric string', () => {
+    expect(toMessageDate('1787000000').getTime()).toBe(1787000000 * 1000);
+  });
+
+  it('falls back to now when the value overflows Date range', () => {
+    const before = Date.now();
+    expect(toMessageDate(9e15).getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it.each([undefined, 0, -1, NaN])('falls back to now for %s', value => {
+    const before = Date.now();
+    const result = toMessageDate(value as number).getTime();
+    expect(result).toBeGreaterThanOrEqual(before);
   });
 });

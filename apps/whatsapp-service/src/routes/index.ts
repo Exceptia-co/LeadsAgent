@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type { MessageDirection } from '@leadcrm/db';
 import sessionController from '../controllers/SessionController';
 import healthRoutes from './health';
 import redisRoutes from './redis';
@@ -655,6 +656,52 @@ router.get('/stats/whitelist', requireTenantContext, async (req, res) => {
 //   - sessionId: ownership verified against req.tenantId (cross-tenant -> 404)
 //   - createProactiveMessage now persists tenant_id; no more tenantless
 //     proactive_messages rows from this route
+// Proactive consent window.
+//
+// `whatsappAuthorized` records that someone once said yes; it never expires.
+// A lead who wrote to us last week is in a live conversation, which is what
+// actually makes an outbound follow-up welcome — and what keeps WhatsApp from
+// reading it as cold outreach. So proactive sends require BOTH: the explicit
+// flag AND a recent inbound message. This also neutralises apps/api
+// whatsapp.service.ts creating inbound leads with `whatsappAuthorized ?? true`:
+// the flag alone no longer opens the door.
+// Capped at 90 days: a stray env var must not be able to widen the window far
+// enough to disable the protection in practice.
+const PROACTIVE_INBOUND_WINDOW_MAX_DAYS = 90;
+const PROACTIVE_INBOUND_WINDOW_DAYS = Math.min(
+  Number(process.env.PROACTIVE_INBOUND_WINDOW_DAYS) || 30,
+  PROACTIVE_INBOUND_WINDOW_MAX_DAYS
+);
+
+type MessageReader = {
+  message: { findFirst: (args: unknown) => Promise<{ id: string } | null> };
+};
+
+async function hasLiveInboundConversation(
+  prismaClient: MessageReader,
+  leadId: string,
+  tenantId: string,
+  sessionId: string
+): Promise<boolean> {
+  const cutoff = new Date(Date.now() - PROACTIVE_INBOUND_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const inbound = await prismaClient.message.findFirst({
+    where: {
+      leadId,
+      tenantId,
+      // Scoped to the line the contact actually wrote to. A tenant can run
+      // several sessions, and writing to line A must not authorise line B.
+      // Inbound rows predating this scoping have a null sessionId and no
+      // longer count — deliberate, since we cannot tell which line they hit.
+      sessionId,
+      direction: 'INBOUND' satisfies MessageDirection,
+      deletedAt: null,
+      createdAt: { gte: cutoff },
+    },
+    select: { id: true },
+  });
+  return inbound !== null;
+}
+
 router.post('/proactive-messages', requireTenantContext, rateLimitBySession, async (req, res) => {
   try {
     const { leadId, templateId, sessionId = 'default-session', content, variables = {} } = req.body;
@@ -706,6 +753,13 @@ router.post('/proactive-messages', requireTenantContext, rateLimitBySession, asy
       return res.status(400).json({
         success: false,
         error: 'Lead has not authorized WhatsApp messages',
+      });
+    }
+
+    if (!(await hasLiveInboundConversation(prismaClient, lead.id, req.tenantId!, sessionId))) {
+      return res.status(400).json({
+        success: false,
+        error: `Lead has no inbound message in the last ${PROACTIVE_INBOUND_WINDOW_DAYS} days`,
       });
     }
 
@@ -922,7 +976,7 @@ router.post(
       // "Lead no encontrado").
       const prismaClient = (
         DatabaseService as unknown as {
-          prisma: { lead: { findFirst: (args: any) => Promise<any> } };
+          prisma: { lead: { findFirst: (args: any) => Promise<any> } } & MessageReader;
         }
       ).prisma;
 
@@ -952,6 +1006,15 @@ router.post(
             console.log(`🚫 Lead not authorized for WhatsApp: ${leadId}`);
             results.failed++;
             results.errors.push(`Lead ${leadId}: Lead has not authorized WhatsApp messages`);
+            continue;
+          }
+
+          if (!(await hasLiveInboundConversation(prismaClient, lead.id, req.tenantId!, sessionId))) {
+            console.log(`🚫 Lead has no live inbound conversation: ${leadId}`);
+            results.failed++;
+            results.errors.push(
+              `Lead ${leadId}: Lead has no inbound message in the last ${PROACTIVE_INBOUND_WINDOW_DAYS} days`
+            );
             continue;
           }
 
