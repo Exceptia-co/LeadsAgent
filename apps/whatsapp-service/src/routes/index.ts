@@ -944,6 +944,17 @@ router.post(
             continue;
           }
 
+          // Consent gate: the single-send endpoint (POST /proactive-messages)
+          // rejects unauthorized leads with 400. Bulk applies the same rule,
+          // skipping the lead instead of aborting the batch — same shape as
+          // the cross-tenant skip above.
+          if (!lead.whatsappAuthorized) {
+            console.log(`🚫 Lead not authorized for WhatsApp: ${leadId}`);
+            results.failed++;
+            results.errors.push(`Lead ${leadId}: Lead has not authorized WhatsApp messages`);
+            continue;
+          }
+
           console.log(`📋 Lead found: ${lead.name} (${lead.phone})`);
           let messageContent = content || '';
 
