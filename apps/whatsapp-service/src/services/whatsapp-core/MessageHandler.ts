@@ -1,13 +1,13 @@
 import type { Client, Message } from 'whatsapp-web.js';
 import { logger } from '../../utils/logger';
-import type { WhatsAppMessage, SendMessageResponse } from '../../types';
+import type { SendMessageResponse } from '../../types';
+import type { NormalizedWhatsAppMessage } from '../../types/messages';
 
 /**
  * MessageHandler - Handles all message sending, receiving, and processing operations
  *
  * Responsibilities:
  * - Message sending with proper phone number normalization
- * - Message parsing and transformation
  * - AI message processing workflow
  * - Message validation and error handling
  * - Response strategies (quoting vs direct sending)
@@ -106,32 +106,19 @@ export class MessageHandler {
   }
 
   /**
-   * Parse a WhatsApp message into our internal format
-   */
-  async parseMessage(message: Message, sessionId: string): Promise<WhatsAppMessage> {
-    const contact = await message.getContact();
-    const chat = await message.getChat();
-
-    return {
-      id: message.id._serialized,
-      from: contact.id._serialized,
-      to: message.to,
-      body: message.body,
-      timestamp: message.timestamp,
-      type: message.type as any,
-      isGroup: chat.isGroup,
-      fromMe: message.fromMe,
-    };
-  }
-
-  /**
    * Process message with AI integration
+   *
+   * `transport` is the Phase 2 seam — the one library object still reaching the
+   * AI path. It carries no data: everything read here comes from `dto`. It
+   * survives only because the reply strategies need a handle on the chat
+   * (`getChat().sendStateTyping()`, `.reply()`, `chat.sendMessage()`).
+   * Replacing it with a narrow reply port is the first step of the cutover.
    */
   async processMessageWithAI(
-    originalMessage: Message,
-    whatsappMessage: WhatsAppMessage,
-    sessionId: string
+    dto: NormalizedWhatsAppMessage,
+    transport: Message
   ): Promise<void> {
+    const sessionId = dto.sessionId;
     const startTime = Date.now();
     let aiResponse: string = '';
     let knowledgeBaseIdsUsed: string[] = [];
@@ -149,7 +136,7 @@ export class MessageHandler {
       // mejor con el mismo tiempo total. whatsapp-web.js mantiene el
       // state por ~25s sin `clearState`, suficiente para cubrir el flow.
       try {
-        const chatEarly = await originalMessage.getChat();
+        const chatEarly = await transport.getChat();
         await chatEarly.sendStateTyping();
         logger.debug('⌨️  Typing indicator activated early (covering LLM + humanized delay)');
       } catch (typingErr) {
@@ -160,8 +147,9 @@ export class MessageHandler {
       const { default: AIThinkingService } = await import('../AIThinkingService');
       const { default: DatabaseService } = await import('../DatabaseService');
 
-      // Get phone number without WhatsApp suffix
-      const phoneNumber = whatsappMessage.from.replace('@c.us', '');
+      // Already suffix-free -- normalizeWwebjsMessage validates E.164 before
+      // building the DTO.
+      const phoneNumber = dto.senderPhone;
 
       // B2.1: resolve tenantId + aiAgentId in a single query
       const { tenantId, aiAgentId } = await DatabaseService.getSessionContext(sessionId);
@@ -177,8 +165,8 @@ export class MessageHandler {
       }
 
       // Enhanced processing with structured thinking
-      const thinkingResult = await AIThinkingService.processWithThinking(whatsappMessage.body, {
-        from: whatsappMessage.from,
+      const thinkingResult = await AIThinkingService.processWithThinking(dto.text, {
+        from: phoneNumber,
         sessionId: sessionId,
         tenantId: tenantId ?? undefined,
         aiAgentId: aiAgentId ?? undefined,
@@ -228,7 +216,7 @@ export class MessageHandler {
 
         // Determine sending method based on strategy
         const strategy = thinkingResult.thinkingProcess.responseStrategy;
-        await this.sendResponseWithStrategy(originalMessage, thinkingResult.content, strategy);
+        await this.sendResponseWithStrategy(transport, dto.text, thinkingResult.content, strategy);
 
         // Fase A4 (2026-04-19): unificar las dos llamadas sueltas de
         // saveConversation (user msg + bot msg) en una única operación
@@ -240,8 +228,8 @@ export class MessageHandler {
         await this.persistMessagePair({
           sessionId,
           phoneNumber,
-          userMessageText: whatsappMessage.body,
-          userMessageType: whatsappMessage.type,
+          userMessageText: dto.text,
+          userMessageType: dto.type,
           botResponseText: thinkingResult.content,
           intent: thinkingResult.thinkingProcess.steps[0]?.data?.intent,
           sentiment: thinkingResult.thinkingProcess.steps[0]?.data?.sentiment,
@@ -255,7 +243,7 @@ export class MessageHandler {
         // Schedule success score calculation and logging after a delay
         setTimeout(async () => {
           await this.logSuccessfulInteraction(
-            whatsappMessage.body,
+            dto.text,
             aiResponse,
             knowledgeBaseIdsUsed,
             phoneNumber,
@@ -286,9 +274,9 @@ export class MessageHandler {
         await DatabaseService.saveConversation({
           sessionId: sessionId,
           phoneNumber: phoneNumber,
-          messageText: whatsappMessage.body,
+          messageText: dto.text,
           responseText: undefined,
-          messageType: whatsappMessage.type,
+          messageType: dto.type,
           intent: thinkingResult.thinkingProcess.steps[0]?.data?.intent || 'no_response',
           sentiment: thinkingResult.thinkingProcess.steps[0]?.data?.sentiment || 'neutral',
           aiProvider: thinkingResult.provider,
@@ -303,11 +291,11 @@ export class MessageHandler {
           );
           try {
             const intelligentFallback = await this.generateIntelligentFallback(
-              originalMessage,
+              dto.text,
               phoneNumber,
               { tenantId: tenantId ?? undefined, aiAgentId: aiAgentId ?? undefined }
             );
-            await originalMessage.reply(intelligentFallback);
+            await transport.reply(intelligentFallback);
 
             // Log the fallback usage
             await DatabaseService.saveConversation({
@@ -328,7 +316,7 @@ export class MessageHandler {
             logger.error('Error sending intelligent fallback message:', replyError);
             // Only use generic fallback as last resort
             try {
-              await originalMessage.reply(
+              await transport.reply(
                 'Disculpa, en este momento no puedo procesar tu mensaje. Un agente se pondrá en contacto contigo pronto. 😊'
               );
             } catch (finalError) {
@@ -345,21 +333,21 @@ export class MessageHandler {
       logger.error('❌ Error in enhanced processMessageWithAI:', error);
 
       // Get phone number for fallback (define it here since it's in catch block)
-      const phoneNumber = whatsappMessage.from.replace('@c.us', '');
+      const phoneNumber = dto.senderPhone;
 
       // Critical error fallback — tenantId/aiAgentId unavailable (declared in try block).
       // KB search here is intentionally unscoped; the warning will fire from DatabaseService.
       try {
         const intelligentFallback = await this.generateIntelligentFallback(
-          originalMessage,
+          dto.text,
           phoneNumber
         );
-        await originalMessage.reply(intelligentFallback);
+        await transport.reply(intelligentFallback);
       } catch (replyError) {
         logger.error('Error sending intelligent fallback message:', replyError);
         // Last resort generic message
         try {
-          await originalMessage.reply(
+          await transport.reply(
             'Gracias por tu mensaje. Un representante te contactará pronto. 👍'
           );
         } catch (finalError) {
@@ -403,7 +391,8 @@ export class MessageHandler {
    * Send response with intelligent quoting strategy
    */
   private async sendResponseWithStrategy(
-    originalMessage: Message,
+    transport: Message,
+    userMessageText: string,
     responseText: string,
     strategy: any
   ): Promise<void> {
@@ -413,7 +402,7 @@ export class MessageHandler {
     // "escribiendo…" en el cliente del receptor; `clearState()` lo apaga.
     let chat: Awaited<ReturnType<Message['getChat']>> | null = null;
     try {
-      chat = await originalMessage.getChat();
+      chat = await transport.getChat();
       await chat.sendStateTyping();
     } catch (typingErr) {
       // No bloqueante: si sendStateTyping falla, seguimos con el envío sin
@@ -424,21 +413,21 @@ export class MessageHandler {
     try {
       if (
         strategy.shouldQuote ||
-        this.shouldQuoteBasedOnContext(originalMessage, responseText, strategy)
+        this.shouldQuoteBasedOnContext(userMessageText, responseText, strategy)
       ) {
         // Quote the original message
-        await originalMessage.reply(responseText);
+        await transport.reply(responseText);
         logger.debug('📝 Response sent with quote');
       } else {
         // Send without quoting — reusa `chat` ya obtenido arriba si existe
-        const targetChat = chat ?? (await originalMessage.getChat());
+        const targetChat = chat ?? (await transport.getChat());
         await targetChat.sendMessage(responseText);
         logger.debug('📝 Response sent without quote');
       }
     } catch (error) {
       logger.error('Error in sendResponseWithStrategy:', error);
       // Fallback to simple reply
-      await originalMessage.reply(responseText);
+      await transport.reply(responseText);
     } finally {
       // Limpiar el typing state siempre — tanto en éxito como en fallback.
       if (chat) {
@@ -455,7 +444,7 @@ export class MessageHandler {
    * Determine if we should quote based on message context
    */
   private shouldQuoteBasedOnContext(
-    originalMessage: Message,
+    rawText: string,
     responseText: string,
     strategy: any
   ): boolean {
@@ -464,7 +453,7 @@ export class MessageHandler {
     if (strategy.shouldQuote === false) return false;
 
     // Smart quoting logic
-    const messageText = originalMessage.body?.toLowerCase() || '';
+    const messageText = rawText.toLowerCase();
 
     // Quote for direct questions
     if (
@@ -617,7 +606,7 @@ export class MessageHandler {
    * Generate intelligent fallback response
    */
   private async generateIntelligentFallback(
-    originalMessage: Message,
+    messageText: string,
     phoneNumber: string,
     opts?: { tenantId?: string; aiAgentId?: string }
   ): Promise<string> {
@@ -626,8 +615,6 @@ export class MessageHandler {
 
       const { default: DatabaseService } = await import('../DatabaseService');
       const { default: AIService } = await import('../AIService');
-
-      const messageText = originalMessage.body || '';
 
       const kbOpts =
         opts?.tenantId || opts?.aiAgentId
@@ -689,7 +676,7 @@ Respuesta:`,
       logger.error('Error generating intelligent fallback:', error);
 
       // Return smart generic fallback as last resort
-      return this.generateSmartGenericFallback(originalMessage.body || '');
+      return this.generateSmartGenericFallback(messageText);
     }
   }
 

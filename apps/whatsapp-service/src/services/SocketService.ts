@@ -292,24 +292,6 @@ export class SocketService {
         });
         break;
 
-      case 'session:snapshot_created':
-        this.io.of('/whatsapp-sessions').emit('session:snapshot_created', {
-          sessionId: payload.sessionId,
-          ...payload.data,
-          timestamp: payload.timestamp,
-        });
-        logger.debug(`📡 Snapshot created event broadcasted for ${payload.sessionId}`);
-        break;
-
-      case 'session:snapshot_restored':
-        this.io.of('/whatsapp-sessions').emit('session:snapshot_restored', {
-          sessionId: payload.sessionId,
-          ...payload.data,
-          timestamp: payload.timestamp,
-        });
-        logger.debug(`📡 Snapshot restored event broadcasted for ${payload.sessionId}`);
-        break;
-
       default:
         logger.debug(`🔄 Unhandled webhook event type: ${payload.event}`);
     }

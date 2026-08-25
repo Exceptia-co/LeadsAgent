@@ -31,9 +31,7 @@ import {
   Zap,
   Circle,
   HardDrive,
-  RefreshCw,
   Heart,
-  Shield,
   Pause,
   Play,
 } from "lucide-react";
@@ -770,7 +768,6 @@ function SessionManager({
   const [newSessionName, setNewSessionName] = useState("");
   const [creating, setCreating] = useState(false);
   const [sessionHealth, setSessionHealth] = useState<Record<string, any>>({});
-  const [backupInProgress, setBackupInProgress] = useState<string | null>(null);
   const [pauseInProgress, setPauseInProgress] = useState<string | null>(null);
   const [reconnectInProgress, setReconnectInProgress] = useState<string | null>(null);
 
@@ -801,67 +798,6 @@ function SessionManager({
       return () => clearInterval(interval);
     }
   }, [sessions.length]);
-
-  const handleForceBackup = async (sessionId: string) => {
-    setBackupInProgress(sessionId);
-    try {
-      const res = await fetch(`${getWhatsAppUrl()}/sessions/${sessionId}/backup`, {
-        method: "POST",
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast({
-          type: "success",
-          title: "Backup creado",
-          description: `Backup creado (${((data.data?.sizeBytes || 0) / 1024 / 1024).toFixed(2)}MB)`,
-        });
-      } else {
-        showToast({
-          type: "error",
-          title: "Error de backup",
-          description: data.error || "No se pudo crear el backup",
-        });
-      }
-    } catch {
-      showToast({
-        type: "error",
-        title: "Error de backup",
-        description: "Error de conexion al servidor",
-      });
-    } finally {
-      setBackupInProgress(null);
-    }
-  };
-
-  const handleRestoreBackup = async (sessionId: string) => {
-    if (!confirm("Esto restaurara la sesion desde el ultimo backup. Continuar?")) return;
-
-    try {
-      const res = await fetch(`${getWhatsAppUrl()}/sessions/${sessionId}/restore-backup`, {
-        method: "POST",
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast({
-          type: "success",
-          title: "Backup restaurado",
-          description: "Reinicia la sesion para aplicar los cambios",
-        });
-      } else {
-        showToast({
-          type: "error",
-          title: "Error de restauracion",
-          description: data.error || "No se pudo restaurar el backup",
-        });
-      }
-    } catch {
-      showToast({
-        type: "error",
-        title: "Error de restauracion",
-        description: "Error de conexion al servidor",
-      });
-    }
-  };
 
   const handlePauseSession = async (sessionId: string) => {
     if (
@@ -1080,7 +1016,7 @@ function SessionManager({
                     </div>
                   )}
 
-                {/* Health & Backup Indicators */}
+                {/* Health Indicators */}
                 {(() => {
                   const health = sessionHealth[session.id];
                   if (!health) return null;
@@ -1108,29 +1044,6 @@ function SessionManager({
                                 ? "Lento"
                                 : "Sin respuesta"
                             : "N/A"}
-                        </span>
-                      </div>
-
-                      {/* Backup Status */}
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center">
-                          <Shield
-                            className={`h-3 w-3 mr-1 ${health.backupStatus?.hasBackup ? "text-green-500" : "text-gray-400"}`}
-                          />
-                          <span className="text-gray-500">Backup</span>
-                        </div>
-                        <span className="text-gray-600">
-                          {health.backupStatus?.hasBackup
-                            ? new Date(health.backupStatus.lastBackupDate).toLocaleDateString(
-                                "es-ES",
-                                {
-                                  day: "2-digit",
-                                  month: "short",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                },
-                              )
-                            : "Sin backup"}
                         </span>
                       </div>
 
@@ -1213,31 +1126,6 @@ function SessionManager({
                     >
                       <Trash2 className="h-4 w-4 mr-1" />
                       Eliminar
-                    </button>
-                  </div>
-
-                  {/* Secondary actions: Backup / Restore */}
-                  <div className="flex items-center justify-end space-x-2">
-                    <button
-                      onClick={() => handleForceBackup(session.id)}
-                      disabled={backupInProgress === session.id}
-                      className="text-blue-600 hover:text-blue-800 text-sm flex items-center disabled:opacity-50"
-                      title="Crear backup ahora"
-                    >
-                      {backupInProgress === session.id ? (
-                        <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                      ) : (
-                        <HardDrive className="h-3.5 w-3.5 mr-1" />
-                      )}
-                      Backup
-                    </button>
-                    <button
-                      onClick={() => handleRestoreBackup(session.id)}
-                      className="text-orange-600 hover:text-orange-800 text-sm flex items-center"
-                      title="Restaurar desde backup"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5 mr-1" />
-                      Restaurar
                     </button>
                   </div>
                 </div>

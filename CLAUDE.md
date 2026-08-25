@@ -61,8 +61,6 @@ pnpm db:reset              # Reset DB (⚠️ destructive)
 ```bash
 pnpm clean:cache                    # Clear Turborepo + .next/dist caches
 pnpm rebuild                        # clean:cache + install + db:generate + build:fast
-pnpm whatsapp:cleanup-chrome        # Kill stale Puppeteer Chrome sessions
-pnpm whatsapp:cleanup-chrome-force  # Force-kill (use only after locked sessions)
 pnpm audit:infra                    # Run scripts/audit-infra.ts (Hetzner/Supabase/Vercel sanity check)
 ```
 
@@ -272,6 +270,19 @@ The lazy idempotent init pattern (`initialized + initializePromise`) is the conv
 21/21 active tests pass (15 pre-existing — HMAC originals + edge cases + redis.spec — plus 4 init idempotency + 2 alert callback dedupe added with the double-init fix). 22 pre-existing tests in `ai-thinking/__tests__/*` and `phase4-integration.test.ts` were deleted as dead debt during Phase A.
 
 ## Production deployment notes
+
+**This branch carries an unapplied Prisma migration**
+(`20260825124830_add_whatsapp_auth_keys`, adding the `whatsapp_auth_keys`
+table for the durable credential store — see the Baileys migration
+foundation plan, Task 4). Apply it against Supabase prod the same way B1
+was applied (see "Phase B.1" above) before or during this branch's
+deploy; it is not run automatically by `pnpm build` or `pm2 restart`.
+
+**Separately, and not fixed by any migration:** production currently has
+30 `whatsapp_sessions` rows deactivated by a since-fixed shutdown bug
+(Task 1 of the same plan). Reviving any of them is a deliberate,
+per-session operation — see
+`docs/deployment/post-shutdown-fix-recovery.md` before touching any row.
 
 **Hetzner VPS (46.225.26.89)** runs both the API and whatsapp-service under PM2:
 

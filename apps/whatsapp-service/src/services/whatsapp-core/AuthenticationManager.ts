@@ -344,7 +344,7 @@ export class AuthenticationManager {
       if (fs.existsSync(sessionAuthPath)) {
         logger.info(`🧹 Cleaning up auth files for session ${sessionId}`);
 
-        await SessionCleanupUtil.cleanupSession(`session-${sessionId}`, authDataPath);
+        await SessionCleanupUtil.cleanupSession(sessionId, authDataPath);
 
         logger.info(`✅ Auth cleanup completed for session ${sessionId}`);
       } else {

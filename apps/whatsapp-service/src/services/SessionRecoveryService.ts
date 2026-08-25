@@ -1,6 +1,5 @@
 import { logger } from '../utils/logger';
 import SessionPersistenceService from './SessionPersistenceService';
-import SnapshotService from './auth-snapshot/SnapshotService';
 import { SESSION_CONSTANTS } from '../config/session-constants';
 
 // Import modular components
@@ -107,34 +106,6 @@ export class SessionRecoveryService {
         result.authValidationFailed = authStats.invalidAuth;
         result.authFilesCleanedUp = authStats.cleanedUp;
         result.errors.push(...authStats.errors);
-      }
-
-      // Attempt snapshot restore for sessions missing local auth files
-      if (SnapshotService.isEnabled()) {
-        for (const session of persistedSessions) {
-          if (!SnapshotService.hasLocalAuth(session.sessionId)) {
-            logger.info(
-              `Session ${session.sessionId} missing local auth, attempting snapshot restore...`
-            );
-            const snapshotData = await this.persistenceService.getSnapshotData(session.sessionId);
-            if (snapshotData) {
-              const restored = await SnapshotService.restoreSnapshot(
-                session.sessionId,
-                snapshotData
-              );
-              if (restored) {
-                logger.info(`Snapshot restored for session ${session.sessionId} during recovery`);
-              } else {
-                logger.warn(
-                  `Snapshot restore failed for session ${session.sessionId}, will need fresh QR`
-                );
-                result.errors.push(`${session.sessionId}: snapshot restore failed`);
-              }
-            } else {
-              logger.debug(`No snapshot found for session ${session.sessionId}`);
-            }
-          }
-        }
       }
 
       const recoveryResult = await this.recoveryRunner.executeRecoveryBatch(
