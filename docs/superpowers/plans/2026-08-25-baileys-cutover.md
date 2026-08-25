@@ -1602,6 +1602,15 @@ jest.mock('./BaileysAuthState', () => ({
   makeBaileysAuthState: (...args: unknown[]) => mockMakeBaileysAuthState(...args),
 }));
 
+const mockRedisGet = jest.fn();
+
+jest.mock('../../config/redis', () => ({
+  __esModule: true,
+  redisClient: { get: (...args: unknown[]) => mockRedisGet(...args) },
+  REDIS_KEYS: { SESSION_HEARTBEAT: 'whatsapp:session:heartbeat:' },
+  REDIS_TTL: {},
+}));
+
 jest.mock('../../utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
@@ -1614,11 +1623,19 @@ const SESSION_ID = 'smoke';
 
 function makeFakeSocket() {
   const emitter = new EventEmitter();
+  let offs = 0;
   return {
+    // A real EventEmitter, not jest.fn(): the teardown test needs `off` to
+    // genuinely unsubscribe so a later emit on the dead socket reaches
+    // nothing. Counting the calls as well lets it assert all three went.
     ev: {
       on: (event: string, handler: (...a: any[]) => void) => emitter.on(event, handler),
-      off: (event: string, handler: (...a: any[]) => void) => emitter.off(event, handler),
+      off: (event: string, handler: (...a: any[]) => void) => {
+        offs++;
+        return emitter.off(event, handler);
+      },
     },
+    offCount: () => offs,
     emit: (event: string, payload: unknown) => emitter.emit(event, payload),
     user: { id: '34600111222:12@s.whatsapp.net' },
     sendMessage: jest.fn().mockResolvedValue({ key: { id: 'OUT1' } }),
@@ -1645,6 +1662,7 @@ beforeEach(() => {
   // Each call returns a distinct wrapper, mirroring the real function's
   // per-call cache.
   mockMakeCacheableSignalKeyStore.mockImplementation((keys: unknown) => ({ wrapped: keys }));
+  mockRedisGet.mockResolvedValue(null);
   store = { hasCredentials: jest.fn().mockResolvedValue(false), clear: jest.fn() };
   publisher = { sendWebhook: jest.fn().mockResolvedValue(undefined) };
   sessionStatus = jest.fn().mockResolvedValue(undefined);
@@ -1751,6 +1769,17 @@ describe('BaileysSessionManager connection lifecycle', () => {
     sock.emit('creds.update', {});
     sock.emit('creds.update', { myAppStateKeyId: 'AAAA' });
     sock.emit('creds.update', { account: {} });
+    await Promise.resolve();
+
+    // Check the split, not just the total. Emitting both from `open` also
+    // yields two -- and loses the "credentials exist" signal the dashboard
+    // uses to stop showing the QR while the connection finishes coming up.
+    const authAfterCreds = publisher.sendWebhook.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((p: any) => p.event === 'authenticated');
+    expect(authAfterCreds).toHaveLength(1);
+    expect(authAfterCreds[0].data.number).toBe('unknown');
+
     sock.emit('connection.update', { connection: 'open' });
     await Promise.resolve();
 
@@ -1758,7 +1787,6 @@ describe('BaileysSessionManager connection lifecycle', () => {
       .map((c: any[]) => c[0])
       .filter((p: any) => p.event === 'authenticated');
     expect(authEvents).toHaveLength(2);
-    expect(authEvents[0].data.number).toBe('unknown');
     expect(authEvents[1].data.number).toBe('34600111222');
   });
 
@@ -1859,6 +1887,69 @@ describe('BaileysSessionManager connection lifecycle', () => {
     jest.useRealTimers();
   });
 
+  it('keeps_the_retry_timers_of_two_sessions_independent', async () => {
+    // The test above is also satisfied by a single global timer -- which
+    // would mean two sessions dropping together produce one reconnect and one
+    // session left dead. The Map has to be keyed by session.
+    jest.useFakeTimers();
+    const sockA = makeFakeSocket();
+    const sockB = makeFakeSocket();
+    mockMakeWASocket.mockReturnValueOnce(sockA).mockReturnValueOnce(sockB);
+    const manager = makeManager();
+    await manager.createSession('a');
+    await manager.createSession('b');
+    mockMakeWASocket.mockClear();
+
+    const drop = (s: ReturnType<typeof makeFakeSocket>) =>
+      s.emit('connection.update', {
+        connection: 'close',
+        lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+      });
+    drop(sockA);
+    drop(sockB);
+    await jest.advanceTimersByTimeAsync(2000);
+
+    expect(mockMakeWASocket).toHaveBeenCalledTimes(2);
+    jest.useRealTimers();
+  });
+
+  it('tears_the_old_socket_down_before_building_the_new_one', async () => {
+    // Nothing else in this file fails if the old listeners stay subscribed:
+    // the reconnect works, the tests pass, and production quietly delivers
+    // every inbound message twice under two socket objects. Redis dedupe
+    // masks it for 300 seconds, so it survives the smoke and shows up later
+    // as duplicate replies.
+    jest.useFakeTimers();
+    const next = makeFakeSocket();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    mockMakeWASocket.mockClear().mockReturnValue(next);
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
+    await jest.advanceTimersByTimeAsync(2000);
+
+    // The old socket was closed and unsubscribed before the new one existed.
+    expect(sock.end).toHaveBeenCalledTimes(1);
+    expect(sock.offCount()).toBe(3);
+    expect(mockMakeWASocket).toHaveBeenCalledTimes(1);
+
+    // And it is inert: an event from the dead socket reaches nothing.
+    pipeline.handle.mockClear();
+    sock.emit('messages.upsert', {
+      type: 'notify',
+      messages: [
+        { key: { remoteJid: '34600111222@s.whatsapp.net', id: 'GHOST' }, message: { conversation: 'x' } },
+      ],
+    });
+    await Promise.resolve();
+    expect(pipeline.handle).not.toHaveBeenCalled();
+
+    jest.useRealTimers();
+  });
+
   it('resets_the_backoff_budget_after_a_successful_connection', async () => {
     // Without the reset, a session that reconnects fine five times over a
     // month is permanently out of retries on the sixth blip -- and nothing
@@ -1948,6 +2039,57 @@ describe('BaileysSessionManager observable state', () => {
     expect(manager.isSessionReady(SESSION_ID)).toBe(true);
   });
 
+  it('leaves_ready_as_soon_as_the_connection_drops', async () => {
+    // Covering only the happy path lets a manager that never downgrades the
+    // status pass: it reports ready forever, the dashboard shows a green
+    // session that answers nothing, and every other test still passes.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    sock.emit('connection.update', { connection: 'open' });
+    await Promise.resolve();
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
+    await Promise.resolve();
+    // Retry pending: connecting, not ready and not disconnected.
+    expect(manager.getSession(SESSION_ID)!.status).toBe('connecting');
+    expect(manager.isSessionReady(SESSION_ID)).toBe(false);
+
+    jest.useRealTimers();
+  });
+
+  it('lands_on_disconnected_when_the_budget_runs_out_and_when_logged_out', async () => {
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+
+    const close = (code: number) =>
+      sock.emit('connection.update', {
+        connection: 'close',
+        lastDisconnect: { error: { output: { statusCode: code } } },
+      });
+
+    for (const rung of [2000, 5000, 10000, 30000, 60000]) {
+      close(DisconnectReason.connectionLost);
+      await jest.advanceTimersByTimeAsync(rung);
+    }
+    close(DisconnectReason.connectionLost);
+    await jest.advanceTimersByTimeAsync(120000);
+    expect(manager.getSession(SESSION_ID)!.status).toBe('disconnected');
+
+    jest.clearAllMocks();
+    const other = makeManager();
+    await other.createSession('logged-out');
+    close(DisconnectReason.loggedOut);
+    await Promise.resolve();
+    expect(other.getSession('logged-out')!.status).toBe('disconnected');
+
+    jest.useRealTimers();
+  });
+
   it('reports_health_in_the_shape_the_rest_route_already_publishes', async () => {
     // { status, hasLocalAuth, heartbeatAge?, authInvalidated? } is a
     // published response body. Returning { hasCredentials, connected }
@@ -1956,16 +2098,24 @@ describe('BaileysSessionManager observable state', () => {
     await manager.createSession(SESSION_ID);
     store.hasCredentials.mockResolvedValue(true);
 
+    // Set up both optional fields so omitting them cannot pass. An
+    // implementation returning only { status, hasLocalAuth } satisfies a
+    // shape check that treats the other two as optional -- and the dashboard
+    // loses its staleness indicator with nothing failing.
+    mockRedisGet.mockResolvedValue(String(Date.now() - 45_000));
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.loggedOut } } },
+    });
+    await Promise.resolve();
+
     const health = await manager.getSessionHealth(SESSION_ID);
 
-    expect(Object.keys(health).sort()).toEqual(
-      ['authInvalidated', 'hasLocalAuth', 'heartbeatAge', 'status'].filter(k =>
-        Object.prototype.hasOwnProperty.call(health, k)
-      )
-    );
-    expect(health.status).toBe('connecting');
     expect(health.hasLocalAuth).toBe(true);
     expect(store.hasCredentials).toHaveBeenCalledWith(SESSION_ID);
+    expect(health.heartbeatAge).toBeGreaterThanOrEqual(45_000);
+    expect(health.authInvalidated).toBe(true);
+    expect(health.status).toBe('disconnected');
   });
 
   it('reports_the_disconnect_upstream_on_every_close_that_is_not_a_restart', async () => {
@@ -1988,6 +2138,11 @@ describe('BaileysSessionManager observable state', () => {
       lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
     });
     await Promise.resolve();
+    // Exactly once, not "at least once": a close handler that reports the
+    // disconnect on every path -- including the restart one it just skipped,
+    // or twice for one event -- satisfies toHaveBeenCalledWith and floods the
+    // persisted reconnectCount.
+    expect(sessionDisconnect).toHaveBeenCalledTimes(1);
     expect(sessionDisconnect).toHaveBeenCalledWith(
       SESSION_ID, 'WHATSAPP_DISCONNECT', expect.anything()
     );
@@ -1998,6 +2153,7 @@ describe('BaileysSessionManager observable state', () => {
       lastDisconnect: { error: { output: { statusCode: DisconnectReason.loggedOut } } },
     });
     await Promise.resolve();
+    expect(sessionDisconnect).toHaveBeenCalledTimes(1);
     expect(sessionDisconnect).toHaveBeenCalledWith(
       SESSION_ID, 'WHATSAPP_LOGGED_OUT', expect.anything()
     );
@@ -2084,8 +2240,13 @@ describe('BaileysSessionManager shutdown vs delete', () => {
 
     await manager.shutdownAll();
 
-    expect(spy).toHaveBeenCalledTimes(2);
-    expect(spy.mock.calls.map(c => c[1])).toEqual(['shutdown', 'shutdown']);
+    // The session ids too, not only the modes: closing 'a' twice and never
+    // touching 'b' produces the same two 'shutdown' strings and leaves a
+    // socket alive through the restart.
+    expect(spy.mock.calls.map(c => [c[0], c[1]])).toEqual([
+      ['a', 'shutdown'],
+      ['b', 'shutdown'],
+    ]);
     expect(store.clear).not.toHaveBeenCalled();
   });
 
@@ -2104,6 +2265,30 @@ describe('BaileysSessionManager shutdown vs delete', () => {
       lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
     });
     await manager.destroySession(SESSION_ID, 'delete');
+    await jest.advanceTimersByTimeAsync(120000);
+
+    expect(mockMakeWASocket).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
+  it.each([
+    ['shutdown mode', (m: any) => m.destroySession(SESSION_ID, 'shutdown')],
+    ['shutdownAll', (m: any) => m.shutdownAll()],
+    ['forceDisconnect', (m: any) => m.forceDisconnect(SESSION_ID)],
+  ])('cancels_a_pending_reconnect_on_%s', async (_label, act) => {
+    // Testing only the delete path leaves `if (mode === 'delete')
+    // clearTimeout(...)` green -- and a pm2 restart with a retry in flight
+    // both keeps the event loop alive and reconnects on the way out.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    mockMakeWASocket.mockClear();
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
+    await act(manager);
     await jest.advanceTimersByTimeAsync(120000);
 
     expect(mockMakeWASocket).not.toHaveBeenCalled();
@@ -2187,7 +2372,21 @@ class BaileysSessionManager {
 Requirements the tests above pin, restated so they are not inferred from the test file:
 
 - The constructor is **inert**. It stores its dependencies and nothing else. `makeWASocket` is called only from `createSession`, so importing this module can never open a socket.
-- `createSession(sessionId, tenantId?)` builds the auth state through `makeBaileysAuthState`, calls `makeWASocket({ auth: { creds, keys: makeCacheableSignalKeyStore(state.keys, logger) }, logger, printQRInTerminal: false, browser: Browsers.ubuntu('Chrome'), syncFullHistory: false, markOnlineOnConnect: false })`, keeps the socket in a per-session `Map`, and wires the three event handlers.
+- `createSession(sessionId, tenantId?)` builds the auth state through `makeBaileysAuthState`, then:
+
+  ```ts
+  const log = makeBaileysLogger({ sessionId });   // Step 1b — never the repo logger
+  const sock = makeWASocket({
+    auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, log) },
+    logger: log,
+    printQRInTerminal: false,
+    browser: Browsers.ubuntu('Chrome'),
+    syncFullHistory: false,
+    markOnlineOnConnect: false,
+  });
+  ```
+
+  then stores the socket in the per-session `Map` and wires the three event handlers. **Both `logger` positions take the adapter**, not `logger` from `utils/logger` — that one does not satisfy `ILogger` and its argument order is inverted (Step 1b).
 - **`makeCacheableSignalKeyStore` is called here, per session.** Its third parameter is the cache; omitted, it builds a fresh one per call. Hoisting it to a module-level constant would share one cache across every session and cross tenants' Signal keys.
 - `ev.on('creds.update', saveCreds)` — and the first time credentials exist, emit the first `authenticated` webhook with `data: { number: 'unknown' }`.
 - `ev.on('connection.update', …)` handles, in this order: `qr` present → status `connecting` + `qr_updated` webhook; `connection === 'open'` → status `ready` + the second `authenticated` webhook with the number from `jidDecode(sock.user.id).user`; `connection === 'close'` → read `(lastDisconnect?.error as Boom)?.output?.statusCode`, and if it is `DisconnectReason.loggedOut` clear the store and emit `disconnected`, otherwise rebuild the socket.
@@ -2202,7 +2401,7 @@ Requirements the tests above pin, restated so they are not inferred from the tes
   The `Map` is cleared before the new socket exists and populated after — it cannot be "replaced" in one step, because there is nothing to replace it with until `makeWASocket` returns. Between the `delete` and the `set`, `getSession` must not claim the session is ready.
 
   A reconnect that leaves the old emitter subscribed keeps a live listener on a dead socket, and any event it still delivers is processed a second time — the same inbound message reaching the pipeline twice under two different socket objects. Redis dedupe hides that (same `${sessionId}:${key.id}`), which is exactly why it would survive the smoke and surface later, once the 300-second window has expired, as duplicate replies.
-- **`handleSessionDisconnect(sessionId, type, reason)` is called on every close that is not `restartRequired`,** before the backoff timer is scheduled, with `type` set to `'WHATSAPP_LOGGED_OUT'` for 401 and `'WHATSAPP_DISCONNECT'` otherwise. It is injected precisely so the persisted session row and its `reconnectCount` keep being updated the way they are today; an implementation that never calls it drops that bookkeeping silently and no test in this plan would notice.
+- **`handleSessionDisconnect(sessionId, type, reason)` is called on every close that is not `restartRequired`,** before the backoff timer is scheduled, with `type` set to `'WHATSAPP_LOGGED_OUT'` for 401 and `'WHATSAPP_DISCONNECT'` otherwise. It is injected precisely so the persisted session row and its `reconnectCount` keep being updated the way they are today; an implementation that never calls it would drop that bookkeeping silently, which is what `reports_the_disconnect_upstream_on_every_close_that_is_not_a_restart` exists to prevent.
 - `sendMessage(sessionId, to, text)` for the outbound REST path, returning the same `SendMessageResponse` shape `MessageHandler.sendMessage` returns today, including the `messageId`.
 - `destroySession(sessionId, mode: 'shutdown' | 'delete')` — **`'shutdown'` must not clear credentials.** This is the Phase 1 Task 1 contract; breaking it reintroduces the bug that logged every session out on every deploy.
 - **Reconnect backoff, exactly this schedule.** Baileys does not reconnect on its own — rebuilding the socket is the application's job, and a naive `connection: 'close'` → `createSession()` is an unthrottled loop against WhatsApp's servers. Ban risk follows sending behaviour, and this migration was approved on the understanding that it does not make that risk worse; a reconnect storm would.
@@ -2229,7 +2428,7 @@ Requirements the tests above pin, restated so they are not inferred from the tes
 
 Run: `cd apps/whatsapp-service && pnpm run test -- --testPathPattern "BaileysSessionManager"`
 
-Expected: PASS, every `it(` in the four `describe` blocks — construction, connection lifecycle, inbound messages, shutdown vs delete.
+Expected: PASS, every `it(` in the five `describe` blocks — construction, connection lifecycle, observable state, inbound messages, shutdown vs delete.
 
 - [ ] **Step 20: Verify Baileys is compiled but unreachable**
 
@@ -2952,7 +3151,7 @@ to 9.0.0 through corepack."
 
 ## Self-review notes
 
-**Reconnect backoff was an open question and is now closed.** It was going to be left to the implementer; the operations review pushed back, correctly. Baileys does not reconnect on its own, so a close handler that rebuilds the socket directly is an unthrottled retry loop against WhatsApp — and this migration was approved on the explicit understanding that it does not raise ban risk. A decision that can only be made wrong in one direction is not a decision worth deferring. The schedule is specified in Task 7 Step 18 and pinned by two tests.
+**Reconnect backoff was an open question and is now closed.** It was going to be left to the implementer; the operations review pushed back, correctly. Baileys does not reconnect on its own, so a close handler that rebuilds the socket directly is an unthrottled retry loop against WhatsApp — and this migration was approved on the explicit understanding that it does not raise ban risk. A decision that can only be made wrong in one direction is not a decision worth deferring. The schedule is specified in Task 7 Step 18 and pinned by four tests: the rung-by-rung calendar, the budget reset, one timer per session across a duplicate close, and independent timers across two sessions.
 
 Two things remain deliberately open, because inventing them would be worse than asking:
 
