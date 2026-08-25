@@ -253,16 +253,24 @@ const advancedTemplate = {
 
 ### 🚀 Proactive Messaging
 
-**Status:** ✅ Production Ready  
-**Current Data:** 4 scheduled messages
+**Status:** In pilot. Gated on live consent since PR #12 (2026-08-25).
+
+> **Not a campaign tool.** A proactive send requires `whatsapp_authorized = true`
+> **and** an inbound message from that lead, on that same session, within
+> `PROACTIVE_INBOUND_WINDOW_DAYS` (default 30, capped at 90).
+>
+> Cold outreach, newsletters and broadcast campaigns are **not supported** —
+> deliberately. They are what gets a WhatsApp number reported and banned, and
+> the number at risk belongs to the customer, not to us. See
+> `docs/features/whatsapp-integration.md` § *Puerta 2*.
 
 #### Features
 
-- **Scheduled Messages**: Time-based message delivery
-- **Trigger-based**: Event-driven message sending
-- **Personalization**: Individual message customization
-- **Campaign Management**: Bulk message campaigns
-- **Performance Tracking**: Delivery and response metrics
+- **Follow-up on live conversations**: outbound to leads who wrote recently
+- **Personalization**: per-lead template variables
+- **Bulk follow-up**: same rule applied per lead; ineligible leads are skipped,
+  not silently sent to
+- **Performance Tracking**: delivery and response metrics
 
 #### Campaign Setup
 

@@ -1,6 +1,18 @@
 # Handoff: bump `whatsapp-web.js` 1.34.6 → 1.34.7
 
-**Status: BLOCKED — not a drop-in patch bump.** Reviewed 2026-05-22 from Windows PowerShell session. The version pin is `^1.34.6` but the bump is gated by a local `pnpm patch` whose target API was refactored upstream in 1.34.7. Details below. Not urgent: 1.34.6 + local patch is currently the safer state than 1.34.7 without it.
+> **Status: WONTFIX (2026-08-25) — superseded by the planned Baileys migration.**
+>
+> A direct migration to `@whiskeysockets/baileys` was agreed on 2026-08-25 (see the decision
+> note in the Obsidian vault and `PLAN-WHATSAPP-AGENT-MULTITENANT.md`). Regenerating this
+> patch against 1.34.7 would be work thrown away at cutover.
+>
+> Kept as history: it documents exactly how brittle patching wwebjs internals is, which is
+> part of *why* the migration was agreed. **Reopen only if** a security advisory lands on
+> 1.34.6, or the current pin breaks before cutover.
+
+---
+
+**Original status (2026-05-22): BLOCKED — not a drop-in patch bump.** Reviewed 2026-05-22 from Windows PowerShell session. The version pin is `^1.34.6` but the bump is gated by a local `pnpm patch` whose target API was refactored upstream in 1.34.7. Details below. Not urgent: 1.34.6 + local patch is currently the safer state than 1.34.7 without it.
 
 This file lives at repo root: `C:\Users\admin\Desktop\LeadsAgent\HANDOFF-BUMP-WAWEB.md`. Keep it until the bump actually ships.
 
