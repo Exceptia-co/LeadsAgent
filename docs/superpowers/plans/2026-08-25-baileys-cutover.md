@@ -1607,7 +1607,10 @@ const mockRedisGet = jest.fn();
 jest.mock('../../config/redis', () => ({
   __esModule: true,
   redisClient: { get: (...args: unknown[]) => mockRedisGet(...args) },
-  REDIS_KEYS: { SESSION_HEARTBEAT: 'whatsapp:session:heartbeat:' },
+  // The real prefixes, from config/redis.ts:351-353. Inventing one here
+  // makes the mock answer for a key the implementation never asks about, so
+  // the test passes whatever the implementation actually reads.
+  REDIS_KEYS: { SESSION_QR: 'session:qr:', SESSION_HEARTBEAT: 'session:hb:' },
   REDIS_TTL: {},
 }));
 
@@ -1636,12 +1639,24 @@ function makeFakeSocket() {
       },
     },
     offCount: () => offs,
+    // end() emits close, the way the real socket does. Without this the fake
+    // hides the ordering bug outright: an implementation that clears the
+    // retry timer and *then* calls end() -- with the listeners still
+    // subscribed -- schedules a fresh retry from inside its own shutdown, and
+    // a silent end() would let that pass. This is the Phase 1 failure mode
+    // wearing new clothes: the deploy restarts, and the process reconnects on
+    // its way out.
     emit: (event: string, payload: unknown) => emitter.emit(event, payload),
     user: { id: '34600111222:12@s.whatsapp.net' },
     sendMessage: jest.fn().mockResolvedValue({ key: { id: 'OUT1' } }),
     sendPresenceUpdate: jest.fn().mockResolvedValue(undefined),
     logout: jest.fn().mockResolvedValue(undefined),
-    end: jest.fn(),
+    end: jest.fn(function (this: void) {
+      emitter.emit('connection.update', {
+        connection: 'close',
+        lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionClosed } } },
+      });
+    }),
   };
 }
 
@@ -1923,7 +1938,15 @@ describe('BaileysSessionManager connection lifecycle', () => {
     const next = makeFakeSocket();
     const manager = makeManager();
     await manager.createSession(SESSION_ID);
-    mockMakeWASocket.mockClear().mockReturnValue(next);
+
+    // Snapshot the old socket's teardown state at the instant the new socket
+    // is requested. This is what makes the test about ordering rather than
+    // about totals.
+    let teardownStateAtCreate: { offs: number; ended: boolean } | null = null;
+    mockMakeWASocket.mockClear().mockImplementation(() => {
+      teardownStateAtCreate = { offs: sock.offCount(), ended: sock.end.mock.calls.length > 0 };
+      return next;
+    });
 
     sock.emit('connection.update', {
       connection: 'close',
@@ -1931,10 +1954,13 @@ describe('BaileysSessionManager connection lifecycle', () => {
     });
     await jest.advanceTimersByTimeAsync(2000);
 
-    // The old socket was closed and unsubscribed before the new one existed.
+    // Order, not just outcome. Building the new socket first and tearing the
+    // old one down afterwards satisfies every count below, so the assertion
+    // that matters is captured at the moment makeWASocket is called.
     expect(sock.end).toHaveBeenCalledTimes(1);
     expect(sock.offCount()).toBe(3);
     expect(mockMakeWASocket).toHaveBeenCalledTimes(1);
+    expect(teardownStateAtCreate).toEqual({ offs: 3, ended: true });
 
     // And it is inert: an event from the dead socket reaches nothing.
     pipeline.handle.mockClear();
@@ -2113,6 +2139,10 @@ describe('BaileysSessionManager observable state', () => {
 
     expect(health.hasLocalAuth).toBe(true);
     expect(store.hasCredentials).toHaveBeenCalledWith(SESSION_ID);
+    // The exact key, not just "some key": a mock that answers for anything
+    // would pass even if the implementation read a prefix that does not
+    // exist in production, where the result is a silently absent heartbeat.
+    expect(mockRedisGet).toHaveBeenCalledWith(`session:hb:${SESSION_ID}`);
     expect(health.heartbeatAge).toBeGreaterThanOrEqual(45_000);
     expect(health.authInvalidated).toBe(true);
     expect(health.status).toBe('disconnected');
@@ -2215,7 +2245,7 @@ describe('BaileysSessionManager shutdown vs delete', () => {
   // what that bug left behind.
   //
   // SessionManager.shutdown.spec.ts pinned it against the old engine and
-  // Task 8b deletes that file. These two tests are where the guarantee
+  // Task 8b deletes that file. This block is where the guarantee
   // continues to live, so the deletion costs no coverage.
 
   it('shutdown_closes_the_socket_without_clearing_credentials', async () => {
@@ -2279,6 +2309,12 @@ describe('BaileysSessionManager shutdown vs delete', () => {
     // Testing only the delete path leaves `if (mode === 'delete')
     // clearTimeout(...)` green -- and a pm2 restart with a retry in flight
     // both keeps the event loop alive and reconnects on the way out.
+    //
+    // The fake's end() emits connection.update{close}, as the real socket
+    // does, so this also catches the subtler ordering bug: clearing the timer
+    // and *then* calling end() with the listeners still subscribed schedules
+    // a brand-new retry from inside the shutdown itself. Zero reconnections
+    // is only reachable by unsubscribing before ending.
     jest.useFakeTimers();
     const manager = makeManager();
     await manager.createSession(SESSION_ID);
@@ -2409,7 +2445,7 @@ Requirements the tests above pin, restated so they are not inferred from the tes
   | Close reason | Action |
   |---|---|
   | `restartRequired` (515) | Reconnect **immediately**. It fires on first pairing and is a normal step. |
-  | `loggedOut` (401) | Do not reconnect. Clear the store, emit `disconnected`, wait for a fresh QR. |
+  | `loggedOut` (401) | Do not reconnect. Clear the store, set the session's `status` to `'disconnected'` **and its `metadata.authInvalidated` to `true`**, emit `disconnected`, wait for a fresh QR. |
   | anything else | Exponential backoff with jitter: **2 s, 5 s, 10 s, 30 s, 60 s**, capped at 60 s, **maximum 5 consecutive attempts**, then mark the session `disconnected` and stop. |
 
   The counter resets on a successful `connection: 'open'`. The jitter matters because every session on the box would otherwise retry in lockstep after a network blip and arrive as one burst.
@@ -3101,10 +3137,10 @@ ssh root@46.225.26.89 '
 Then clear orphaned Redis session keys so Puppeteer-era metrics do not contaminate the new service's health reporting:
 
 ```bash
-ssh root@46.225.26.89 "redis-cli --scan --pattern 'whatsapp:session:*' | head -20"
+ssh root@46.225.26.89 "redis-cli -p 6379 --scan --pattern 'session:*' | head -40"
 ```
 
-Inspect before deleting. Delete only keys belonging to sessions that no longer exist.
+The real prefixes are `session:qr:`, `session:hb:` and `session:lock:` (`config/redis.ts:351-353`) — not `whatsapp:session:*`, which matches nothing. Inspect before deleting, and delete only keys whose session no longer exists. A stale `session:lock:` in particular will refuse a `createSession` for five minutes with `Session X is already being initialized`, which reads as a bug in the new engine.
 
 - [ ] **Step 10b: Watch the first days**
 
