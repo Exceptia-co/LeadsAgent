@@ -3,8 +3,11 @@ import qrcode from 'qrcode-terminal';
 import { logger } from '../../utils/logger';
 import advancedLogger from '../../utils/advancedLogger';
 import type { WhatsAppMessage, WebhookPayload } from '../../types';
-import redisClient, { REDIS_KEYS, REDIS_TTL } from '../../config/redis';
+import type { NormalizedWhatsAppMessage } from '../../types/messages';
+import redisClient, { REDIS_KEYS } from '../../config/redis';
 import { signServiceRequest } from '../../middleware/auth';
+import { normalizeWwebjsMessage } from './wwebjs-normalizer';
+import { IncomingMessagePipeline } from './IncomingMessagePipeline';
 
 /**
  * EventDispatcher - Handles all WhatsApp client events, webhooks, and event-driven operations
@@ -40,9 +43,8 @@ export class EventDispatcher {
     messageHandler: {
       parseMessage: (message: Message, sessionId: string) => Promise<WhatsAppMessage>;
       processMessageWithAI: (
-        originalMessage: Message,
-        whatsappMessage: WhatsAppMessage,
-        sessionId: string
+        dto: NormalizedWhatsAppMessage,
+        transport: Message
       ) => Promise<void>;
     },
     sessionManager: {
@@ -72,8 +74,14 @@ export class EventDispatcher {
     this.sessionListeners.set(sessionId, listeners);
     this.sessionTimeouts.set(sessionId, timeouts);
 
-    // Throttle: only update health check in DB/Redis at most once per 30s per session
-    let lastHealthUpdate = 0;
+    // The pipeline is engine-agnostic; Message only appears here, where the
+    // generic is bound for this whatsapp-web.js dispatcher.
+    const pipeline = new IncomingMessagePipeline<Message>({
+      authChecker,
+      messageHandler,
+      sessionManager,
+      sendWebhook: this.sendWebhook.bind(this),
+    });
 
     // QR Code event
     const onQr = async (qr: string) => {
@@ -300,86 +308,20 @@ export class EventDispatcher {
 
     // Message event
     const onMessage = async (message: Message) => {
-      logger.info(
-        `[DIAG] MESSAGE event fired for session ${sessionId} from=${message.from} body=${message.body?.substring(0, 50)}`
-      );
-      try {
-        // Fase A1 (2026-04-19): dedupe atómico en Redis.
-        // whatsapp-web.js puede re-emitir el mismo mensaje si Chromium hace
-        // reload o si hay una reconexión en medio; sin este check, la IA
-        // respondería dos veces al mismo `hola`.
-        const messageId = message.id._serialized;
-        const dedupeKey = `${REDIS_KEYS.MESSAGE_DEDUP}${messageId}`;
-        logger.info(`[DEDUPE] Checking msgId=${messageId} session=${sessionId}`);
-        const isFirstTime = await redisClient.setNX(
-          dedupeKey,
-          '1',
-          REDIS_TTL.MESSAGE_DEDUP_SECONDS
-        );
-        if (!isFirstTime) {
-          logger.info(
-            `[DEDUPE] Skipping already-processed message ${messageId} in session ${sessionId}`
-          );
-          return;
-        }
-
-        // Fase A2 (2026-04-19): ignorar broadcasts y grupos ANTES de parsear
-        // para no gastar work en mensajes que nunca debemos responder.
-        // whatsapp-web.js usa sufijos de JID: `@c.us` = chat 1:1, `@g.us` =
-        // grupo, `status@broadcast` = estados/status.
-        if (message.from === 'status@broadcast') {
-          logger.debug(`[FILTER] Skipping status@broadcast in session ${sessionId}`);
-          return;
-        }
-        if (message.from?.endsWith('@g.us')) {
-          logger.debug(
-            `[FILTER] Skipping group message (from=${message.from}) in session ${sessionId}`
-          );
-          return;
-        }
-
-        // Throttled health check update — avoids DB/Redis writes on every message
-        const now = Date.now();
-        if (now - lastHealthUpdate > 30000) {
-          lastHealthUpdate = now;
-          await sessionManager.updateSessionStatus(sessionId, 'ready', {
-            lastHealthCheck: new Date(),
-          });
-        }
-
-        const whatsappMessage = await messageHandler.parseMessage(message, sessionId);
-        logger.info(`Message received in session ${sessionId}:`, {
-          from: whatsappMessage.from,
-          body: whatsappMessage.body.substring(0, 100),
-        });
-
-        // Process with AI only if it's not from us AND if sender is in whitelist
-        if (!whatsappMessage.fromMe && whatsappMessage.body.trim()) {
-          const whitelistResult = await authChecker.checkPhoneNumberAllowedWithLog(
-            whatsappMessage.from,
-            sessionId,
-            whatsappMessage.body
-          );
-          if (whitelistResult.allowed) {
-            logger.info(`📱 Respuesta automática permitida para: ${whatsappMessage.from}`);
-            await messageHandler.processMessageWithAI(message, whatsappMessage, sessionId);
-          } else {
-            logger.info(
-              `🚫 Respuesta automática bloqueada para: ${whatsappMessage.from} - ${whitelistResult.reason}`
-            );
-          }
-        }
-
-        // Send webhook with message (always, regardless of AI processing)
-        await this.sendWebhook({
-          event: 'message',
-          sessionId,
-          data: whatsappMessage,
-          timestamp: new Date().toISOString(),
-        });
-      } catch (error) {
-        logger.error(`Error processing message in session ${sessionId}:`, error);
+      if (message.from === 'status@broadcast') {
+        logger.debug(`[FILTER] Skipping status@broadcast in session ${sessionId}`);
+        return;
       }
+
+      const dto = normalizeWwebjsMessage(message, sessionId);
+      if (!dto) {
+        logger.warn(
+          `[NORMALIZE] Dropping unparseable message in session ${sessionId} from=${message.from}`
+        );
+        return;
+      }
+
+      await pipeline.handle(dto, message);
     };
     client.on('message', onMessage);
     listeners.push({ event: 'message', handler: onMessage });
