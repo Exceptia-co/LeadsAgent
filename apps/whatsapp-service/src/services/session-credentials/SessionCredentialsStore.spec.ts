@@ -44,6 +44,11 @@ describe('SessionCredentialsStore', () => {
     const { create, update } = mockUpsert.mock.calls[0][0];
     expect(JSON.stringify(create.value)).not.toContain('signal-private-key');
     expect(JSON.stringify(update.value)).not.toContain('signal-private-key');
+    // "Doesn't contain the substring" also passes for a base64-without-
+    // encryption regression. Pin the real invariant: both branches of the
+    // upsert carry the identical sealed envelope, not just two values that
+    // happen to lack the plaintext.
+    expect(update.value).toEqual(create.value);
 
     mockFindMany.mockResolvedValue([{ keyId: 'creds', value: create.value }]);
     const read = await store.get(SESSION_ID, 'creds', ['creds']);
@@ -67,6 +72,34 @@ describe('SessionCredentialsStore', () => {
     const roundTripped = (read as { creds: { privateKey: Buffer; counter: number } }).creds;
     expect(Buffer.isBuffer(roundTripped.privateKey)).toBe(true);
     expect(roundTripped.privateKey.equals(secret.privateKey)).toBe(true);
+    expect(roundTripped.counter).toBe(7);
+  });
+
+  it('round_trips_a_plain_uint8array_nested_inside_the_value', async () => {
+    // bufferReplacer has two branches. The Buffer test above only exercises
+    // the second one: Buffer.prototype.toJSON runs before the replacer sees
+    // it, so a Buffer already looks like {type:'Buffer',data:[...]} by the
+    // time the replacer runs. A plain Uint8Array has no toJSON and would
+    // otherwise serialize as an index-keyed object ({"0":1,"1":2,...}) —
+    // only the first branch (`instanceof Uint8Array`) catches that, and
+    // Baileys' own Signal key material is frequently plain Uint8Array.
+    //
+    // Deliberate choice: bufferReviver returns a Node Buffer, which IS a
+    // Uint8Array (Buffer subclasses it), so `instanceof Uint8Array` and byte
+    // equality both hold for the revived value even though it isn't the
+    // exact same subclass instance that went in. That's fine for Baileys.
+    const store = new SessionCredentialsStore();
+    const secret = { privateKey: new Uint8Array([1, 2, 3, 255]), counter: 7 };
+
+    await store.set(SESSION_ID, 'creds', { creds: secret });
+
+    const stored = mockUpsert.mock.calls[0][0].create.value;
+    mockFindMany.mockResolvedValue([{ keyId: 'creds', value: stored }]);
+    const read = await store.get(SESSION_ID, 'creds', ['creds']);
+
+    const roundTripped = (read as { creds: { privateKey: Uint8Array; counter: number } }).creds;
+    expect(roundTripped.privateKey).toBeInstanceOf(Uint8Array);
+    expect(Buffer.from(roundTripped.privateKey).equals(Buffer.from(secret.privateKey))).toBe(true);
     expect(roundTripped.counter).toBe(7);
   });
 
