@@ -47,11 +47,7 @@ export class IncomingMessagePipeline<TTransport> {
       // provider message id.
       const dedupeKey = `${REDIS_KEYS.MESSAGE_DEDUP}${dto.id}`;
       logger.info(`[DEDUPE] Checking msgId=${dto.id} session=${dto.sessionId}`);
-      const isFirstTime = await redisClient.setNX(
-        dedupeKey,
-        '1',
-        REDIS_TTL.MESSAGE_DEDUP_SECONDS
-      );
+      const isFirstTime = await redisClient.setNX(dedupeKey, '1', REDIS_TTL.MESSAGE_DEDUP_SECONDS);
       if (!isFirstTime) {
         logger.info(`[DEDUPE] Skipping already-processed message ${dto.id}`);
         return;

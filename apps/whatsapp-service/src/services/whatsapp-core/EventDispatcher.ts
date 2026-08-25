@@ -41,10 +41,7 @@ export class EventDispatcher {
     client: Client,
     sessionId: string,
     messageHandler: {
-      processMessageWithAI: (
-        dto: NormalizedWhatsAppMessage,
-        transport: Message
-      ) => Promise<void>;
+      processMessageWithAI: (dto: NormalizedWhatsAppMessage, transport: Message) => Promise<void>;
     },
     sessionManager: {
       updateSessionStatus: (sessionId: string, status: string, data?: any) => Promise<void>;

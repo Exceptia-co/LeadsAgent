@@ -114,10 +114,7 @@ export class MessageHandler {
    * (`getChat().sendStateTyping()`, `.reply()`, `chat.sendMessage()`).
    * Replacing it with a narrow reply port is the first step of the cutover.
    */
-  async processMessageWithAI(
-    dto: NormalizedWhatsAppMessage,
-    transport: Message
-  ): Promise<void> {
+  async processMessageWithAI(dto: NormalizedWhatsAppMessage, transport: Message): Promise<void> {
     const sessionId = dto.sessionId;
     const startTime = Date.now();
     let aiResponse: string = '';
@@ -338,10 +335,7 @@ export class MessageHandler {
       // Critical error fallback — tenantId/aiAgentId unavailable (declared in try block).
       // KB search here is intentionally unscoped; the warning will fire from DatabaseService.
       try {
-        const intelligentFallback = await this.generateIntelligentFallback(
-          dto.text,
-          phoneNumber
-        );
+        const intelligentFallback = await this.generateIntelligentFallback(dto.text, phoneNumber);
         await transport.reply(intelligentFallback);
       } catch (replyError) {
         logger.error('Error sending intelligent fallback message:', replyError);
@@ -443,11 +437,7 @@ export class MessageHandler {
   /**
    * Determine if we should quote based on message context
    */
-  private shouldQuoteBasedOnContext(
-    rawText: string,
-    responseText: string,
-    strategy: any
-  ): boolean {
+  private shouldQuoteBasedOnContext(rawText: string, responseText: string, strategy: any): boolean {
     // Always quote if strategy explicitly says so
     if (strategy.shouldQuote === true) return true;
     if (strategy.shouldQuote === false) return false;
