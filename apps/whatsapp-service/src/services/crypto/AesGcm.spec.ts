@@ -38,16 +38,12 @@ describe('AesGcm', () => {
   });
 
   it('rejects_a_key_that_is_not_64_hex_chars', () => {
-    expect(() => AesGcm.encrypt(Buffer.from('x', 'utf8'), 'tooshort')).toThrow(
-      /64-character hex/
-    );
+    expect(() => AesGcm.encrypt(Buffer.from('x', 'utf8'), 'tooshort')).toThrow(/64-character hex/);
   });
 
   it('rejects_a_64_character_key_that_is_not_hex', () => {
     const nonHexKey = 'g'.repeat(64);
 
-    expect(() => AesGcm.encrypt(Buffer.from('x', 'utf8'), nonHexKey)).toThrow(
-      /64-character hex/
-    );
+    expect(() => AesGcm.encrypt(Buffer.from('x', 'utf8'), nonHexKey)).toThrow(/64-character hex/);
   });
 });
