@@ -2301,6 +2301,41 @@ describe('BaileysSessionManager shutdown vs delete', () => {
     jest.useRealTimers();
   });
 
+  it('does_not_schedule_a_retry_that_was_decided_before_the_session_stopped', async () => {
+    // The close handler awaits handleSessionDisconnect before it reaches the
+    // scheduling line, so destroySession can run to completion inside that
+    // await: listeners off, socket ended, timer cleared. The handler then
+    // resumes and schedules a retry for a session that no longer exists --
+    // and every teardown assertion has already passed. clearTimeout cannot
+    // cancel a setTimeout that has not been created yet; only a re-check
+    // after the last await can.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    mockMakeWASocket.mockClear();
+
+    // Hold the close handler open exactly where the race lives.
+    let release!: () => void;
+    sessionDisconnect.mockImplementation(
+      () => new Promise<void>(resolve => { release = resolve; })
+    );
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
+    await Promise.resolve();
+
+    // Destroy while the handler is suspended, then let it resume.
+    await manager.destroySession(SESSION_ID, 'delete');
+    release();
+    await Promise.resolve();
+    await jest.advanceTimersByTimeAsync(120000);
+
+    expect(mockMakeWASocket).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
   it.each([
     ['shutdown mode', (m: any) => m.destroySession(SESSION_ID, 'shutdown')],
     ['shutdownAll', (m: any) => m.shutdownAll()],
@@ -2455,6 +2490,18 @@ Requirements the tests above pin, restated so they are not inferred from the tes
   `clearTimeout` also runs in `destroySession` (both modes), `forceDisconnect` and `shutdownAll`. A timer sleeping through a 60-second rung outlives the session it belongs to: the operator deletes a session, the callback fires half a minute later, and `makeWASocket` opens a socket for a session that no longer exists — using credentials `destroySession(id, 'delete')` has already cleared. During shutdown it is worse: a pending timer keeps the event loop alive and reconnects on the way out, so the process both fails to exit and re-pairs while exiting.
 
   **Use a deterministic jitter source.** Take it from an injectable function defaulting to `Math.random`, so the tests can pin the schedule. A schedule that cannot be asserted is a schedule nobody will notice regressing.
+
+  **Keep a `stopped: Set<sessionId>` and re-check it immediately before scheduling.** The close handler is `async` — it awaits `handleSessionDisconnect` before it reaches the scheduling line — so `destroySession` can run to completion *inside* that await: unsubscribe the listeners, end the socket, clear the timer. When the handler resumes it schedules a retry against a session that no longer exists, and every teardown assertion has already passed by then. Clearing a timer cannot cancel a `setTimeout` that has not been created yet.
+
+  ```ts
+  // Every await between the close event and the schedule is a place where
+  // the session can be destroyed underneath us. Check after the last one.
+  await this.deps.handleSessionDisconnect(sessionId, type, reason);
+  if (this.stopped.has(sessionId)) return;
+  this.retryTimers.set(sessionId, setTimeout(...));
+  ```
+
+  `destroySession`, `forceDisconnect` and `shutdownAll` add to `stopped` **before** they start tearing anything down; `createSession` removes the entry.
 
   **How a session with unusable credentials gets out.** With the Chromium-era cleanup retired, nothing wipes credentials automatically any more, so this is the recovery path and it needs to work: Baileys exhausts the five attempts, the session lands in `disconnected`, and the operator deletes it from the dashboard. That goes through `destroySession(id, 'delete')` → `store.clear(sessionId)` → a fresh QR. No manual database access, and no heuristic deciding on its own that credentials are bad.
 
