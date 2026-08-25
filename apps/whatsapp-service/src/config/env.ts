@@ -14,6 +14,12 @@ const envSchema = z.object({
     .min(32, 'must be at least 32 characters (64 hex recommended)')
     .optional(),
 
+  // Cifrado en reposo de las credenciales de sesión (whatsapp_auth_keys / Task 4)
+  WHATSAPP_AUTH_ENCRYPTION_KEY: z
+    .string()
+    .length(64, 'WHATSAPP_AUTH_ENCRYPTION_KEY must be 64 hex chars (32 bytes)')
+    .optional(),
+
   // Persistencia
   DATABASE_URL: z.string().url().optional(),
 
@@ -72,6 +78,19 @@ export function validateEnv(): Env {
       if (isProd) {
         logger.error(`❌ ${msg}`);
         logger.error('🛑 Exiting because NODE_ENV=production and HMAC secret is missing.');
+        process.exit(1);
+      }
+      logger.warn(`⚠️  ${msg} (dev mode: continuing)`);
+    }
+
+    if (!env.WHATSAPP_AUTH_ENCRYPTION_KEY) {
+      const msg =
+        'WHATSAPP_AUTH_ENCRYPTION_KEY is required outside test — session credentials cannot be sealed for storage';
+      if (isProd) {
+        logger.error(`❌ ${msg}`);
+        logger.error(
+          '🛑 Exiting because NODE_ENV=production and the auth encryption key is missing.'
+        );
         process.exit(1);
       }
       logger.warn(`⚠️  ${msg} (dev mode: continuing)`);

@@ -335,6 +335,7 @@ model WhatsAppSession {
   tenant                Tenant?                @relation(fields: [tenantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   aiAgent               AiAgent?               @relation(fields: [aiAgentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   whatsappConversations WhatsAppConversation[]
+  whatsappAuthKeys      WhatsAppAuthKey[]
 
   @@index([sessionId], map: "idx_sessions_session_id")
   @@index([status], map: "idx_sessions_status")
@@ -344,6 +345,22 @@ model WhatsAppSession {
   @@index([tenantId], map: "idx_sessions_tenant_id")
   @@index([aiAgentId], map: "idx_sessions_ai_agent_id")
   @@map("whatsapp_sessions")
+}
+
+model WhatsAppAuthKey {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String   @map("session_id") @db.VarChar(255)
+  category  String   @db.VarChar(50)
+  keyId     String   @map("key_id") @db.VarChar(255)
+  value     Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  session WhatsAppSession @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([sessionId, category, keyId], map: "uniq_whatsapp_auth_keys_session_cat_key")
+  @@index([sessionId, category], map: "idx_whatsapp_auth_keys_session_cat")
+  @@map("whatsapp_auth_keys")
 }
 
 model WhatsAppWhitelistLog {
