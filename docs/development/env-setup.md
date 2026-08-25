@@ -45,7 +45,6 @@ cp .env.example .env
 #   CLERK_WEBHOOK_SECRET        ← Clerk dashboard > Webhooks (or whsec_dev_placeholder for first run)
 #   WHATSAPP_SERVICE_HMAC_SECRET ← node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 #   OPENROUTER_API_KEY          ← openrouter.ai dashboard
-#   SNAPSHOT_ENCRYPTION_KEY     ← node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 # Dashboard .env.local (Next.js doesn't read root .env)
 cp .env.example apps/dashboard/.env.local
@@ -115,14 +114,6 @@ In production, Redis is co-located on the Hetzner VPS at `localhost:6379`.
 | `WHATSAPP_ENABLE_AUTO_RECOVERY` | `false` (dev) / `true` (prod) | Whether the service tries to reconnect dropped WhatsApp sessions on boot. |
 | `PUPPETEER_HEADLESS` | `false` (dev) / `true` (prod) | `false` shows the Chrome window for debugging; `true` runs headless. |
 
-### Auth snapshot (session backup)
-
-| Var | Notes |
-|---|---|
-| `ENABLE_AUTH_SNAPSHOTS=true` | Persists WhatsApp session auth state to Postgres (encrypted) so it survives Hetzner restarts and migrations without re-scanning QR. |
-| `SNAPSHOT_ENCRYPTION_KEY` | 64-char hex, generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. **Never rotate without first decrypting all existing snapshots** — you'll lose all backed-up sessions. |
-| `SNAPSHOT_INTERVAL_HOURS=4` | How often the auto-backup runs for active sessions. |
-
 ---
 
 ## Production specifics (Vercel + Hetzner)
@@ -170,7 +161,6 @@ When rotating secrets, all surfaces using that secret must update at the same ti
 | `WHATSAPP_SERVICE_HMAC_SECRET` | Vercel + Hetzner api + Hetzner whatsapp-service + every dev's local `.env` |
 | `CLERK_SECRET_KEY` | Vercel + Hetzner api + Hetzner whatsapp-service + every dev's local `.env` |
 | `CLERK_WEBHOOK_SECRET` | Vercel + Hetzner api (only the API verifies webhooks) + every dev's local `.env` |
-| `SNAPSHOT_ENCRYPTION_KEY` | **Do not rotate** without coordinated decrypt-all-existing-snapshots step. |
 
 Step-by-step rotation is tracked in `docs/deployment/secrets-rotation.md`.
 

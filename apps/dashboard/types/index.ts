@@ -142,11 +142,6 @@ export interface WhatsAppSession {
   updatedAt: string;
   lastSeen?: string;
   lastHeartbeat?: string;
-  backupStatus?: {
-    hasBackup: boolean;
-    lastBackupDate?: string;
-    sizeBytes?: number;
-  };
 }
 
 export interface WhatsAppMessage {

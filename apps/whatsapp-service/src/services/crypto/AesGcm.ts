@@ -10,7 +10,7 @@ const IV_LENGTH = 16;
  */
 export class AesGcm {
   private static toKey(keyHex: string): Buffer {
-    if (!keyHex || keyHex.length !== 64) {
+    if (!keyHex || !/^[0-9a-fA-F]{64}$/.test(keyHex)) {
       throw new Error(
         'Encryption key must be a 64-character hex string (32 bytes). ' +
           "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""

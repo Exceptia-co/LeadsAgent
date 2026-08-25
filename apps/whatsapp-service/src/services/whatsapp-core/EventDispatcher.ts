@@ -190,7 +190,7 @@ export class EventDispatcher {
         },
       });
 
-      // Clean up stale auth files and snapshot so next reconnect requires fresh QR
+      // Clean up stale auth files so next reconnect requires fresh QR
       if (onAuthInvalidated) {
         onAuthInvalidated(sessionId, 'auth_failure').catch(err => {
           logger.warn(`Auth invalidation cleanup failed for ${sessionId}:`, err);
@@ -264,7 +264,7 @@ export class EventDispatcher {
           `State: ${state}`
         );
 
-        // Clean up stale auth files and snapshot so next reconnect requires fresh QR
+        // Clean up stale auth files so next reconnect requires fresh QR
         if (onAuthInvalidated) {
           onAuthInvalidated(sessionId, `unpaired:${state}`).catch(err => {
             logger.warn(`Auth invalidation cleanup failed for ${sessionId}:`, err);

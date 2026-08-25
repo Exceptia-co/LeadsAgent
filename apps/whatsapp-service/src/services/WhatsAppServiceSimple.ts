@@ -4,7 +4,6 @@ import type { WhatsAppSession, SendMessageResponse } from '../types';
 import type { HealthAlert } from './session-health-check/AlertManager';
 import SessionRecoveryService from './SessionRecoveryService';
 import SessionHealthCheckService from './SessionHealthCheckService';
-import SessionPersistenceService from './SessionPersistenceService';
 import redisClient, { REDIS_KEYS } from '../config/redis';
 import { SESSION_CONSTANTS } from '../config/session-constants';
 
@@ -178,7 +177,7 @@ class WhatsAppServiceSimple {
         authFileInfo
       );
 
-      // Setup event listeners using EventDispatcher (with snapshot trigger callback)
+      // Setup event listeners using EventDispatcher
       this.eventDispatcher.setupClientEventListeners(
         client,
         sessionId,
