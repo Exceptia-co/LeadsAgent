@@ -14,6 +14,25 @@ import {
   MessageStatus,
 } from '@prisma/client';
 
+/**
+ * whatsapp-web.js delivers `Message.timestamp` as Unix SECONDS, but `new Date()`
+ * reads a bare number as MILLISECONDS — passing it through lands the row in
+ * January 1970. That silently breaks anything reasoning about recency, such as
+ * the proactive consent window in whatsapp-service.
+ *
+ * 1e11 ms is 1973, so any value below that cannot be a plausible epoch-ms date
+ * and is treated as seconds. Anything unusable — undefined, non-finite,
+ * non-positive, or out of Date's range — falls back to now() rather than
+ * writing a bogus date or an Invalid Date.
+ */
+export function toMessageDate(timestamp: number | string | undefined): Date {
+  const raw = typeof timestamp === 'string' ? Number(timestamp) : timestamp;
+  if (raw === undefined || !Number.isFinite(raw) || raw <= 0) return new Date();
+  const date = new Date(raw < 1e11 ? raw * 1000 : raw);
+  // Beyond ~8.64e15 ms the Date constructor yields Invalid Date, not a throw.
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
 interface WhatsAppMessage {
   id: string;
   from: string;
@@ -198,7 +217,11 @@ export class WhatsAppService {
           direction: MessageDirection.INBOUND,
           status: MessageStatus.READ,
           whatsappMessageId: messageData.id,
-          createdAt: new Date(messageData.timestamp),
+          // Recorded so consent checks can tell which line the contact
+          // wrote to: an inbound on line A must not authorise an outbound
+          // from line B within the same tenant.
+          sessionId,
+          createdAt: toMessageDate(messageData.timestamp),
         },
       });
 

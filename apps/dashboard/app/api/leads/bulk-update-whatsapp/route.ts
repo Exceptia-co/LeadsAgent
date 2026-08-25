@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { requireClerkToken } from "../../../../lib/auth/proxy-auth";
+import { resolveActiveTenantId } from "../../../../lib/auth/tenant-lookup";
 
 // Force dynamic rendering for this route
 export const dynamic = "force-dynamic";
@@ -31,6 +32,14 @@ interface BulkUpdateRequest {
 export async function PATCH(request: NextRequest) {
   const gate = await requireClerkToken();
   if (gate instanceof NextResponse) return gate;
+
+  // requireClerkToken only proves *a* valid Clerk session; it says nothing
+  // about which org. This route uses the service-role key, which bypasses
+  // RLS, so every query below must carry the tenant filter itself.
+  const tenantId = await resolveActiveTenantId();
+  if (!tenantId) {
+    return NextResponse.json({ error: "No active organization" }, { status: 403 });
+  }
 
   try {
     const body: BulkUpdateRequest = await request.json();
@@ -68,6 +77,7 @@ export async function PATCH(request: NextRequest) {
         updated_at: new Date().toISOString(),
       })
       .in("id", validIds)
+      .eq("tenant_id", tenantId)
       .select("id");
 
     if (updateError) {
@@ -88,10 +98,18 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const { data: updatedLeads } = await getSupabase()
+    const { data: updatedLeads, error: readbackError } = await getSupabase()
       .from("leads")
       .select("id, name, phone, whatsapp_authorized, updated_at")
-      .in("id", validIds);
+      .in("id", validIds)
+      .eq("tenant_id", tenantId);
+
+    // The update already succeeded; a failed read-back must not look like
+    // "updated 0 leads", so surface it instead of returning an empty list.
+    if (readbackError) {
+      console.error("Error reading back updated leads:", readbackError);
+      throw new Error(`Database read-back failed: ${readbackError.message}`);
+    }
 
     const formattedLeads = (updatedLeads || []).map((lead) => ({
       id: lead.id,

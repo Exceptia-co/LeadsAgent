@@ -122,7 +122,9 @@ export default function MessagingPage() {
       const matchesSearch =
         lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         lead.phone.includes(searchTerm);
-      const isAuthorized = lead.whatsappAuthorized !== false;
+      // Consent is opt-in: the server rejects null/undefined too, so a lead
+      // without an explicit true must not look sendable here.
+      const isAuthorized = lead.whatsappAuthorized === true;
       return matchesSearch && isAuthorized;
     });
     setFilteredLeads(filtered);
