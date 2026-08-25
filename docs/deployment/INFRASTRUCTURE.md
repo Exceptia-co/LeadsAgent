@@ -379,23 +379,34 @@ git push main → Vercel detecta cambios → Build automático → Deploy
 
 Despliegue manual:
 
+> **Corregido 2026-08-25.** Este bloque describía `/root/api` y `/root/whatsapp-service`
+> como repos separados con procesos `api-service`. La realidad es **un solo monorepo en
+> `/opt/leadcrm`** y los procesos son `leadcrm-api` y `whatsapp-service`. Ver
+> `CLAUDE.md` § Deployment.
+
 ```bash
-ssh root@46.225.26.89
-
-# API
-cd /root/api
-git pull origin main
-pnpm install
-pnpm build
-pm2 restart api-service
-
-# WhatsApp Service
-cd /root/whatsapp-service
-git pull origin main
-pnpm install
-pnpm build
-pm2 restart whatsapp-service
+ssh root@46.225.26.89 '
+  set -e
+  cd /opt/leadcrm
+  git pull origin main
+  pnpm install --frozen-lockfile
+  pnpm build                      # NO omitir: whatsapp-service corre node dist/index.js
+  pm2 restart all --update-env
+'
 ```
+
+**El `pnpm build` no es opcional.** `apps/whatsapp-service` arranca con
+`node dist/index.js`; sin recompilar, PM2 reinicia el bundle anterior y el deploy
+parece correcto sin serlo.
+
+`pm2 restart all` reinicia ambos servicios a la vez, que es lo que hace falta cuando
+un cambio los cruza. Si los despliegas por separado, **`leadcrm-api` va primero**:
+el gate de consentimiento de `whatsapp-service` filtra por `sessionId`, y quien
+persiste ese `sessionId` en el mensaje entrante es el webhook de Nest. Al revés, los
+proactivos dejan de salir en silencio (se contabilizan como `failed`, no como error).
+
+Efecto: ~15–30 s de caída, y la sesión de WhatsApp se desconecta y vuelve por
+`LocalAuth`. Verificar con `pm2 logs whatsapp-service --lines 30`.
 
 ---
 

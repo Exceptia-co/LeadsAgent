@@ -285,10 +285,21 @@ ssh root@46.225.26.89 '
   set -e
   cd /opt/leadcrm
   git pull origin develop   # or main once merged
-  pnpm install
+  pnpm install --frozen-lockfile
+  pnpm build                # required: whatsapp-service runs node dist/index.js
   pm2 restart all --update-env
 '
 ```
+
+Do **not** drop the `pnpm build`. `apps/whatsapp-service` starts from
+`dist/index.js`, so without it PM2 restarts the previous bundle and the deploy
+looks successful while shipping nothing.
+
+If you ever deploy the two services separately, **`leadcrm-api` goes first**: the
+proactive consent gate in `whatsapp-service` filters by `sessionId`, and the Nest
+webhook is what persists that `sessionId` on the inbound message. The other order
+silently stops every proactive send — they are counted as `failed`, not raised as
+an error.
 
 Effects: ~15-30s downtime while installing deps and restarting; the WhatsApp `test` session disconnects briefly and reconnects via LocalAuth. Verify with `pm2 logs whatsapp-service --lines 30` — should show `Environment validated (NODE_ENV=production)` and `[DEDUPE] Checking msgId=...` on inbound messages.
 
