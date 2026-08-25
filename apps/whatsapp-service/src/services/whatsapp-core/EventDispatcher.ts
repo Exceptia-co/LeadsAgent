@@ -4,10 +4,12 @@ import { logger } from '../../utils/logger';
 import advancedLogger from '../../utils/advancedLogger';
 import type { WebhookPayload } from '../../types';
 import type { NormalizedWhatsAppMessage } from '../../types/messages';
+import type { ReplyPort } from '../../types/reply-port';
 import redisClient, { REDIS_KEYS } from '../../config/redis';
 import { signServiceRequest } from '../../middleware/auth';
 import { normalizeWwebjsMessage } from './wwebjs-normalizer';
 import { IncomingMessagePipeline } from './IncomingMessagePipeline';
+import { makeWwebjsReplyPort } from './wwebjs-reply-port';
 
 /**
  * EventDispatcher - Handles all WhatsApp client events, webhooks, and event-driven operations
@@ -41,7 +43,7 @@ export class EventDispatcher {
     client: Client,
     sessionId: string,
     messageHandler: {
-      processMessageWithAI: (dto: NormalizedWhatsAppMessage, transport: Message) => Promise<void>;
+      processMessageWithAI: (dto: NormalizedWhatsAppMessage, port: ReplyPort) => Promise<void>;
     },
     sessionManager: {
       updateSessionStatus: (sessionId: string, status: string, data?: any) => Promise<void>;
@@ -70,9 +72,9 @@ export class EventDispatcher {
     this.sessionListeners.set(sessionId, listeners);
     this.sessionTimeouts.set(sessionId, timeouts);
 
-    // The pipeline is engine-agnostic; Message only appears here, where the
-    // generic is bound for this whatsapp-web.js dispatcher.
-    const pipeline = new IncomingMessagePipeline<Message>({
+    // The pipeline is engine-agnostic. Message only appears below, where this
+    // dispatcher wraps it in a ReplyPort.
+    const pipeline = new IncomingMessagePipeline({
       authChecker,
       messageHandler,
       sessionManager,
@@ -318,7 +320,7 @@ export class EventDispatcher {
           return;
         }
 
-        await pipeline.handle(dto, message);
+        await pipeline.handle(dto, makeWwebjsReplyPort(message));
       } catch (error) {
         logger.error(`Error processing message in session ${sessionId}:`, error);
       }

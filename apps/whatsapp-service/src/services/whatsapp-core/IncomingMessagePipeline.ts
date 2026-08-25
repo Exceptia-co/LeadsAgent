@@ -2,14 +2,9 @@ import { redisClient, REDIS_KEYS, REDIS_TTL } from '../../config/redis';
 import { logger } from '../../utils/logger';
 import type { NormalizedWhatsAppMessage } from '../../types/messages';
 import type { WhatsAppMessage } from '../../types';
+import type { ReplyPort } from '../../types/reply-port';
 
-/**
- * Generic over the transport handle so this file threads it through without
- * ever importing a library type. `EventDispatcher` instantiates it as
- * `IncomingMessagePipeline<Message>`; the pipeline itself only passes the
- * value along and never inspects it.
- */
-export interface IncomingMessagePipelineDeps<TTransport> {
+export interface IncomingMessagePipelineDeps {
   authChecker: {
     checkPhoneNumberAllowedWithLog(
       phone: string,
@@ -18,7 +13,7 @@ export interface IncomingMessagePipelineDeps<TTransport> {
     ): Promise<{ allowed: boolean; reason?: string }>;
   };
   messageHandler: {
-    processMessageWithAI(dto: NormalizedWhatsAppMessage, transport: TTransport): Promise<void>;
+    processMessageWithAI(dto: NormalizedWhatsAppMessage, port: ReplyPort): Promise<void>;
   };
   sessionManager: {
     updateSessionStatus(sessionId: string, status: string, data?: unknown): Promise<void>;
@@ -35,12 +30,12 @@ export interface IncomingMessagePipelineDeps<TTransport> {
 
 const HEALTH_UPDATE_INTERVAL_MS = 30000;
 
-export class IncomingMessagePipeline<TTransport> {
+export class IncomingMessagePipeline {
   private lastHealthUpdate = 0;
 
-  constructor(private readonly deps: IncomingMessagePipelineDeps<TTransport>) {}
+  constructor(private readonly deps: IncomingMessagePipelineDeps) {}
 
-  async handle(dto: NormalizedWhatsAppMessage, transport: TTransport): Promise<void> {
+  async handle(dto: NormalizedWhatsAppMessage, port: ReplyPort): Promise<void> {
     try {
       // Dedupe first: the transport may re-emit the same message on reconnect.
       // The key is session-scoped -- two tenants can legitimately see the same
@@ -74,7 +69,7 @@ export class IncomingMessagePipeline<TTransport> {
         );
         if (verdict.allowed) {
           logger.info(`📱 Respuesta automática permitida para: ${dto.senderPhone}`);
-          await this.deps.messageHandler.processMessageWithAI(dto, transport);
+          await this.deps.messageHandler.processMessageWithAI(dto, port);
         } else {
           logger.info(
             `🚫 Respuesta automática bloqueada para: ${dto.senderPhone} - ${verdict.reason}`

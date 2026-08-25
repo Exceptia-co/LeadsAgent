@@ -36,12 +36,12 @@ function dto(overrides: Partial<NormalizedWhatsAppMessage> = {}): NormalizedWhat
   };
 }
 
-// A stand-in for the library object. The pipeline must never look inside it,
-// so anything with an identity we can assert on will do.
-const TRANSPORT = { id: 'fake-transport' };
+// A stand-in for the reply port. The pipeline must never call it -- it only
+// forwards it -- so a bare object with an identity is enough.
+const PORT = { id: 'fake-port' } as any;
 
 function makePipeline() {
-  return new IncomingMessagePipeline<typeof TRANSPORT>({
+  return new IncomingMessagePipeline({
     authChecker: { checkPhoneNumberAllowedWithLog: mockCheckPhone } as any,
     messageHandler: { processMessageWithAI: mockProcessWithAI } as any,
     sessionManager: { updateSessionStatus: mockUpdateStatus } as any,
@@ -62,7 +62,7 @@ describe('IncomingMessagePipeline', () => {
   it('processes_authorized_inbound_message_and_sends_one_webhook', async () => {
     const message = dto();
 
-    await makePipeline().handle(message, TRANSPORT);
+    await makePipeline().handle(message, PORT);
 
     expect(mockCheckPhone).toHaveBeenCalledWith(SENDER, SESSION_ID, 'hola');
     expect(mockProcessWithAI).toHaveBeenCalledTimes(1);
@@ -71,7 +71,7 @@ describe('IncomingMessagePipeline', () => {
     // very same object it received -- and the same transport handle -- rather
     // than a lookalike, which is the thing this test exists to catch.
     expect(mockProcessWithAI.mock.calls[0][0]).toBe(message);
-    expect(mockProcessWithAI.mock.calls[0][1]).toBe(TRANSPORT);
+    expect(mockProcessWithAI.mock.calls[0][1]).toBe(PORT);
     expect(mockSendWebhook).toHaveBeenCalledTimes(1);
     expect(mockSendWebhook.mock.calls[0][0]).toMatchObject({
       event: 'message',
@@ -84,7 +84,7 @@ describe('IncomingMessagePipeline', () => {
     // this pins the wire shape so a future edit that leaks the DTO's own
     // field names (senderPhone/text/...) onto the wire fails loudly here
     // instead of throwing `undefined.replace()` in production.
-    await makePipeline().handle(dto(), TRANSPORT);
+    await makePipeline().handle(dto(), PORT);
 
     expect(mockSendWebhook).toHaveBeenCalledTimes(1);
     const payload = mockSendWebhook.mock.calls[0][0];
@@ -104,7 +104,7 @@ describe('IncomingMessagePipeline', () => {
     // WhatsAppMessage.to is typed `string`, but recipientPhone is
     // `string | null` (null for non-1-1 chats). The published contract must
     // not lie about its own type.
-    await makePipeline().handle(dto({ recipientPhone: null }), TRANSPORT);
+    await makePipeline().handle(dto({ recipientPhone: null }), PORT);
 
     const payload = mockSendWebhook.mock.calls[0][0];
     expect(payload.data.to).toBe('');
@@ -114,8 +114,8 @@ describe('IncomingMessagePipeline', () => {
     const pipeline = makePipeline();
     mockSetNX.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
-    await pipeline.handle(dto(), TRANSPORT);
-    await pipeline.handle(dto(), TRANSPORT);
+    await pipeline.handle(dto(), PORT);
+    await pipeline.handle(dto(), PORT);
 
     expect(mockSetNX).toHaveBeenCalledTimes(2);
     expect(mockCheckPhone).toHaveBeenCalledTimes(1);
@@ -130,7 +130,7 @@ describe('IncomingMessagePipeline', () => {
     // the normalizer -- see wwebjs-normalizer.spec.ts's
     // prefixes_the_dto_id_with_the_session_it_was_normalized_for for the test
     // that actually exercises where the session prefix is introduced.
-    await makePipeline().handle(dto(), TRANSPORT);
+    await makePipeline().handle(dto(), PORT);
 
     expect(mockSetNX).toHaveBeenCalledWith(`whatsapp:dedup:${SESSION_ID}:ABC123`, '1', 300);
   });
@@ -138,7 +138,7 @@ describe('IncomingMessagePipeline', () => {
   it('skips_ai_but_still_webhooks_when_sender_is_not_allowed', async () => {
     mockCheckPhone.mockResolvedValue({ allowed: false, reason: 'not whitelisted' });
 
-    await makePipeline().handle(dto(), TRANSPORT);
+    await makePipeline().handle(dto(), PORT);
 
     expect(mockProcessWithAI).not.toHaveBeenCalled();
     expect(mockSendWebhook).toHaveBeenCalledTimes(1);
@@ -148,16 +148,16 @@ describe('IncomingMessagePipeline', () => {
     const pipeline = makePipeline();
 
     // Group messages short-circuit before the webhook is ever sent.
-    await pipeline.handle(dto({ isGroup: true }), TRANSPORT);
+    await pipeline.handle(dto({ isGroup: true }), PORT);
     expect(mockSendWebhook).toHaveBeenCalledTimes(0);
 
     // fromMe and blank-text only skip the AI branch -- the webhook still
     // fires for both, matching today's behaviour (only isGroup short-circuits
     // early; see Step 5's note in the brief).
-    await pipeline.handle(dto({ fromMe: true }), TRANSPORT);
+    await pipeline.handle(dto({ fromMe: true }), PORT);
     expect(mockSendWebhook).toHaveBeenCalledTimes(1);
 
-    await pipeline.handle(dto({ text: '   ' }), TRANSPORT);
+    await pipeline.handle(dto({ text: '   ' }), PORT);
     expect(mockSendWebhook).toHaveBeenCalledTimes(2);
 
     expect(mockCheckPhone).not.toHaveBeenCalled();

@@ -1,7 +1,8 @@
-import type { Client, Message } from 'whatsapp-web.js';
+import type { Client } from 'whatsapp-web.js';
 import { logger } from '../../utils/logger';
 import type { SendMessageResponse } from '../../types';
 import type { NormalizedWhatsAppMessage } from '../../types/messages';
+import type { ReplyPort } from '../../types/reply-port';
 
 /**
  * MessageHandler - Handles all message sending, receiving, and processing operations
@@ -106,15 +107,13 @@ export class MessageHandler {
   }
 
   /**
-   * Process message with AI integration
+   * Process message with AI integration.
    *
-   * `transport` is the Phase 2 seam — the one library object still reaching the
-   * AI path. It carries no data: everything read here comes from `dto`. It
-   * survives only because the reply strategies need a handle on the chat
-   * (`getChat().sendStateTyping()`, `.reply()`, `chat.sendMessage()`).
-   * Replacing it with a narrow reply port is the first step of the cutover.
+   * `port` is how this method answers. It holds the engine's message handle
+   * privately; nothing here knows which engine produced it. Everything read
+   * comes from `dto`.
    */
-  async processMessageWithAI(dto: NormalizedWhatsAppMessage, transport: Message): Promise<void> {
+  async processMessageWithAI(dto: NormalizedWhatsAppMessage, port: ReplyPort): Promise<void> {
     const sessionId = dto.sessionId;
     const startTime = Date.now();
     let aiResponse: string = '';
@@ -130,11 +129,10 @@ export class MessageHandler {
       // solo se activa en el último tramo, el usuario ve silencio durante
       // 15s y luego "escribiendo..." fugaz. Activarlo temprano hace que
       // el indicator cubra todo el pipeline → percepción drásticamente
-      // mejor con el mismo tiempo total. whatsapp-web.js mantiene el
-      // state por ~25s sin `clearState`, suficiente para cubrir el flow.
+      // mejor con el mismo tiempo total. El transporte mantiene el state
+      // ~25s sin clearState, suficiente para cubrir el flow.
       try {
-        const chatEarly = await transport.getChat();
-        await chatEarly.sendStateTyping();
+        await port.startTyping();
         logger.debug('⌨️  Typing indicator activated early (covering LLM + humanized delay)');
       } catch (typingErr) {
         logger.warn('⚠️  Early typing indicator failed (non-blocking):', typingErr);
@@ -213,7 +211,7 @@ export class MessageHandler {
 
         // Determine sending method based on strategy
         const strategy = thinkingResult.thinkingProcess.responseStrategy;
-        await this.sendResponseWithStrategy(transport, dto.text, thinkingResult.content, strategy);
+        await this.sendResponseWithStrategy(port, dto.text, thinkingResult.content, strategy);
 
         // Fase A4 (2026-04-19): unificar las dos llamadas sueltas de
         // saveConversation (user msg + bot msg) en una única operación
@@ -292,7 +290,7 @@ export class MessageHandler {
               phoneNumber,
               { tenantId: tenantId ?? undefined, aiAgentId: aiAgentId ?? undefined }
             );
-            await transport.reply(intelligentFallback);
+            await port.reply(intelligentFallback);
 
             // Log the fallback usage
             await DatabaseService.saveConversation({
@@ -313,7 +311,7 @@ export class MessageHandler {
             logger.error('Error sending intelligent fallback message:', replyError);
             // Only use generic fallback as last resort
             try {
-              await transport.reply(
+              await port.reply(
                 'Disculpa, en este momento no puedo procesar tu mensaje. Un agente se pondrá en contacto contigo pronto. 😊'
               );
             } catch (finalError) {
@@ -336,12 +334,12 @@ export class MessageHandler {
       // KB search here is intentionally unscoped; the warning will fire from DatabaseService.
       try {
         const intelligentFallback = await this.generateIntelligentFallback(dto.text, phoneNumber);
-        await transport.reply(intelligentFallback);
+        await port.reply(intelligentFallback);
       } catch (replyError) {
         logger.error('Error sending intelligent fallback message:', replyError);
         // Last resort generic message
         try {
-          await transport.reply(
+          await port.reply(
             'Gracias por tu mensaje. Un representante te contactará pronto. 👍'
           );
         } catch (finalError) {
@@ -385,22 +383,19 @@ export class MessageHandler {
    * Send response with intelligent quoting strategy
    */
   private async sendResponseWithStrategy(
-    transport: Message,
+    port: ReplyPort,
     userMessageText: string,
     responseText: string,
     strategy: any
   ): Promise<void> {
     // Fase A3 (2026-04-19): typing indicator para que la respuesta de la IA
     // se vea natural en WhatsApp. Sin esto el mensaje aparece "de golpe" y el
-    // usuario percibe al bot como robótico. `sendStateTyping()` muestra
-    // "escribiendo…" en el cliente del receptor; `clearState()` lo apaga.
-    let chat: Awaited<ReturnType<Message['getChat']>> | null = null;
+    // usuario percibe al bot como robótico.
     try {
-      chat = await transport.getChat();
-      await chat.sendStateTyping();
+      await port.startTyping();
     } catch (typingErr) {
-      // No bloqueante: si sendStateTyping falla, seguimos con el envío sin
-      // indicator. Evita que un problema transitorio impida la respuesta.
+      // No bloqueante: si falla, seguimos con el envío sin indicator. Evita
+      // que un problema transitorio impida la respuesta.
       logger.warn('⚠️  Could not send typing state (continuing without):', typingErr);
     }
 
@@ -409,27 +404,25 @@ export class MessageHandler {
         strategy.shouldQuote ||
         this.shouldQuoteBasedOnContext(userMessageText, responseText, strategy)
       ) {
-        // Quote the original message
-        await transport.reply(responseText);
+        await port.reply(responseText);
         logger.debug('📝 Response sent with quote');
       } else {
-        // Send without quoting — reusa `chat` ya obtenido arriba si existe
-        const targetChat = chat ?? (await transport.getChat());
-        await targetChat.sendMessage(responseText);
+        await port.send(responseText);
         logger.debug('📝 Response sent without quote');
       }
     } catch (error) {
       logger.error('Error in sendResponseWithStrategy:', error);
       // Fallback to simple reply
-      await transport.reply(responseText);
+      await port.reply(responseText);
     } finally {
       // Limpiar el typing state siempre — tanto en éxito como en fallback.
-      if (chat) {
-        try {
-          await chat.clearState();
-        } catch (clearErr) {
-          logger.debug('Could not clear typing state (non-critical):', clearErr);
-        }
+      // Antes esto iba condicionado a haber obtenido el chat; el port ya
+      // encapsula esa búsqueda, así que se llama incondicionalmente y el
+      // catch absorbe el caso en que nunca llegó a activarse.
+      try {
+        await port.stopTyping();
+      } catch (clearErr) {
+        logger.debug('Could not clear typing state (non-critical):', clearErr);
       }
     }
   }
