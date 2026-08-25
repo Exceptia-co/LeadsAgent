@@ -103,25 +103,6 @@ export interface WhatsAppConfig {
 // ================================
 
 /**
- * Core WhatsApp Session Management
- */
-export interface ISessionManager {
-  createSession(sessionId: string, options?: any): Promise<WhatsAppSession>;
-  destroySession(sessionId: string): Promise<void>;
-  getSession(sessionId: string): Promise<WhatsAppSession | null>;
-  getAllSessions(): Promise<WhatsAppSession[]>;
-  updateSessionStatus(
-    sessionId: string,
-    status: SessionStatus,
-    data?: Partial<WhatsAppSession>
-  ): Promise<void>;
-  getClient(sessionId: string): any; // WhatsApp Web Client
-  isSessionReady(sessionId: string): boolean;
-  getSessionMetrics(sessionId: string): any;
-  getActiveSessions(): WhatsAppSession[];
-}
-
-/**
  * Message Processing
  */
 export interface IMessageProcessor {
@@ -594,27 +575,6 @@ export interface IWhatsAppService {
   destroySession(sessionId: string): Promise<void>;
   getHealthStatus(): any;
   shutdown(): Promise<void>;
-}
-
-/**
- * WhatsApp Session Manager interface
- */
-export interface IWhatsAppSessionManager extends ISessionManager {
-  initialize(): Promise<void>;
-  getClient(sessionId: string): any; // WhatsApp Web Client
-  hasActiveSession(sessionId: string): boolean;
-  restoreSession(sessionId: string): Promise<boolean>;
-  getSessionData(sessionId: string): Promise<any>;
-  clearSessionData(sessionId: string): Promise<void>;
-  isSessionReady(sessionId: string): boolean;
-  getQrCode(sessionId: string): Promise<string | null>;
-  getSessionStatus(sessionId: string): Promise<{
-    id: string;
-    status: SessionStatus;
-    qrCode?: string;
-    clientInfo?: any;
-    lastSeen?: Date;
-  } | null>;
 }
 
 // ================================

@@ -36,11 +36,6 @@ export interface IWhatsAppSessionManager {
   } | null>;
 
   /**
-   * Get WhatsApp client for session
-   */
-  getClient(sessionId: string): any;
-
-  /**
    * Update session status and data
    */
   updateSessionStatus(sessionId: string, status: any, data?: any): Promise<void>;
