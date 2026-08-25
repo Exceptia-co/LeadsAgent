@@ -14,6 +14,12 @@ const envSchema = z.object({
     .min(32, 'must be at least 32 characters (64 hex recommended)')
     .optional(),
 
+  // Cifrado en reposo de las credenciales de sesión (whatsapp_auth_keys / Task 4)
+  WHATSAPP_AUTH_ENCRYPTION_KEY: z
+    .string()
+    .regex(/^[0-9a-fA-F]{64}$/, 'WHATSAPP_AUTH_ENCRYPTION_KEY must be 64 hex chars (32 bytes)')
+    .optional(),
+
   // Persistencia
   DATABASE_URL: z.string().url().optional(),
 
@@ -75,6 +81,17 @@ export function validateEnv(): Env {
         process.exit(1);
       }
       logger.warn(`⚠️  ${msg} (dev mode: continuing)`);
+    }
+
+    // No fail-fast here: unlike WHATSAPP_SERVICE_HMAC_SECRET, nothing on this
+    // branch reads this key yet (Phase 2 wires it into the auth adapter).
+    // Exiting production boot for an unused secret would boot-loop Hetzner.
+    // SessionCredentialsStore.key() is the right place to fail, once the
+    // store is actually used.
+    if (!env.WHATSAPP_AUTH_ENCRYPTION_KEY) {
+      logger.warn(
+        '⚠️  WHATSAPP_AUTH_ENCRYPTION_KEY not set — session credential storage will refuse to seal/open values when used'
+      );
     }
 
     if (!env.DATABASE_URL) {

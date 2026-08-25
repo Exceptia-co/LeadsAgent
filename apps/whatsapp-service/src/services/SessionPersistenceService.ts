@@ -1,7 +1,6 @@
 import { PrismaClient } from '@leadcrm/db';
 import { logger } from '../utils/logger';
 import { WhatsAppSession } from '../types';
-import type { SnapshotData } from './auth-snapshot/types';
 
 export interface SessionPersistenceData {
   id?: string;
@@ -348,74 +347,6 @@ export class SessionPersistenceService {
       webhookUrl: dbSession.webhookUrl,
       metadata: dbSession.metadata,
     };
-  }
-
-  /**
-   * Get snapshot data from session's authData field
-   */
-  async getSnapshotData(sessionId: string): Promise<SnapshotData | null> {
-    try {
-      const session = await this.prisma.whatsAppSession.findUnique({
-        where: { sessionId },
-        select: { authData: true },
-      });
-
-      if (!session?.authData) return null;
-
-      const authData = session.authData as any;
-      if (authData?.metadata && authData?.data) {
-        return authData as SnapshotData;
-      }
-
-      return null;
-    } catch (error) {
-      logger.error(`Error getting snapshot data for ${sessionId}:`, error);
-      return null;
-    }
-  }
-
-  /**
-   * Save snapshot data to session's authData field
-   */
-  async saveSnapshotData(sessionId: string, data: SnapshotData): Promise<boolean> {
-    try {
-      await this.prisma.whatsAppSession.update({
-        where: { sessionId },
-        data: {
-          authData: data as any,
-          updatedAt: new Date(),
-        },
-      });
-
-      logger.info(
-        `Snapshot saved for session ${sessionId}: ${(data.metadata.sizeBytes / 1024 / 1024).toFixed(2)}MB`
-      );
-      return true;
-    } catch (error) {
-      logger.error(`Error saving snapshot data for ${sessionId}:`, error);
-      return false;
-    }
-  }
-
-  /**
-   * Clear snapshot data from session's authData field
-   */
-  async clearSnapshotData(sessionId: string): Promise<boolean> {
-    try {
-      await this.prisma.whatsAppSession.update({
-        where: { sessionId },
-        data: {
-          authData: null as any,
-          updatedAt: new Date(),
-        },
-      });
-
-      logger.info(`Snapshot data cleared for session ${sessionId}`);
-      return true;
-    } catch (error) {
-      logger.error(`Error clearing snapshot data for ${sessionId}:`, error);
-      return false;
-    }
   }
 
   /**
