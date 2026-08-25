@@ -230,7 +230,9 @@ makeBaileysAuthState(sessionId): Promise<{
 | `src/services/whatsapp-core/EventDispatcher.ts` | `pipeline.handle(dto, makeWwebjsReplyPort(message))`. Keeps `import type { Message }`. |
 | specs | the fake port replaces every `Message` mock. |
 
-**Done when** `MessageHandler.ts` and `IncomingMessagePipeline.ts` contain zero mentions of `whatsapp-web.js`.
+**Done when** `IncomingMessagePipeline.ts` contains zero mentions of `whatsapp-web.js`, and `MessageHandler.ts` no longer imports `Message`.
+
+`MessageHandler` keeps `import type { Client }` after T5, and that is correct rather than an oversight: `sendMessage(client, sessionId, to, message, onStatusUpdate)` at `MessageHandler.ts:21` is the **outbound** path, called only from `WhatsAppServiceSimple.ts:247`, and it is a different seam from the reply port. `BaileysSessionManager` takes ownership of outbound in T8a. Promising "zero mentions" for this file in T5 would force the outbound abstraction into a task that has no reason to carry it.
 
 ### T6 — Engine-neutral tidy
 *Mergeable to `main` with `whatsapp-web.js` still serving production.*
@@ -245,10 +247,24 @@ makeBaileysAuthState(sessionId): Promise<{
 
 Built in this order, because the manager is the composition of the other three and must land last:
 
-1. `src/services/baileys/baileys-normalizer.ts` — identical signature to `normalizeWwebjsMessage`. Returns `null` rather than a partial DTO. Must handle: text living in `conversation` / `extendedTextMessage.text` / `imageMessage.caption`; group messages where the sender is in `key.participant`, not `key.remoteJid`; LID identifiers; `fromMe`; the session-scoped id `${sessionId}:${key.id}`.
+1. `src/services/baileys/baileys-normalizer.ts` — identical signature to `normalizeWwebjsMessage`. Returns `null` rather than a partial DTO. Two behaviours here are not portable from the wwebjs normalizer and were verified against the installed library, because both fail silently rather than loudly:
+
+   **A LID passes the E.164 test and becomes a fake phone number.** `jidDecode('182736451827364@lid').user` returns `'182736451827364'` — fifteen digits, which `/^[1-9]\d{7,14}$/` accepts. Copying `toPhone(jid)` from the wwebjs normalizer would therefore mint a plausible-looking phone number that belongs to no one, create a `Lead` under it, and answer the wrong person. The Baileys normalizer must test `isLidUser()` and read the real number from `key.senderPn` (one-to-one) or `key.participantPn` (group) — fields that exist on `WAMessageKey` precisely for this — falling back to `key.remoteJid` / `key.participant` only when the JID is not a LID.
+
+   **`extractMessageContent` must run before `getContentType`.** Verified: `getContentType({ ephemeralMessage: { message: { conversation: 'x' } } })` returns `'ephemeralMessage'`, and the text is lost; after `extractMessageContent` it returns `'conversation'`. Same for `viewOnceMessageV2` → `imageMessage`. Disappearing-message chats are ordinary in production, so skipping the unwrap silently drops every message from them.
+
+   Beyond those: text lives in `conversation` / `extendedTextMessage.text` / `imageMessage.caption` / `videoMessage.caption`; `fromMe` comes from `key.fromMe`; the id is the session-scoped `${sessionId}:${key.id}`; `messageTimestamp` may be a protobuf `Long` and needs coercing to a plain number of seconds.
 2. `SessionCredentialsStore` gains the multi-category transactional batch and `hasCredentials(sessionId)`; `src/services/baileys/BaileysAuthState.ts` is written on top.
 3. `src/services/baileys/baileys-reply-port.ts`.
 4. `src/services/baileys/BaileysSessionManager.ts` — the single runtime import of the library. Inert constructor: `makeWASocket` is called only inside `createSession`.
+
+   Eight `whatsapp-web.js` events collapse into `connection.update`, whose payload is `Partial<ConnectionState>`: `{ connection: 'open' | 'connecting' | 'close', lastDisconnect?: { error, date }, qr?, isNewLogin? }`. The mapping to today's session states and webhooks is application logic now, and two details decide it:
+
+   **`DisconnectReason.connectionLost` and `DisconnectReason.timedOut` are both `408`.** They are not distinguishable by code, so any branch that tries to tell them apart is wrong by construction. What matters operationally is a single split: `loggedOut` (401) means the credentials are dead — clear the store and force a fresh QR — while every other code is a reconnect.
+
+   **`restartRequired` (515) fires on the first pairing** and is a normal step, not a failure. Treating it as a disconnect is the classic Baileys integration bug: the session pairs, immediately "fails", and never comes up.
+
+   The two `authenticated` webhooks that Phase 1 froze must be reproduced from this single event: one when credentials first exist, carrying the number as `'unknown'`, and one on `connection: 'open'` carrying `sock.user?.id`.
 
 Tested against a fake socket. No network, no real pairing.
 
