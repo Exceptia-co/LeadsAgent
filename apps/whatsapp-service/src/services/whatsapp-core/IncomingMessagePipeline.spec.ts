@@ -66,15 +66,12 @@ describe('IncomingMessagePipeline', () => {
 
     expect(mockCheckPhone).toHaveBeenCalledWith(SENDER, SESSION_ID, 'hola');
     expect(mockProcessWithAI).toHaveBeenCalledTimes(1);
-    // Exact-value match, not objectContaining: proves the very same DTO the
-    // pipeline received is what reaches the AI layer, not just a lookalike
-    // with the three fields we happened to list.
-    expect(mockProcessWithAI).toHaveBeenCalledWith(
-      message,
-      // The transport handle is threaded through untouched -- the pipeline
-      // never inspects it, but the reply path downstream depends on it.
-      TRANSPORT
-    );
+    // Identity, not deep equality: toHaveBeenCalledWith would also pass for a
+    // reconstructed clone of the DTO. .toBe proves the pipeline forwards the
+    // very same object it received -- and the same transport handle -- rather
+    // than a lookalike, which is the thing this test exists to catch.
+    expect(mockProcessWithAI.mock.calls[0][0]).toBe(message);
+    expect(mockProcessWithAI.mock.calls[0][1]).toBe(TRANSPORT);
     expect(mockSendWebhook).toHaveBeenCalledTimes(1);
     expect(mockSendWebhook.mock.calls[0][0]).toMatchObject({
       event: 'message',
@@ -103,6 +100,16 @@ describe('IncomingMessagePipeline', () => {
     });
   });
 
+  it('coerces_a_null_recipient_phone_to_an_empty_string_on_the_wire', async () => {
+    // WhatsAppMessage.to is typed `string`, but recipientPhone is
+    // `string | null` (null for non-1-1 chats). The published contract must
+    // not lie about its own type.
+    await makePipeline().handle(dto({ recipientPhone: null }), TRANSPORT);
+
+    const payload = mockSendWebhook.mock.calls[0][0];
+    expect(payload.data.to).toBe('');
+  });
+
   it('deduplicates_same_message_id_before_authorization_ai_and_webhook', async () => {
     const pipeline = makePipeline();
     mockSetNX.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
@@ -116,22 +123,16 @@ describe('IncomingMessagePipeline', () => {
     expect(mockSendWebhook).toHaveBeenCalledTimes(1);
   });
 
-  it('scopes_the_dedupe_key_by_session', async () => {
-    // Same provider message id, two different sessions: this is the actual
-    // seam the session-scoping fix protects. A version that dedupes globally
-    // (by provider id alone) would produce the SAME key for both calls, so
-    // this fails on the old behaviour and passes only when the key is
-    // genuinely derived from dto.sessionId as well as the provider id.
-    const pipeline = makePipeline();
+  it('builds_the_dedupe_key_from_dto_id_and_applies_the_ttl', async () => {
+    // The pipeline only concatenates REDIS_KEYS.MESSAGE_DEDUP with dto.id -- it
+    // never reads dto.sessionId itself, so this only proves that much: the key
+    // prefix and the TTL. Session-scoping is a property of dto.id, produced by
+    // the normalizer -- see wwebjs-normalizer.spec.ts's
+    // prefixes_the_dto_id_with_the_session_it_was_normalized_for for the test
+    // that actually exercises where the session prefix is introduced.
+    await makePipeline().handle(dto(), TRANSPORT);
 
-    await pipeline.handle(dto({ sessionId: 's1', id: 's1:SAME_PROVIDER_ID' }), TRANSPORT);
-    await pipeline.handle(dto({ sessionId: 's2', id: 's2:SAME_PROVIDER_ID' }), TRANSPORT);
-
-    expect(mockSetNX).toHaveBeenCalledWith('whatsapp:dedup:s1:SAME_PROVIDER_ID', '1', 300);
-    expect(mockSetNX).toHaveBeenCalledWith('whatsapp:dedup:s2:SAME_PROVIDER_ID', '1', 300);
-    const [firstKey] = mockSetNX.mock.calls[0];
-    const [secondKey] = mockSetNX.mock.calls[1];
-    expect(firstKey).not.toBe(secondKey);
+    expect(mockSetNX).toHaveBeenCalledWith(`whatsapp:dedup:${SESSION_ID}:ABC123`, '1', 300);
   });
 
   it('skips_ai_but_still_webhooks_when_sender_is_not_allowed', async () => {

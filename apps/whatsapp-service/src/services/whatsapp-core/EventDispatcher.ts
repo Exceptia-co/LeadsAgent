@@ -2,7 +2,7 @@ import type { Client, Message } from 'whatsapp-web.js';
 import qrcode from 'qrcode-terminal';
 import { logger } from '../../utils/logger';
 import advancedLogger from '../../utils/advancedLogger';
-import type { WhatsAppMessage, WebhookPayload } from '../../types';
+import type { WebhookPayload } from '../../types';
 import type { NormalizedWhatsAppMessage } from '../../types/messages';
 import redisClient, { REDIS_KEYS } from '../../config/redis';
 import { signServiceRequest } from '../../middleware/auth';
@@ -41,7 +41,6 @@ export class EventDispatcher {
     client: Client,
     sessionId: string,
     messageHandler: {
-      parseMessage: (message: Message, sessionId: string) => Promise<WhatsAppMessage>;
       processMessageWithAI: (
         dto: NormalizedWhatsAppMessage,
         transport: Message

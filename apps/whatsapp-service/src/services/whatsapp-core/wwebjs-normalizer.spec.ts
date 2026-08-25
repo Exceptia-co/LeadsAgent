@@ -60,4 +60,20 @@ describe('normalizeWwebjsMessage', () => {
 
     expect(dto).toBeNull();
   });
+
+  it('prefixes_the_dto_id_with_the_session_it_was_normalized_for', () => {
+    // This is the actual seam the dedupe session-scoping fix depends on:
+    // `id: \`${sessionId}:${message.id._serialized}\`` in normalizeWwebjsMessage.
+    // Same provider message id, two different sessions -- the resulting dto.id
+    // must differ and carry its own session prefix. If anyone ever drops the
+    // prefix (e.g. `id: message.id._serialized` alone), this fails.
+    const message = makeMessage({ id: { _serialized: 'SAME_PROVIDER_ID' } as any });
+
+    const dtoForSessionOne = normalizeWwebjsMessage(message, 's1');
+    const dtoForSessionTwo = normalizeWwebjsMessage(message, 's2');
+
+    expect(dtoForSessionOne?.id).toBe('s1:SAME_PROVIDER_ID');
+    expect(dtoForSessionTwo?.id).toBe('s2:SAME_PROVIDER_ID');
+    expect(dtoForSessionOne?.id).not.toBe(dtoForSessionTwo?.id);
+  });
 });

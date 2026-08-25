@@ -1,6 +1,6 @@
 import type { Client, Message } from 'whatsapp-web.js';
 import { logger } from '../../utils/logger';
-import type { WhatsAppMessage, SendMessageResponse } from '../../types';
+import type { SendMessageResponse } from '../../types';
 import type { NormalizedWhatsAppMessage } from '../../types/messages';
 
 /**
@@ -104,25 +104,6 @@ export class MessageHandler {
         error: errorMessage,
       };
     }
-  }
-
-  /**
-   * Parse a WhatsApp message into our internal format
-   */
-  async parseMessage(message: Message, sessionId: string): Promise<WhatsAppMessage> {
-    const contact = await message.getContact();
-    const chat = await message.getChat();
-
-    return {
-      id: message.id._serialized,
-      from: contact.id._serialized,
-      to: message.to,
-      body: message.body,
-      timestamp: message.timestamp,
-      type: message.type as any,
-      isGroup: chat.isGroup,
-      fromMe: message.fromMe,
-    };
   }
 
   /**

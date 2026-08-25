@@ -182,7 +182,6 @@ class WhatsAppServiceSimple {
         client,
         sessionId,
         {
-          parseMessage: this.messageHandler.parseMessage.bind(this.messageHandler),
           processMessageWithAI: this.messageHandler.processMessageWithAI.bind(this.messageHandler),
         },
         {

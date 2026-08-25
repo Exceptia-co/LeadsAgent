@@ -97,7 +97,10 @@ export class IncomingMessagePipeline<TTransport> {
         data: {
           id: dto.id,
           from: dto.senderPhone,
-          to: dto.recipientPhone,
+          // WhatsAppMessage.to is `string`; recipientPhone is `string | null`.
+          // strictNullChecks is off in this project so nothing mechanical
+          // catches the mismatch -- coerce explicitly rather than lie about it.
+          to: dto.recipientPhone ?? '',
           body: dto.text,
           timestamp: dto.timestamp,
           type: dto.type,
