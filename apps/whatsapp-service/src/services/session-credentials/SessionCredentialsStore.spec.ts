@@ -37,13 +37,37 @@ describe('SessionCredentialsStore', () => {
 
     await store.set(SESSION_ID, 'creds', { creds: secret });
 
-    const stored = mockUpsert.mock.calls[0][0].create.value;
-    expect(JSON.stringify(stored)).not.toContain('signal-private-key');
+    // Assert BOTH envelopes: upsert always carries a create AND an update
+    // payload (Prisma picks which one runs), so a rotation that leaked
+    // plaintext through update.value while sealing create.value would slip
+    // past a check that only looked at one of the two.
+    const { create, update } = mockUpsert.mock.calls[0][0];
+    expect(JSON.stringify(create.value)).not.toContain('signal-private-key');
+    expect(JSON.stringify(update.value)).not.toContain('signal-private-key');
 
-    mockFindMany.mockResolvedValue([{ keyId: 'creds', value: stored }]);
+    mockFindMany.mockResolvedValue([{ keyId: 'creds', value: create.value }]);
     const read = await store.get(SESSION_ID, 'creds', ['creds']);
 
     expect(read).toEqual({ creds: secret });
+  });
+
+  it('round_trips_a_buffer_nested_inside_the_value', async () => {
+    // Signal key material is binary. Plain JSON.stringify/parse turns a
+    // Buffer into a plain {type:'Buffer',data:[...]} object and never back,
+    // which silently corrupts the only kind of value this store exists for.
+    const store = new SessionCredentialsStore();
+    const secret = { privateKey: Buffer.from([1, 2, 3, 255]), counter: 7 };
+
+    await store.set(SESSION_ID, 'creds', { creds: secret });
+
+    const stored = mockUpsert.mock.calls[0][0].create.value;
+    mockFindMany.mockResolvedValue([{ keyId: 'creds', value: stored }]);
+    const read = await store.get(SESSION_ID, 'creds', ['creds']);
+
+    const roundTripped = (read as { creds: { privateKey: Buffer; counter: number } }).creds;
+    expect(Buffer.isBuffer(roundTripped.privateKey)).toBe(true);
+    expect(roundTripped.privateKey.equals(secret.privateKey)).toBe(true);
+    expect(roundTripped.counter).toBe(7);
   });
 
   it('scopes_every_read_and_write_by_session_and_category', async () => {
@@ -55,6 +79,14 @@ describe('SessionCredentialsStore', () => {
       where: { sessionId: SESSION_ID, category: 'pre-key', keyId: { in: ['1', '2'] } },
       select: { keyId: true, value: true },
     });
+
+    await store.set(SESSION_ID, 'pre-key', { '1': { v: 1 } });
+
+    const { where, create } = mockUpsert.mock.calls[0][0];
+    expect(where).toEqual({
+      sessionId_category_keyId: { sessionId: SESSION_ID, category: 'pre-key', keyId: '1' },
+    });
+    expect(create).toMatchObject({ sessionId: SESSION_ID, category: 'pre-key', keyId: '1' });
   });
 
   it('writes_each_key_independently_so_concurrent_sets_cannot_lose_updates', async () => {
@@ -84,7 +116,28 @@ describe('SessionCredentialsStore', () => {
 
     const read = await store.get(SESSION_ID, 'pre-key', ['missing']);
 
-    expect(read).toEqual({});
+    // toEqual ignores undefined-valued properties, so {missing: undefined}
+    // would pass it — toStrictEqual + toHaveProperty is what actually proves
+    // the key is absent rather than present-but-undefined.
+    expect(read).toStrictEqual({});
+    expect(read).not.toHaveProperty('missing');
+  });
+
+  it('omits_a_key_that_fails_to_decrypt_and_logs_the_error_instead_of_throwing', async () => {
+    const store = new SessionCredentialsStore();
+    const { logger } = jest.requireMock('../../utils/logger') as {
+      logger: { error: jest.Mock };
+    };
+
+    mockFindMany.mockResolvedValue([
+      { keyId: 'corrupt', value: { ciphertext: 'AAAA', iv: 'AAAA', authTag: 'AAAA' } },
+    ]);
+
+    const read = await store.get(SESSION_ID, 'creds', ['corrupt']);
+
+    expect(read).toStrictEqual({});
+    expect(read).not.toHaveProperty('corrupt');
+    expect(logger.error).toHaveBeenCalledTimes(1);
   });
 
   it('clear_removes_every_row_for_the_session', async () => {

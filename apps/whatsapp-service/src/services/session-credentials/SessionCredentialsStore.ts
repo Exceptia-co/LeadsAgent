@@ -27,8 +27,46 @@ export class SessionCredentialsStore {
     return key;
   }
 
+  /**
+   * Signal key material is binary. Plain JSON.stringify turns a Buffer into
+   * `{"type":"Buffer","data":[…]}` and JSON.parse hands back that plain object
+   * rather than a Buffer, so the round trip is lossy in exactly the case this
+   * store exists for. These two mirror Baileys' own BufferJSON helpers, which
+   * we cannot import yet because the dependency is Phase 2.
+   */
+  private static bufferReplacer(_key: string, value: unknown): unknown {
+    if (value instanceof Uint8Array) {
+      return { __buf: Buffer.from(value).toString('base64') };
+    }
+    // JSON.stringify pre-converts a Buffer to {type:'Buffer',data:[…]} before
+    // the replacer sees it in some Node versions; catch that shape too.
+    if (
+      value &&
+      typeof value === 'object' &&
+      (value as { type?: string }).type === 'Buffer' &&
+      Array.isArray((value as { data?: unknown }).data)
+    ) {
+      return { __buf: Buffer.from((value as { data: number[] }).data).toString('base64') };
+    }
+    return value;
+  }
+
+  private static bufferReviver(_key: string, value: unknown): unknown {
+    if (
+      value &&
+      typeof value === 'object' &&
+      typeof (value as { __buf?: string }).__buf === 'string'
+    ) {
+      return Buffer.from((value as { __buf: string }).__buf, 'base64');
+    }
+    return value;
+  }
+
   private seal(value: unknown): EncryptedValue {
-    const plaintext = Buffer.from(JSON.stringify(value), 'utf8');
+    const plaintext = Buffer.from(
+      JSON.stringify(value, SessionCredentialsStore.bufferReplacer),
+      'utf8'
+    );
     const { ciphertext, iv, authTag } = AesGcm.encrypt(plaintext, this.key());
     return {
       ciphertext: ciphertext.toString('base64'),
@@ -44,7 +82,7 @@ export class SessionCredentialsStore {
       Buffer.from(stored.authTag, 'base64'),
       this.key()
     );
-    return JSON.parse(plaintext.toString('utf8'));
+    return JSON.parse(plaintext.toString('utf8'), SessionCredentialsStore.bufferReviver);
   }
 
   async get(
