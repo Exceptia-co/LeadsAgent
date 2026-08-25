@@ -137,6 +137,67 @@ export class SessionCredentialsStore {
     }
   }
 
+  /**
+   * Write one Baileys SignalDataSet atomically.
+   *
+   * `data` is keyed by category, then by key id; a null value means delete.
+   * Everything goes in one transaction because Baileys flushes a whole batch
+   * per commit: a pre-key deletion that lands while its matching session
+   * write does not leaves the Signal ratchet desynchronised, and no retry
+   * can repair it because the consumed key is already gone.
+   */
+  async setBatch(
+    sessionId: string,
+    data: Record<string, Record<string, unknown | null>>
+  ): Promise<void> {
+    const deletes: Array<{ category: string; keyIds: string[] }> = [];
+    const writes: Array<{ category: string; keyId: string; value: EncryptedValue }> = [];
+
+    for (const [category, values] of Object.entries(data)) {
+      if (!values) continue;
+      const keyIds = Object.keys(values);
+      const toDelete = keyIds.filter(k => values[k] === null);
+      if (toDelete.length > 0) deletes.push({ category, keyIds: toDelete });
+      for (const keyId of keyIds.filter(k => values[k] !== null)) {
+        // Seal outside the transaction: AES-GCM is CPU work, and holding a
+        // Postgres transaction open across it lengthens the window for no
+        // reason.
+        writes.push({ category, keyId, value: this.seal(values[keyId]) });
+      }
+    }
+
+    if (deletes.length === 0 && writes.length === 0) return;
+
+    await this.prisma.$transaction(async tx => {
+      for (const { category, keyIds } of deletes) {
+        await tx.whatsAppAuthKey.deleteMany({
+          where: { sessionId, category, keyId: { in: keyIds } },
+        });
+      }
+      for (const { category, keyId, value } of writes) {
+        await tx.whatsAppAuthKey.upsert({
+          where: { sessionId_category_keyId: { sessionId, category, keyId } },
+          create: { sessionId, category, keyId, value: value as unknown as object },
+          update: { value: value as unknown as object },
+        });
+      }
+    });
+  }
+
+  /**
+   * Whether this session can reconnect without a new QR.
+   *
+   * Scoped to the `creds` category on purpose: a session can hold orphaned
+   * pre-keys with no credentials, and answering "yes" for it would fail after
+   * the socket is already up rather than before it starts.
+   */
+  async hasCredentials(sessionId: string): Promise<boolean> {
+    const count = await this.prisma.whatsAppAuthKey.count({
+      where: { sessionId, category: 'creds' },
+    });
+    return count > 0;
+  }
+
   /** Only on explicit logout or session delete. Never on shutdown. */
   async clear(sessionId: string): Promise<void> {
     await this.prisma.whatsAppAuthKey.deleteMany({ where: { sessionId } });

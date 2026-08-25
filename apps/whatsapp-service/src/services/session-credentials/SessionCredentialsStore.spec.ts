@@ -1,6 +1,8 @@
 const mockUpsert = jest.fn();
 const mockFindMany = jest.fn();
 const mockDeleteMany = jest.fn();
+const mockCount = jest.fn();
+const mockTransaction = jest.fn();
 
 jest.mock('@leadcrm/db', () => ({
   PrismaClient: jest.fn().mockImplementation(() => ({
@@ -8,7 +10,9 @@ jest.mock('@leadcrm/db', () => ({
       upsert: (...args: unknown[]) => mockUpsert(...args),
       findMany: (...args: unknown[]) => mockFindMany(...args),
       deleteMany: (...args: unknown[]) => mockDeleteMany(...args),
+      count: (...args: unknown[]) => mockCount(...args),
     },
+    $transaction: (...args: unknown[]) => mockTransaction(...args),
   })),
   Prisma: {},
 }));
@@ -23,11 +27,33 @@ import { SessionCredentialsStore } from './SessionCredentialsStore';
 
 const SESSION_ID = 's1';
 
+// Distinct from the outer `prismaMock`: `setBatch` must run its writes
+// through this object, obtained via `$transaction(cb)`, never through the
+// outer one -- that is what proves the writes are actually inside the
+// transaction rather than merely alongside it.
+const txMock = {
+  whatsAppAuthKey: {
+    deleteMany: jest.fn(),
+    upsert: jest.fn(),
+  },
+};
+
+const prismaMock = {
+  whatsAppAuthKey: {
+    upsert: mockUpsert,
+    findMany: mockFindMany,
+    deleteMany: mockDeleteMany,
+    count: mockCount,
+  },
+  $transaction: mockTransaction,
+};
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockUpsert.mockResolvedValue({});
   mockFindMany.mockResolvedValue([]);
   mockDeleteMany.mockResolvedValue({ count: 0 });
+  mockTransaction.mockImplementation(async (cb: (tx: typeof txMock) => unknown) => cb(txMock));
 });
 
 describe('SessionCredentialsStore', () => {
@@ -182,5 +208,63 @@ describe('SessionCredentialsStore', () => {
     await store.clear(SESSION_ID);
 
     expect(mockDeleteMany).toHaveBeenCalledWith({ where: { sessionId: SESSION_ID } });
+  });
+});
+
+describe('SessionCredentialsStore batch writes', () => {
+  it('writes_every_category_of_one_batch_inside_a_single_transaction', async () => {
+    // Baileys wraps this store in its own transaction buffer and flushes one
+    // batch per commit, retrying the whole commit up to ten times. The retry
+    // is idempotent, so a failure mid-batch is survivable -- unless the
+    // process dies during the 3s backoff, at which point Postgres keeps a
+    // partial write: a consumed pre-key deleted, the session never advanced.
+    // That desynchronises the Signal ratchet irrecoverably for that contact.
+    const store = new SessionCredentialsStore(prismaMock as any);
+
+    await store.setBatch('s1', {
+      'pre-key': { '1': null },
+      session: { '34600111222.0': { some: 'state' } },
+    });
+
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    // Every write must be inside the callback, none outside it.
+    expect(txMock.whatsAppAuthKey.deleteMany).toHaveBeenCalledTimes(1);
+    expect(txMock.whatsAppAuthKey.upsert).toHaveBeenCalledTimes(1);
+    expect(prismaMock.whatsAppAuthKey.deleteMany).not.toHaveBeenCalled();
+    expect(prismaMock.whatsAppAuthKey.upsert).not.toHaveBeenCalled();
+  });
+
+  it('scopes_the_delete_by_category_as_well_as_by_key_id', async () => {
+    // Two categories can legitimately hold the same keyId. Deleting by
+    // (sessionId, keyId) alone would take an unrelated key with it.
+    const store = new SessionCredentialsStore(prismaMock as any);
+
+    await store.setBatch('s1', { 'pre-key': { '1': null }, session: { '1': null } });
+
+    // toStrictEqual on the complete `where`, not objectContaining: dropping
+    // `keyId: { in: keyIds }` would delete every key in the category and an
+    // objectContaining assertion would still pass, which is the opposite of
+    // what a test named "scopes the delete" is for.
+    const wheres = txMock.whatsAppAuthKey.deleteMany.mock.calls.map((c: any[]) => c[0].where);
+    expect(wheres).toStrictEqual([
+      { sessionId: 's1', category: 'pre-key', keyId: { in: ['1'] } },
+      { sessionId: 's1', category: 'session', keyId: { in: ['1'] } },
+    ]);
+  });
+
+  it('hasCredentials_is_true_only_when_the_creds_row_exists', async () => {
+    // "Do I have credentials" must not be answered by "are there any rows":
+    // a session can hold orphaned pre-keys with no creds row, and recovering
+    // it would fail after the socket is already up.
+    const store = new SessionCredentialsStore(prismaMock as any);
+
+    prismaMock.whatsAppAuthKey.count.mockResolvedValueOnce(1);
+    await expect(store.hasCredentials('s1')).resolves.toBe(true);
+    expect(prismaMock.whatsAppAuthKey.count).toHaveBeenCalledWith({
+      where: { sessionId: 's1', category: 'creds' },
+    });
+
+    prismaMock.whatsAppAuthKey.count.mockResolvedValueOnce(0);
+    await expect(store.hasCredentials('s1')).resolves.toBe(false);
   });
 });
