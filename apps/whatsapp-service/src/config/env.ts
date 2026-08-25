@@ -27,6 +27,10 @@ const envSchema = z.object({
   WHATSAPP_SERVICE_PORT: z.coerce.number().int().positive().optional(),
   PORT: z.coerce.number().int().positive().optional(),
 
+  // Consentimiento proactivo: cuántos días vale un mensaje entrante como
+  // prueba de conversación viva. Ver hasLiveInboundConversation en routes/index.ts.
+  PROACTIVE_INBOUND_WINDOW_DAYS: z.coerce.number().int().positive().optional(),
+
   // Otros
   CORS_ORIGIN: z.string().optional(),
   LOG_LEVEL: z.string().optional(),

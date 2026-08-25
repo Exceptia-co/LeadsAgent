@@ -71,7 +71,50 @@ WhatsApp ← → WhatsApp Service ← → NestJS API ← → PostgreSQL
 
 ---
 
-## 🛡️ **Sistema de Whitelist**
+## 🛡️ **Dos controles distintos, no los confundas**
+
+El sistema tiene **dos** puertas separadas, y hacen cosas diferentes:
+
+| | Puerta | Qué controla | Dónde |
+| --- | --- | --- | --- |
+| **1** | Whitelist | Si **aceptamos y respondemos** un mensaje que nos llega | `WhitelistService` (Nest) |
+| **2** | Gate proactivo | Si **podemos escribir nosotros** sin que nos escriban antes | `routes/index.ts` (whatsapp-service) |
+
+Pasar la puerta 1 **no** abre la puerta 2. Un lead puede conversar con nosotros
+y aun así no ser elegible para un mensaje proactivo.
+
+### **Puerta 2 — Elegibilidad proactiva (PR #12, 2026-08-25)**
+
+Un envío proactivo (`POST /proactive-messages` y `/proactive-messages/bulk`)
+exige **las dos condiciones a la vez**:
+
+1. `lead.whatsapp_authorized === true` — consentimiento explícito. `false`,
+   `null` y `undefined` bloquean por igual.
+2. Un `Message` con `direction = INBOUND`, no borrado, **del mismo tenant y la
+   misma sesión**, dentro de `PROACTIVE_INBOUND_WINDOW_DAYS` (30 por defecto,
+   tope 90).
+
+Es un AND, no un OR: `whatsapp_authorized = false` sigue siendo un opt-out
+explícito del operador y siempre gana.
+
+**Por qué la ventana**: `whatsapp_authorized` no caduca nunca. Un lead que
+escribió hace ocho meses lee un seguimiento como contacto en frío — que es lo
+que hace que reporten el número. El mensaje entrante reciente es la prueba de
+que la conversación sigue viva.
+
+**Por qué el filtro de sesión**: un tenant puede tener varias líneas. Que te
+escriban a la línea A no autoriza escribir desde la B.
+
+**Comportamiento en bulk**: el lead no elegible se **salta**, no aborta el
+lote; se contabiliza en `failed` con el motivo en `errors`. Igual que se tratan
+los leads de otro tenant.
+
+---
+
+## 🛡️ **Puerta 1 — Sistema de Whitelist**
+
+Controla qué mensajes entrantes se aceptan y procesan. **No** habilita envíos
+proactivos.
 
 ### **Problema Original Resuelto**
 

@@ -4,6 +4,9 @@
 **Branch de referencia:** `develop` (estos issues existen ANTES de B2)
 **Detectados por:** Smoke test local con Chrome MCP + logs + network monitoring
 
+> Los issues numerados de este documento son los **pre-B2**. Los descubiertos
+> después tienen su propia sección al final: ver _Pendientes descubiertos en PR #12_.
+
 ---
 
 ## P1 — Alto impacto
@@ -109,3 +112,52 @@ Los cambios de B2 (19 commits, +2191 líneas) pasaron el smoke sin regresiones:
 - Endpoints B2.7-B2.9 (ai-agents CRUD) responden 200/201
 - Tenant isolation verificada (Testing = 0 leads, EscortsHub = 13)
 - 115 tests verdes (API 53 + WS 62)
+
+---
+
+## Pendientes descubiertos en PR #12 (2026-08-25)
+
+No son pre-B2. Salieron al revisar la ruta de mensajería proactiva mientras se
+evaluaba migrar de `whatsapp-web.js` a Baileys. El PR cerró los agujeros de
+código; esto es lo que quedó fuera y por qué.
+
+### PR12-1 — Filas `messages` con `created_at` en 1970 (P1)
+
+El writer ya está corregido (T3, `toMessageDate()`), pero las filas escritas
+antes siguen con la fecha mal. Afecta al orden por fecha y, ahora, a la ventana
+de consentimiento proactivo: un lead cuyo único INBOUND esté en 1970 no
+recibirá proactivos.
+
+Medir el alcance:
+
+```sql
+SELECT count(*), min(created_at), max(created_at)
+FROM messages
+WHERE direction = 'incoming'
+  AND whatsapp_message_id IS NOT NULL
+  AND created_at < '2020-01-01';
+```
+
+Reparable con `to_timestamp(extract(epoch FROM created_at) * 1000)`, **en
+transacción** y validando que el resultado cae entre 2025 y ahora. Aviso:
+repararlas puede destapar duplicados, porque `DatabaseService` escribía otra
+fila inbound contemporánea (ver T2). El dedupe es una operación aparte.
+
+### PR12-2 — Rutas de envío directo sin gate de consentimiento (P2)
+
+`/whatsapp/send`, `/messages/send` y `/sessions/:sessionId/send` (más el
+wrapper Nest `/whatsapp/send`) permiten iniciar conversación con cualquier
+número. Verifican tenant y sesión, pero no consentimiento ni conversación
+viva. Son envíos manuales uno a uno, de menor riesgo que el bulk, pero la
+garantía del PR #12 no es global mientras existan.
+
+Decisión pendiente: aplicarles el mismo gate, o declararlas explícitamente
+reactivas y documentarlo.
+
+### PR12-3 — `getUserStats` sin filtro de tenant (P3)
+
+`apps/dashboard/lib/auth/unified-auth.ts` cuenta leads por `assigned_to` con
+service-role y sin `tenant_id`. Solo devuelve contadores, así que no filtra
+datos de otros a un extraño; el efecto es que un usuario que pertenezca a
+varias organizaciones ve el agregado de todas en vez del de la org activa.
+Corrección de datos más que de seguridad.

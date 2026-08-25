@@ -101,7 +101,10 @@ Use `@leadcrm/db`, `@leadcrm/config-eslint`, `@leadcrm/config-ts`. There is no s
 
 Schema lives in `packages/db/prisma/schema.prisma`. Core models:
 
-- `Lead` — CRM entity, unique phone, `whatsapp_authorized` boolean, soft-delete (`deleted_at`)
+- `Lead` — CRM entity, unique phone, `whatsapp_authorized` boolean (nullable), soft-delete (`deleted_at`).
+  `whatsapp_authorized` authorises **conversation**, not outbound initiative. Proactive sends
+  additionally require a non-deleted INBOUND `Message` for the same tenant **and session**
+  within `PROACTIVE_INBOUND_WINDOW_DAYS` (default 30, capped at 90) — see PR #12
 - `Message` — Conversation log with `direction` (INBOUND/OUTBOUND) and `status`
 - `WhatsAppConversation` — Session metadata; canonical link to `Message` is `message_id` FK (T1.1-bis unified the legacy dual-write)
 - `WhatsAppSession` — QR codes, reconnect state
@@ -243,7 +246,11 @@ Tracked in `PLAN-WHATSAPP-AGENT-MULTITENANT.md`. Highlights:
 
 - **T1**: `Message` rows are created with `lead_id=null` from whatsapp-service when the lead doesn't yet exist. JOIN-based readers miss them. Fix scheduled for Phase B
 - **T2**: Both whatsapp-service and Nest API persist inbound messages, producing 3 `messages` rows for 2 real messages. Fix scheduled for Phase C: Nest API becomes sole owner; whatsapp-service writes only `whatsapp_conversations`
-- **T3**: `apps/api/src/whatsapp/whatsapp.service.ts:114` interprets WhatsApp epoch in seconds as milliseconds → `created_at` lands in 1970. Functional but messes up date ordering
+- **T3** — *fixed in PR #12*: `apps/api/src/whatsapp/whatsapp.service.ts` interpreted the WhatsApp epoch
+  (seconds) as milliseconds → `created_at` landed in 1970. Stopped being harmless once the proactive
+  consent window started reasoning about recency. The writer now goes through `toMessageDate()`.
+  **Remaining debt**: rows already written with a 1970 date are not repaired — audit and fix is
+  operational work, see `PREEXISTING-ISSUES.md`
 - **Whitelist evaluated twice**: once in whatsapp-service, once in Nest API. Defaults are in sync (`true`) but coupling is fragile. Phase C will unify
 - **Multi-device dedupe**: WhatsApp Linked Devices (`@lid`) can deliver the same message with different `message.id`. Current dedupe by `message.id` doesn't catch it. Future fix: secondary dedupe by `(from, body-hash, ±3s)`
 
