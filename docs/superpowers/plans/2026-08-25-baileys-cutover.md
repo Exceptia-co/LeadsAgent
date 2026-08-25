@@ -759,6 +759,18 @@ Expected: `"@whiskeysockets/baileys": "6.7.24"` — **no caret**. If pnpm wrote 
 
 The install pulls `sharp` (a non-optional peer) and resolves `libsignal` from a GitHub tarball pinned at commit `bcea72d`. Both are expected. If the install fails with `ERR_PNPM_EXOTIC_SUBDEP`, the local pnpm is 11.x — this repo requires pnpm 9 (`packageManager: pnpm@9.0.0`); run through corepack.
 
+**Baileys 6.7.24 ships pure ESM** — `"type": "module"` with no CommonJS build. Jest's default `transformIgnorePatterns` never transforms anything under `node_modules`, so a spec that imports the real library (the logger and normalizer specs do — they use `jidDecode`, `getContentType`, `extractMessageContent` and `proto`) fails to parse its `import` syntax. `apps/whatsapp-service/jest.config.js` therefore needs a narrow carve-out that transpiles **only** that package's `.js` files and leaves every other `.js` in the tree alone:
+
+```js
+  transform: {
+    '^.+\\.ts$': 'ts-jest',
+    '@whiskeysockets/baileys/.*\\.js$': 'ts-jest',
+  },
+  transformIgnorePatterns: ['node_modules/(?!.*@whiskeysockets/baileys)'],
+```
+
+This lands once, here, and the later dispatches inherit it. Whatever the shape of the change, the gate is that the pre-existing suites stay green — a transform config that widens beyond this package would start transpiling dependencies that never needed it.
+
 - [ ] **Step 1b: Write the logger adapter Baileys requires**
 
 `makeWASocket` and `makeCacheableSignalKeyStore` both demand a `ILogger`, and this repo's logger does not satisfy it — not by a little:
@@ -785,7 +797,10 @@ Create `apps/whatsapp-service/src/services/baileys/baileys-logger.ts`:
 
 ```ts
 import { logger } from '../../utils/logger';
-import type { ILogger } from '@whiskeysockets/baileys';
+// ILogger lives in Utils/logger.d.ts, and Utils/index.d.ts does not
+// re-export that module -- so it is NOT reachable from the package root in
+// 6.7.24. Import it from the subpath; the frozen signature is unaffected.
+import type { ILogger } from '@whiskeysockets/baileys/lib/Utils/logger';
 
 /**
  * Baileys' ILogger over this repo's winston logger.
@@ -876,7 +891,10 @@ function waMessage(overrides: any = {}): any {
       id: 'ABC123',
       ...(overrides.key ?? {}),
     },
-    message: overrides.message ?? { conversation: 'hola' },
+    // `in`, not `??`: the drop-a-contentless-message test passes
+    // `{ message: null }`, and `??` would hand back the default instead --
+    // making that assertion unfailable by any implementation.
+    message: 'message' in overrides ? overrides.message : { conversation: 'hola' },
     messageTimestamp: overrides.messageTimestamp ?? 1756000000,
     pushName: 'Tester',
   };
