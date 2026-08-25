@@ -308,20 +308,24 @@ export class EventDispatcher {
 
     // Message event
     const onMessage = async (message: Message) => {
-      if (message.from === 'status@broadcast') {
-        logger.debug(`[FILTER] Skipping status@broadcast in session ${sessionId}`);
-        return;
-      }
+      try {
+        if (message.from === 'status@broadcast') {
+          logger.debug(`[FILTER] Skipping status@broadcast in session ${sessionId}`);
+          return;
+        }
 
-      const dto = normalizeWwebjsMessage(message, sessionId);
-      if (!dto) {
-        logger.warn(
-          `[NORMALIZE] Dropping unparseable message in session ${sessionId} from=${message.from}`
-        );
-        return;
-      }
+        const dto = normalizeWwebjsMessage(message, sessionId);
+        if (!dto) {
+          logger.warn(
+            `[NORMALIZE] Dropping unparseable message in session ${sessionId} from=${message.from}`
+          );
+          return;
+        }
 
-      await pipeline.handle(dto, message);
+        await pipeline.handle(dto, message);
+      } catch (error) {
+        logger.error(`Error processing message in session ${sessionId}:`, error);
+      }
     };
     client.on('message', onMessage);
     listeners.push({ event: 'message', handler: onMessage });

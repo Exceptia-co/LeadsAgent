@@ -1,6 +1,7 @@
 import { redisClient, REDIS_KEYS, REDIS_TTL } from '../../config/redis';
 import { logger } from '../../utils/logger';
 import type { NormalizedWhatsAppMessage } from '../../types/messages';
+import type { WhatsAppMessage } from '../../types';
 
 /**
  * Generic over the transport handle so this file threads it through without
@@ -25,7 +26,9 @@ export interface IncomingMessagePipelineDeps<TTransport> {
   sendWebhook(payload: {
     event: string;
     sessionId: string;
-    data: NormalizedWhatsAppMessage;
+    // Frozen wire shape -- apps/api reads `data.from`/`data.body` over HTTP.
+    // Never widen this back to NormalizedWhatsAppMessage.
+    data: WhatsAppMessage;
     timestamp: string;
   }): Promise<void>;
 }
@@ -83,10 +86,24 @@ export class IncomingMessagePipeline<TTransport> {
         }
       }
 
+      // The webhook wire format is FROZEN. `apps/api` consumes this payload
+      // over HTTP and reads `data.from` and `data.body`; its controller types
+      // the field as `any`, so neither side's typecheck can catch a drift.
+      // Emitting the DTO raw here throws `undefined.replace()` in the API on
+      // every inbound message. Map back to the published shape instead.
       await this.deps.sendWebhook({
         event: 'message',
         sessionId: dto.sessionId,
-        data: dto,
+        data: {
+          id: dto.id,
+          from: dto.senderPhone,
+          to: dto.recipientPhone,
+          body: dto.text,
+          timestamp: dto.timestamp,
+          type: dto.type,
+          isGroup: dto.isGroup,
+          fromMe: dto.fromMe,
+        },
         timestamp: new Date().toISOString(),
       });
     } catch (error) {

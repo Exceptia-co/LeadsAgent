@@ -33,7 +33,14 @@ export function normalizeWwebjsMessage(
   message: Message,
   sessionId: string
 ): NormalizedWhatsAppMessage | null {
-  const senderPhone = toPhone(message.from);
+  const isGroup = message.from?.endsWith('@g.us') ?? false;
+
+  // Order matters. In a group, `from` is the GROUP's JID -- an 18+ digit id
+  // that fails the E164 test -- and the actual sender is in `author`. Resolving
+  // `from` first would return null before `isGroup` was ever set, so every
+  // group message would leave here as "unparseable" and the pipeline's group
+  // branch would be unreachable dead code.
+  const senderPhone = toPhone(isGroup ? message.author : message.from);
   if (!senderPhone) return null;
 
   return {
@@ -44,7 +51,7 @@ export function normalizeWwebjsMessage(
     text: message.body ?? '',
     timestamp: message.timestamp,
     type: toType(message.type as string),
-    isGroup: message.from?.endsWith('@g.us') ?? false,
+    isGroup,
     fromMe: message.fromMe,
   };
 }

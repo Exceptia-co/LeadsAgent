@@ -236,7 +236,7 @@ export class MessageHandler {
 
         // Determine sending method based on strategy
         const strategy = thinkingResult.thinkingProcess.responseStrategy;
-        await this.sendResponseWithStrategy(transport, thinkingResult.content, strategy);
+        await this.sendResponseWithStrategy(transport, dto.text, thinkingResult.content, strategy);
 
         // Fase A4 (2026-04-19): unificar las dos llamadas sueltas de
         // saveConversation (user msg + bot msg) en una única operación
@@ -311,7 +311,7 @@ export class MessageHandler {
           );
           try {
             const intelligentFallback = await this.generateIntelligentFallback(
-              transport,
+              dto.text,
               phoneNumber,
               { tenantId: tenantId ?? undefined, aiAgentId: aiAgentId ?? undefined }
             );
@@ -359,7 +359,7 @@ export class MessageHandler {
       // KB search here is intentionally unscoped; the warning will fire from DatabaseService.
       try {
         const intelligentFallback = await this.generateIntelligentFallback(
-          transport,
+          dto.text,
           phoneNumber
         );
         await transport.reply(intelligentFallback);
@@ -412,6 +412,7 @@ export class MessageHandler {
    */
   private async sendResponseWithStrategy(
     transport: Message,
+    userMessageText: string,
     responseText: string,
     strategy: any
   ): Promise<void> {
@@ -432,7 +433,7 @@ export class MessageHandler {
     try {
       if (
         strategy.shouldQuote ||
-        this.shouldQuoteBasedOnContext(transport, responseText, strategy)
+        this.shouldQuoteBasedOnContext(userMessageText, responseText, strategy)
       ) {
         // Quote the original message
         await transport.reply(responseText);
@@ -463,7 +464,7 @@ export class MessageHandler {
    * Determine if we should quote based on message context
    */
   private shouldQuoteBasedOnContext(
-    originalMessage: Message,
+    rawText: string,
     responseText: string,
     strategy: any
   ): boolean {
@@ -472,7 +473,7 @@ export class MessageHandler {
     if (strategy.shouldQuote === false) return false;
 
     // Smart quoting logic
-    const messageText = originalMessage.body?.toLowerCase() || '';
+    const messageText = rawText.toLowerCase();
 
     // Quote for direct questions
     if (
@@ -625,7 +626,7 @@ export class MessageHandler {
    * Generate intelligent fallback response
    */
   private async generateIntelligentFallback(
-    originalMessage: Message,
+    messageText: string,
     phoneNumber: string,
     opts?: { tenantId?: string; aiAgentId?: string }
   ): Promise<string> {
@@ -634,8 +635,6 @@ export class MessageHandler {
 
       const { default: DatabaseService } = await import('../DatabaseService');
       const { default: AIService } = await import('../AIService');
-
-      const messageText = originalMessage.body || '';
 
       const kbOpts =
         opts?.tenantId || opts?.aiAgentId
@@ -697,7 +696,7 @@ Respuesta:`,
       logger.error('Error generating intelligent fallback:', error);
 
       // Return smart generic fallback as last resort
-      return this.generateSmartGenericFallback(originalMessage.body || '');
+      return this.generateSmartGenericFallback(messageText);
     }
   }
 
