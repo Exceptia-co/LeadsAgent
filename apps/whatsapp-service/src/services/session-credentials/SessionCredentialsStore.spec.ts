@@ -45,10 +45,13 @@ describe('SessionCredentialsStore', () => {
     expect(JSON.stringify(create.value)).not.toContain('signal-private-key');
     expect(JSON.stringify(update.value)).not.toContain('signal-private-key');
     // "Doesn't contain the substring" also passes for a base64-without-
-    // encryption regression. Pin the real invariant: both branches of the
-    // upsert carry the identical sealed envelope, not just two values that
-    // happen to lack the plaintext.
-    expect(update.value).toEqual(create.value);
+    // encryption regression. Pin the real invariant: sealing the same value
+    // twice must not produce the same envelope. A base64 "seal" is
+    // deterministic and would emit an identical iv both times; AES-GCM's
+    // random IV will not.
+    await store.set(SESSION_ID, 'creds', { creds: secret });
+    const secondEnvelope = mockUpsert.mock.calls[1][0].create.value;
+    expect(secondEnvelope.iv).not.toEqual(create.value.iv);
 
     mockFindMany.mockResolvedValue([{ keyId: 'creds', value: create.value }]);
     const read = await store.get(SESSION_ID, 'creds', ['creds']);

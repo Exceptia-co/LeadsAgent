@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import type { Client } from 'whatsapp-web.js';
 import { logger } from '../utils/logger';
 import type { WhatsAppSession, SendMessageResponse } from '../types';
@@ -534,8 +536,7 @@ class WhatsAppServiceSimple {
     authInvalidated?: boolean;
   }> {
     const session = this.sessionManager.getSession(sessionId);
-    const authInfo = await this.authenticationManager.getAuthFileInfo(sessionId, './wwebjs_auth');
-    const hasLocalAuth = authInfo.exists;
+    const hasLocalAuth = fs.existsSync(path.join('./wwebjs_auth', `session-${sessionId}`));
 
     let heartbeatAge: number | undefined;
     try {

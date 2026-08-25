@@ -8,7 +8,6 @@ import type { NormalizedWhatsAppMessage } from '../../types/messages';
  *
  * Responsibilities:
  * - Message sending with proper phone number normalization
- * - Message parsing and transformation
  * - AI message processing workflow
  * - Message validation and error handling
  * - Response strategies (quoting vs direct sending)

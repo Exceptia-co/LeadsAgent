@@ -5,8 +5,8 @@
  * ensure the SESSION the caller is operating on belongs to that tenant.
  *
  * Pattern:
- *   router.post(
- *     '/sessions/:sessionId/backup',
+ *   router.get(
+ *     '/sessions/:sessionId/health',
  *     requireTenantContext,           // 403 if no tenant on request
  *     requireSessionOwnership,        // 404 if session belongs elsewhere
  *     handler

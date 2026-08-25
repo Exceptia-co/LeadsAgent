@@ -161,6 +161,7 @@ When rotating secrets, all surfaces using that secret must update at the same ti
 | `WHATSAPP_SERVICE_HMAC_SECRET` | Vercel + Hetzner api + Hetzner whatsapp-service + every dev's local `.env` |
 | `CLERK_SECRET_KEY` | Vercel + Hetzner api + Hetzner whatsapp-service + every dev's local `.env` |
 | `CLERK_WEBHOOK_SECRET` | Vercel + Hetzner api (only the API verifies webhooks) + every dev's local `.env` |
+| `WHATSAPP_AUTH_ENCRYPTION_KEY` | Hetzner whatsapp-service only (not read by the dashboard or the API). Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Not read by anything yet — it's wired up once the Baileys credential store (`SessionCredentialsStore`) goes live, so a missing value today is not an incident. |
 
 Step-by-step rotation is tracked in `docs/deployment/secrets-rotation.md`.
 
