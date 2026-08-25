@@ -1584,6 +1584,7 @@ Create `apps/whatsapp-service/src/services/baileys/BaileysSessionManager.spec.ts
 ```ts
 const mockMakeWASocket = jest.fn();
 const mockMakeBaileysAuthState = jest.fn();
+const mockMakeCacheableSignalKeyStore = jest.fn();
 
 jest.mock('@whiskeysockets/baileys', () => {
   const actual = jest.requireActual('@whiskeysockets/baileys');
@@ -1592,6 +1593,8 @@ jest.mock('@whiskeysockets/baileys', () => {
     __esModule: true,
     default: (...args: unknown[]) => mockMakeWASocket(...args),
     makeWASocket: (...args: unknown[]) => mockMakeWASocket(...args),
+    makeCacheableSignalKeyStore: (...args: unknown[]) =>
+      mockMakeCacheableSignalKeyStore(...args),
   };
 });
 
@@ -1639,19 +1642,31 @@ beforeEach(() => {
     state: { creds: {}, keys: { get: jest.fn(), set: jest.fn() } },
     saveCreds: jest.fn().mockResolvedValue(undefined),
   });
+  // Each call returns a distinct wrapper, mirroring the real function's
+  // per-call cache.
+  mockMakeCacheableSignalKeyStore.mockImplementation((keys: unknown) => ({ wrapped: keys }));
   store = { hasCredentials: jest.fn().mockResolvedValue(false), clear: jest.fn() };
   publisher = { sendWebhook: jest.fn().mockResolvedValue(undefined) };
   sessionStatus = jest.fn().mockResolvedValue(undefined);
   pipeline = { handle: jest.fn().mockResolvedValue(undefined) };
 });
 
+let sessionDisconnect: jest.Mock;
+
 function makeManager() {
+  sessionDisconnect = jest.fn().mockResolvedValue(undefined);
   return new BaileysSessionManager({
     store,
     publisher,
     pipeline,
     updateSessionStatus: sessionStatus,
-    handleSessionDisconnect: jest.fn().mockResolvedValue(undefined),
+    handleSessionDisconnect: sessionDisconnect,
+    // Deterministic jitter. The production default is Math.random; pinning it
+    // to 0 here is what lets the backoff test advance to an exact
+    // millisecond. Without the injection, "2 s with jitter" and
+    // advanceTimersByTime(2000) contradict each other and the test is either
+    // flaky or meaningless.
+    jitter: () => 0,
   });
 }
 
@@ -1667,18 +1682,26 @@ describe('BaileysSessionManager construction', () => {
     expect(mockMakeBaileysAuthState).not.toHaveBeenCalled();
   });
 
-  it('gives_every_session_its_own_key_cache', async () => {
+  it('wraps_every_session_in_its_own_cacheable_key_store', async () => {
     // makeCacheableSignalKeyStore builds a fresh cache per call when no cache
     // is passed. Hoisting the call to module scope -- the obvious way to
     // "avoid rebuilding it" -- would share one cache across every session and
     // cross two tenants' Signal keys in memory.
+    //
+    // Comparing the two `auth.keys` for inequality is not enough: passing
+    // `{ ...state.keys }` gives two distinct objects without calling the
+    // wrapper at all. The mock is what proves the wrapper ran.
     const manager = makeManager();
     await manager.createSession('tenant-a');
     await manager.createSession('tenant-b');
 
-    const cacheA = mockMakeWASocket.mock.calls[0][0].auth.keys;
-    const cacheB = mockMakeWASocket.mock.calls[1][0].auth.keys;
-    expect(cacheA).not.toBe(cacheB);
+    expect(mockMakeCacheableSignalKeyStore).toHaveBeenCalledTimes(2);
+    // No shared cache argument -- the third parameter must stay unset so each
+    // call builds its own.
+    expect(mockMakeCacheableSignalKeyStore.mock.calls[0][2]).toBeUndefined();
+    const keysA = mockMakeWASocket.mock.calls[0][0].auth.keys;
+    const keysB = mockMakeWASocket.mock.calls[1][0].auth.keys;
+    expect(keysA).not.toBe(keysB);
   });
 
   it('passes_the_configuration_the_cutover_depends_on', async () => {
@@ -1791,26 +1814,48 @@ describe('BaileysSessionManager connection lifecycle', () => {
         lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
       });
 
-    close();
-    await Promise.resolve();
-    // Nothing yet: the first retry waits 2s.
-    expect(mockMakeWASocket).not.toHaveBeenCalled();
-
-    await jest.advanceTimersByTimeAsync(2000);
-    expect(mockMakeWASocket).toHaveBeenCalledTimes(1);
-
-    for (const delay of [5000, 10000, 30000, 60000]) {
+    // Assert on both sides of every rung. Advancing straight to the total
+    // would pass for any shorter delay -- including zero -- which is exactly
+    // the regression the schedule exists to prevent.
+    let expected = 0;
+    for (const rung of [2000, 5000, 10000, 30000, 60000]) {
       close();
-      await jest.advanceTimersByTimeAsync(delay);
+      await jest.advanceTimersByTimeAsync(rung - 1);
+      expect(mockMakeWASocket).toHaveBeenCalledTimes(expected);   // not yet
+      await jest.advanceTimersByTimeAsync(1);
+      expect(mockMakeWASocket).toHaveBeenCalledTimes(++expected); // now
     }
-    expect(mockMakeWASocket).toHaveBeenCalledTimes(5);
 
-    // Sixth close: the budget is spent, the session gives up.
+    // Sixth close: the five-attempt budget is spent, the session gives up.
     close();
     await jest.advanceTimersByTimeAsync(120000);
     expect(mockMakeWASocket).toHaveBeenCalledTimes(5);
     expect(sessionStatus).toHaveBeenCalledWith(SESSION_ID, 'disconnected', expect.anything());
 
+    jest.useRealTimers();
+  });
+
+  it('schedules_only_one_retry_when_close_fires_twice_for_one_disconnect', async () => {
+    // A single disconnect can emit connection:'close' more than once -- the
+    // socket emits it, and end() during teardown emits it again. Scheduling
+    // per event instead of per session leaves two timers racing to rebuild
+    // the same session, which ends with two live sockets and every inbound
+    // message delivered twice.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    mockMakeWASocket.mockClear();
+
+    const close = () =>
+      sock.emit('connection.update', {
+        connection: 'close',
+        lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+      });
+    close();
+    close();
+    await jest.advanceTimersByTimeAsync(10000);
+
+    expect(mockMakeWASocket).toHaveBeenCalledTimes(1);
     jest.useRealTimers();
   });
 
@@ -1883,6 +1928,84 @@ describe('BaileysSessionManager connection lifecycle', () => {
   });
 });
 
+describe('BaileysSessionManager observable state', () => {
+  it('moves_the_session_through_the_states_the_dashboard_reads', async () => {
+    // Without this, a manager whose createSession returns {} and never
+    // updates anything passes every other test in this file. The dashboard
+    // reads these values; "compiles and emits webhooks" is not the contract.
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    expect(manager.getSession(SESSION_ID)!.status).toBe('connecting');
+
+    sock.emit('connection.update', { qr: 'QR-PAYLOAD' });
+    await Promise.resolve();
+    expect(manager.getSession(SESSION_ID)!.qrCode).toBe('QR-PAYLOAD');
+
+    sock.emit('connection.update', { connection: 'open' });
+    await Promise.resolve();
+    expect(manager.getSession(SESSION_ID)!.status).toBe('ready');
+    expect(manager.getSession(SESSION_ID)!.connectedNumber).toBe('34600111222');
+    expect(manager.isSessionReady(SESSION_ID)).toBe(true);
+  });
+
+  it('reports_health_in_the_shape_the_rest_route_already_publishes', async () => {
+    // { status, hasLocalAuth, heartbeatAge?, authInvalidated? } is a
+    // published response body. Returning { hasCredentials, connected }
+    // instead compiles and breaks the consumer silently.
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    store.hasCredentials.mockResolvedValue(true);
+
+    const health = await manager.getSessionHealth(SESSION_ID);
+
+    expect(Object.keys(health).sort()).toEqual(
+      ['authInvalidated', 'hasLocalAuth', 'heartbeatAge', 'status'].filter(k =>
+        Object.prototype.hasOwnProperty.call(health, k)
+      )
+    );
+    expect(health.status).toBe('connecting');
+    expect(health.hasLocalAuth).toBe(true);
+    expect(store.hasCredentials).toHaveBeenCalledWith(SESSION_ID);
+  });
+
+  it('reports_the_disconnect_upstream_on_every_close_that_is_not_a_restart', async () => {
+    // handleSessionDisconnect is injected so the persisted row and its
+    // reconnectCount keep being maintained. A manager that never calls it
+    // drops that bookkeeping and nothing else in this file notices.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.restartRequired } } },
+    });
+    await Promise.resolve();
+    expect(sessionDisconnect).not.toHaveBeenCalled();
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
+    await Promise.resolve();
+    expect(sessionDisconnect).toHaveBeenCalledWith(
+      SESSION_ID, 'WHATSAPP_DISCONNECT', expect.anything()
+    );
+
+    sessionDisconnect.mockClear();
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.loggedOut } } },
+    });
+    await Promise.resolve();
+    expect(sessionDisconnect).toHaveBeenCalledWith(
+      SESSION_ID, 'WHATSAPP_LOGGED_OUT', expect.anything()
+    );
+
+    jest.useRealTimers();
+  });
+});
+
 describe('BaileysSessionManager inbound messages', () => {
   it('processes_notify_batches_and_ignores_history_appends', async () => {
     // 'append' is history sync. Feeding it to the pipeline would replay old
@@ -1950,6 +2073,43 @@ describe('BaileysSessionManager shutdown vs delete', () => {
     expect(store.clear).not.toHaveBeenCalled();
   });
 
+  it('shutdownAll_closes_every_session_in_shutdown_mode', async () => {
+    // This is the path a pm2 restart actually takes. Testing destroySession
+    // directly leaves shutdownAll -- the only caller in production -- with no
+    // coverage at all, which is where the Phase 1 bug lived.
+    const manager = makeManager();
+    await manager.createSession('a');
+    await manager.createSession('b');
+    const spy = jest.spyOn(manager, 'destroySession');
+
+    await manager.shutdownAll();
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    expect(spy.mock.calls.map(c => c[1])).toEqual(['shutdown', 'shutdown']);
+    expect(store.clear).not.toHaveBeenCalled();
+  });
+
+  it('cancels_a_pending_reconnect_when_the_session_is_destroyed', async () => {
+    // A timer sleeping through a 60s rung outlives the session it belongs to.
+    // Without the clearTimeout, deleting a session leaves a callback that
+    // fires half a minute later and opens a socket for a session that no
+    // longer exists, using credentials destroySession already cleared.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    mockMakeWASocket.mockClear();
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
+    await manager.destroySession(SESSION_ID, 'delete');
+    await jest.advanceTimersByTimeAsync(120000);
+
+    expect(mockMakeWASocket).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
   it('delete_logs_out_and_clears_credentials', async () => {
     // The mirror image. Without this, a destroySession that never cleared
     // anything would satisfy the test above and leave dead credentials
@@ -1985,6 +2145,8 @@ class BaileysSessionManager {
     pipeline: IncomingMessagePipeline;
     updateSessionStatus(sessionId: string, status: string, data?: unknown): Promise<void>;
     handleSessionDisconnect(sessionId: string, type: string, reason?: unknown): Promise<void>;
+    /** Extra milliseconds added to each backoff rung. Defaults to Math.random() * 1000. */
+    jitter?: () => number;
   });
 
   createSession(sessionId: string, tenantId?: string): Promise<WhatsAppSession>;
@@ -1995,11 +2157,30 @@ class BaileysSessionManager {
   destroySession(sessionId: string, mode: 'shutdown' | 'delete'): Promise<void>;
   shutdownAll(): Promise<void>;                                    // every session, 'shutdown' mode
   forceDisconnect(sessionId: string): Promise<void>;
-  getSessionHealth(sessionId: string): Promise<{ hasCredentials: boolean; connected: boolean }>;
+  getSessionHealth(sessionId: string): Promise<{
+    status: string;
+    hasLocalAuth: boolean;          // ← name preserved, source changed
+    heartbeatAge?: number;
+    authInvalidated?: boolean;
+  }>;
 }
 ```
 
-**Who owns `WhatsAppSession`.** This class owns the in-memory `Map<sessionId, WhatsAppSession>` and the `Map<sessionId, WASocket>`; `WhatsAppServiceSimple` keeps neither after Task 8a. Persistence stays where it is — `SessionPersistenceService` through the injected `updateSessionStatus` — so this class never imports Prisma.
+**`getSessionHealth` keeps its published shape.** `WhatsAppServiceSimple.getSessionHealth` returns `{ status, hasLocalAuth, heartbeatAge?, authInvalidated? }` today and a REST route serves it. Returning `{ hasCredentials, connected }` instead would compile and break the consumer silently. **`hasLocalAuth` keeps its name and changes its source**: it becomes `await store.hasCredentials(sessionId)`. The name is now slightly wrong — the auth is not local any more — and renaming it is a dashboard change that does not belong in this task. `heartbeatAge` still comes from the Redis heartbeat key and `authInvalidated` still from the session's own status and metadata; neither had anything to do with Chromium.
+
+**Who owns `WhatsAppSession`, and what it looks like.** This class owns the in-memory `Map<sessionId, WhatsAppSession>` and the `Map<sessionId, WASocket>`; `WhatsAppServiceSimple` keeps neither after Task 8a. Persistence stays where it is — `SessionPersistenceService` through the injected `updateSessionStatus` — so this class never imports Prisma.
+
+`createSession` seeds the entry the way `SessionManager.createSessionObject` does today, and the entry then moves through observable states. Returning an empty object and leaving the status at `connecting` forever would compile and pass every other test in this task, so `getSession` is asserted directly:
+
+| After | `getSession(id)!.status` |
+|---|---|
+| `createSession` | `'connecting'` |
+| a `qr` in `connection.update` | `'connecting'`, with `qrCode` set |
+| `connection: 'open'` | `'ready'`, with `connectedNumber` set |
+| a non-`loggedOut` close, retry pending | `'connecting'` |
+| the retry budget exhausted | `'disconnected'` |
+| `loggedOut` | `'disconnected'` |
+| between `sockets.delete` and `sockets.set` during a rebuild | **not** `'ready'` |
 
 **`destroySession` has two callers with different intent.** `WhatsAppServiceSimple.destroySession(sessionId)` is the public REST delete and maps to `'delete'`; `shutdown()` maps to `'shutdown'`. Task 8a must not let the mode default — an omitted argument is how the Phase 1 bug returns.
 
@@ -2011,7 +2192,16 @@ Requirements the tests above pin, restated so they are not inferred from the tes
 - `ev.on('creds.update', saveCreds)` — and the first time credentials exist, emit the first `authenticated` webhook with `data: { number: 'unknown' }`.
 - `ev.on('connection.update', …)` handles, in this order: `qr` present → status `connecting` + `qr_updated` webhook; `connection === 'open'` → status `ready` + the second `authenticated` webhook with the number from `jidDecode(sock.user.id).user`; `connection === 'close'` → read `(lastDisconnect?.error as Boom)?.output?.statusCode`, and if it is `DisconnectReason.loggedOut` clear the store and emit `disconnected`, otherwise rebuild the socket.
 - `ev.on('messages.upsert', …)` ignores `type !== 'notify'`, drops `status@broadcast` by JID, normalizes, and forwards `(dto, makeBaileysReplyPort(sock, message))` to the pipeline.
-- **Rebuilding a socket means tearing the old one down first, in this order:** `ev.off` all three listeners → `sock.end(undefined)` → replace the entry in the socket `Map` → only then `makeWASocket`. A reconnect that leaves the old emitter subscribed keeps a live listener on a dead socket, and any event it still delivers is processed a second time — the same inbound message reaching the pipeline twice under two different socket objects. Redis dedupe hides it (same `${sessionId}:${key.id}`), which is exactly why it would survive the smoke and surface later as duplicated outbound sends when the dedupe window has expired.
+- **Rebuilding a socket means tearing the old one down first, in exactly this order:**
+
+  ```
+  ev.off(the three listeners)  →  sock.end(undefined)  →  sockets.delete(sessionId)
+    →  makeWASocket(...)  →  sockets.set(sessionId, next)  →  next.ev.on(the three listeners)
+  ```
+
+  The `Map` is cleared before the new socket exists and populated after — it cannot be "replaced" in one step, because there is nothing to replace it with until `makeWASocket` returns. Between the `delete` and the `set`, `getSession` must not claim the session is ready.
+
+  A reconnect that leaves the old emitter subscribed keeps a live listener on a dead socket, and any event it still delivers is processed a second time — the same inbound message reaching the pipeline twice under two different socket objects. Redis dedupe hides that (same `${sessionId}:${key.id}`), which is exactly why it would survive the smoke and surface later, once the 300-second window has expired, as duplicate replies.
 - **`handleSessionDisconnect(sessionId, type, reason)` is called on every close that is not `restartRequired`,** before the backoff timer is scheduled, with `type` set to `'WHATSAPP_LOGGED_OUT'` for 401 and `'WHATSAPP_DISCONNECT'` otherwise. It is injected precisely so the persisted session row and its `reconnectCount` keep being updated the way they are today; an implementation that never calls it drops that bookkeeping silently and no test in this plan would notice.
 - `sendMessage(sessionId, to, text)` for the outbound REST path, returning the same `SendMessageResponse` shape `MessageHandler.sendMessage` returns today, including the `messageId`.
 - `destroySession(sessionId, mode: 'shutdown' | 'delete')` — **`'shutdown'` must not clear credentials.** This is the Phase 1 Task 1 contract; breaking it reintroduces the bug that logged every session out on every deploy.
@@ -2024,6 +2214,14 @@ Requirements the tests above pin, restated so they are not inferred from the tes
   | anything else | Exponential backoff with jitter: **2 s, 5 s, 10 s, 30 s, 60 s**, capped at 60 s, **maximum 5 consecutive attempts**, then mark the session `disconnected` and stop. |
 
   The counter resets on a successful `connection: 'open'`. The jitter matters because every session on the box would otherwise retry in lockstep after a network blip and arrive as one burst.
+
+  **At most one pending retry per session, and it is always cancellable.** Keep the `setTimeout` handle in a `Map<sessionId, NodeJS.Timeout>`; before scheduling, `clearTimeout` whatever is already there. `connection: 'close'` can arrive more than once for a single disconnect — the socket emits it, and `end()` during teardown can emit it again — and scheduling per event rather than per session gives two timers racing to rebuild the same socket, which produces two live sockets for one session and every inbound message delivered twice.
+
+  `clearTimeout` also runs in `destroySession` (both modes), `forceDisconnect` and `shutdownAll`. A timer sleeping through a 60-second rung outlives the session it belongs to: the operator deletes a session, the callback fires half a minute later, and `makeWASocket` opens a socket for a session that no longer exists — using credentials `destroySession(id, 'delete')` has already cleared. During shutdown it is worse: a pending timer keeps the event loop alive and reconnects on the way out, so the process both fails to exit and re-pairs while exiting.
+
+  **Use a deterministic jitter source.** Take it from an injectable function defaulting to `Math.random`, so the tests can pin the schedule. A schedule that cannot be asserted is a schedule nobody will notice regressing.
+
+  **How a session with unusable credentials gets out.** With the Chromium-era cleanup retired, nothing wipes credentials automatically any more, so this is the recovery path and it needs to work: Baileys exhausts the five attempts, the session lands in `disconnected`, and the operator deletes it from the dashboard. That goes through `destroySession(id, 'delete')` → `store.clear(sessionId)` → a fresh QR. No manual database access, and no heuristic deciding on its own that credentials are bad.
 
 **Stop and ask before inventing anything this list does not cover.** Presence handling on reconnect and history-sync policy beyond `syncFullHistory: false` are decisions, not details.
 
@@ -2126,8 +2324,8 @@ protobuf."
 - Modify: `apps/whatsapp-service/src/routes/index.ts:149,378,659,915`
 - Modify: `apps/whatsapp-service/src/routes/health.ts:8,174,202,212`
 - Modify: `apps/whatsapp-service/src/routes/proactive-consent.spec.ts:64`
-- Modify: `apps/whatsapp-service/src/services/SessionRecoveryService.ts:241,252`
-- Modify: `apps/whatsapp-service/src/services/session/RecoveryRunner.ts:238`
+- Modify: `apps/whatsapp-service/src/services/SessionRecoveryService.ts:101,239,250`
+- Modify: `apps/whatsapp-service/src/services/session/RecoveryRunner.ts:236,267,284,295`
 - Modify: `apps/whatsapp-service/src/services/session/HealthMetrics.ts`
 - Modify: `apps/whatsapp-service/src/services/session-health-check/HealthMetrics.ts:141-142`
 - Modify: `apps/whatsapp-service/src/services/whatsapp-core/MessageHandler.ts:1,21-106` — **delete `sendMessage(client, …)` and the last `whatsapp-web.js` import**
@@ -2322,15 +2520,6 @@ grep -rn "wwebjs_auth" src --include=*.ts | grep -v "whatsapp-core/\|session/Aut
 
 Expected: **no output.** The exclusions are deliberate: `ConnectionManager`, `AuthenticationManager` and `AuthValidator` still exist until Task 8b and still contain the string. An unqualified grep cannot return zero here, and a step that demands the impossible teaches the executor to ignore its gates.
 
-Confirm:
-
-```bash
-cd apps/whatsapp-service
-grep -rn "wwebjs_auth" src --include=*.ts
-```
-
-Expected: **no output.**
-
 - [ ] **Step 5c: Pin the three invariants the delegation could silently drop**
 
 The delegation in Step 4 rewires a class with fifteen public methods. Three of its behaviours are invisible in the diff, break nothing at compile time, and have no test anywhere. Add `apps/whatsapp-service/src/services/WhatsAppServiceSimple.cutover.spec.ts`:
@@ -2344,7 +2533,7 @@ describe('WhatsAppServiceSimple delegation invariants', () => {
     // fails on a constraint violation -- during pairing, where it reads as
     // "the QR did not work".
     const order: string[] = [];
-    mockPersistSession.mockImplementation(async () => { order.push('persist'); });
+    mockSaveSession.mockImplementation(async () => { order.push('persist'); });
     mockCreateSession.mockImplementation(async () => { order.push('socket'); return {} as any; });
 
     await service.createSession('s1', 'tenant-1');
@@ -2356,28 +2545,35 @@ describe('WhatsAppServiceSimple delegation invariants', () => {
     // PR5a-bis binds tenantId on first create. Dropping the argument during
     // the rewrite produces sessions with tenant_id NULL, which apps/api then
     // refuses to process -- every inbound message logged and discarded.
+    //
+    // Assert on saveSession's payload object, not on positional arguments:
+    // persistSession's fourth parameter is authFileInfo, which disappears
+    // with the auth layer, and expect.anything() does not match undefined.
     await service.createSession('s1', 'tenant-1');
 
-    expect(mockPersistSession).toHaveBeenCalledWith(
-      's1', 'tenant-1', expect.anything(), expect.anything()
-    );
+    expect(mockSaveSession).toHaveBeenCalledTimes(1);
+    expect(mockSaveSession.mock.calls[0][0]).toMatchObject({
+      sessionId: 's1',
+      tenantId: 'tenant-1',
+    });
   });
 
-  it('maps_shutdown_and_delete_to_the_right_modes', async () => {
-    // The Phase 1 bug in one line: shutdown() reaching destroySession in
-    // 'delete' mode is what deactivated every session on every deploy. An
-    // omitted second argument is the modern way to reintroduce it.
+  it('routes_shutdown_through_shutdownAll_and_delete_through_destroySession', async () => {
+    // The Phase 1 bug in one line: shutdown() reaching a delete path is what
+    // deactivated every session on every deploy. shutdownAll is the declared
+    // entry point for it -- asserting destroySession here instead would pass
+    // for an implementation that bypasses the interface.
     await service.shutdown();
-    expect(mockDestroySession).toHaveBeenCalledWith('s1', 'shutdown');
+    expect(mockShutdownAll).toHaveBeenCalledTimes(1);
+    expect(mockDestroySession).not.toHaveBeenCalled();
 
-    mockDestroySession.mockClear();
     await service.destroySession('s1');
     expect(mockDestroySession).toHaveBeenCalledWith('s1', 'delete');
   });
 });
 ```
 
-Build the mocks to match however Step 4 left the class — `mockPersistSession`, `mockCreateSession` and `mockDestroySession` stand for `SessionPersistenceService.saveSession` (or whatever `persistSession` calls) and `BaileysSessionManager`'s two methods. **If the shape of the class after Step 4 makes any of these three untestable, that is a finding about Step 4, not about the test — stop and say so.**
+Build the mocks against the seams Step 4 actually left: `mockSaveSession` is `SessionPersistenceService.saveSession`, and `mockCreateSession` / `mockDestroySession` / `mockShutdownAll` are `BaileysSessionManager`'s methods. **If the shape of the class after Step 4 makes any of these three untestable, that is a finding about Step 4, not about the test — stop and say so.**
 
 - [ ] **Step 6: Typecheck and run the full suite**
 
@@ -2405,8 +2601,16 @@ routes/index.ts did it dynamically in four more places. All six now go
 through the facade: two entry points into one runtime is how a half-cut
 engine survives a green test suite and starts two engines in production.
 
-The four filesystem auth checks against ./wwebjs_auth become
-store.hasCredentials(). Nothing reads that directory any more.
+The Chromium-era auth-cleanup policy is retired rather than ported.
+Three of AuthValidator's seven call sites were deletes, not checks, and
+one fired on lastError.message.includes('auth') -- a heuristic that
+existed because a half-written wwebjs_auth directory was a common
+failure. Against durable transactional rows in Postgres it has no
+subject, and wiring it to store.clear() would have wiped a working
+session's Signal credentials on any transient error containing the word.
+Credentials are now cleared in exactly two places, both in
+BaileysSessionManager: DisconnectReason.loggedOut, and an explicit
+delete. The one site that really was a read becomes hasCredentials().
 
 WHATSAPP_AUTH_ENCRYPTION_KEY becomes fail-fast in production, which is
 what the comment in env.ts said Phase 2 would do. Without it the service

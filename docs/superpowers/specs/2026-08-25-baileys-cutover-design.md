@@ -282,7 +282,8 @@ Tested against a fake socket. No network, no real pairing.
 | `src/routes/index.ts:149,378,659,915` | four dynamic imports of `WhatsAppServiceSimple` rerouted. HTTP shapes preserved. |
 | `src/routes/health.ts:8,174,202,212` | same. |
 | `src/routes/proactive-consent.spec.ts:64` | mock follows the new import path. |
-| `src/services/SessionRecoveryService.ts`, `src/services/session/RecoveryRunner.ts`, `src/services/session/HealthMetrics.ts`, `src/services/session-health-check/HealthMetrics.ts` | stop inspecting `./wwebjs_auth`; use `hasCredentials`. Public shapes may stay. |
+| `src/services/SessionRecoveryService.ts`, `src/services/session/RecoveryRunner.ts` | **retire the auth-cleanup policy, do not port it.** Of `AuthValidator`'s seven call sites only one (`SessionRecoveryService.ts:101`) is a read and becomes `hasCredentials`; three are deletes gated on a Chromium-era error-substring heuristic and are removed outright, and three are string/timestamp helpers that never touched the disk and move across unchanged. See the plan's T8a Step 5 — a naive substitution here either does nothing or destroys live credentials. |
+| `src/services/session/HealthMetrics.ts`, `src/services/session-health-check/HealthMetrics.ts` | stop inspecting `./wwebjs_auth`; use `hasCredentials`. Public shapes stay — `getSessionHealth`'s `{ status, hasLocalAuth, heartbeatAge?, authInvalidated? }` is a published response body, so `hasLocalAuth` keeps its name and changes its source. |
 | `src/services/baileys/BaileysSessionManager.ts` | real lifecycle, outbound, events, recovery, health, logout/delete. |
 
 ### T8b — Purge
