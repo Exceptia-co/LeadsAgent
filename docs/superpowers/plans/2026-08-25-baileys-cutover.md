@@ -18,9 +18,9 @@
 
 - **Pin `@whiskeysockets/baileys@6.7.24` exactly — no caret.** `latest` is `7.0.0-rc14`; `6.7.24` carries the `legacy` dist-tag. A bare `pnpm add @whiskeysockets/baileys` installs a release candidate.
 - **Never run `prisma migrate deploy`.** Production's `_prisma_migrations` shares no name with `packages/db/prisma/migrations`. This phase needs no new migration — `whatsapp_auth_keys` already exists in production and matches `schema.prisma`.
-- **The `message` webhook payload's `data` field is a frozen wire contract:** `{ id, from, to, body, timestamp, type, isGroup, fromMe }`. `apps/api/src/whatsapp/whatsapp.controller.ts:32` types it as `any` and `whatsapp.service.ts:134,137` reads `data.from` and `data.body`, so no typecheck on either side can see a drift, and the two apps deploy separately. `IncomingMessagePipeline` already maps the DTO back to this shape. **Do not touch that mapping.**
+- **The `message` webhook payload's `data` field is a frozen wire contract:** `{ id, from, to, body, timestamp, type, isGroup, fromMe }`. `apps/api/src/whatsapp/whatsapp.controller.ts:33` types it as `any` and `whatsapp.service.ts:135,138` reads `data.from` and `data.body`, so no typecheck on either side can see a drift, and the two apps deploy separately. `IncomingMessagePipeline` already maps the DTO back to this shape. **Do not touch that mapping.**
 - **Do not change REST route shapes** (`apps/whatsapp-service/src/routes/index.ts`) **or Socket.IO payloads** (`SocketService.ts`). The dashboard is deployed separately on Vercel.
-- **Two `authenticated` webhooks per session lifecycle is frozen behaviour.** `EventDispatcher.ts:142` (inside `ready`) and `:178` (inside `authenticated`) both emit one; `SocketService.ts:265` turns each into `session:connected`. Reproduce exactly two — not one, not three.
+- **Two `authenticated` webhooks per session lifecycle is frozen behaviour.** `EventDispatcher.ts:142` (inside `ready`) and `:178` (inside `authenticated`) both emit one; `SocketService.ts:275` turns each into `session:connected` via `emitSessionConnected` (declared at `:214`). Reproduce exactly two — not one, not three.
 - **Response shape for all Express JSON:** `{ success: boolean, data?: T, error?: string }`.
 - **Tests:** Jest, `*.spec.ts` colocated with the source. Run from `apps/whatsapp-service`. `jest.config.js` uses `preset: 'ts-jest'`, `roots: ['<rootDir>/src']`, `moduleNameMapper` `^@/(.*)$ → <rootDir>/src/$1`.
 - **Baseline before this plan: 104 passing in `apps/whatsapp-service` across 14 suites, 61 in `apps/api`.** Every task leaves both green.
@@ -88,9 +88,9 @@ The `transport` handle threaded through `MessageHandler` is the last library obj
 - Create: `apps/whatsapp-service/src/services/whatsapp-core/wwebjs-reply-port.ts`
 - Test: `apps/whatsapp-service/src/services/whatsapp-core/wwebjs-reply-port.spec.ts`
 - Modify: `apps/whatsapp-service/src/services/whatsapp-core/MessageHandler.ts:1,117,136,216,295,316,339,344,388,397-435`
-- Modify: `apps/whatsapp-service/src/services/whatsapp-core/IncomingMessagePipeline.ts:12,22,36,42,76`
+- Modify: `apps/whatsapp-service/src/services/whatsapp-core/IncomingMessagePipeline.ts` — the `<TTransport>` generic at its three declaration sites (interface at 12, class at 36, `handle` at 42) and the forwarding call at 77
 - Modify: `apps/whatsapp-service/src/services/whatsapp-core/IncomingMessagePipeline.spec.ts:41,44,65,74,87,107,117,118,133,141,151,157,160`
-- Modify: `apps/whatsapp-service/src/services/whatsapp-core/EventDispatcher.ts:42,74,320`
+- Modify: `apps/whatsapp-service/src/services/whatsapp-core/EventDispatcher.ts:42-44,75,321`
 
 **Interfaces:**
 - Consumes: `NormalizedWhatsAppMessage` from `src/types/messages.ts` (Phase 1, Task 3).
@@ -393,8 +393,8 @@ In `apps/whatsapp-service/src/services/whatsapp-core/EventDispatcher.ts`:
         processMessageWithAI: (dto: NormalizedWhatsAppMessage, port: ReplyPort) => Promise<void>;
       },
   ```
-- Line 74 becomes `const pipeline = new IncomingMessagePipeline({` — the `<Message>` type argument goes. Replace the two-line comment above it with: `// The pipeline is engine-agnostic. Message only appears below, where this` / `// dispatcher wraps it in a ReplyPort.`
-- Line 320 becomes `await pipeline.handle(dto, makeWwebjsReplyPort(message));`
+- Line 75 becomes `const pipeline = new IncomingMessagePipeline({` — the `<Message>` type argument goes. Replace the two-line comment above it with: `// The pipeline is engine-agnostic. Message only appears below, where this` / `// dispatcher wraps it in a ReplyPort.`
+- Line 321 becomes `await pipeline.handle(dto, makeWwebjsReplyPort(message));`
 
 `EventDispatcher` keeps `import type { Client, Message }` at line 1. It is the engine boundary until Task 8a and needs both.
 
@@ -458,7 +458,7 @@ Two independent pieces of engine-neutral tidying that both have to happen before
 - Modify: `apps/whatsapp-service/src/interfaces/IWhatsAppSessionManager.ts:36-41`
 - Create: `apps/whatsapp-service/src/services/WhatsAppEventPublisher.ts`
 - Test: `apps/whatsapp-service/src/services/WhatsAppEventPublisher.spec.ts`
-- Modify: `apps/whatsapp-service/src/services/whatsapp-core/EventDispatcher.ts:351-512`
+- Modify: `apps/whatsapp-service/src/services/whatsapp-core/EventDispatcher.ts:355-509` — the six methods only. The class closes at 510 and `export default` follows; taking either leaves the file without a class.
 
 **Interfaces:**
 - Consumes: nothing from Task 5.
@@ -480,11 +480,16 @@ Expected: `ISessionManager` appears only at `src/types/index.ts:108` (declaratio
 
 - [ ] **Step 2: Delete the two dead interfaces**
 
-In `apps/whatsapp-service/src/types/index.ts`, delete `export interface ISessionManager { … }` (lines 108-124, including the `/** Message Processing */` separator only if it belongs to the deleted block — check before cutting) and `export interface IWhatsAppSessionManager extends ISessionManager { … }` (lines 600-618, including its doc comment).
+In `apps/whatsapp-service/src/types/index.ts`, delete two declarations **by symbol, not by line range** — the ranges below are where they sit today and are given only to help you find them:
+
+- `export interface ISessionManager { … }`, declaration at line 108, together with its doc comment above.
+- `export interface IWhatsAppSessionManager extends ISessionManager { … }`, declaration at line 602, together with its doc comment above.
+
+Do not take the `/** Message Processing */` separator that follows the first one — it belongs to `IMessageProcessor`, which stays.
 
 - [ ] **Step 3: Drop `getClient` from the live interface**
 
-In `apps/whatsapp-service/src/interfaces/IWhatsAppSessionManager.ts`, delete lines 36-41:
+In `apps/whatsapp-service/src/interfaces/IWhatsAppSessionManager.ts`, delete exactly this block and nothing more — it is lines 38-41 today:
 
 ```ts
   /**
@@ -492,6 +497,8 @@ In `apps/whatsapp-service/src/interfaces/IWhatsAppSessionManager.ts`, delete lin
    */
   getClient(sessionId: string): any;
 ```
+
+**Do not start the cut at line 36.** Line 36 is `  } | null>;`, the closing of `getSessionStatus`'s return type; taking it breaks the interface in a way that reads as a missing brace rather than an over-eager delete.
 
 This is the last declared escape hatch through which a library type could reach a consumer. It has no callers, so removing it is free — but leaving it would let the cutover reintroduce one silently.
 
@@ -552,10 +559,16 @@ describe('WhatsAppEventPublisher', () => {
     // object would produce a different byte string for the same data and
     // every webhook would 401 -- which no local test would catch, because
     // the signature is only checked on the other side of the network.
-    await new WhatsAppEventPublisher(URL).sendWebhook(payload() as any);
+    //
+    // "signed string equals sent string" alone is not enough -- `const body =
+    // '{}'` satisfies it and delivers nothing. The payload has to be pinned
+    // as well, or the test proves only internal consistency.
+    const input = payload();
+    await new WhatsAppEventPublisher(URL).sendWebhook(input as any);
 
     expect(mockSignServiceRequest).toHaveBeenCalledTimes(1);
     const signedBody = mockSignServiceRequest.mock.calls[0][0];
+    expect(signedBody).toBe(JSON.stringify(input));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][1].body).toBe(signedBody);
     expect(fetchMock.mock.calls[0][1].headers).toMatchObject({
@@ -620,7 +633,7 @@ Expected: FAIL with `Cannot find module './WhatsAppEventPublisher'`.
 
 - [ ] **Step 7: Extract the publisher**
 
-Create `apps/whatsapp-service/src/services/WhatsAppEventPublisher.ts` by **moving** — not rewriting — `sendWebhook`, `sendForceDisconnectWebhook`, `sendBrowserDisconnectWebhook`, `setWebhookUrl`, `getWebhookUrl` and `testWebhook` out of `EventDispatcher.ts:351-512`.
+Create `apps/whatsapp-service/src/services/WhatsAppEventPublisher.ts` by **moving** — not rewriting — `sendWebhook`, `sendForceDisconnectWebhook`, `sendBrowserDisconnectWebhook`, `setWebhookUrl`, `getWebhookUrl` and `testWebhook` out of `EventDispatcher.ts:355-509`.
 
 The class takes the webhook URL in its constructor, exactly as `EventDispatcher` does today:
 
@@ -728,7 +741,7 @@ Everything here compiles — `tsconfig` includes all of `src/**/*` — and nothi
   - `SessionCredentialsStore.hasCredentials(sessionId: string): Promise<boolean>`
   - `makeBaileysAuthState(sessionId: string, store: SessionCredentialsStore): Promise<{ state: AuthenticationState; saveCreds: (update: Partial<AuthenticationCreds>) => Promise<void> }>`
   - `makeBaileysReplyPort(sock: WASocket, message: WAMessage): ReplyPort`
-  - `BaileysSessionManager` — see Step 14.
+  - `BaileysSessionManager` — full public surface declared in Step 18.
 
 - [ ] **Step 1: Add the dependency**
 
@@ -745,6 +758,106 @@ grep '"@whiskeysockets/baileys"' apps/whatsapp-service/package.json
 Expected: `"@whiskeysockets/baileys": "6.7.24"` — **no caret**. If pnpm wrote `^6.7.24`, edit it to the exact version and re-run `pnpm install`. A caret would let `6.7.25` in, and the 7.x line is a release candidate.
 
 The install pulls `sharp` (a non-optional peer) and resolves `libsignal` from a GitHub tarball pinned at commit `bcea72d`. Both are expected. If the install fails with `ERR_PNPM_EXOTIC_SUBDEP`, the local pnpm is 11.x — this repo requires pnpm 9 (`packageManager: pnpm@9.0.0`); run through corepack.
+
+- [ ] **Step 1b: Write the logger adapter Baileys requires**
+
+`makeWASocket` and `makeCacheableSignalKeyStore` both demand a `ILogger`, and this repo's logger does not satisfy it — not by a little:
+
+```ts
+// what Baileys requires (lib/Utils/logger.d.ts)
+interface ILogger {
+  level: string;
+  child(obj: Record<string, unknown>): ILogger;
+  trace(obj: unknown, msg?: string): void;
+  debug(obj: unknown, msg?: string): void;   // (obj, msg)
+  info(obj: unknown, msg?: string): void;
+  warn(obj: unknown, msg?: string): void;
+  error(obj: unknown, msg?: string): void;
+}
+
+// what src/utils/logger.ts exports
+{ info, error, warn, debug, verbose }        // (message: string, meta?: any)
+```
+
+`level`, `child` and `trace` are missing, and **the argument order is inverted**. Passing our logger fails the typecheck; casting past it would make every Baileys log line record the object as its message and the message as metadata.
+
+Create `apps/whatsapp-service/src/services/baileys/baileys-logger.ts`:
+
+```ts
+import { logger } from '../../utils/logger';
+import type { ILogger } from '@whiskeysockets/baileys';
+
+/**
+ * Baileys' ILogger over this repo's winston logger.
+ *
+ * Two incompatibilities, not one: ILogger needs `level`, `child` and `trace`,
+ * and its methods take (obj, msg) where ours take (message, meta). Casting
+ * instead of adapting would compile and then log every Baileys line with the
+ * object where the message should be.
+ */
+export function makeBaileysLogger(bindings: Record<string, unknown> = {}): ILogger {
+  const prefix = Object.entries(bindings)
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join(' ');
+  const line = (obj: unknown, msg?: string): [string, unknown] => {
+    // Baileys calls both log(obj, msg) and log(msg). Normalize to our shape.
+    const text = msg ?? (typeof obj === 'string' ? obj : '');
+    const meta = msg === undefined && typeof obj === 'string' ? undefined : obj;
+    return [prefix ? `[baileys ${prefix}] ${text}` : `[baileys] ${text}`, meta];
+  };
+
+  return {
+    level: process.env.LOG_LEVEL || 'info',
+    child: (obj: Record<string, unknown>) => makeBaileysLogger({ ...bindings, ...obj }),
+    // Baileys' trace is extremely chatty (every binary node). Map it to debug
+    // so LOG_LEVEL still governs it and it never reaches production logs.
+    trace: (obj, msg) => logger.debug(...(line(obj, msg) as [string, any])),
+    debug: (obj, msg) => logger.debug(...(line(obj, msg) as [string, any])),
+    info: (obj, msg) => logger.info(...(line(obj, msg) as [string, any])),
+    warn: (obj, msg) => logger.warn(...(line(obj, msg) as [string, any])),
+    error: (obj, msg) => logger.error(...(line(obj, msg) as [string, any])),
+  };
+}
+```
+
+Add to `apps/whatsapp-service/src/services/baileys/baileys-logger.spec.ts`:
+
+```ts
+import { makeBaileysLogger } from './baileys-logger';
+
+jest.mock('../../utils/logger', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+}));
+
+import { logger } from '../../utils/logger';
+
+describe('makeBaileysLogger', () => {
+  it('puts_the_message_first_and_the_object_second', () => {
+    // The whole reason this adapter exists. Baileys calls info(obj, msg);
+    // our logger is info(message, meta). Forwarding the arguments unchanged
+    // compiles and logs "[object Object]" for every line Baileys emits.
+    makeBaileysLogger().info({ sessionId: 's1' }, 'socket opened');
+
+    expect(logger.info).toHaveBeenCalledWith('[baileys] socket opened', { sessionId: 's1' });
+  });
+
+  it('handles_the_single_argument_form', () => {
+    makeBaileysLogger().warn('just a string');
+
+    expect(logger.warn).toHaveBeenCalledWith('[baileys] just a string', undefined);
+  });
+
+  it('child_carries_its_bindings_into_the_message', () => {
+    makeBaileysLogger({ class: 'baileys' }).child({ sessionId: 's1' }).info({}, 'x');
+
+    expect(logger.info).toHaveBeenCalledWith('[baileys class=baileys sessionId=s1] x', {});
+  });
+});
+```
+
+Run it: `cd apps/whatsapp-service && pnpm run test -- --testPathPattern "baileys-logger"` — expect PASS, 3 tests.
+
+Every `makeWASocket` and `makeCacheableSignalKeyStore` call in this task uses `makeBaileysLogger({ sessionId })`, never `logger` directly.
 
 - [ ] **Step 2: Write the failing normalizer test**
 
@@ -1046,13 +1159,15 @@ describe('SessionCredentialsStore batch writes', () => {
 
     await store.setBatch('s1', { 'pre-key': { '1': null }, session: { '1': null } });
 
+    // toStrictEqual on the complete `where`, not objectContaining: dropping
+    // `keyId: { in: keyIds }` would delete every key in the category and an
+    // objectContaining assertion would still pass, which is the opposite of
+    // what a test named "scopes the delete" is for.
     const wheres = txMock.whatsAppAuthKey.deleteMany.mock.calls.map((c: any[]) => c[0].where);
-    expect(wheres).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ sessionId: 's1', category: 'pre-key' }),
-        expect.objectContaining({ sessionId: 's1', category: 'session' }),
-      ])
-    );
+    expect(wheres).toStrictEqual([
+      { sessionId: 's1', category: 'pre-key', keyId: { in: ['1'] } },
+      { sessionId: 's1', category: 'session', keyId: { in: ['1'] } },
+    ]);
   });
 
   it('hasCredentials_is_true_only_when_the_creds_row_exists', async () => {
@@ -1201,7 +1316,13 @@ describe('makeBaileysAuthState', () => {
     const { state } = await makeBaileysAuthState('s1', store);
     const read = await state.keys.get('app-state-sync-key', ['k1']);
 
+    // The class matters, not only the bytes: decoding the base64 by hand into
+    // a plain object would satisfy a keyData-only assertion while handing
+    // Baileys something that is not a protobuf message.
+    expect(read.k1).toBeInstanceOf(proto.Message.AppStateSyncKeyData);
     expect(Buffer.from(read.k1!.keyData as Uint8Array)).toEqual(Buffer.from(original.keyData));
+    expect(read.k1!.fingerprint!.deviceIndexes).toEqual([0, 1]);
+    expect(read.k1!.timestamp!.toString()).toBe('1756000000000');
   });
 
   it('does_not_apply_fromObject_to_any_other_category', async () => {
@@ -1226,10 +1347,17 @@ describe('makeBaileysAuthState', () => {
       session: { 'a.0': Buffer.from([9]) },
     } as any);
 
+    // Assert the payload, not just its key names. An adapter that forwarded
+    // the right categories with their values emptied -- or that dropped the
+    // nulls, which are the deletions -- would satisfy a keys-only assertion
+    // and lose every pre-key deletion silently.
     expect(store.setBatch).toHaveBeenCalledTimes(1);
     expect(store.set).not.toHaveBeenCalled();
     expect(store.setBatch.mock.calls[0][0]).toBe('s1');
-    expect(Object.keys(store.setBatch.mock.calls[0][1]).sort()).toEqual(['pre-key', 'session']);
+    expect(store.setBatch.mock.calls[0][1]).toStrictEqual({
+      'pre-key': { '1': null },
+      session: { 'a.0': Buffer.from([9]) },
+    });
   });
 
   it('merges_partial_creds_updates_instead_of_replacing_them', async () => {
@@ -1256,8 +1384,14 @@ describe('makeBaileysAuthState', () => {
     store.get.mockResolvedValue({});
 
     const { state } = await makeBaileysAuthState('s1', store);
+    const read = await state.keys.get('session', ['missing']);
 
-    expect(await state.keys.get('session', ['missing'])).toEqual({});
+    // toStrictEqual, not toEqual: Jest's toEqual ignores properties whose
+    // value is undefined, so `{ missing: undefined }` would pass -- and that
+    // is precisely the distinction this test claims to make. Baileys checks
+    // key presence, so an explicit undefined is not the same as absence.
+    expect(read).toStrictEqual({});
+    expect(read).not.toHaveProperty('missing');
   });
 });
 ```
@@ -1521,6 +1655,61 @@ function makeManager() {
   });
 }
 
+describe('BaileysSessionManager construction', () => {
+  it('opens_no_socket_until_createSession_is_called', async () => {
+    // Task 7 lands this class in main while whatsapp-web.js is still serving
+    // production. A makeWASocket at module scope, or in the constructor,
+    // would connect to WhatsApp the moment anything imports the file --
+    // turning "compiled but unreachable" into a second live engine.
+    makeManager();
+
+    expect(mockMakeWASocket).not.toHaveBeenCalled();
+    expect(mockMakeBaileysAuthState).not.toHaveBeenCalled();
+  });
+
+  it('gives_every_session_its_own_key_cache', async () => {
+    // makeCacheableSignalKeyStore builds a fresh cache per call when no cache
+    // is passed. Hoisting the call to module scope -- the obvious way to
+    // "avoid rebuilding it" -- would share one cache across every session and
+    // cross two tenants' Signal keys in memory.
+    const manager = makeManager();
+    await manager.createSession('tenant-a');
+    await manager.createSession('tenant-b');
+
+    const cacheA = mockMakeWASocket.mock.calls[0][0].auth.keys;
+    const cacheB = mockMakeWASocket.mock.calls[1][0].auth.keys;
+    expect(cacheA).not.toBe(cacheB);
+  });
+
+  it('passes_the_configuration_the_cutover_depends_on', async () => {
+    // syncFullHistory would replay old conversations through the AI and
+    // answer them; printQRInTerminal would dump QR codes into production
+    // logs. Neither has a test anywhere else.
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+
+    expect(mockMakeWASocket).toHaveBeenCalledTimes(1);
+    expect(mockMakeWASocket.mock.calls[0][0]).toMatchObject({
+      printQRInTerminal: false,
+      syncFullHistory: false,
+      markOnlineOnConnect: false,
+    });
+  });
+
+  it('returns_the_provider_message_id_from_an_outbound_send', async () => {
+    // WhatsAppServiceSimple.sendMessage's response shape is a published REST
+    // contract that the dashboard reads. A send that works but returns no
+    // messageId breaks the caller without failing anything here otherwise.
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+
+    const result = await manager.sendMessage(SESSION_ID, '34600111222', 'hola');
+
+    expect(sock.sendMessage).toHaveBeenCalledWith('34600111222@s.whatsapp.net', { text: 'hola' });
+    expect(result).toMatchObject({ success: true, messageId: 'OUT1' });
+  });
+});
+
 describe('BaileysSessionManager connection lifecycle', () => {
   it('emits_exactly_two_authenticated_webhooks_per_successful_pairing', async () => {
     // Phase 1 froze this: EventDispatcher emitted one from `authenticated`
@@ -1531,7 +1720,14 @@ describe('BaileysSessionManager connection lifecycle', () => {
     const manager = makeManager();
     await manager.createSession(SESSION_ID);
 
+    // Three creds.update events, not one. Baileys emits this repeatedly
+    // during a single handshake -- keys rotate, myAppStateKeyId arrives, the
+    // account record fills in. An implementation that emits `authenticated`
+    // on every creds.update satisfies a test that fires the event once, and
+    // then floods the dashboard with session:connected in production.
     sock.emit('creds.update', {});
+    sock.emit('creds.update', { myAppStateKeyId: 'AAAA' });
+    sock.emit('creds.update', { account: {} });
     sock.emit('connection.update', { connection: 'open' });
     await Promise.resolve();
 
@@ -1541,6 +1737,23 @@ describe('BaileysSessionManager connection lifecycle', () => {
     expect(authEvents).toHaveLength(2);
     expect(authEvents[0].data.number).toBe('unknown');
     expect(authEvents[1].data.number).toBe('34600111222');
+  });
+
+  it('does_not_emit_a_third_authenticated_when_the_connection_reopens', async () => {
+    // The mirror case. `open` fires again after every reconnect, and Phase 1's
+    // contract is two per session lifecycle -- not two per connection.
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+
+    sock.emit('creds.update', {});
+    sock.emit('connection.update', { connection: 'open' });
+    sock.emit('connection.update', { connection: 'open' });
+    await Promise.resolve();
+
+    const authEvents = publisher.sendWebhook.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((p: any) => p.event === 'authenticated');
+    expect(authEvents).toHaveLength(2);
   });
 
   it('treats_restartRequired_as_a_reconnect_and_not_as_a_failure', async () => {
@@ -1559,6 +1772,74 @@ describe('BaileysSessionManager connection lifecycle', () => {
 
     expect(store.clear).not.toHaveBeenCalled();
     expect(mockMakeWASocket).toHaveBeenCalledTimes(1);
+  });
+
+  it('backs_off_between_reconnects_and_gives_up_after_five', async () => {
+    // Baileys does not reconnect on its own. A close handler that calls
+    // createSession() directly is an unthrottled loop against WhatsApp's
+    // servers -- deleting the delay is a one-line change, and the cost of it
+    // is the exact risk this migration was approved on the promise of not
+    // making worse.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    mockMakeWASocket.mockClear();
+
+    const close = () =>
+      sock.emit('connection.update', {
+        connection: 'close',
+        lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+      });
+
+    close();
+    await Promise.resolve();
+    // Nothing yet: the first retry waits 2s.
+    expect(mockMakeWASocket).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(2000);
+    expect(mockMakeWASocket).toHaveBeenCalledTimes(1);
+
+    for (const delay of [5000, 10000, 30000, 60000]) {
+      close();
+      await jest.advanceTimersByTimeAsync(delay);
+    }
+    expect(mockMakeWASocket).toHaveBeenCalledTimes(5);
+
+    // Sixth close: the budget is spent, the session gives up.
+    close();
+    await jest.advanceTimersByTimeAsync(120000);
+    expect(mockMakeWASocket).toHaveBeenCalledTimes(5);
+    expect(sessionStatus).toHaveBeenCalledWith(SESSION_ID, 'disconnected', expect.anything());
+
+    jest.useRealTimers();
+  });
+
+  it('resets_the_backoff_budget_after_a_successful_connection', async () => {
+    // Without the reset, a session that reconnects fine five times over a
+    // month is permanently out of retries on the sixth blip -- and nothing
+    // logs why.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    mockMakeWASocket.mockClear();
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
+    await jest.advanceTimersByTimeAsync(2000);
+    sock.emit('connection.update', { connection: 'open' });
+    await Promise.resolve();
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
+    // Back to the first rung, not the second.
+    await jest.advanceTimersByTimeAsync(2000);
+    expect(mockMakeWASocket).toHaveBeenCalledTimes(2);
+
+    jest.useRealTimers();
   });
 
   it('clears_the_credentials_only_on_loggedOut', async () => {
@@ -1590,10 +1871,15 @@ describe('BaileysSessionManager connection lifecycle', () => {
     sock.emit('connection.update', { qr: 'QR-PAYLOAD' });
     await Promise.resolve();
 
+    // The full payload, not objectContaining: a webhook carrying the right
+    // QR under the wrong sessionId routes a working pairing code to another
+    // tenant's dashboard, and objectContaining would let it through.
     expect(sessionStatus).toHaveBeenCalledWith(SESSION_ID, 'connecting', { qrCode: 'QR-PAYLOAD' });
-    expect(publisher.sendWebhook).toHaveBeenCalledWith(
-      expect.objectContaining({ event: 'qr_updated', data: { qrCode: 'QR-PAYLOAD' } })
-    );
+    expect(publisher.sendWebhook).toHaveBeenCalledTimes(1);
+    const sent = publisher.sendWebhook.mock.calls[0][0];
+    expect(sent.event).toBe('qr_updated');
+    expect(sent.sessionId).toBe(SESSION_ID);
+    expect(sent.data).toStrictEqual({ qrCode: 'QR-PAYLOAD' });
   });
 });
 
@@ -1618,6 +1904,14 @@ describe('BaileysSessionManager inbound messages', () => {
     await Promise.resolve();
     expect(pipeline.handle).toHaveBeenCalledTimes(1);
     expect(pipeline.handle.mock.calls[0][0].text).toBe('nuevo');
+    // The port is the second argument and nothing downstream can answer
+    // without it. Omitting it entirely leaves a DTO-only assertion green and
+    // produces a bot that receives every message and replies to none.
+    const port = pipeline.handle.mock.calls[0][1];
+    expect(typeof port?.reply).toBe('function');
+    expect(typeof port?.send).toBe('function');
+    expect(typeof port?.startTyping).toBe('function');
+    expect(typeof port?.stopTyping).toBe('function');
   });
 
   it('drops_status_broadcast_before_normalizing', async () => {
@@ -1681,6 +1975,34 @@ Expected: FAIL with `Cannot find module './BaileysSessionManager'`.
 
 Create `apps/whatsapp-service/src/services/baileys/BaileysSessionManager.ts`. It is the single runtime import of the library.
 
+**The public surface, in full.** `WhatsAppServiceSimple` delegates to this class in Task 8a without changing its own API, so every method that survives there needs a counterpart here. Declare all of it before implementing any of it:
+
+```ts
+class BaileysSessionManager {
+  constructor(deps: {
+    store: SessionCredentialsStore;
+    publisher: WhatsAppEventPublisher;
+    pipeline: IncomingMessagePipeline;
+    updateSessionStatus(sessionId: string, status: string, data?: unknown): Promise<void>;
+    handleSessionDisconnect(sessionId: string, type: string, reason?: unknown): Promise<void>;
+  });
+
+  createSession(sessionId: string, tenantId?: string): Promise<WhatsAppSession>;
+  getSession(sessionId: string): WhatsAppSession | null;          // in-memory, sync
+  getAllSessions(): Promise<WhatsAppSession[]>;
+  isSessionReady(sessionId: string): boolean;
+  sendMessage(sessionId: string, to: string, text: string): Promise<SendMessageResponse>;
+  destroySession(sessionId: string, mode: 'shutdown' | 'delete'): Promise<void>;
+  shutdownAll(): Promise<void>;                                    // every session, 'shutdown' mode
+  forceDisconnect(sessionId: string): Promise<void>;
+  getSessionHealth(sessionId: string): Promise<{ hasCredentials: boolean; connected: boolean }>;
+}
+```
+
+**Who owns `WhatsAppSession`.** This class owns the in-memory `Map<sessionId, WhatsAppSession>` and the `Map<sessionId, WASocket>`; `WhatsAppServiceSimple` keeps neither after Task 8a. Persistence stays where it is — `SessionPersistenceService` through the injected `updateSessionStatus` — so this class never imports Prisma.
+
+**`destroySession` has two callers with different intent.** `WhatsAppServiceSimple.destroySession(sessionId)` is the public REST delete and maps to `'delete'`; `shutdown()` maps to `'shutdown'`. Task 8a must not let the mode default — an omitted argument is how the Phase 1 bug returns.
+
 Requirements the tests above pin, restated so they are not inferred from the test file:
 
 - The constructor is **inert**. It stores its dependencies and nothing else. `makeWASocket` is called only from `createSession`, so importing this module can never open a socket.
@@ -1689,16 +2011,27 @@ Requirements the tests above pin, restated so they are not inferred from the tes
 - `ev.on('creds.update', saveCreds)` — and the first time credentials exist, emit the first `authenticated` webhook with `data: { number: 'unknown' }`.
 - `ev.on('connection.update', …)` handles, in this order: `qr` present → status `connecting` + `qr_updated` webhook; `connection === 'open'` → status `ready` + the second `authenticated` webhook with the number from `jidDecode(sock.user.id).user`; `connection === 'close'` → read `(lastDisconnect?.error as Boom)?.output?.statusCode`, and if it is `DisconnectReason.loggedOut` clear the store and emit `disconnected`, otherwise rebuild the socket.
 - `ev.on('messages.upsert', …)` ignores `type !== 'notify'`, drops `status@broadcast` by JID, normalizes, and forwards `(dto, makeBaileysReplyPort(sock, message))` to the pipeline.
+- **Rebuilding a socket means tearing the old one down first, in this order:** `ev.off` all three listeners → `sock.end(undefined)` → replace the entry in the socket `Map` → only then `makeWASocket`. A reconnect that leaves the old emitter subscribed keeps a live listener on a dead socket, and any event it still delivers is processed a second time — the same inbound message reaching the pipeline twice under two different socket objects. Redis dedupe hides it (same `${sessionId}:${key.id}`), which is exactly why it would survive the smoke and surface later as duplicated outbound sends when the dedupe window has expired.
+- **`handleSessionDisconnect(sessionId, type, reason)` is called on every close that is not `restartRequired`,** before the backoff timer is scheduled, with `type` set to `'WHATSAPP_LOGGED_OUT'` for 401 and `'WHATSAPP_DISCONNECT'` otherwise. It is injected precisely so the persisted session row and its `reconnectCount` keep being updated the way they are today; an implementation that never calls it drops that bookkeeping silently and no test in this plan would notice.
 - `sendMessage(sessionId, to, text)` for the outbound REST path, returning the same `SendMessageResponse` shape `MessageHandler.sendMessage` returns today, including the `messageId`.
 - `destroySession(sessionId, mode: 'shutdown' | 'delete')` — **`'shutdown'` must not clear credentials.** This is the Phase 1 Task 1 contract; breaking it reintroduces the bug that logged every session out on every deploy.
+- **Reconnect backoff, exactly this schedule.** Baileys does not reconnect on its own — rebuilding the socket is the application's job, and a naive `connection: 'close'` → `createSession()` is an unthrottled loop against WhatsApp's servers. Ban risk follows sending behaviour, and this migration was approved on the understanding that it does not make that risk worse; a reconnect storm would.
 
-**Stop and ask before inventing anything this list does not cover.** Reconnect backoff, presence handling on reconnect, and history-sync policy are decisions, not details.
+  | Close reason | Action |
+  |---|---|
+  | `restartRequired` (515) | Reconnect **immediately**. It fires on first pairing and is a normal step. |
+  | `loggedOut` (401) | Do not reconnect. Clear the store, emit `disconnected`, wait for a fresh QR. |
+  | anything else | Exponential backoff with jitter: **2 s, 5 s, 10 s, 30 s, 60 s**, capped at 60 s, **maximum 5 consecutive attempts**, then mark the session `disconnected` and stop. |
+
+  The counter resets on a successful `connection: 'open'`. The jitter matters because every session on the box would otherwise retry in lockstep after a network blip and arrive as one burst.
+
+**Stop and ask before inventing anything this list does not cover.** Presence handling on reconnect and history-sync policy beyond `syncFullHistory: false` are decisions, not details.
 
 - [ ] **Step 19: Run the test to verify it passes**
 
 Run: `cd apps/whatsapp-service && pnpm run test -- --testPathPattern "BaileysSessionManager"`
 
-Expected: PASS, 8 tests.
+Expected: PASS, every `it(` in the four `describe` blocks — construction, connection lifecycle, inbound messages, shutdown vs delete.
 
 - [ ] **Step 20: Verify Baileys is compiled but unreachable**
 
@@ -1722,23 +2055,22 @@ pnpm typecheck
 cd apps/whatsapp-service && pnpm run test
 ```
 
-Expected: typecheck clean; **142 passing across 20 suites**.
+Expected: typecheck clean, and the suite count grown by exactly the specs this plan added — **21 suites**, up from the 14 baseline:
 
-The arithmetic, so a mismatch is diagnosable rather than shrugged at:
-
-| | tests | suites |
+| Task | Spec file | new suite? |
 |---|---|---|
-| Baseline before Task 5 | 104 | 14 |
-| Task 5 — `wwebjs-reply-port.spec.ts` | +4 | +1 |
-| Task 6 — `WhatsAppEventPublisher.spec.ts` | +5 | +1 |
-| Task 7 — `baileys-normalizer.spec.ts` | +9 | +1 |
-| Task 7 — `SessionCredentialsStore.spec.ts` (existing file) | +3 | — |
-| Task 7 — `BaileysAuthState.spec.ts` | +6 | +1 |
-| Task 7 — `baileys-reply-port.spec.ts` | +3 | +1 |
-| Task 7 — `BaileysSessionManager.spec.ts` | +8 | +1 |
-| **Total** | **142** | **20** |
+| 5 | `whatsapp-core/wwebjs-reply-port.spec.ts` | yes |
+| 6 | `WhatsAppEventPublisher.spec.ts` | yes |
+| 7 | `baileys/baileys-logger.spec.ts` | yes |
+| 7 | `baileys/baileys-normalizer.spec.ts` | yes |
+| 7 | `baileys/BaileysAuthState.spec.ts` | yes |
+| 7 | `baileys/baileys-reply-port.spec.ts` | yes |
+| 7 | `baileys/BaileysSessionManager.spec.ts` | yes |
+| 7 | `session-credentials/SessionCredentialsStore.spec.ts` | no — existing file, more cases |
 
-If the run reports anything else, find out why before continuing.
+**Count the `it(` blocks in the specs you actually wrote and compare against the run**, rather than against a total written here: the test bodies in this plan were revised during review and an arithmetic total in a document is the first thing to go stale. What matters is that every number is accounted for — a suite that reports fewer tests than its file contains means Jest skipped something, and a run with more means a spec was duplicated.
+
+Baseline for the comparison is 104 tests across 14 suites, from before Task 5.
 
 - [ ] **Step 22: Commit**
 
@@ -1786,6 +2118,8 @@ protobuf."
 
 **Files:**
 - Modify: `apps/whatsapp-service/src/config/env.ts:86-95`
+- Create: `apps/whatsapp-service/src/config/env.spec.ts`
+- Create: `apps/whatsapp-service/src/services/WhatsAppServiceSimple.cutover.spec.ts`
 - Modify: `apps/whatsapp-service/src/services/WhatsAppServiceSimple.ts`
 - Modify: `apps/whatsapp-service/src/services/WhatsAppService.ts:1,47,56`
 - Modify: `apps/whatsapp-service/src/controllers/SessionController.ts:2`
@@ -1796,6 +2130,7 @@ protobuf."
 - Modify: `apps/whatsapp-service/src/services/session/RecoveryRunner.ts:238`
 - Modify: `apps/whatsapp-service/src/services/session/HealthMetrics.ts`
 - Modify: `apps/whatsapp-service/src/services/session-health-check/HealthMetrics.ts:141-142`
+- Modify: `apps/whatsapp-service/src/services/whatsapp-core/MessageHandler.ts:1,21-106` — **delete `sendMessage(client, …)` and the last `whatsapp-web.js` import**
 - Modify: `apps/whatsapp-service/src/services/baileys/BaileysSessionManager.ts`
 
 **Interfaces:**
@@ -1812,6 +2147,7 @@ jest.mock('../utils/logger', () => ({
 }));
 
 import { validateEnv } from './env';
+import { logger } from '../utils/logger';
 
 const ORIGINAL_ENV = process.env;
 
@@ -1843,6 +2179,8 @@ it('exits_in_production_when_the_credential_encryption_key_is_missing', () => {
 });
 
 it('only_warns_in_development_when_the_credential_encryption_key_is_missing', () => {
+  // "did not exit" is satisfied by a validateEnv that does nothing at all.
+  // The positive assertion on the warning is what makes this discriminate.
   const exit = jest.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
   process.env.NODE_ENV = 'development';
   process.env.WHATSAPP_SERVICE_HMAC_SECRET = 'a'.repeat(64);
@@ -1851,6 +2189,9 @@ it('only_warns_in_development_when_the_credential_encryption_key_is_missing', ()
   validateEnv();
 
   expect(exit).not.toHaveBeenCalled();
+  expect(logger.warn).toHaveBeenCalledWith(
+    expect.stringContaining('WHATSAPP_AUTH_ENCRYPTION_KEY')
+  );
   exit.mockRestore();
 });
 ```
@@ -1899,18 +2240,87 @@ Rewrite `WhatsAppServiceSimple` so every method that used `ConnectionManager`, `
 
 `shutdown()` must still route through the `'shutdown'` mode, never `'delete'`.
 
-- [ ] **Step 5: Replace every filesystem auth check with `hasCredentials`**
+- [ ] **Step 4b: Take the outbound path off `MessageHandler`**
 
-Four files inspect `./wwebjs_auth` on disk. Each becomes a store query:
+Task 5 deliberately left `import type { Client }` in `MessageHandler.ts` because `sendMessage(client, sessionId, to, message, onStatusUpdate)` at lines 21-106 is the outbound path and belongs to a different seam. **This is that seam.** `BaileysSessionManager.sendMessage(sessionId, to, text)` replaces it, so the method and the import go here — Task 8b removes the `whatsapp-web.js` dependency, and a surviving `import type { Client }` would break the build.
+
+- Delete `MessageHandler.sendMessage` and line 1's import entirely.
+- Its only caller is `WhatsAppServiceSimple.ts:247`, which Step 4 already rerouted to `BaileysSessionManager`.
+- `normalizePhoneNumber` is used by the deleted method — check whether anything else calls it before removing it. If nothing does, it goes too; if something does, keep it.
+
+Verify:
+
+```bash
+cd apps/whatsapp-service
+grep -n "whatsapp-web.js" src/services/whatsapp-core/MessageHandler.ts
+```
+
+Expected: **no output.** `MessageHandler` is now fully engine-neutral, which is what Task 8b's commit message claims about it.
+
+- [ ] **Step 5: Retire the disk-auth policy — do not port it**
+
+**Read this whole step before editing anything.** The obvious reading — "swap each `./wwebjs_auth` path for a store call" — is wrong, and wrong in a way that either does nothing or destroys credentials.
+
+`AuthValidator` has **seven** consumer call sites across two files, and they are not all the same kind of thing:
+
+| Site | What it actually is |
+|---|---|
+| `SessionRecoveryService.ts:101` `validateAllAuthFiles` | a **read**: counts and validates auth directories |
+| `SessionRecoveryService.ts:239` `cleanupCorruptedAuth` | a **delete** |
+| `SessionRecoveryService.ts:250` `cleanupCorruptedAuth` | a **delete** |
+| `RecoveryRunner.ts:236` `cleanupCorruptedAuth` | a **delete**, gated on a matched error string |
+| `RecoveryRunner.ts:267` `isSessionClosedByUser` | a **string match** on `lastError` — no filesystem at all |
+| `RecoveryRunner.ts:284` `isAuthCorruptionError` | a **string match** — no filesystem at all |
+| `RecoveryRunner.ts:295` `isRecentManualDisconnect` | a **timestamp comparison** — no filesystem at all |
+
+Three deletes, one read, three heuristics that never touched the disk. Task 8b removes `AuthValidator`, so **all seven must be resolved here or Task 8b will not compile.**
+
+**The deletes do not become `hasCredentials`.** That would replace a destructive operation with a query and silently turn the cleanup into a no-op — the code would look migrated and do nothing.
+
+**Nor do they become `store.clear(sessionId)`.** Look at what gates `RecoveryRunner.ts:232`:
+
+```ts
+const isAuthError =
+  lastError.message.includes('auth') ||
+  lastError.message.includes('QR') ||
+  lastError.message.includes('authentication');
+if (isAuthError && options.cleanupCorruptedAuth) { … }
+```
+
+That is a Chromium-era heuristic: it existed because a half-written `wwebjs_auth` directory was a real and common failure, and matching an error substring was the cheapest way to detect it. Wiring it to `store.clear()` means **any transient error whose message happens to contain "auth" wipes a working session's Signal credentials and forces a re-pair.** With durable, transactional, encrypted rows in Postgres, the condition it was guarding no longer exists.
+
+**So: delete the policy rather than port it.**
+
+- Remove the three `cleanupCorruptedAuth` call sites and the `options.cleanupCorruptedAuth` flag entirely. Credentials are cleared in exactly one place from now on: `BaileysSessionManager` on `DisconnectReason.loggedOut`, and `destroySession(id, 'delete')`. Nothing else may call `store.clear`.
+- Replace `validateAllAuthFiles` (`SessionRecoveryService.ts:101`) with `store.hasCredentials(sessionId)` per session — it is the only one of the seven that really was a read.
+- The three string/timestamp heuristics move as-is into `RecoveryRunner` (or a small private helper), minus their `AuthValidator` import. They are unrelated to storage, and rewriting them is not this task's job. `isAuthCorruptionError` in particular now only decides whether to *retry*, never whether to *delete*.
+
+Then the two `HealthMetrics` files:
 
 | File | Today | Becomes |
 |---|---|---|
-| `SessionRecoveryService.ts:241,252` | `require('path').resolve('./wwebjs_auth')` | `await store.hasCredentials(sessionId)` |
-| `session/RecoveryRunner.ts:238` | same | same |
 | `session/HealthMetrics.ts` | `authFileExists` / `authCorruptionDetected` metadata | a `hasCredentials` boolean |
-| `session-health-check/HealthMetrics.ts:141-142` | `path.join(authDataPath, 'session-' + sessionId)` | same |
+| `session-health-check/HealthMetrics.ts:141-142` | `path.join(authDataPath, 'session-' + sessionId)` | `store.hasCredentials(sessionId)` |
 
-Public shapes may keep their names — `checkAuthFileHealth` can stay called that if its callers depend on it. What must go is every `fs` call against `wwebjs_auth`.
+Public shapes may keep their names — `checkAuthFileHealth` can stay called that if its callers depend on it.
+
+**A thrown `hasCredentials` is not an answer of `false`.** This moves "can this session reconnect?" from the local filesystem onto Postgres, which puts Supabase on the startup path of every session. `hasCredentials` propagates a database error rather than swallowing it, and every caller must keep it that way: a pooler timeout during boot means *unknown*, not *no credentials*. A caller that catches it into `false` marks a healthy session `auth_failure` and demands a QR that was never needed — and since the credentials are still in the database, the operator sees a session that "lost its pairing" for no visible reason. On a database error, leave the session `connecting` and let the next recovery pass retry.
+
+- [ ] **Step 5b: Verify the cleanup policy really is gone**
+
+```bash
+cd apps/whatsapp-service
+grep -rn "cleanupCorruptedAuth\|validateAllAuthFiles\|authCorruptionDetected" src
+grep -rn "\.clear(" src/services/session src/services/SessionRecoveryService.ts
+```
+
+Expected: no `cleanupCorruptedAuth`, no `validateAllAuthFiles`. No `store.clear` anywhere under recovery — the only two callers in the whole codebase are in `BaileysSessionManager`.
+
+```bash
+grep -rn "wwebjs_auth" src --include=*.ts | grep -v "whatsapp-core/\|session/AuthValidator.ts"
+```
+
+Expected: **no output.** The exclusions are deliberate: `ConnectionManager`, `AuthenticationManager` and `AuthValidator` still exist until Task 8b and still contain the string. An unqualified grep cannot return zero here, and a step that demands the impossible teaches the executor to ignore its gates.
 
 Confirm:
 
@@ -1920,6 +2330,54 @@ grep -rn "wwebjs_auth" src --include=*.ts
 ```
 
 Expected: **no output.**
+
+- [ ] **Step 5c: Pin the three invariants the delegation could silently drop**
+
+The delegation in Step 4 rewires a class with fifteen public methods. Three of its behaviours are invisible in the diff, break nothing at compile time, and have no test anywhere. Add `apps/whatsapp-service/src/services/WhatsAppServiceSimple.cutover.spec.ts`:
+
+```ts
+describe('WhatsAppServiceSimple delegation invariants', () => {
+  it('persists_the_session_row_before_the_socket_is_created', async () => {
+    // whatsapp_auth_keys.session_id is a foreign key onto
+    // whatsapp_sessions(session_id), and Baileys writes creds during the
+    // handshake. Creating the socket first means the very first creds.update
+    // fails on a constraint violation -- during pairing, where it reads as
+    // "the QR did not work".
+    const order: string[] = [];
+    mockPersistSession.mockImplementation(async () => { order.push('persist'); });
+    mockCreateSession.mockImplementation(async () => { order.push('socket'); return {} as any; });
+
+    await service.createSession('s1', 'tenant-1');
+
+    expect(order).toEqual(['persist', 'socket']);
+  });
+
+  it('carries_the_tenant_id_into_the_persisted_row', async () => {
+    // PR5a-bis binds tenantId on first create. Dropping the argument during
+    // the rewrite produces sessions with tenant_id NULL, which apps/api then
+    // refuses to process -- every inbound message logged and discarded.
+    await service.createSession('s1', 'tenant-1');
+
+    expect(mockPersistSession).toHaveBeenCalledWith(
+      's1', 'tenant-1', expect.anything(), expect.anything()
+    );
+  });
+
+  it('maps_shutdown_and_delete_to_the_right_modes', async () => {
+    // The Phase 1 bug in one line: shutdown() reaching destroySession in
+    // 'delete' mode is what deactivated every session on every deploy. An
+    // omitted second argument is the modern way to reintroduce it.
+    await service.shutdown();
+    expect(mockDestroySession).toHaveBeenCalledWith('s1', 'shutdown');
+
+    mockDestroySession.mockClear();
+    await service.destroySession('s1');
+    expect(mockDestroySession).toHaveBeenCalledWith('s1', 'delete');
+  });
+});
+```
+
+Build the mocks to match however Step 4 left the class — `mockPersistSession`, `mockCreateSession` and `mockDestroySession` stand for `SessionPersistenceService.saveSession` (or whatever `persistSession` calls) and `BaileysSessionManager`'s two methods. **If the shape of the class after Step 4 makes any of these three untestable, that is a finding about Step 4, not about the test — stop and say so.**
 
 - [ ] **Step 6: Typecheck and run the full suite**
 
@@ -2002,13 +2460,26 @@ Removing the `patchedDependencies` key while leaving the patch file — or the r
 
 Then: `pnpm install`
 
+- [ ] **Step 2b: Clean up the four references the deletions do not reach**
+
+Deleting the engine's files leaves four mentions behind, verified against `main`. Three are stale comments and one is a dead type member:
+
+| Site | What it is | Do |
+|---|---|---|
+| `src/index.ts:14` | comment: *"cada sesión = 1 Chromium; si whatsapp-web.js dispara un error…"* | rewrite for Baileys — the reasoning about staying alive on `uncaughtException` still holds, the Chromium premise does not |
+| `src/config/redis.ts:365` | comment: *"Cubre casi todos los re-emits de whatsapp-web.js…"* | say "del transporte" instead |
+| `src/config/redis.spec.ts:6` | comment listing what the test avoids mocking | drop the two names |
+| `src/types/index.ts:89` | `WhatsAppConfig.puppeteerOptions` | **delete the member.** Verified: `puppeteerOptions` has no reader anywhere in `apps/whatsapp-service` or `apps/api` — it is the last piece of Chromium in the type system |
+
 - [ ] **Step 3: Verify the engine is gone**
 
 ```bash
-grep -rn "whatsapp-web.js\|puppeteer\|Puppeteer" apps/whatsapp-service/src apps/whatsapp-service/package.json package.json turbo.json apps/whatsapp-service/Dockerfile
+grep -rn "whatsapp-web\|puppeteer\|Puppeteer" apps/whatsapp-service/src apps/whatsapp-service/package.json package.json turbo.json apps/whatsapp-service/Dockerfile
 ```
 
-Expected: **no output**, except possibly historical prose in `docs/`. If a source file still matches, an importer was missed — and because `tsconfig` compiles all of `src/**/*`, the build would have caught it, so check whether the file is outside `src/`.
+Expected: **no output.**
+
+This gate only becomes achievable after Step 2b. Before it, four matches survive that no file deletion touches — which is why they get their own step rather than being left for this grep to discover. `docs/` is deliberately outside the search: historical prose there is a record, not a leak.
 
 - [ ] **Step 4: Typecheck, test, build**
 
@@ -2069,12 +2540,32 @@ The preflight runs **while `whatsapp-web.js` is still serving production**, so t
 - [ ] **Step 1: Preflight — pin the package manager**
 
 ```bash
-ssh root@46.225.26.89 'corepack enable && cd /opt/leadcrm && pnpm --version'
+ssh root@46.225.26.89 'corepack enable && cd /opt/leadcrm && which pnpm && pnpm --version'
 ```
 
-Expected: `9.0.0`. Before this, `/usr/bin/pnpm` is a globally npm-installed 10.28.1 that ignores `packageManager: pnpm@9.0.0`; pnpm 10 installs Baileys but skips its build scripts, and pnpm 11 refuses the tree outright with `ERR_PNPM_EXOTIC_SUBDEP` because `libsignal` is a git dependency.
+Expected: `/usr/local/bin/pnpm` and `9.0.0`.
 
-If it still reports 10.28.1, corepack's shims are not ahead of `/usr/bin` on `PATH`. **Stop and report** — do not work around it by uninstalling the global pnpm.
+Before this, `/usr/bin/pnpm` is a symlink to a globally npm-installed pnpm 10.28.1 which ignores `packageManager: pnpm@9.0.0` because it is not a corepack shim. pnpm 10 installs Baileys but skips its build scripts; pnpm 11 refuses the tree outright with `ERR_PNPM_EXOTIC_SUBDEP` because `libsignal` is a git dependency.
+
+Root's `PATH` on this VPS is `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:…` — verified — so `/usr/local/bin`, where corepack writes its shims, wins over `/usr/bin`, and nothing lives there yet to collide with. If `which pnpm` still reports `/usr/bin/pnpm`, activate the version explicitly:
+
+```bash
+ssh root@46.225.26.89 'corepack prepare pnpm@9.0.0 --activate && which pnpm && pnpm --version'
+```
+
+**Do not work around this by uninstalling the global pnpm.** If neither form yields 9.0.0, stop and report.
+
+- [ ] **Step 1b: Preflight — prove the new package manager installs the *current* tree**
+
+```bash
+ssh root@46.225.26.89 'cd /opt/leadcrm && pnpm install --frozen-lockfile'
+```
+
+Expected: success, no lockfile modification, no `ERR_PNPM_*`.
+
+This runs with `whatsapp-web.js` still installed and still serving traffic. Its whole purpose is to separate two changes that would otherwise land together: the package manager changed in Step 1, and the engine changes in Step 4. Without this, a corepack problem surfaces only after `git pull` has already put the new code on disk, and the failure looks like "Baileys broke the deploy" when it is nothing of the sort.
+
+If the lockfile comes back modified, `--frozen-lockfile` would have failed in Step 4 — stop and find out why before continuing.
 
 - [ ] **Step 2: Preflight — the encryption key**
 
@@ -2140,7 +2631,7 @@ WHERE category = 'pre-key' AND session_id = '<sessionId>';
 ```
 
 - **29 or 30** — the initial batch was generated *and* persisted. Continue.
-- **0, or fewer than 5** — the transactional insert failed during the handshake. **The cutover is not authorised.** Stop and diagnose.
+- **0, or fewer than 5** — the transactional insert failed during the handshake. **The cutover is not authorised.** Abort with Step 8b below.
 
 This is the cheap detection for the failure that otherwise appears on day 5-10: Baileys starts with `INITIAL_PREKEY_COUNT = 30` and uploads a fresh batch below `MIN_PREKEY_COUNT = 5`. If persistence is broken, existing conversations keep working and the dashboard stays green while every *new* contact sees "Waiting for this message" on their phone — no `messages.upsert`, no AI, no fatal error in the PM2 logs.
 
@@ -2150,10 +2641,37 @@ Each of these must pass:
 
 - Inbound message → AI → row in `messages` → reply delivered.
 - Outbound through the REST endpoint.
-- The same message delivered twice produces exactly **one** response (Redis dedupe on `${sessionId}:${key.id}`).
+- The dedupe primitive is live. You cannot make WhatsApp redeliver the same provider message id on demand, so do not try to stage a duplicate by hand — the behaviour is already pinned by `IncomingMessagePipeline.spec.ts`'s `deduplicates_same_message_id_before_authorization_ai_and_webhook`. What that unit test *cannot* prove is that the key is really being written in production under the session-scoped shape. Check that directly, right after an inbound message:
+
+  ```bash
+  ssh root@46.225.26.89 "redis-cli -p 6379 --scan --pattern 'whatsapp:dedup:*' | head"
+  ```
+
+  Expected: at least one key of the form `whatsapp:dedup:<sessionId>:<providerMessageId>`. A key missing the `<sessionId>:` prefix means the normalizer is not scoping the id, and two tenants receiving the same provider id would suppress each other's messages.
 - The dashboard shows the session as connected — two `session:connected` events, matching the frozen behaviour.
 
 **Not asserted: `status = 'ready'` on connect.** The row does not reach it — `apps/api`'s `handleSessionAuthenticated` rewrites the same row to `'authenticated'` right after the local write, and only the first inbound message's health update moves it to `'ready'`. This predates Baileys and is recorded as debt in the spec. Assert instead that `connected_number` is populated after pairing, and that `status` becomes `'ready'` after the first inbound message.
+
+- [ ] **Step 8b: The abort procedure — read this before Step 7, not after it fails**
+
+If the pre-key gate (Step 7) or any part of Step 8 fails, go back to the previous release rather than debugging in production:
+
+```bash
+ssh root@46.225.26.89 '
+  set -e
+  cd /opt/leadcrm
+  git log --oneline -5                       # identify the pre-cutover commit
+  git checkout <the commit before Task 8a>
+  pnpm install --frozen-lockfile
+  pnpm build --filter=@leadcrm/api --filter=@leadcrm/whatsapp-service
+  pm2 restart leadcrm-api --update-env
+  pm2 restart whatsapp-service --update-env
+'
+```
+
+**What this restores and what it does not.** The code goes back and `whatsapp-web.js` runs again — `wwebjs_auth` is still on disk at this point, which is exactly why Step 10 comes last. What does not come back is the Baileys session you just paired: it lives in `whatsapp_auth_keys`, the old engine cannot read it, and re-attempting the cutover means scanning a fresh QR. That costs nothing here because the number is disposable, and it is the whole reason Step 6 insists on one.
+
+Leave the `whatsapp_auth_keys` rows in place while diagnosing — they are the evidence. Clear them with `DELETE FROM whatsapp_auth_keys WHERE session_id = '<sessionId>'` only when starting a clean retry.
 
 - [ ] **Step 9: The regression test for Phase 1**
 
@@ -2185,6 +2703,23 @@ ssh root@46.225.26.89 "redis-cli --scan --pattern 'whatsapp:session:*' | head -2
 
 Inspect before deleting. Delete only keys belonging to sessions that no longer exist.
 
+- [ ] **Step 10b: Watch the first days**
+
+The pre-key gate in Step 7 proves persistence worked at pairing. It cannot prove the *replenishment* path works, because that only runs once the stock falls below `MIN_PREKEY_COUNT = 5` — days later, under real traffic. Check at 24 hours and again at a week:
+
+```bash
+ssh root@46.225.26.89 'pm2 logs whatsapp-service --lines 400 --nostream | grep -iE "connection.update|Bad MAC|PreKey|401|loggedOut|Decrypt"'
+```
+
+And the same count as the gate, which should stay at or above 5:
+
+```sql
+SELECT category, count(*) FROM whatsapp_auth_keys
+WHERE session_id = '<sessionId>' GROUP BY category ORDER BY category;
+```
+
+A `pre-key` count that has fallen to zero and stayed there is the day-5-to-10 failure arriving: existing conversations keep working and the dashboard stays green while every *new* contact silently never reaches the service.
+
 - [ ] **Step 11: Record what changed for whoever deploys next**
 
 Update, in one commit:
@@ -2213,8 +2748,11 @@ to 9.0.0 through corepack."
 
 ## Self-review notes
 
-Three things this plan deliberately leaves as decisions rather than steps, because inventing them would be worse than asking:
+**Reconnect backoff was an open question and is now closed.** It was going to be left to the implementer; the operations review pushed back, correctly. Baileys does not reconnect on its own, so a close handler that rebuilds the socket directly is an unthrottled retry loop against WhatsApp — and this migration was approved on the explicit understanding that it does not raise ban risk. A decision that can only be made wrong in one direction is not a decision worth deferring. The schedule is specified in Task 7 Step 18 and pinned by two tests.
 
-1. **Reconnect backoff in `BaileysSessionManager`.** Task 7 Step 18 says a non-`loggedOut` close rebuilds the socket. How fast, how many times, and whether to give up are policy. Ask.
-2. **History sync.** `syncFullHistory: false` is proposed because the pipeline would otherwise replay old conversations through the AI. If the product wants history in the database, that is a separate feature.
-3. **`recipientPhone` in the Baileys normalizer.** Baileys does not put the connected number on an inbound message. Task 7 Step 4 documents the chosen behaviour and pins it with a test; the field feeds `data.to`, which `apps/api` never reads.
+Two things remain deliberately open, because inventing them would be worse than asking:
+
+1. **History sync beyond the flag.** `syncFullHistory: false` is settled — the pipeline would otherwise replay old conversations through the AI and answer them. What is *not* settled is whether the product wants historical messages in the database at all. That is a feature, not a cutover detail.
+2. **`recipientPhone` in the Baileys normalizer.** Baileys does not put the connected number on an inbound message; the wwebjs behaviour cannot be mirrored without threading the socket into the normalizer and breaking its signature. Task 7 Step 4 documents the choice and pins it with a test. The field feeds `data.to` on the frozen webhook, which `apps/api` never reads — so this is low stakes, but it is a choice rather than a fact.
+
+Also worth stating plainly: **Task 7 Step 18 is the only step in this plan that specifies requirements instead of showing code.** `BaileysSessionManager` is the composition of the other three pieces, and writing its lifecycle here — before the interfaces it composes exist in the repository — is precisely how a plan invents code that does not fit. The tests in Step 16 are the contract; the requirement list is what they are testing. If the two ever disagree, the tests are right.

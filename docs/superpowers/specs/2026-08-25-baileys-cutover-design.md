@@ -145,7 +145,7 @@ That is buffering, serialisation and retry — but not durability. The failure w
 
 **The disk-auth layer is deleted, not reimplemented.** `AuthenticationManager` (413 lines) and `session/AuthValidator` (237) are file-system validators end to end, plus scattered checks in `SessionRecoveryService`, `RecoveryRunner`, both `HealthMetrics` files and `WhatsAppServiceSimple:539`. Against a key-value store, "do I have credentials for this session" is one query. Keeping the shape and swapping the implementation would leave ~400 lines of scaffolding — corruption detection, file counts, file sizes — with no subject. Deleting the layer also retires both defects recorded in `docs/deployment/post-shutdown-fix-recovery.md` § *Known issue*: the double `session-` prefix in `cleanupCorruptedAuthFiles`, and the permanent `authCorruptionDetected` latch that bars a session from recovery forever with no code path to clear it. Neither needs a fix once neither has a subject.
 
-**`WhatsAppEventPublisher` is extracted in T6, not T8a.** `EventDispatcher.ts:358-512` holds `sendWebhook` (Socket.IO through the facade, HMAC signing, `fetch`), `sendForceDisconnectWebhook`, `sendBrowserDisconnectWebhook`, `setWebhookUrl`, `getWebhookUrl` and `testWebhook`. T8b deletes `EventDispatcher` entirely, which would take the webhook emitter with it. The extraction is a pure engine-neutral refactor, so it ships early and keeps T8a smaller. `EventDispatcher` must delegate to it immediately rather than keeping a duplicate.
+**`WhatsAppEventPublisher` is extracted in T6, not T8a.** `EventDispatcher.ts:355-509` holds `sendWebhook` (Socket.IO through the facade, HMAC signing, `fetch`), `sendForceDisconnectWebhook`, `sendBrowserDisconnectWebhook`, `setWebhookUrl`, `getWebhookUrl` and `testWebhook`. T8b deletes `EventDispatcher` entirely, which would take the webhook emitter with it. The extraction is a pure engine-neutral refactor, so it ships early and keeps T8a smaller. `EventDispatcher` must delegate to it immediately rather than keeping a duplicate.
 
 **`EventDispatcher` keeps its `import type { Message }` until T8a.** After T5 it is the engine boundary and still needs to type the `message` callback and `makeWwebjsReplyPort(message)`. Moving the adapter elsewhere would only relocate the import; replacing `Message` with a local structural interface would hide incompatibilities without removing any runtime coupling. T5's goal is that `MessageHandler.ts` and `IncomingMessagePipeline.ts` reach zero mentions — not a cosmetic zero at the boundary.
 
@@ -201,11 +201,13 @@ Behaviour to preserve verbatim, because it is a product decision and not an impl
 `SessionCredentialsStore` already matches `SignalKeyStore` shape by construction. The adapter over it:
 
 ```ts
-makeBaileysAuthState(sessionId): Promise<{
+makeBaileysAuthState(sessionId: string, store: SessionCredentialsStore): Promise<{
   state: { creds: AuthenticationCreds; keys: SignalKeyStore };
-  saveCreds: () => Promise<void>;
+  saveCreds: (update: Partial<AuthenticationCreds>) => Promise<void>;
 }>
 ```
+
+`saveCreds` takes the update rather than closing over it, because `creds.update` delivers a **patch** and is wired as `ev.on('creds.update', saveCreds)`. The store is injected rather than constructed, so tests do not need a database.
 
 - `creds` is read once at construction; `initAuthCreds()` when absent. It must be a plain synchronous object — `makeWASocket` reads it at construction.
 - `keys.get` / `keys.set` are `Awaitable`, so promises are fine.
@@ -237,8 +239,8 @@ makeBaileysAuthState(sessionId): Promise<{
 ### T6 — Engine-neutral tidy
 *Mergeable to `main` with `whatsapp-web.js` still serving production.*
 
-- Collapse the three `IWhatsAppSessionManager` / `ISessionManager` declarations into one and drop `getClient(sessionId): any` from all three sites — `interfaces/IWhatsAppSessionManager.ts:39`, `types/index.ts:604`, `types/index.ts:118`. Note that the two existing interfaces are not merely duplicated but *incompatible*: the `types/index.ts` one extends `ISessionManager` and its `getSessionStatus` returns a different shape.
-- Extract `src/services/WhatsAppEventPublisher.ts` from `EventDispatcher.ts:358-512`. `EventDispatcher` delegates; no duplicated logic.
+- This turned out not to be a three-way merge. Verified while writing the plan: `ISessionManager` (`types/index.ts:108`) and the `IWhatsAppSessionManager` that extends it (`types/index.ts:602`) have **no consumers at all** — nothing imports them, nothing declares `implements`. And `getClient(sessionId)` has **no callers anywhere** in the repository; the only `getClient()` calls are `redisClient.getClient()`, which is unrelated. So it is two deletions plus removing one dead method from the one live interface (`interfaces/IWhatsAppSessionManager.ts:41`, used by `core/ServiceLocator.ts:8,22`).
+- Extract `src/services/WhatsAppEventPublisher.ts` from `EventDispatcher.ts:355-509`. `EventDispatcher` delegates; no duplicated logic.
 
 ### T7 — Baileys, isolated and unwired
 *Mergeable to `main`. The code compiles (`tsconfig` include is `["src/**/*"]`) but nothing reaches it at runtime.*
