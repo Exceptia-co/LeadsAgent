@@ -162,10 +162,11 @@ export class SessionManager {
   async destroySession(
     sessionId: string,
     client?: Client,
-    cleanupCallback?: (sessionId: string) => Promise<void>
+    cleanupCallback?: (sessionId: string) => Promise<void>,
+    mode: 'shutdown' | 'delete' = 'delete'
   ): Promise<void> {
     try {
-      logger.info(`🗑️ Starting destruction of session ${sessionId}`);
+      logger.info(`🗑️ Starting ${mode} of session ${sessionId}`);
 
       // Destroy WhatsApp client if provided
       if (client) {
@@ -181,23 +182,27 @@ export class SessionManager {
       // Remove from memory
       this.sessions.delete(sessionId);
 
-      // Deactivate session in database
-      try {
-        await SessionPersistenceService.deactivateSession(sessionId);
-        logger.info(`Session ${sessionId} deactivated in database`);
-      } catch (dbError) {
-        logger.error(`Error deactivating session ${sessionId} in database:`, dbError);
-        // Continue with cleanup even if database update fails
-      }
-
-      // Execute custom cleanup callback if provided
-      if (cleanupCallback) {
+      // Shutdown is not deletion: a restart must leave the session row and its
+      // credentials exactly as they were, or every deploy logs the tenant out.
+      if (mode === 'delete') {
+        // Deactivate session in database
         try {
-          await cleanupCallback(sessionId);
-          logger.info(`Custom cleanup completed for session ${sessionId}`);
-        } catch (cleanupError) {
-          logger.error(`Error in custom cleanup for session ${sessionId}:`, cleanupError);
-          // Don't throw - allow cleanup to continue
+          await SessionPersistenceService.deactivateSession(sessionId);
+          logger.info(`Session ${sessionId} deactivated in database`);
+        } catch (dbError) {
+          logger.error(`Error deactivating session ${sessionId} in database:`, dbError);
+          // Continue with cleanup even if database update fails
+        }
+
+        // Execute custom cleanup callback if provided
+        if (cleanupCallback) {
+          try {
+            await cleanupCallback(sessionId);
+            logger.info(`Custom cleanup completed for session ${sessionId}`);
+          } catch (cleanupError) {
+            logger.error(`Error in custom cleanup for session ${sessionId}:`, cleanupError);
+            // Don't throw - allow cleanup to continue
+          }
         }
       }
 
@@ -309,10 +314,7 @@ export class SessionManager {
   /**
    * Shutdown all sessions gracefully
    */
-  async shutdownAllSessions(
-    clients: Map<string, Client>,
-    cleanupCallback?: (sessionId: string) => Promise<void>
-  ): Promise<void> {
+  async shutdownAllSessions(clients: Map<string, Client>): Promise<void> {
     logger.info('🛑 Starting graceful shutdown of all sessions...');
 
     const sessionIds = Array.from(this.sessions.keys());
@@ -328,7 +330,7 @@ export class SessionManager {
         }, 10000); // 10 second timeout per session
 
         const client = clients.get(sessionId);
-        this.destroySession(sessionId, client, cleanupCallback)
+        this.destroySession(sessionId, client, undefined, 'shutdown')
           .then(() => {
             clearTimeout(timeoutId);
             logger.info(`✅ Session ${sessionId} shutdown complete`);
@@ -361,9 +363,8 @@ export class SessionManager {
       const remainingSessions = await SessionPersistenceService.loadActiveSessions();
       for (const session of remainingSessions) {
         await SessionPersistenceService.updateSessionStatus(session.sessionId, 'disconnected', {
-          lastError: 'Server shutdown',
           metadata: {
-            autoReconnect: false,
+            autoReconnect: true,
             shutdownReason: 'Server shutdown',
             shutdownTimestamp: new Date().toISOString(),
           },

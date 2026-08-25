@@ -358,11 +358,9 @@ class WhatsAppServiceSimple {
       logger.error('Error stopping health monitoring:', error);
     }
 
-    // Shutdown all sessions using SessionManager
-    await this.sessionManager.shutdownAllSessions(this.clients, async (sessionId: string) => {
-      // Custom cleanup for each session
-      await this.authenticationManager.cleanupSessionAuth(sessionId);
-    });
+    // Shutdown all sessions using SessionManager. No auth cleanup here on
+    // purpose: a restart must not look like a session deletion.
+    await this.sessionManager.shutdownAllSessions(this.clients);
 
     // Clean up all connection monitoring
     this.connectionManager.cleanupAllMonitoring();
