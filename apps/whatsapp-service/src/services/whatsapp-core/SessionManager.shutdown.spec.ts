@@ -61,23 +61,39 @@ describe('SessionManager shutdown vs delete', () => {
     expect(destroySpy).toHaveBeenCalledWith(SESSION_ID, client, undefined, 'shutdown');
   });
 
-  it('shutdown_leaves_autoReconnect_enabled_so_recovery_can_restore_the_session', async () => {
+  it('shutdown_sweep_does_not_touch_autoReconnect_either_way', async () => {
     const clients = new Map([[SESSION_ID, makeClient()]]);
-    mockLoadActiveSessions.mockResolvedValue([{ sessionId: SESSION_ID }]);
+    mockLoadActiveSessions.mockResolvedValue([{ sessionId: SESSION_ID, metadata: {} }]);
 
     await manager.shutdownAllSessions(clients);
 
-    expect(mockUpdateSessionStatus).toHaveBeenCalledWith(
-      SESSION_ID,
-      'disconnected',
-      expect.objectContaining({
-        metadata: expect.objectContaining({ autoReconnect: true }),
-      })
-    );
-    // A planned shutdown is not an error, and lastError feeds recovery
-    // heuristics, so it must not be written here.
     const [, , payload] = mockUpdateSessionStatus.mock.calls[0];
-    expect(payload.lastError).toBeUndefined();
+    // Not false (that is what barred recovery), and not true either: writing
+    // true would resurrect sessions something else deliberately stopped.
+    expect(payload.metadata).not.toHaveProperty('autoReconnect');
+    expect(payload.metadata.shutdownReason).toBe('Server shutdown');
+    // The payload omits lastError so a planned shutdown is not recorded as an
+    // error. This asserts the payload shape only -- updateSessionStatus skips
+    // undefined fields, so any previously persisted lastError is left alone,
+    // which is deliberate.
+    expect(payload).not.toHaveProperty('lastError');
+  });
+
+  it('shutdown_sweep_preserves_a_deliberate_do_not_reconnect_decision', async () => {
+    const clients = new Map([[SESSION_ID, makeClient()]]);
+    mockLoadActiveSessions.mockResolvedValue([
+      {
+        sessionId: SESSION_ID,
+        metadata: { autoReconnect: false, forceDisconnected: true },
+      },
+    ]);
+
+    await manager.shutdownAllSessions(clients);
+
+    const [, , payload] = mockUpdateSessionStatus.mock.calls[0];
+    // A session stopped on purpose must stay stopped across a restart.
+    expect(payload.metadata.autoReconnect).toBe(false);
+    expect(payload.metadata.forceDisconnected).toBe(true);
   });
 
   it('delete_deactivates_session_and_runs_auth_cleanup', async () => {

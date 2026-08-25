@@ -157,7 +157,13 @@ export class SessionManager {
   }
 
   /**
-   * Destroy a session completely
+   * Tear down a session's in-memory client and, depending on `mode`, its
+   * persisted state. `mode: 'delete'` (the default, for backwards
+   * compatibility with existing callers) deactivates the session in the
+   * database and runs the auth-cleanup callback -- a real deletion.
+   * `mode: 'shutdown'` only destroys the in-memory client; it deliberately
+   * leaves the database row and auth files untouched, because a process
+   * restart must not look like the tenant logging out.
    */
   async destroySession(
     sessionId: string,
@@ -213,10 +219,14 @@ export class SessionManager {
       // Even on error, attempt to clean up memory and database
       this.sessions.delete(sessionId);
 
-      try {
-        await SessionPersistenceService.deactivateSession(sessionId);
-      } catch (dbError) {
-        logger.error(`Final database cleanup failed for session ${sessionId}:`, dbError);
+      // Same shutdown/delete gate as the main path -- a shutdown-mode error
+      // must not deactivate the session either.
+      if (mode === 'delete') {
+        try {
+          await SessionPersistenceService.deactivateSession(sessionId);
+        } catch (dbError) {
+          logger.error(`Final database cleanup failed for session ${sessionId}:`, dbError);
+        }
       }
 
       throw error;
@@ -364,7 +374,7 @@ export class SessionManager {
       for (const session of remainingSessions) {
         await SessionPersistenceService.updateSessionStatus(session.sessionId, 'disconnected', {
           metadata: {
-            autoReconnect: true,
+            ...(session.metadata ?? {}),
             shutdownReason: 'Server shutdown',
             shutdownTimestamp: new Date().toISOString(),
           },
