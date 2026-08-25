@@ -202,7 +202,7 @@ describe('toMessageDate', () => {
     expect(toMessageDate(9e15).getTime()).toBeGreaterThanOrEqual(before);
   });
 
-  it.each([undefined, 0, -1, NaN])('falls back to now for %s', value => {
+  it.each([undefined, 0, -1, NaN])('falls back to now for %s', (value) => {
     const before = Date.now();
     const result = toMessageDate(value as number).getTime();
     expect(result).toBeGreaterThanOrEqual(before);

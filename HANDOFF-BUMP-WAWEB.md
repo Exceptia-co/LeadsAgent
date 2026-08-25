@@ -7,7 +7,7 @@
 > patch against 1.34.7 would be work thrown away at cutover.
 >
 > Kept as history: it documents exactly how brittle patching wwebjs internals is, which is
-> part of *why* the migration was agreed. **Reopen only if** a security advisory lands on
+> part of _why_ the migration was agreed. **Reopen only if** a security advisory lands on
 > 1.34.6, or the current pin breaks before cutover.
 
 ---

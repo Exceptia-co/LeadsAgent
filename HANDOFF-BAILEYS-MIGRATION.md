@@ -38,7 +38,7 @@ desechable** — no el tuyo ni el de un piloto.
 ## Por qué no Meta Cloud API
 
 Incompatible con el onboarding: el cliente conecta **su propio número** por QR, el que
-ya usa con sus contactos. Cloud API exige número dedicado. *Coexistence* existe pero
+ya usa con sus contactos. Cloud API exige número dedicado. _Coexistence_ existe pero
 solo cubre WhatsApp **Business App**, no personal. Ver R1 en el plan.
 
 ## Por qué no OpenWA ni WAHA
@@ -104,7 +104,7 @@ Dockerfile.
 ## Lo que NO mejora con la migración
 
 - **El riesgo de baneo.** Es por comportamiento, no por librería. De hecho el
-  fingerprint de Baileys es sintético, así que el riesgo *técnico* puede ser algo mayor
+  fingerprint de Baileys es sintético, así que el riesgo _técnico_ puede ser algo mayor
   — y el número en juego es el personal del cliente. De ahí el canario con número
   desechable.
 - **La resistencia a cambios de WhatsApp.** wwebjs usa Chrome real y se adapta solo;
@@ -118,5 +118,5 @@ Ambos riesgos deben quedar escritos en el plan antes del cutover, no como nota a
 
 - `PLAN-WHATSAPP-AGENT-MULTITENANT.md` — cabecera (decisión), Fase C (C7/C8 superseded),
   R1 (Cloud API condicionado), registro v7.11
-- `PREEXISTING-ISSUES.md` § *Pendientes descubiertos en PR #12*
+- `PREEXISTING-ISSUES.md` § _Pendientes descubiertos en PR #12_
 - PR #12 — el trabajo de consentimiento que precede a esto y que **no** depende del motor

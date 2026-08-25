@@ -1009,7 +1009,9 @@ router.post(
             continue;
           }
 
-          if (!(await hasLiveInboundConversation(prismaClient, lead.id, req.tenantId!, sessionId))) {
+          if (
+            !(await hasLiveInboundConversation(prismaClient, lead.id, req.tenantId!, sessionId))
+          ) {
             console.log(`🚫 Lead has no live inbound conversation: ${leadId}`);
             results.failed++;
             results.errors.push(

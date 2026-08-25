@@ -5,7 +5,7 @@
 **Detectados por:** Smoke test local con Chrome MCP + logs + network monitoring
 
 > Los issues numerados de este documento son los **pre-B2**. Los descubiertos
-> después tienen su propia sección al final: ver *Pendientes descubiertos en PR #12*.
+> después tienen su propia sección al final: ver _Pendientes descubiertos en PR #12_.
 
 ---
 
