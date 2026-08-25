@@ -36,8 +36,6 @@
     "clean:cache": "npx turbo daemon stop && powershell -Command \"if (Test-Path '.turbo') { Remove-Item -Recurse -Force '.turbo' }; Get-ChildItem -Path 'apps' -Directory | ForEach-Object { if (Test-Path (Join-Path $_.FullName '.next')) { Remove-Item -Recurse -Force (Join-Path $_.FullName '.next') }; if (Test-Path (Join-Path $_.FullName 'dist')) { Remove-Item -Recurse -Force (Join-Path $_.FullName 'dist') } }; Get-ChildItem -Path 'packages' -Directory | ForEach-Object { if (Test-Path (Join-Path $_.FullName 'dist')) { Remove-Item -Recurse -Force (Join-Path $_.FullName 'dist') } }\"",
     "setup": "pnpm install && pnpm db:generate",
     "rebuild": "pnpm clean:cache && pnpm install && pnpm db:generate && pnpm build:fast",
-    "whatsapp:cleanup-chrome": "turbo run cleanup-chrome --filter=@leadcrm/whatsapp-service",
-    "whatsapp:cleanup-chrome-force": "turbo run cleanup-chrome-force --filter=@leadcrm/whatsapp-service",
     "audit:infra": "tsx scripts/audit-infra.ts"
   },
   "devDependencies": {

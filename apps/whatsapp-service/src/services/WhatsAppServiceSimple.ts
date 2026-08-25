@@ -4,7 +4,6 @@ import type { WhatsAppSession, SendMessageResponse } from '../types';
 import type { HealthAlert } from './session-health-check/AlertManager';
 import SessionRecoveryService from './SessionRecoveryService';
 import SessionHealthCheckService from './SessionHealthCheckService';
-import SnapshotService from './auth-snapshot/SnapshotService';
 import SessionPersistenceService from './SessionPersistenceService';
 import redisClient, { REDIS_KEYS } from '../config/redis';
 import { SESSION_CONSTANTS } from '../config/session-constants';
@@ -31,8 +30,6 @@ import AuthenticationManager from './whatsapp-core/AuthenticationManager';
  */
 class WhatsAppServiceSimple {
   private clients: Map<string, Client> = new Map();
-  private snapshotIntervalId: ReturnType<typeof setInterval> | null = null;
-  private isSnapshotBatchRunning: boolean = false;
   private destroyingSessions: Set<string> = new Set();
   private sessionInitLocks: Set<string> = new Set();
   private initialized: boolean = false;
@@ -124,18 +121,6 @@ class WhatsAppServiceSimple {
     // can unregister on shutdown).
     SessionHealthCheckService.onAlert(this.alertCallback);
 
-    // Schedule periodic snapshots for ready sessions
-    if (SnapshotService.isEnabled() && !this.snapshotIntervalId) {
-      const intervalHours = parseInt(process.env.SNAPSHOT_INTERVAL_HOURS || '4', 10);
-      this.snapshotIntervalId = setInterval(
-        async () => {
-          await this.runPeriodicSnapshots();
-        },
-        intervalHours * 60 * 60 * 1000
-      );
-      logger.info(`Periodic snapshots scheduled every ${intervalHours} hours`);
-    }
-
     logger.info('✅ WhatsApp service initialized successfully with modular architecture');
   }
 
@@ -176,22 +161,6 @@ class WhatsAppServiceSimple {
         authDataPath
       );
 
-      // If no local auth files exist, try restoring from snapshot
-      if (!authFileInfo.exists && SnapshotService.isEnabled()) {
-        logger.info(`No local auth for session ${sessionId}, attempting snapshot restore...`);
-        const snapshotData = await SessionPersistenceService.getSnapshotData(sessionId);
-        if (snapshotData) {
-          const restored = await SnapshotService.restoreSnapshot(sessionId, snapshotData);
-          if (restored) {
-            logger.info(`Snapshot restored for session ${sessionId}, auth files available`);
-          } else {
-            logger.warn(`Snapshot restore failed for session ${sessionId}, will need QR`);
-          }
-        } else {
-          logger.debug(`No snapshot found for session ${sessionId}, new session will need QR`);
-        }
-      }
-
       // Create WhatsApp client using ConnectionManager
       const client = await this.connectionManager.createClient(sessionId, authDataPath);
 
@@ -226,7 +195,6 @@ class WhatsAppServiceSimple {
         {
           checkPhoneNumberAllowedWithLog: this.checkPhoneNumberAllowedWithLog.bind(this),
         },
-        this.triggerSnapshot.bind(this),
         this.handleAuthInvalidated.bind(this),
         (id: string) => this.destroyingSessions.has(id)
       );
@@ -349,10 +317,6 @@ class WhatsAppServiceSimple {
       SessionHealthCheckService.stopMonitoring();
       SessionHealthCheckService.offAlert(this.alertCallback);
       this.sessionManager.stopHeartbeatUpdates();
-      if (this.snapshotIntervalId) {
-        clearInterval(this.snapshotIntervalId);
-        this.snapshotIntervalId = null;
-      }
       logger.info('✅ Health monitoring and periodic tasks stopped');
     } catch (error) {
       logger.error('Error stopping health monitoring:', error);
@@ -542,42 +506,9 @@ class WhatsAppServiceSimple {
     return await this.eventDispatcher.testWebhook();
   }
 
-  // ─── Snapshot / Backup Methods ─────────────────────────────────────
-
-  /**
-   * Trigger a snapshot for a single session (called from EventDispatcher on 'ready')
-   */
-  private async triggerSnapshot(sessionId: string): Promise<void> {
-    try {
-      const snapshotData = await SnapshotService.createSnapshot(sessionId);
-      if (snapshotData) {
-        await SessionPersistenceService.saveSnapshotData(sessionId, snapshotData);
-        logger.info(`Snapshot saved for session ${sessionId}`);
-
-        // Emit socket event for dashboard
-        try {
-          const WhatsAppServiceModule = await import('./WhatsAppService');
-          await WhatsAppServiceModule.default.notifySocketEvent({
-            event: 'session:snapshot_created',
-            sessionId,
-            data: {
-              sizeBytes: snapshotData.metadata.sizeBytes,
-              createdAt: snapshotData.metadata.createdAt,
-            },
-            timestamp: new Date().toISOString(),
-          });
-        } catch {
-          /* ignore socket errors */
-        }
-      }
-    } catch (error) {
-      logger.error(`Snapshot trigger failed for session ${sessionId}:`, error);
-    }
-  }
-
   /**
    * Handle auth invalidation (unpaired from phone or auth_failure).
-   * Cleans up stale auth files and snapshot so next reconnect generates a fresh QR.
+   * Cleans up stale auth files so next reconnect generates a fresh QR.
    */
   private async handleAuthInvalidated(sessionId: string, reason: string): Promise<void> {
     logger.warn(`🔑 Auth invalidated for session ${sessionId} — reason: ${reason}`);
@@ -590,137 +521,9 @@ class WhatsAppServiceSimple {
       logger.warn(`Error cleaning auth files for ${sessionId}:`, err);
     }
 
-    // 2. Clear stale snapshot from DB (it was generated from now-invalid auth)
-    try {
-      await SessionPersistenceService.clearSnapshotData(sessionId);
-      logger.info(`Stale snapshot cleared for session ${sessionId}`);
-    } catch (err) {
-      logger.warn(`Error clearing snapshot for ${sessionId}:`, err);
-    }
-
     logger.info(
       `✅ Auth invalidation cleanup done for ${sessionId} — reconnect will require fresh QR`
     );
-  }
-
-  /**
-   * Run periodic snapshots for all ready sessions
-   */
-  private async runPeriodicSnapshots(): Promise<void> {
-    if (this.isSnapshotBatchRunning) {
-      logger.warn('Snapshot batch already in progress, skipping this cycle');
-      return;
-    }
-    this.isSnapshotBatchRunning = true;
-    try {
-      const allSessions = await this.sessionManager.getAllSessions();
-      const readySessions = allSessions.filter(s => s.status === 'ready');
-
-      if (readySessions.length === 0) return;
-
-      logger.info(`Running periodic snapshots for ${readySessions.length} ready sessions`);
-
-      for (const session of readySessions) {
-        await this.triggerSnapshot(session.id);
-      }
-    } finally {
-      this.isSnapshotBatchRunning = false;
-    }
-  }
-
-  /**
-   * Force backup a specific session (called from REST API)
-   */
-  async forceBackup(
-    sessionId: string
-  ): Promise<{ success: boolean; sizeBytes?: number; error?: string }> {
-    if (!SnapshotService.isEnabled()) {
-      return { success: false, error: 'Snapshots are disabled' };
-    }
-
-    if (!SnapshotService.hasLocalAuth(sessionId)) {
-      return { success: false, error: 'No local auth files found for this session' };
-    }
-
-    try {
-      const snapshotData = await SnapshotService.createSnapshot(sessionId);
-      if (!snapshotData) {
-        return { success: false, error: 'Failed to create snapshot' };
-      }
-
-      const saved = await SessionPersistenceService.saveSnapshotData(sessionId, snapshotData);
-      if (!saved) {
-        return { success: false, error: 'Failed to save snapshot to database' };
-      }
-
-      return { success: true, sizeBytes: snapshotData.metadata.sizeBytes };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  }
-
-  /**
-   * Restore backup for a specific session (called from REST API)
-   */
-  async restoreBackup(sessionId: string): Promise<{ success: boolean; error?: string }> {
-    if (!SnapshotService.isEnabled()) {
-      return { success: false, error: 'Snapshots are disabled' };
-    }
-
-    try {
-      const snapshotData = await SessionPersistenceService.getSnapshotData(sessionId);
-      if (!snapshotData) {
-        return { success: false, error: 'No snapshot found for this session' };
-      }
-
-      const restored = await SnapshotService.restoreSnapshot(sessionId, snapshotData);
-      if (!restored) {
-        return { success: false, error: 'Failed to restore snapshot' };
-      }
-
-      // Emit socket event
-      try {
-        const WhatsAppServiceModule = await import('./WhatsAppService');
-        await WhatsAppServiceModule.default.notifySocketEvent({
-          event: 'session:snapshot_restored',
-          sessionId,
-          data: { restoredAt: new Date().toISOString() },
-          timestamp: new Date().toISOString(),
-        });
-      } catch {
-        /* ignore socket errors */
-      }
-
-      return { success: true };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-    }
-  }
-
-  /**
-   * Get backup status for a specific session
-   */
-  async getBackupStatus(sessionId: string): Promise<{
-    hasBackup: boolean;
-    lastBackupDate?: string;
-    sizeBytes?: number;
-    checksum?: string;
-  }> {
-    try {
-      const snapshotData = await SessionPersistenceService.getSnapshotData(sessionId);
-      if (!snapshotData) {
-        return { hasBackup: false };
-      }
-
-      return {
-        hasBackup: true,
-        lastBackupDate: snapshotData.metadata.createdAt,
-        sizeBytes: snapshotData.metadata.sizeBytes,
-        checksum: snapshotData.metadata.checksum,
-      };
-    } catch {
-      return { hasBackup: false };
-    }
   }
 
   /**
@@ -729,13 +532,12 @@ class WhatsAppServiceSimple {
   async getSessionHealth(sessionId: string): Promise<{
     status: string;
     hasLocalAuth: boolean;
-    backupStatus: { hasBackup: boolean; lastBackupDate?: string; sizeBytes?: number };
     heartbeatAge?: number;
     authInvalidated?: boolean;
   }> {
     const session = this.sessionManager.getSession(sessionId);
-    const hasLocalAuth = SnapshotService.hasLocalAuth(sessionId);
-    const backupStatus = await this.getBackupStatus(sessionId);
+    const authInfo = await this.authenticationManager.getAuthFileInfo(sessionId, './wwebjs_auth');
+    const hasLocalAuth = authInfo.exists;
 
     let heartbeatAge: number | undefined;
     try {
@@ -754,7 +556,6 @@ class WhatsAppServiceSimple {
     return {
       status: session?.status || 'unknown',
       hasLocalAuth,
-      backupStatus,
       heartbeatAge,
       authInvalidated,
     };

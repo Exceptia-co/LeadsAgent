@@ -14,11 +14,11 @@ El techo actual es **~5–8 sesiones concurrentes** en el CX23 (2 vCPU / 4 GB), 
 techo de **Chromium**, no del producto: 300–400 MB por sesión. Baileys usa 30–80 MB.
 Mismo hierro, ~40–60 sesiones. Sin eso, cada tenant nuevo es hierro nuevo.
 
-Ver `PLAN-WHATSAPP-AGENT-MULTITENANT.md:37` (techo) y `:73` (memory leaks documentados).
+Ver `PLAN-WHATSAPP-AGENT-MULTITENANT.md:41` (techo) y `:77` (memory leaks documentados).
 
 ## Por qué ahora y no después
 
-El proyecto está en piloto, sin clientes de pago. El propio plan lo dice en la línea 53:
+El proyecto está en piloto, sin clientes de pago. El propio plan lo dice en la línea 57:
 
 > «Lectura: proyecto en fase piloto. Ventana ideal para cambios arquitectónicos sin
 > migración dolorosa.»
@@ -71,14 +71,16 @@ solo cubre WhatsApp **Business App**, no personal. Ver R1 en el plan.
 ## Alcance real
 
 **Reescribir:** `ConnectionManager`, `EventDispatcher`, `AuthenticationManager`, la capa
-de transporte de `MessageHandler`, y `services/auth-snapshot/SnapshotService.ts` (hoy un
-tar cifrado del perfil de Chromium → pasa a JSON en Postgres, mucho más simple).
+de transporte de `MessageHandler`. (`services/auth-snapshot/SnapshotService.ts` ya no
+existe — se borró en Task 2 de este plan por no haber escrito nunca un byte en
+producción; `services/crypto/AesGcm.ts` sobrevive como la primitiva que Task 4
+reutiliza para las credenciales de Baileys.)
 
 **Adaptar:** `WhatsAppServiceSimple`, `SessionManager`, `SessionRecoveryService`, tipos,
 Dockerfile.
 
-**Borrar:** `config/puppeteer.config.ts` (119 líneas), `scripts/cleanup-chrome.ps1`,
-`patches/`, deps `puppeteer` y `tar`, el `chromium` del Dockerfile.
+**Borrar:** `config/puppeteer.config.ts` (119 líneas), `patches/`, dep `puppeteer`, el
+`chromium` del Dockerfile. (`tar` ya se borró en Task 2.)
 
 **Se reutiliza sin tocar:** DB, IA, Redis, contratos REST y Socket.IO.
 
@@ -95,7 +97,7 @@ Dockerfile.
 4. **`message.body` no existe en Baileys.** El texto vive en `conversation`,
    `extendedTextMessage.text`, `imageMessage.caption`… Una función que no cubra un tipo
    nuevo devuelve vacío en silencio.
-5. **Los 9 eventos se vuelven uno.** `connection.update` con códigos numéricos
+5. **Los 8 eventos se vuelven uno.** `connection.update` con códigos numéricos
    (`DisconnectReason`). La lógica de «¿fallo real o reconexión normal?» pasa a ser tuya.
 6. **Conservar los contratos REST, Socket.IO y los estados de sesión.** Cambias el
    transporte, no el dashboard ni la base de datos. Esto es lo que impide que «migrar la

@@ -60,7 +60,6 @@ export class EventDispatcher {
         messagePreview?: string
       ) => Promise<{ allowed: boolean; reason: string; leadInfo?: any }>;
     },
-    onSnapshotTrigger?: (sessionId: string) => Promise<void>,
     onAuthInvalidated?: (sessionId: string, reason: string) => Promise<void>,
     isSessionDestroying?: (sessionId: string) => boolean
   ): void {
@@ -141,16 +140,6 @@ export class EventDispatcher {
         data: { number: clientInfo?.wid?.user },
         timestamp: new Date().toISOString(),
       });
-
-      // Trigger snapshot backup after 5s delay (LocalAuth may still be writing)
-      if (onSnapshotTrigger) {
-        const snapshotTimeout = setTimeout(() => {
-          onSnapshotTrigger(sessionId).catch(err => {
-            logger.warn(`Snapshot trigger failed for session ${sessionId}:`, err);
-          });
-        }, 5000);
-        timeouts.push(snapshotTimeout);
-      }
     });
 
     // Authenticated event (once: whatsapp-web.js may emit this multiple times due to hasSynced race condition)

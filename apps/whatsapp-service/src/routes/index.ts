@@ -134,68 +134,10 @@ router.get(
   sessionController.getQRCode.bind(sessionController)
 );
 
-// ── Session Backup / Restore / Health endpoints ──────────────────
-//
 // PR5a-ter (Codex review #1): every :sessionId route now goes through
 // requireSessionOwnership before the handler so a tenant cannot
-// backup/restore/inspect a session owned by another tenant. Cross-tenant
-// returns 404 (matches SessionController's leak-safe pattern).
-
-// Force backup a session
-router.post(
-  '/sessions/:sessionId/backup',
-  validateSessionId,
-  requireSessionOwnership,
-  async (req, res) => {
-    try {
-      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-      const result = await WhatsAppService.forceBackup(req.params.sessionId);
-      if (result.success) {
-        res.json({ success: true, data: { sizeBytes: result.sizeBytes } });
-      } else {
-        res.status(400).json({ success: false, error: result.error });
-      }
-    } catch (error) {
-      res.status(500).json({ success: false, error: 'Error creating backup' });
-    }
-  }
-);
-
-// Restore backup for a session
-router.post(
-  '/sessions/:sessionId/restore-backup',
-  validateSessionId,
-  requireSessionOwnership,
-  async (req, res) => {
-    try {
-      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-      const result = await WhatsAppService.restoreBackup(req.params.sessionId);
-      if (result.success) {
-        res.json({ success: true, message: 'Backup restored successfully' });
-      } else {
-        res.status(400).json({ success: false, error: result.error });
-      }
-    } catch (error) {
-      res.status(500).json({ success: false, error: 'Error restoring backup' });
-    }
-  }
-);
-
-// Get backup status for a session
-router.get(
-  '/sessions/:sessionId/backup-status',
-  validateSessionId,
-  requireSessionOwnership,
-  async (req, res) => {
-    try {
-      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
-      const status = await WhatsAppService.getBackupStatus(req.params.sessionId);
-      res.json({ success: true, data: status });
-    } catch (error) {
-      res.status(500).json({ success: false, error: 'Error getting backup status' });
-    }
-  }
-);
+// inspect a session owned by another tenant. Cross-tenant returns 404
+// (matches SessionController's leak-safe pattern).
 
 // Get session health
 router.get(

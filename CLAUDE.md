@@ -61,8 +61,6 @@ pnpm db:reset              # Reset DB (⚠️ destructive)
 ```bash
 pnpm clean:cache                    # Clear Turborepo + .next/dist caches
 pnpm rebuild                        # clean:cache + install + db:generate + build:fast
-pnpm whatsapp:cleanup-chrome        # Kill stale Puppeteer Chrome sessions
-pnpm whatsapp:cleanup-chrome-force  # Force-kill (use only after locked sessions)
 pnpm audit:infra                    # Run scripts/audit-infra.ts (Hetzner/Supabase/Vercel sanity check)
 ```
 
