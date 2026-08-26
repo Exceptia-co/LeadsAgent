@@ -200,6 +200,10 @@ export class SessionHealthCheckService {
           isConnected: false,
           isAuthenticated: false,
           authFileHealth: 'missing',
+          // -1, not 0: the check threw, so nothing was measured. Reporting
+          // zero here would raise "no pre-keys left" off a failed health
+          // check rather than off an actual empty store.
+          preKeyCount: -1,
           consecutiveFailures: 1,
           uptime: 0,
           messagesSent24h: 0,

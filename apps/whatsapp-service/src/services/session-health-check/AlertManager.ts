@@ -1,5 +1,6 @@
 import { logger } from '../../utils/logger';
 import SessionPersistenceService from '../SessionPersistenceService';
+import { SESSION_CONSTANTS } from '../../config/session-constants';
 import type { SessionHealthStatus } from './DiagnosticsEngine';
 
 export interface HealthAlert {
@@ -100,10 +101,65 @@ export class AlertManager {
         enabled: true,
       },
       {
+        id: 'pre-keys-exhausted',
+        name: 'Pre-keys Exhausted',
+        type: 'auth',
+        // Only for a connected session, and never on -1 (the count could not
+        // be read). A disconnected session has no pre-keys in play and
+        // already has its own alert; raising this one too would bury the
+        // cause under a symptom.
+        //
+        // Baileys' initial upload runs before `connection: 'open'`, so an
+        // upload that fails while the socket is still coming up is not seen
+        // here. That is deliberate: the case this alert exists for is the
+        // silent one -- socket open, everything apparently fine, new
+        // contacts quietly unable to reach us -- and that case does reach
+        // this check on the next sweep. An upload failure that also stops
+        // the connection opening is not silent; it raises the connection
+        // alert, which is the accurate one.
+        condition: health => health.metrics.isConnected && health.metrics.preKeyCount === 0,
+        severity: 'critical',
+        message: health =>
+          `Session ${health.sessionId} has no pre-keys left: numbers it has never spoken to cannot reach it`,
+        // Deliberately not "reconnect to force an upload". Baileys decides
+        // whether to upload from the SERVER's stock, so the case that
+        // produces this alert -- the server took 30 keys and our store kept
+        // none -- looks healthy to it on reconnect and uploads nothing. The
+        // reconnect would appear to work and change nothing.
+        recommendation:
+          'Check whether pre-key writes are reaching whatsapp_auth_keys (whatsapp-service logs around uploaded pre-keys); if the store is genuinely empty while the server is not, the session has to be re-paired',
+        cooldownMs: 15 * 60 * 1000, // 15 minutes
+        enabled: true,
+      },
+      {
+        id: 'pre-keys-low',
+        name: 'Pre-keys Low',
+        type: 'auth',
+        // Below Baileys' own replenishment threshold while connected means a
+        // batch it believes it uploaded never reached the store. The window
+        // between here and zero is the only warning this failure gives.
+        condition: health =>
+          health.metrics.isConnected &&
+          health.metrics.preKeyCount > 0 &&
+          health.metrics.preKeyCount < SESSION_CONSTANTS.MIN_PRE_KEY_COUNT,
+        severity: 'high',
+        message: health =>
+          `Session ${health.sessionId} is down to ${health.metrics.preKeyCount} pre-keys (Baileys replenishes below ${SESSION_CONSTANTS.MIN_PRE_KEY_COUNT})`,
+        recommendation:
+          'Check whether Baileys pre-key uploads are being persisted; a replenisher that silently does nothing looks exactly like this',
+        cooldownMs: 30 * 60 * 1000, // 30 minutes
+        enabled: true,
+      },
+      {
         id: 'high-response-time',
         name: 'High Response Time',
         type: 'performance',
-        condition: health => health.metrics.responseTimeMs > 5000,
+        // Upper bound matters now that alerts dedupe per rule rather than
+        // per type. Unbounded, a 31s response raised this AND the critical
+        // rule below -- two alerts for one fact, the milder one adding
+        // nothing. The bands have to partition the range, not nest.
+        condition: health =>
+          health.metrics.responseTimeMs > 5000 && health.metrics.responseTimeMs <= 30000,
         severity: 'medium',
         message: health =>
           `High response time for session ${health.sessionId}: ${health.metrics.responseTimeMs}ms`,
@@ -163,11 +219,9 @@ export class AlertManager {
             continue;
           }
 
-          // Check if similar alert already exists
-          if (this.hasSimilarActiveAlert(sessionId, rule.type)) {
-            logger.debug(
-              `🔄 Similar alert already active for session ${sessionId}, type ${rule.type}`
-            );
+          // Check if this same rule is already raised and unresolved
+          if (this.hasActiveAlertForRule(sessionId, ruleId)) {
+            logger.debug(`🔄 Alert already active for session ${sessionId}, rule ${ruleId}`);
             continue;
           }
 
@@ -269,11 +323,23 @@ export class AlertManager {
   }
 
   /**
-   * Check if similar alert already exists
+   * Whether THIS rule is already raised and unresolved for this session.
+   *
+   * Deliberately per-rule, not per-type. Matching on `type` alone silenced
+   * every escalation the rule set is built to express: `pre-keys-low` and
+   * `pre-keys-exhausted` are both `auth`, so a session warning at 4 keys
+   * could never report reaching 0 -- and `high-response-time` and
+   * `critical-response-time` are both `performance`, so a session at 6s
+   * could never report crossing 30s. The first, mildest alert of a category
+   * suppressed the severe one behind it, which is the opposite of what an
+   * alert should do.
+   *
+   * Each rule keeps its own cooldown, so per-rule matching does not make the
+   * alert stream chattier for a problem that simply persists.
    */
-  private hasSimilarActiveAlert(sessionId: string, type: HealthAlert['type']): boolean {
+  private hasActiveAlertForRule(sessionId: string, ruleId: string): boolean {
     return Array.from(this.activeAlerts.values()).some(
-      alert => alert.sessionId === sessionId && alert.type === type && !alert.resolved
+      alert => alert.sessionId === sessionId && alert.metadata?.ruleId === ruleId && !alert.resolved
     );
   }
 
@@ -366,6 +432,17 @@ export class AlertManager {
       if (alert.sessionId === sessionId && !alert.resolved) {
         alert.resolved = true;
         resolvedCount++;
+
+        // Drop the cooldown with the alert it belongs to. The cooldown is
+        // there to stop a problem that is still happening from re-alerting
+        // every sweep -- and the active-alert check above already does that.
+        // What is left, once the alert resolves, is a window where the same
+        // problem coming straight back is silently swallowed: a session that
+        // recovers and fails again eight minutes later reports nothing at
+        // all. Recurrence is the signal, not the noise.
+        const ruleId = alert.metadata?.ruleId;
+        if (ruleId) this.alertCooldowns.delete(`${sessionId}-${ruleId}`);
+
         logger.info(`✅ Auto-resolved alert: ${alert.sessionId}: ${alert.message}`);
       }
     }

@@ -182,6 +182,29 @@ export class SessionCredentialsStore {
     return count > 0;
   }
 
+  /**
+   * How many one-time pre-keys this session still holds.
+   *
+   * The count is what makes pre-key exhaustion visible. A session that runs
+   * out cannot establish a Signal session with a contact it has never spoken
+   * to, so *new* conversations stop arriving while the socket stays open and
+   * every existing chat keeps working -- the session looks healthy from every
+   * angle except this number.
+   *
+   * Baileys replenishes on its own, checking the server's count at each open
+   * and uploading more when it is low. This does not second-guess that. It
+   * measures our side of it, because the upload lands in `setBatch` like any
+   * other write and Baileys' own transaction wrapper can drop a buffered
+   * batch without raising anything (see the app-state-sync-key note in the
+   * cutover post-mortem). A replenisher that silently does nothing is exactly
+   * the failure this is here to catch.
+   */
+  async countPreKeys(sessionId: string): Promise<number> {
+    return this.prisma.whatsAppAuthKey.count({
+      where: { sessionId, category: 'pre-key' },
+    });
+  }
+
   /** Only on explicit logout or session delete. Never on shutdown. */
   async clear(sessionId: string): Promise<void> {
     await this.prisma.whatsAppAuthKey.deleteMany({ where: { sessionId } });

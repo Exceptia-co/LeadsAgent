@@ -1,6 +1,7 @@
 import { logger } from '../../utils/logger';
 import SessionPersistenceService from '../SessionPersistenceService';
 import { sessionCredentialsStore } from '../session-credentials/SessionCredentialsStore';
+import { SESSION_CONSTANTS } from '../../config/session-constants';
 import type { WhatsAppSession } from '../../types';
 
 export interface SessionMetrics {
@@ -8,6 +9,11 @@ export interface SessionMetrics {
   isConnected: boolean;
   isAuthenticated: boolean;
   authFileHealth: 'valid' | 'corrupted' | 'missing';
+  /**
+   * One-time pre-keys still held for this session. `-1` means the count could
+   * not be read -- unknown, which must not be mistaken for zero.
+   */
+  preKeyCount: number;
   consecutiveFailures: number;
   lastSuccessfulPing?: Date;
   uptime: number;
@@ -71,6 +77,10 @@ export class HealthMetrics {
         // reported as "this session has no credentials" and raised the
         // auth-missing alert for a session whose credentials are fine.
         authFileHealth: 'valid',
+        // -1, not 0: a throw before the count below must not be reported as
+        // "this session has no pre-keys left" and raise the exhaustion alert
+        // for a session whose keys are fine. Same reasoning as authFileHealth.
+        preKeyCount: -1,
         consecutiveFailures: 0,
         uptime: 0,
         messagesSent24h: 0,
@@ -88,6 +98,10 @@ export class HealthMetrics {
       // 2. Authentication file health check
       result.metrics.authFileHealth = await this.checkAuthFileHealth(sessionId);
       this.evaluateAuthFileHealth(result);
+
+      // 2b. Pre-key stock. Cheap COUNT next to the auth read above.
+      result.metrics.preKeyCount = await this.countPreKeys(sessionId);
+      this.evaluatePreKeyStock(result);
 
       // 3. Response time measurement
       result.metrics.responseTimeMs = await this.measureResponseTime(whatsAppService, sessionId);
@@ -148,6 +162,53 @@ export class HealthMetrics {
    * raise an auth alert and send an operator hunting for a QR that was never
    * needed. Letting it throw records the collection failure instead.
    */
+  /**
+   * Pre-key stock, or -1 when it cannot be read.
+   *
+   * Failures do not propagate: this runs inside the periodic metrics sweep,
+   * and a Postgres blip must degrade one number to "unknown" rather than
+   * abort the whole collection for that session.
+   */
+  async countPreKeys(sessionId: string): Promise<number> {
+    try {
+      return await sessionCredentialsStore.countPreKeys(sessionId);
+    } catch (error) {
+      logger.warn(`Could not count pre-keys for ${sessionId}:`, error);
+      return -1;
+    }
+  }
+
+  /**
+   * Pre-key exhaustion is the quietest way this service can break: the socket
+   * stays open, existing chats keep working, and only conversations with
+   * numbers the session has never spoken to fail. Nothing else in the health
+   * model would notice.
+   */
+  private evaluatePreKeyStock(result: MetricsCollectionResult): void {
+    const { preKeyCount } = result.metrics;
+    if (preKeyCount < 0) return; // unknown, not empty
+
+    if (preKeyCount === 0) {
+      result.issues.push('No pre-keys left: new contacts cannot start a conversation');
+      // Not "reconnect to force an upload": Baileys decides from the
+      // SERVER's stock, so the case that produces this -- server took the
+      // keys, our store kept none -- looks healthy to it and uploads nothing.
+      result.recommendations.push(
+        'Check whether pre-key writes are reaching whatsapp_auth_keys; if the store is genuinely empty while the server is not, the session has to be re-paired'
+      );
+      return;
+    }
+
+    if (preKeyCount < SESSION_CONSTANTS.MIN_PRE_KEY_COUNT) {
+      result.issues.push(
+        `Pre-key stock low: ${preKeyCount} left (floor ${SESSION_CONSTANTS.MIN_PRE_KEY_COUNT})`
+      );
+      result.recommendations.push(
+        'Baileys replenishes on connect; if the count keeps falling, the uploads are not being persisted'
+      );
+    }
+  }
+
   async checkAuthFileHealth(sessionId: string): Promise<'valid' | 'corrupted' | 'missing'> {
     const hasCredentials = await sessionCredentialsStore.hasCredentials(sessionId);
     logger.debug(`🔐 Credentials for ${sessionId}: ${hasCredentials ? 'present' : 'absent'}`);
