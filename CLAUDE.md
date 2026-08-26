@@ -302,18 +302,57 @@ The lazy idempotent init pattern (`initialized + initializePromise`) is the conv
 
 ## Production deployment notes
 
-**This branch carries an unapplied Prisma migration**
-(`20260825124830_add_whatsapp_auth_keys`, adding the `whatsapp_auth_keys`
-table for the durable credential store — see the Baileys migration
-foundation plan, Task 4). Apply it against Supabase prod the same way B1
-was applied (see "Phase B.1" above) before or during this branch's
-deploy; it is not run automatically by `pnpm build` or `pm2 restart`.
+**Schema changes reach production as direct SQL, never `prisma migrate
+deploy`.** Prod's `_prisma_migrations` holds 2 rows against 6 migration
+directories in `packages/db/prisma/migrations/`, and the names do not
+overlap: the two histories are disjoint and will stay that way. Running
+`migrate deploy` against prod would try to replay migrations for schema
+that already exists.
 
-**Separately, and not fixed by any migration:** production currently has
-30 `whatsapp_sessions` rows deactivated by a since-fixed shutdown bug
-(Task 1 of the same plan). Reviving any of them is a deliberate,
-per-session operation — see
-`docs/deployment/post-shutdown-fix-recovery.md` before touching any row.
+The working contract, in order:
+
+1. **Preflight.** Query prod for whatever the change assumes — NULLs in a
+   column about to become NOT NULL, duplicates under a unique you are
+   about to add, rows that would violate a new FK. Write down the counts.
+   A migration that is only safe "because it should be" is not
+   preflighted. Where the rollback DDL cannot bring back data the change
+   destroys, take a backup or export first; a `DROP COLUMN` has no undo.
+2. **Write the forward SQL and its rollback together**, before either
+   runs. A change with no rollback statement is a change you have decided
+   not to be able to undo — decide that on purpose, never by omission.
+3. **Prepare the code in the same change**: edit `schema.prisma` so it
+   stays the desired-state contract, then `prisma validate`,
+   `db:generate`, `typecheck` and the tests. This happens **before**
+   anything touches prod — a schema change that turns out to break the
+   client is far cheaper to discover here than against a live database.
+4. **Deploy the tolerant code first** when the change needs it: for
+   anything that is not purely additive, ship a version that works
+   against both the old and new shape before the shape moves.
+5. **Apply the SQL** via Supabase MCP `execute_sql`, the route B1 took.
+6. **Verify the DDL, not the table.** That a table exists and holds rows
+   proves almost nothing: check the catalog for the primary key, every
+   unique, every index and every FK the SQL was supposed to create
+   (`information_schema` / `pg_indexes`). Only after that is it applied.
+7. **Deploy the final code and smoke the affected flow in prod**, then
+   diff the real database against `schema.prisma` and expect nothing.
+
+Keep the exact SQL, its rollback and the preflight counts in a runbook
+under `docs/deployment/`, never in `prisma/migrations/`, and leave
+`_prisma_migrations` alone.
+
+`20260825124830_add_whatsapp_auth_keys` reached prod by direct SQL on
+2026-08-26 — before this contract was written, so do not read it as a
+worked example of the seven steps. The table is live and holding
+credentials; it is **not** recorded in `_prisma_migrations`, and that is
+expected, not a gap to repair. The 2-against-6 count above is a snapshot
+of that day, not a number to check against — the two histories diverge
+further with every change, by design.
+
+**Separately:** production has 29 `whatsapp_sessions` rows deactivated by
+a since-fixed shutdown bug (Task 1 of the Baileys foundation plan). They
+are test sessions with no real users behind them. Reviving one is a
+deliberate, per-session operation — see
+`docs/deployment/post-shutdown-fix-recovery.md` first.
 
 **Hetzner VPS (46.225.26.89)** runs both the API and whatsapp-service under PM2:
 
