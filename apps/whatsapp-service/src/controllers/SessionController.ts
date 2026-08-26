@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import WhatsAppService from '../services/WhatsAppServiceSimple';
+import WhatsAppService from '../services/WhatsAppService';
 import SessionPersistenceService from '../services/SessionPersistenceService';
 import SessionRecoveryService from '../services/SessionRecoveryService';
 import { logger } from '../utils/logger';

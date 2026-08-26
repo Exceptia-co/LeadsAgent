@@ -1,111 +1,19 @@
-import type { Client } from 'whatsapp-web.js';
 import { logger } from '../../utils/logger';
-import type { SendMessageResponse } from '../../types';
 import type { NormalizedWhatsAppMessage } from '../../types/messages';
 import type { ReplyPort } from '../../types/reply-port';
 
 /**
- * MessageHandler - Handles all message sending, receiving, and processing operations
+ * MessageHandler - Inbound message processing
  *
  * Responsibilities:
- * - Message sending with proper phone number normalization
  * - AI message processing workflow
- * - Message validation and error handling
- * - Response strategies (quoting vs direct sending)
+ * - Response strategies (quoting vs direct sending), via ReplyPort
  *
- * Extracted from WhatsAppServiceSimple lines: 486-1072, 1597-1705
+ * Engine-neutral: it answers through a ReplyPort and never holds a client.
+ * The outbound path (sendMessage) moved to BaileysSessionManager with the
+ * engine cutover.
  */
 export class MessageHandler {
-  /**
-   * Send a message through WhatsApp
-   */
-  async sendMessage(
-    client: Client,
-    sessionId: string,
-    to: string,
-    message: string,
-    onStatusUpdate: (sessionId: string, status: string, data?: any) => Promise<void>
-  ): Promise<SendMessageResponse> {
-    try {
-      if (!client) {
-        return {
-          success: false,
-          error: `Session ${sessionId} not found`,
-        };
-      }
-
-      // Update health check on successful message sending attempt
-      await onStatusUpdate(sessionId, 'ready', {
-        lastHealthCheck: new Date(),
-      });
-
-      // Normalize phone number for WhatsApp Web compatibility
-      let normalizedNumber: string;
-      try {
-        normalizedNumber = this.normalizePhoneNumber(to);
-      } catch (normalizationError) {
-        const errorMessage =
-          normalizationError instanceof Error
-            ? normalizationError.message
-            : 'Invalid phone number format';
-
-        logger.error(`📞 Phone normalization failed for ${to}:`, errorMessage);
-        return {
-          success: false,
-          error: `Phone number validation failed: ${errorMessage}`,
-        };
-      }
-
-      const formattedNumber = normalizedNumber.includes('@c.us')
-        ? normalizedNumber
-        : `${normalizedNumber}@c.us`;
-
-      logger.info(`📞 WhatsApp Service - Attempting to send message:`, {
-        sessionId,
-        originalNumber: to,
-        normalizedNumber,
-        formattedNumber,
-        messagePreview: message.substring(0, 50) + '...',
-      });
-
-      const sentMessage = await client.sendMessage(formattedNumber, message);
-
-      logger.info(`Message sent successfully in session ${sessionId}`, {
-        to: formattedNumber,
-        messageId: sentMessage.id._serialized,
-      });
-
-      // Update health check on successful message sent
-      await onStatusUpdate(sessionId, 'ready', {
-        lastHealthCheck: new Date(),
-      });
-
-      return {
-        success: true,
-        messageId: sentMessage.id._serialized,
-      };
-    } catch (error) {
-      logger.error(`Error sending message in session ${sessionId}:`, error);
-
-      // Provide more specific error messages for common issues
-      let errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-      if (errorMessage.includes('Evaluation failed')) {
-        errorMessage =
-          'WhatsApp Web evaluation failed - possibly due to invalid phone number format or session state';
-      } else if (errorMessage.includes('net::ERR_')) {
-        errorMessage = 'Network error - check internet connection';
-      } else if (errorMessage.includes('Target closed')) {
-        errorMessage = 'WhatsApp session was closed unexpectedly';
-      }
-
-      return {
-        success: false,
-        error: errorMessage,
-      };
-    }
-  }
-
   /**
    * Process message with AI integration.
    *
@@ -347,36 +255,6 @@ export class MessageHandler {
         }
       }
     }
-  }
-
-  /**
-   * Normalize phone number for WhatsApp Web compatibility
-   */
-  private normalizePhoneNumber(phoneNumber: string): string {
-    if (!phoneNumber) {
-      throw new Error('Phone number is required');
-    }
-
-    // Remove WhatsApp suffix if present
-    let normalized = phoneNumber.replace(/@c\.us$/, '').replace(/@g\.us$/, '');
-
-    // Remove '+' prefix that causes issues with WhatsApp Web
-    normalized = normalized.replace(/^\+/, '');
-
-    // Remove any spaces, dashes, or parentheses
-    normalized = normalized.replace(/[\s\-\(\)]/g, '');
-
-    // Ensure it's only digits
-    normalized = normalized.replace(/[^\d]/g, '');
-
-    // Validate the result
-    if (!normalized || normalized.length < 8 || normalized.length > 15) {
-      throw new Error(`Invalid phone number format: ${phoneNumber}. Expected 8-15 digits.`);
-    }
-
-    logger.debug(`📞 Phone normalization: ${phoneNumber} → ${normalized}`);
-
-    return normalized;
   }
 
   /**

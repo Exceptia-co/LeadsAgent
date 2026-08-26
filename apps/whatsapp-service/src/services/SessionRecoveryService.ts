@@ -3,7 +3,7 @@ import SessionPersistenceService from './SessionPersistenceService';
 import { SESSION_CONSTANTS } from '../config/session-constants';
 
 // Import modular components
-import { AuthValidator } from './session/AuthValidator';
+import { sessionCredentialsStore } from './session-credentials/SessionCredentialsStore';
 import { RecoveryRunner, RecoveryOptions } from './session/RecoveryRunner';
 import { HealthMetrics } from './session/HealthMetrics';
 import { AlertsService } from './session/AlertsService';
@@ -15,7 +15,6 @@ export interface RecoveryResult {
   skippedSessions: number;
   authValidationPassed: number;
   authValidationFailed: number;
-  authFilesCleanedUp: number;
   errors: string[];
   recoveryTimeMs: number;
   metrics: {
@@ -32,7 +31,6 @@ export class SessionRecoveryService {
   private useModularImplementation: boolean;
 
   // Modular components
-  private authValidator = new AuthValidator();
   private recoveryRunner = new RecoveryRunner();
   private healthMetrics = new HealthMetrics();
   private alertsService = new AlertsService();
@@ -43,7 +41,6 @@ export class SessionRecoveryService {
     maxReconnectAttempts: SESSION_CONSTANTS.MAX_RECONNECT_ATTEMPTS,
     timeoutMs: 30000,
     validateAuthFiles: true,
-    cleanupCorruptedAuth: true,
     maxConcurrentRecoveries: 3,
   };
 
@@ -73,7 +70,6 @@ export class SessionRecoveryService {
       skippedSessions: 0,
       authValidationPassed: 0,
       authValidationFailed: 0,
-      authFilesCleanedUp: 0,
       errors: [],
       recoveryTimeMs: 0,
       metrics: {
@@ -97,17 +93,6 @@ export class SessionRecoveryService {
 
       logger.info(`📋 Encontradas ${persistedSessions.length} sesiones para recuperar`);
 
-      if (config.validateAuthFiles) {
-        const authStats = await this.authValidator.validateAllAuthFiles(
-          persistedSessions,
-          config.cleanupCorruptedAuth
-        );
-        result.authValidationPassed = authStats.validAuth;
-        result.authValidationFailed = authStats.invalidAuth;
-        result.authFilesCleanedUp = authStats.cleanedUp;
-        result.errors.push(...authStats.errors);
-      }
-
       const recoveryResult = await this.recoveryRunner.executeRecoveryBatch(
         whatsAppService,
         persistedSessions,
@@ -125,6 +110,30 @@ export class SessionRecoveryService {
         if (sessionResult.errorMessage) {
           result.errors.push(`${sessionResult.sessionId}: ${sessionResult.errorMessage}`);
         }
+      }
+
+      if (config.validateAuthFiles) {
+        // The one call site of the seven that really was a read. It answers
+        // "can this session reconnect without a new QR?" from Postgres now,
+        // and it is deliberately not wrapped in a per-session try/catch: a
+        // pooler timeout means *unknown*, not "no credentials", and swallowing
+        // it into `false` would count healthy sessions as auth failures.
+        //
+        // It runs AFTER the batch on purpose. Its only consumer is the
+        // authHealthScore metric, and boot recovery is one-shot -- in front of
+        // the batch, letting the error out would turn "unknown" into "no
+        // session reconnects until someone calls POST /sessions/restore". It
+        // also kept N sequential COUNT queries on the startup path.
+        for (const sessionData of persistedSessions) {
+          if (await sessionCredentialsStore.hasCredentials(sessionData.sessionId)) {
+            result.authValidationPassed++;
+          } else {
+            result.authValidationFailed++;
+          }
+        }
+        logger.info(
+          `🔍 Credenciales presentes en ${result.authValidationPassed}/${persistedSessions.length} sesiones`
+        );
       }
 
       await this.cleanupFailedSessionsEnhanced();
@@ -214,13 +223,6 @@ export class SessionRecoveryService {
           (s.metadata?.recoveryFailureCount || 0) > 10
       );
 
-      const authCorruptedSessions = sessions.filter(
-        s =>
-          s.metadata?.authCorruptionDetected &&
-          new Date(s.metadata.authCleanupPerformed || 0).getTime() <
-            Date.now() - 24 * 60 * 60 * 1000
-      );
-
       for (const session of failedSessions) {
         logger.info(
           `🧹 Desactivando sesión fallida: ${session.sessionId} (reconexiones: ${session.reconnectCount})`
@@ -234,30 +236,14 @@ export class SessionRecoveryService {
           `Session deactivated due to ${session.reconnectCount} failed reconnection attempts`,
           { reconnectCount: session.reconnectCount }
         );
-
-        try {
-          await this.authValidator.cleanupCorruptedAuth(
-            session.sessionId,
-            require('path').resolve('./wwebjs_auth')
-          );
-        } catch (cleanupError) {
-          logger.debug(`Error cleaning auth files for ${session.sessionId}:`, cleanupError);
-        }
       }
 
-      for (const session of authCorruptedSessions) {
-        logger.info(`🧹 Limpiando auth corrupto antiguo: ${session.sessionId}`);
-        await this.authValidator.cleanupCorruptedAuth(
-          session.sessionId,
-          require('path').resolve('./wwebjs_auth')
-        );
-      }
-
-      const totalCleaned = failedSessions.length + authCorruptedSessions.length;
-      if (totalCleaned > 0) {
-        logger.info(
-          `🧹 Limpieza completada: ${failedSessions.length} sesiones desactivadas, ${authCorruptedSessions.length} auth corruptos limpiados`
-        );
+      // Deactivating the row is the whole cleanup now. The credentials stay:
+      // a session that ran out of reconnect attempts has not been logged out,
+      // and wiping its Signal keys here would force a re-pair for what is
+      // usually a network outage.
+      if (failedSessions.length > 0) {
+        logger.info(`🧹 Limpieza completada: ${failedSessions.length} sesiones desactivadas`);
       }
     } catch (error) {
       logger.error('Error en limpieza avanzada de sesiones:', error);
@@ -280,7 +266,7 @@ export class SessionRecoveryService {
     return {
       type: 'modular',
       version: '2.0.0',
-      components: ['AuthValidator', 'RecoveryRunner', 'HealthMetrics', 'AlertsService'],
+      components: ['RecoveryRunner', 'HealthMetrics', 'AlertsService'],
     };
   }
 

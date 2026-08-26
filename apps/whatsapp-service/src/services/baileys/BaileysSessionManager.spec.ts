@@ -592,7 +592,7 @@ describe('BaileysSessionManager observable state', () => {
     jest.useRealTimers();
   });
 
-  it('lands_on_disconnected_when_the_budget_runs_out_and_when_logged_out', async () => {
+  it('lands_on_disconnected_when_the_budget_runs_out_and_auth_failure_when_logged_out', async () => {
     jest.useFakeTimers();
     const manager = makeManager();
     await manager.createSession(SESSION_ID);
@@ -616,7 +616,229 @@ describe('BaileysSessionManager observable state', () => {
     await other.createSession('logged-out');
     close(DisconnectReason.loggedOut);
     await Promise.resolve();
-    expect(other.getSession('logged-out')!.status).toBe('disconnected');
+    // 'auth_failure', not 'disconnected'. This is the in-memory status the
+    // REST session route serves, and it is what tells the operator a new QR is
+    // needed rather than that the session is coming back on its own. The two
+    // outcomes must stay distinguishable: a 401 and an exhausted budget both
+    // end the session, and only one of them can be waited out.
+    expect(other.getSession('logged-out')!.status).toBe('auth_failure');
+
+    jest.useRealTimers();
+  });
+
+  it('records_a_401_as_auth_failure_everywhere_it_is_written', async () => {
+    // Three writers record a 401 and they used to contradict each other:
+    // handleSessionDisconnect mapped it to auth_failure, then markLoggedOut's
+    // own status write and its webhook both said 'disconnected' -- the second
+    // because apps/api branches on data.authInvalidated and the payload did
+    // not carry it. Recovery was unaffected (metadata.authInvalidated is the
+    // latch), but the status the dashboard shows was wrong, which is the whole
+    // signal an operator uses to decide whether to go and scan a QR.
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.loggedOut } } },
+    });
+    await jest.advanceTimersByTimeAsync(0);
+
+    // The persisted row. Filtering by the lastError rather than taking the
+    // last call keeps this from passing on some unrelated write.
+    const logout = sessionStatus.mock.calls.filter((c: any[]) => c[2]?.metadata?.authInvalidated);
+    expect(logout).toHaveLength(1);
+    expect(logout[0][1]).toBe('auth_failure');
+
+    // The webhook apps/api consumes. Without authInvalidated it falls to the
+    // 'disconnected' arm of `data?.authInvalidated ? … : …` and the API's copy
+    // of the session contradicts ours.
+    const disconnects = publisher.sendWebhook.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((pl: any) => pl.event === 'disconnected');
+    expect(disconnects).toHaveLength(1);
+    expect(disconnects[0].data).toMatchObject({
+      disconnectType: 'WHATSAPP_LOGGED_OUT',
+      authInvalidated: true,
+    });
+    // apps/api writes data.reason into whatsapp_sessions.lastError -- the same
+    // column this method just set. Sending anything else (it used to send the
+    // token 'logged_out') overwrites the explanation with something less
+    // useful a moment after persisting it.
+    expect(disconnects[0].data.reason).toBe(logout[0][2].lastError);
+    expect(disconnects[0].data.reason).toContain('401');
+  });
+
+  it('stops_without_wiping_credentials_when_another_client_takes_over', async () => {
+    // 440 is a takeover, not a failure. Retrying it is a fight the user loses
+    // either way: five rounds of kicking each other off. But it must not reach
+    // markLoggedOut either -- the credentials are valid, so clearing them
+    // would turn "you opened WhatsApp Web elsewhere" into "scan a new QR".
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    mockMakeWASocket.mockClear();
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionReplaced } } },
+    });
+    await jest.advanceTimersByTimeAsync(0);
+
+    // No retry armed, and none appearing later: the timer is the only witness,
+    // since a manager that scheduled one looks identical until it fires.
+    expect(jest.getTimerCount()).toBe(0);
+    await jest.advanceTimersByTimeAsync(120000);
+    expect(mockMakeWASocket).not.toHaveBeenCalled();
+
+    expect(store.clear).not.toHaveBeenCalled();
+    const replaced = sessionStatus.mock.calls.filter((c: any[]) => c[2]?.metadata?.replacedAt);
+    expect(replaced).toHaveLength(1);
+    expect(replaced[0][1]).toBe('disconnected');
+    // Recoverable on a later boot, once the other client has gone.
+    expect(replaced[0][2].metadata.autoReconnect).toBe(true);
+    expect(replaced[0][2].lastError).toContain('taken over');
+
+    const takeover = publisher.sendWebhook.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((pl: any) => pl.event === 'disconnected')
+      .pop();
+    // Same rule as the other terminal path: apps/api persists data.reason over
+    // the lastError asserted just above.
+    expect(takeover.data.reason).toBe(replaced[0][2].lastError);
+    // Not NETWORK_ERROR -- a terminal takeover is not a blip we mean to retry.
+    expect(takeover.data.disconnectType).toBe('WHATSAPP_REPLACED');
+
+    jest.useRealTimers();
+  });
+
+  it('publishes_one_disconnected_webhook_on_a_transient_close', async () => {
+    // The engine this replaces used client.on('disconnected'), so every drop
+    // reached both consumers. Emitting only from markLoggedOut means a
+    // transient close publishes nothing: apps/api never records the drop, and
+    // SocketService never emits session:disconnected -- so the dashboard shows
+    // the session as connected for the entire time it is down and
+    // reconnecting.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    publisher.sendWebhook.mockClear();
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
+    await jest.advanceTimersByTimeAsync(0);
+
+    const disconnects = publisher.sendWebhook.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((p: any) => p.event === 'disconnected');
+    // Exactly one: markLoggedOut publishes its own, so a close that reached
+    // both paths would double-report.
+    expect(disconnects).toHaveLength(1);
+    // `data.reason` specifically -- SocketService.processWebhookEvent passes
+    // `payload.data.reason` to emitSessionDisconnected and apps/api stores it
+    // as lastError. A payload carrying the code under any other key satisfies
+    // a shape check and gives both consumers undefined.
+    expect(disconnects[0]).toMatchObject({
+      event: 'disconnected',
+      sessionId: SESSION_ID,
+      data: { reason: expect.stringContaining('408'), disconnectType: 'NETWORK_ERROR' },
+    });
+    expect(typeof disconnects[0].timestamp).toBe('string');
+
+    // A single disconnect emits close twice -- the socket emits it, and end()
+    // emits it again during teardown. scheduleRetry already re-arms the same
+    // rung rather than advancing it; without the matching suppression here the
+    // dashboard gets two session:disconnected events for one drop.
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(
+      publisher.sendWebhook.mock.calls
+        .map((c: any[]) => c[0])
+        .filter((pl: any) => pl.event === 'disconnected')
+    ).toHaveLength(1);
+    // The suppression must not have cost the retry: still exactly one timer,
+    // re-armed rather than doubled.
+    expect(jest.getTimerCount()).toBe(1);
+
+    jest.useRealTimers();
+  });
+
+  it('a_transient_close_does_not_bar_the_session_from_recovery', async () => {
+    // SessionManager.handleSessionDisconnect has no case for
+    // 'WHATSAPP_DISCONNECT'; it falls to `default`, which writes
+    // metadata.autoReconnect:false -- and RecoveryRunner refuses to recover a
+    // session carrying that flag. So the string this manager reports decides
+    // whether a session survives a network blip across a restart. Asserting it
+    // here rather than in SessionManager's spec is deliberate: the mapping is
+    // already covered there, and what nothing else pins is which string this
+    // side sends.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
+    await Promise.resolve();
+
+    // 'NETWORK_ERROR' is the only string in that switch that both maps to
+    // shouldAutoReconnect:true and leaves authInvalidated false.
+    expect(sessionDisconnect.mock.calls[0][1]).toBe('NETWORK_ERROR');
+
+    jest.useRealTimers();
+  });
+
+  it('an_exhausted_budget_still_leaves_the_session_recoverable', async () => {
+    // The other half of the pair, and the one that is counter-intuitive.
+    // Spending the budget means a problem persisted for about two minutes; it
+    // is not evidence the session should never be tried again. The flag means
+    // "may RecoveryRunner attempt this at boot", the budget is per-process, so
+    // writing false here condemns a healthy session to zombie state over a
+    // temporary fibre cut -- recoverable only by database surgery. That is the
+    // failure documented in post-shutdown-fix-recovery.md, and it is one of
+    // the two Phase 1 latches, so it should never be settable by accident.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+
+    const close = () =>
+      sock.emit('connection.update', {
+        connection: 'close',
+        lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+      });
+
+    for (const rung of [2000, 5000, 10000, 30000, 60000]) {
+      close();
+      await jest.advanceTimersByTimeAsync(rung);
+    }
+    close();
+    await jest.advanceTimersByTimeAsync(120000);
+
+    // Keyed on gaveUpAt, not on the flag itself: filtering by
+    // `autoReconnect === true` would find the transient writes as well and
+    // pass for an implementation that latches at the end.
+    const gaveUp = sessionStatus.mock.calls.filter((c: any[]) => c[2]?.metadata?.gaveUpAt);
+    expect(gaveUp).toHaveLength(1);
+    expect(gaveUp[0][1]).toBe('disconnected');
+    expect(gaveUp[0][2].metadata.autoReconnect).toBe(true);
+    // The operator's only record of what happened, and what the dashboard
+    // surfaces -- the flag no longer carries that signal.
+    expect(gaveUp[0][2].lastError).toContain('Reconnect budget exhausted');
+
+    // ...and it has to survive the webhook that follows it. apps/api writes
+    // data.reason into this very column, so a generic string here erases the
+    // line above microseconds after it lands.
+    const lastDisconnect = publisher.sendWebhook.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((pl: any) => pl.event === 'disconnected')
+      .pop();
+    expect(lastDisconnect.data.reason).toBe(gaveUp[0][2].lastError);
 
     jest.useRealTimers();
   });
@@ -650,7 +872,12 @@ describe('BaileysSessionManager observable state', () => {
     expect(mockRedisGet).toHaveBeenCalledWith(`session:hb:${SESSION_ID}`);
     expect(health.heartbeatAge).toBeGreaterThanOrEqual(45_000);
     expect(health.authInvalidated).toBe(true);
-    expect(health.status).toBe('disconnected');
+    // getSessionHealth ORs the two sources, so now that a 401 sets the status
+    // to 'auth_failure' the assertion above would pass on the status alone --
+    // including for an implementation that stopped writing the metadata flag.
+    // That flag is what RecoveryRunner's latch reads, so pin it directly.
+    expect(manager.getSession(SESSION_ID)!.metadata!.authInvalidated).toBe(true);
+    expect(health.status).toBe('auth_failure');
   });
 
   it('reports_the_disconnect_upstream_on_every_close_that_is_not_a_restart', async () => {
@@ -678,8 +905,11 @@ describe('BaileysSessionManager observable state', () => {
     // or twice for one event -- satisfies toHaveBeenCalledWith and floods the
     // persisted reconnectCount.
     expect(sessionDisconnect).toHaveBeenCalledTimes(1);
+    // NETWORK_ERROR, not WHATSAPP_DISCONNECT: see
+    // `a_transient_close_does_not_bar_the_session_from_recovery` below for why
+    // the string is load-bearing.
     expect(sessionDisconnect).toHaveBeenCalledWith(
-      SESSION_ID, 'WHATSAPP_DISCONNECT', expect.anything()
+      SESSION_ID, 'NETWORK_ERROR', expect.anything()
     );
 
     sessionDisconnect.mockClear();

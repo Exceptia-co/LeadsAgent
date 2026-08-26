@@ -1,9 +1,7 @@
 import { logger } from '../../utils/logger';
 import type { SessionPersistenceData } from '../SessionPersistenceService';
 import SessionPersistenceService from '../SessionPersistenceService';
-import { AuthValidator } from './AuthValidator';
 import { SESSION_CONSTANTS } from '../../config/session-constants';
-import path from 'path';
 
 export interface RecoveryOptions {
   maxRetries: number;
@@ -11,7 +9,6 @@ export interface RecoveryOptions {
   maxReconnectAttempts: number;
   timeoutMs: number;
   validateAuthFiles: boolean;
-  cleanupCorruptedAuth: boolean;
   maxConcurrentRecoveries: number;
 }
 
@@ -36,7 +33,6 @@ export interface BatchRecoveryResult {
 
 export class RecoveryRunner {
   private persistenceService = SessionPersistenceService;
-  private authValidator = new AuthValidator();
 
   async executeRecoveryBatch(
     whatsAppService: any,
@@ -224,21 +220,15 @@ export class RecoveryRunner {
       } catch (error) {
         lastError = error instanceof Error ? error : new Error('Unknown error');
 
-        const isAuthError =
-          lastError.message.includes('auth') ||
-          lastError.message.includes('QR') ||
-          lastError.message.includes('authentication');
-
-        if (isAuthError && options.cleanupCorruptedAuth) {
-          logger.warn(
-            `🔧 Error de autenticación para ${sessionData.sessionId}, limpiando archivos...`
-          );
-          await this.authValidator.cleanupCorruptedAuth(
-            sessionData.sessionId,
-            path.resolve('./wwebjs_auth')
-          );
-        }
-
+        // No credential cleanup here. The Chromium-era policy wiped the
+        // session's auth directory whenever lastError.message contained
+        // 'auth' -- cheap and roughly right against a half-written profile
+        // directory on disk, and
+        // catastrophic against durable transactional rows, where it would
+        // force a re-pair on any transient error containing the word.
+        // Credentials are cleared in exactly two places, both in
+        // BaileysSessionManager: DisconnectReason.loggedOut, and an explicit
+        // delete.
         logger.warn(`⚠️ Intento ${attempt} falló para ${sessionData.sessionId}:`, error);
 
         if (attempt < options.maxRetries) {
@@ -264,7 +254,7 @@ export class RecoveryRunner {
     const { lastError, lastSeen, reconnectCount, metadata } = sessionData;
     const sessionMetadata = metadata || {};
 
-    if (lastError && this.authValidator.isSessionClosedByUser(lastError)) {
+    if (lastError && RecoveryRunner.isSessionClosedByUser(lastError)) {
       return {
         shouldRecover: false,
         reason: `Session was closed by user: ${lastError}`,
@@ -279,9 +269,8 @@ export class RecoveryRunner {
     }
 
     if (
-      sessionMetadata.authCorruptionDetected ||
       sessionMetadata.lastAlertType === 'authentication' ||
-      (lastError && this.authValidator.isAuthCorruptionError(lastError))
+      (lastError && RecoveryRunner.isAuthCorruptionError(lastError))
     ) {
       return {
         shouldRecover: false,
@@ -292,7 +281,7 @@ export class RecoveryRunner {
     if (
       sessionMetadata.manualDisconnect === true &&
       sessionMetadata.lastDisconnectTime &&
-      this.authValidator.isRecentManualDisconnect(sessionMetadata.lastDisconnectTime)
+      RecoveryRunner.isRecentManualDisconnect(sessionMetadata.lastDisconnectTime)
     ) {
       return {
         shouldRecover: false,
@@ -354,6 +343,59 @@ export class RecoveryRunner {
       shouldRecover: true,
       reason: 'Session passed all recovery checks',
     };
+  }
+
+  /**
+   * The three heuristics that came back from AuthValidator with the storage
+   * migration. None of them ever touched the filesystem: two are substring
+   * matches on a persisted lastError, one is a timestamp comparison. They
+   * decide whether to *retry* a session, never whether to delete anything.
+   */
+  private static isAuthCorruptionError(lastError: string): boolean {
+    const authCorruptionIndicators = [
+      'authentication files are corrupted',
+      'auth files corrupted',
+      'session files invalid',
+      'chrome profile corrupted',
+      'local storage corrupted',
+      'session storage corrupted',
+      'authentication failed repeatedly',
+      'qr code timeout',
+      'auth timeout',
+      'profile directory corrupted',
+      'browser profile invalid',
+    ];
+
+    const normalizedError = lastError.toLowerCase();
+    return authCorruptionIndicators.some(indicator => normalizedError.includes(indicator));
+  }
+
+  private static isSessionClosedByUser(lastError: string): boolean {
+    const userClosureIndicators = [
+      'browser disconnected',
+      'browser was closed',
+      'page closed',
+      'browser_closed',
+      'page_closed',
+      'target closed',
+      'force disconnected by user',
+      'user closed',
+      'window closed',
+    ];
+
+    const normalizedError = lastError.toLowerCase();
+    return userClosureIndicators.some(indicator => normalizedError.includes(indicator));
+  }
+
+  private static isRecentManualDisconnect(lastDisconnectTime: string): boolean {
+    try {
+      const disconnectTime = new Date(lastDisconnectTime);
+      const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+
+      return disconnectTime > thirtyMinutesAgo;
+    } catch (error) {
+      return false;
+    }
   }
 
   private isHealthCheckTooOld(lastSeen: Date): boolean {

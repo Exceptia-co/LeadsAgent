@@ -5,7 +5,7 @@ import SessionHealthCheckService, {
   SessionHealthCheckService as HealthService,
   HealthCheckOptions,
 } from '../services/SessionHealthCheckService';
-import WhatsAppServiceSimple from '../services/WhatsAppServiceSimple';
+import WhatsAppService from '../services/WhatsAppService';
 
 const router: Router = express.Router();
 
@@ -171,7 +171,7 @@ router.post('/check', async (req, res) => {
   try {
     logger.info('🏥 Manual health check triggered via API');
 
-    const report = await SessionHealthCheckService.runHealthCheck(WhatsAppServiceSimple);
+    const report = await SessionHealthCheckService.runHealthCheck(WhatsAppService);
 
     res.json({
       success: true,
@@ -199,7 +199,7 @@ router.post('/check/:sessionId', async (req, res) => {
     logger.info(`🏥 Manual health check triggered for session ${sessionId}`);
 
     // Get session from WhatsApp service
-    const session = await WhatsAppServiceSimple.getSessionStatus(sessionId);
+    const session = await WhatsAppService.getSessionStatus(sessionId);
     if (!session) {
       return res.status(404).json({
         success: false,
@@ -209,7 +209,7 @@ router.post('/check/:sessionId', async (req, res) => {
 
     // Perform health check on specific session
     const healthStatus = await SessionHealthCheckService.checkSessionHealth(
-      WhatsAppServiceSimple,
+      WhatsAppService,
       session
     );
 

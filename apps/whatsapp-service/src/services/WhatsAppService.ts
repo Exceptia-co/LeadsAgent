@@ -90,8 +90,12 @@ export class WhatsAppService {
   // CORE WHATSAPP FUNCTIONALITY - Delegated to SimpleService
   // =============================================================================
 
-  async createSession(sessionId: string): Promise<WhatsAppSession> {
-    return this.simpleService.createSession(sessionId);
+  // tenantId is not optional in practice: PR5a-bis binds it on the first
+  // create, and a session row that lands with tenant_id NULL is one apps/api
+  // then refuses to process. The parameter stays optional only for the
+  // recovery path, which re-creates a session whose row already has an owner.
+  async createSession(sessionId: string, tenantId?: string): Promise<WhatsAppSession> {
+    return this.simpleService.createSession(sessionId, tenantId);
   }
 
   async getSessionStatus(sessionId: string): Promise<WhatsAppSession | null> {
@@ -112,6 +116,15 @@ export class WhatsAppService {
 
   async forceDisconnectSession(sessionId: string): Promise<void> {
     await this.simpleService.forceDisconnectSession(sessionId);
+  }
+
+  async getSessionHealth(sessionId: string): Promise<{
+    status: string;
+    hasLocalAuth: boolean;
+    heartbeatAge?: number;
+    authInvalidated?: boolean;
+  }> {
+    return this.simpleService.getSessionHealth(sessionId);
   }
 
   // =============================================================================

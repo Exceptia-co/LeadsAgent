@@ -17,6 +17,13 @@ import redisClient, { REDIS_KEYS } from '../../config/redis';
  * Extracted from WhatsAppServiceSimple lines: 83-227, 232-234, 635-707, 709-731
  */
 export class SessionManager {
+  /**
+   * No longer populated after the Baileys cutover: BaileysSessionManager owns
+   * the live session map, and WhatsAppServiceSimple reads it from there. This
+   * map, and every accessor over it (getSession, getAllSessions, hasSession,
+   * createSessionObject, …), is dead weight kept only until Task 8b sweeps the
+   * whatsapp-web.js layer. Do not add a reader: it will always be empty.
+   */
   private sessions: Map<string, WhatsAppSession> = new Map();
   private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
   private statusUpdateLocks: Map<string, Promise<void>> = new Map();
@@ -122,14 +129,17 @@ export class SessionManager {
    * may pass undefined; the row will land with tenantId=null and require
    * a backfill — but the HTTP layer prevents this for new creates.
    */
-  async persistSession(
-    sessionId: string,
-    tenantId?: string,
-    webhookUrl?: string,
-    authFileInfo?: any
-  ): Promise<void> {
+  async persistSession(sessionId: string, tenantId?: string, webhookUrl?: string): Promise<void> {
     try {
-      await SessionPersistenceService.saveSession({
+      // saveSession catches its own errors and returns false, so ordering this
+      // ahead of the socket is not enough on its own: a database blip would
+      // leave no session row, the socket would open anyway, and the first
+      // creds.update would hit the whatsapp_auth_keys -> whatsapp_sessions
+      // foreign key inside a handler whose guard() swallows the rejection into
+      // a log line. The session pairs, works, and silently stores no
+      // credentials -- then demands a fresh QR at the next restart with
+      // nothing pointing at why.
+      const saved = await SessionPersistenceService.saveSession({
         sessionId: sessionId,
         tenantId,
         name: sessionId,
@@ -138,16 +148,18 @@ export class SessionManager {
         webhookUrl: webhookUrl,
         isActive: true,
         reconnectCount: 0,
+        // The authFileInfo parameter and its four metadata fields went with
+        // the disk-auth layer: nothing read them, and they described a
+        // directory that no longer exists. Credentials live in
+        // whatsapp_auth_keys now, keyed by this row's sessionId.
         metadata: {
           clientId: sessionId,
-          authDataPath: './wwebjs_auth',
-          authFileExists: authFileInfo?.exists || false,
-          authFileSize: authFileInfo?.size || 0,
-          authFileModified: authFileInfo?.modified || null,
           sessionCreated: new Date().toISOString(),
-          localAuthVersion: '1.0',
         },
       });
+      if (!saved) {
+        throw new Error(`Failed to persist session ${sessionId}`);
+      }
 
       logger.info(`📱 Session ${sessionId} persisted to database successfully`);
     } catch (error) {
@@ -283,6 +295,11 @@ export class SessionManager {
 
         case 'WHATSAPP_UNPAIRED':
         case 'WHATSAPP_TIMEOUT':
+        // Baileys' 401. Without this case it falls to `default`, which
+        // persists 'disconnected' with authInvalidated:false — the dashboard
+        // reads status, so a logged-out session would look like a plain
+        // network drop instead of one that needs a new QR.
+        case 'WHATSAPP_LOGGED_OUT':
           shouldAutoReconnect = false; // WhatsApp Web session expired / unlinked from phone
           authInvalidated = true;
           errorMessage = `WhatsApp Web session expired: ${disconnectType}`;
@@ -434,16 +451,26 @@ export class SessionManager {
   /**
    * Start heartbeat updates for all ready sessions
    * Sets Redis key with TTL 120s every 30s
+   *
+   * `listSessions` is injected because this class no longer owns the live
+   * session map — the engine does. Reading `this.sessions` here would write
+   * no heartbeats at all.
    */
-  startHeartbeatUpdates(): void {
+  startHeartbeatUpdates(listSessions: () => Promise<WhatsAppSession[]>): void {
     if (this.heartbeatIntervalId) return;
 
     this.heartbeatIntervalId = setInterval(async () => {
-      for (const [sessionId, session] of this.sessions) {
+      let sessions: WhatsAppSession[];
+      try {
+        sessions = await listSessions();
+      } catch {
+        return; // Silently ignore heartbeat failures
+      }
+      for (const session of sessions) {
         if (session.status === 'ready') {
           try {
             await redisClient.set(
-              `${REDIS_KEYS.SESSION_HEARTBEAT}${sessionId}`,
+              `${REDIS_KEYS.SESSION_HEARTBEAT}${session.id}`,
               Date.now().toString(),
               120
             );

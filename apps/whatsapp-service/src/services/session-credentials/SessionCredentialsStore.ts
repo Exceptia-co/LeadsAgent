@@ -1,5 +1,6 @@
 import { PrismaClient } from '@leadcrm/db';
 import { AesGcm } from '../crypto/AesGcm';
+import SessionPersistenceService from '../SessionPersistenceService';
 import { logger } from '../../utils/logger';
 
 interface EncryptedValue {
@@ -204,3 +205,14 @@ export class SessionCredentialsStore {
     logger.info(`Cleared all auth keys for session ${sessionId}`);
   }
 }
+
+/**
+ * Shared instance. Four call sites read credentials now (the session manager,
+ * recovery, and the two HealthMetrics); each constructing its own store would
+ * open a separate PrismaClient pool. It reuses SessionPersistenceService's
+ * client rather than opening a third: that service owns whatsapp_sessions,
+ * the parent table of every row this store writes.
+ */
+export const sessionCredentialsStore = new SessionCredentialsStore(
+  SessionPersistenceService.prisma
+);

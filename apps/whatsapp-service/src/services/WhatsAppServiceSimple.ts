@@ -1,6 +1,3 @@
-import fs from 'fs';
-import path from 'path';
-import type { Client } from 'whatsapp-web.js';
 import { logger } from '../utils/logger';
 import type { WhatsAppSession, SendMessageResponse } from '../types';
 import type { HealthAlert } from './session-health-check/AlertManager';
@@ -12,26 +9,26 @@ import { SESSION_CONSTANTS } from '../config/session-constants';
 // Import modular components
 import MessageHandler from './whatsapp-core/MessageHandler';
 import SessionManager from './whatsapp-core/SessionManager';
-import ConnectionManager from './whatsapp-core/ConnectionManager';
-import EventDispatcher from './whatsapp-core/EventDispatcher';
-import AuthenticationManager from './whatsapp-core/AuthenticationManager';
+import { IncomingMessagePipeline } from './whatsapp-core/IncomingMessagePipeline';
+import { WhatsAppEventPublisher } from './WhatsAppEventPublisher';
+import { BaileysSessionManager } from './baileys/BaileysSessionManager';
+import { sessionCredentialsStore } from './session-credentials/SessionCredentialsStore';
 
 /**
- * WhatsAppServiceSimple - Modular WhatsApp Service Facade
+ * WhatsAppServiceSimple - WhatsApp Service Facade (Baileys)
  *
- * Now uses 5 specialized modules:
- * - MessageHandler: Message processing, sending, AI integration
- * - SessionManager: Session lifecycle, persistence, status management
- * - ConnectionManager: Browser management, monitoring, health checks
- * - EventDispatcher: Event handling, webhooks, Socket.IO
- * - AuthenticationManager: LocalAuth management, validation, cleanup
+ * The engine lives in BaileysSessionManager: sockets, the in-memory session
+ * map, the reconnect policy and the credential lifecycle are all its. This
+ * class keeps the pieces that are not engine-specific and wires them together:
+ * - MessageHandler: AI processing of an inbound message (via IncomingMessagePipeline)
+ * - SessionManager: persisted session row, status writes, disconnect policy
+ * - WhatsAppEventPublisher: Socket.IO + HMAC-signed webhook emission
  *
- * This facade maintains 100% API compatibility with the original monolithic service
- * while providing better organization, testability, and maintainability.
+ * The public API is unchanged from the whatsapp-web.js era, so the REST
+ * routes, the Socket.IO payloads and the message webhook contract are all
+ * untouched.
  */
 class WhatsAppServiceSimple {
-  private clients: Map<string, Client> = new Map();
-  private destroyingSessions: Set<string> = new Set();
   private sessionInitLocks: Set<string> = new Set();
   private initialized: boolean = false;
   private initializePromise: Promise<void> | null = null;
@@ -49,15 +46,35 @@ class WhatsAppServiceSimple {
     );
   };
 
-  // Module instances
+  // Module instances. Declaration order matters: the pipeline and the session
+  // manager below read the three above during field initialisation.
   private messageHandler = MessageHandler;
   private sessionManager = SessionManager;
-  private connectionManager = ConnectionManager;
-  private eventDispatcher = new EventDispatcher(process.env.WEBHOOK_URL);
-  private authenticationManager = AuthenticationManager;
+  private publisher = new WhatsAppEventPublisher(process.env.WEBHOOK_URL);
+
+  private pipeline = new IncomingMessagePipeline({
+    authChecker: {
+      checkPhoneNumberAllowedWithLog: this.checkPhoneNumberAllowedWithLog.bind(this),
+    },
+    messageHandler: {
+      processMessageWithAI: this.messageHandler.processMessageWithAI.bind(this.messageHandler),
+    },
+    sessionManager: {
+      updateSessionStatus: this.sessionManager.updateSessionStatus.bind(this.sessionManager),
+    },
+    sendWebhook: this.publisher.sendWebhook.bind(this.publisher),
+  });
+
+  private baileys = new BaileysSessionManager({
+    store: sessionCredentialsStore,
+    publisher: this.publisher,
+    pipeline: this.pipeline,
+    updateSessionStatus: this.sessionManager.updateSessionStatus.bind(this.sessionManager),
+    handleSessionDisconnect: this.sessionManager.handleSessionDisconnect.bind(this.sessionManager),
+  });
 
   constructor() {
-    logger.info('🚀 WhatsApp Service initialized with MODULAR architecture');
+    logger.info('🚀 WhatsApp Service initialized with Baileys engine');
   }
 
   // Lazy idempotent init: same pattern as the WhatsAppService facade. Direct
@@ -81,7 +98,7 @@ class WhatsAppServiceSimple {
   }
 
   private async runInitialize(): Promise<void> {
-    logger.info('🚀 Iniciando WhatsApp service con persistencia y monitoreo avanzado (MODULAR)...');
+    logger.info('🚀 Iniciando WhatsApp service con persistencia y monitoreo avanzado...');
 
     // Recover existing sessions from database using smart filtering
     if (process.env.WHATSAPP_ENABLE_AUTO_RECOVERY === 'true') {
@@ -91,7 +108,6 @@ class WhatsAppServiceSimple {
           this,
           {
             validateAuthFiles: true,
-            cleanupCorruptedAuth: true,
             maxReconnectAttempts: SESSION_CONSTANTS.MAX_RECONNECT_ATTEMPTS,
           }
         );
@@ -115,23 +131,45 @@ class WhatsAppServiceSimple {
     // already cover the same need.)
     SessionHealthCheckService.startMonitoring(this);
 
-    // Start Redis heartbeat updates for session health tracking
-    this.sessionManager.startHeartbeatUpdates();
+    // Start Redis heartbeat updates for session health tracking. The engine
+    // owns the session map now, so the heartbeat has to read from it — left
+    // pointing at SessionManager's own (permanently empty) map it would
+    // silently stop writing session:hb: keys, and getSessionHealth would
+    // report no heartbeatAge for every session.
+    this.sessionManager.startHeartbeatUpdates(() => this.baileys.getAllSessions());
 
     // Register alert callback (stable identity so AlertManager dedupes and we
     // can unregister on shutdown).
     SessionHealthCheckService.onAlert(this.alertCallback);
 
-    logger.info('✅ WhatsApp service initialized successfully with modular architecture');
+    logger.info('✅ WhatsApp service initialized successfully');
   }
 
   async createSession(sessionId: string, tenantId?: string): Promise<WhatsAppSession> {
+    // Only the caller that took the lock may release it. Releasing
+    // unconditionally means the racer that just lost to `SET NX` erases the
+    // winner's key on its way out -- and a third concurrent create then walks
+    // straight into the manager's `sockets.has` TOCTOU, which this lock is the
+    // only defence against.
+    let lockAcquired = false;
     try {
-      if (this.clients.has(sessionId)) {
+      // BaileysSessionManager's own `sockets.has` guard is the authority on
+      // "already live", but it only runs after persistSession below — and
+      // saveSession's update branch would reset a live row to 'connecting'
+      // and wipe its connectedNumber before that throw ever landed. A session
+      // still in the manager's map and not 'disconnected' either holds a
+      // socket or has a reconnect pending; a 'disconnected' one (paused, or
+      // out of retries) is legitimately re-creatable, which is what the
+      // dashboard's reconnect button does.
+      const existing = this.baileys.getSession(sessionId);
+      if (existing && existing.status !== 'disconnected') {
         throw new Error(`Session ${sessionId} already exists`);
       }
 
-      // Acquire lock to prevent double initialization (Redis primary, in-memory fallback)
+      // Acquire lock to prevent double initialization (Redis primary, in-memory fallback).
+      // This is what serialises a double-clicked connect button and a boot-time
+      // recovery overlapping a manual create — and, unlike an in-process Map,
+      // it also serialises across pm2 processes.
       try {
         const lockKey = `${REDIS_KEYS.SESSION_LOCK}${sessionId}`;
         const redisLock = await redisClient
@@ -140,6 +178,7 @@ class WhatsAppServiceSimple {
         if (!redisLock) {
           throw new Error(`Session ${sessionId} is already being initialized (lock exists)`);
         }
+        lockAcquired = true;
       } catch (lockError: any) {
         if (lockError.message?.includes('already being initialized')) throw lockError;
         // Redis unavailable — use in-memory lock as fallback
@@ -151,70 +190,34 @@ class WhatsAppServiceSimple {
           throw new Error(`Session ${sessionId} is already being initialized (in-memory lock)`);
         }
         this.sessionInitLocks.add(sessionId);
+        lockAcquired = true;
       }
 
-      logger.info(`🚀 Creating session ${sessionId} with modular architecture`);
+      logger.info(`🚀 Creating session ${sessionId} with Baileys`);
 
-      // Setup authentication using AuthenticationManager
-      const authDataPath = './wwebjs_auth';
-      const { authFileInfo } = await this.authenticationManager.setupSessionAuth(
-        sessionId,
-        authDataPath
-      );
+      // Persist the session row BEFORE the socket exists (PR5a-bis: bind
+      // tenantId on first create). whatsapp_auth_keys.session_id is a foreign
+      // key onto whatsapp_sessions(session_id) and Baileys writes creds during
+      // the handshake, so creating the socket first makes the very first
+      // creds.update fail on a constraint violation — during pairing, where it
+      // reads as "the QR did not work".
+      await this.sessionManager.persistSession(sessionId, tenantId, process.env.WEBHOOK_URL);
 
-      // Create WhatsApp client using ConnectionManager
-      const client = await this.connectionManager.createClient(sessionId, authDataPath);
+      const session = await this.baileys.createSession(sessionId, tenantId);
 
-      // Create session object using SessionManager
-      const session = this.sessionManager.createSessionObject(sessionId, process.env.WEBHOOK_URL);
-
-      // Store client in memory
-      this.clients.set(sessionId, client);
-
-      // Persist session to database (PR5a-bis: bind tenantId on first create)
-      await this.sessionManager.persistSession(
-        sessionId,
-        tenantId,
-        process.env.WEBHOOK_URL,
-        authFileInfo
-      );
-
-      // Setup event listeners using EventDispatcher
-      this.eventDispatcher.setupClientEventListeners(
-        client,
-        sessionId,
-        {
-          processMessageWithAI: this.messageHandler.processMessageWithAI.bind(this.messageHandler),
-        },
-        {
-          updateSessionStatus: this.sessionManager.updateSessionStatus.bind(this.sessionManager),
-          handleSessionDisconnect: this.sessionManager.handleSessionDisconnect.bind(
-            this.sessionManager
-          ),
-        },
-        {
-          checkPhoneNumberAllowedWithLog: this.checkPhoneNumberAllowedWithLog.bind(this),
-        },
-        this.handleAuthInvalidated.bind(this),
-        (id: string) => this.destroyingSessions.has(id)
-      );
-
-      // Initialize client with monitoring using ConnectionManager
-      await this.connectionManager.initializeClient(
-        client,
-        sessionId,
-        this.handleBrowserDisconnect.bind(this)
-      );
-
-      logger.info(`✅ Session ${sessionId} created successfully with modular architecture`);
+      logger.info(`✅ Session ${sessionId} created successfully with Baileys`);
       return session;
     } catch (error) {
-      // Release locks on failure
-      this.sessionInitLocks.delete(sessionId);
-      try {
-        await redisClient.del(`${REDIS_KEYS.SESSION_LOCK}${sessionId}`);
-      } catch {
-        /* ignore */
+      // Release locks on failure -- ours only. A failure before the lock was
+      // taken (the "already exists" guard, or losing the SET NX) owns nothing
+      // to release.
+      if (lockAcquired) {
+        this.sessionInitLocks.delete(sessionId);
+        try {
+          await redisClient.del(`${REDIS_KEYS.SESSION_LOCK}${sessionId}`);
+        } catch {
+          /* ignore */
+        }
       }
       logger.error(`Error creating session ${sessionId}:`, error);
       throw error;
@@ -222,37 +225,31 @@ class WhatsAppServiceSimple {
   }
 
   getSession(sessionId: string): WhatsAppSession | null {
-    return this.sessionManager.getSession(sessionId);
+    return this.baileys.getSession(sessionId);
   }
 
   async sendMessage(sessionId: string, to: string, message: string): Promise<SendMessageResponse> {
     try {
-      const client = this.clients.get(sessionId);
-      if (!client) {
+      const session = this.baileys.getSession(sessionId);
+      if (!session) {
         return {
           success: false,
           error: `Session ${sessionId} not found`,
         };
       }
 
-      const session = this.sessionManager.getSession(sessionId);
-      if (!session || session.status !== 'ready') {
+      if (session.status !== 'ready') {
         return {
           success: false,
-          error: `Session ${sessionId} is not ready. Status: ${session?.status || 'not found'}`,
+          error: `Session ${sessionId} is not ready. Status: ${session.status}`,
         };
       }
 
-      // Use MessageHandler to send message
-      return await this.messageHandler.sendMessage(
-        client,
-        sessionId,
-        to,
-        message,
-        this.sessionManager.updateSessionStatus.bind(this.sessionManager)
-      );
+      // `to` may arrive bare, as @c.us or as @s.whatsapp.net — the manager
+      // normalises all three. Do not normalise again here.
+      return await this.baileys.sendMessage(sessionId, to, message);
     } catch (error) {
-      logger.error(`Error in modular sendMessage for session ${sessionId}:`, error);
+      logger.error(`Error in sendMessage for session ${sessionId}:`, error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
@@ -261,36 +258,24 @@ class WhatsAppServiceSimple {
   }
 
   async getSessionStatus(sessionId: string): Promise<WhatsAppSession | null> {
-    return this.sessionManager.getSession(sessionId);
+    return this.baileys.getSession(sessionId);
   }
 
   async getAllSessions(): Promise<WhatsAppSession[]> {
-    return this.sessionManager.getAllSessions();
+    return this.baileys.getAllSessions();
   }
 
   async destroySession(sessionId: string): Promise<void> {
-    this.destroyingSessions.add(sessionId);
     try {
-      logger.info(`🗑️ Destroying session ${sessionId} with modular architecture`);
+      logger.info(`🗑️ Destroying session ${sessionId}`);
 
-      const client = this.clients.get(sessionId);
-      if (client) {
-        // Remove tracked event listeners surgically (prevents disconnect/destroy race)
-        this.eventDispatcher.cleanupSessionListeners(client, sessionId);
+      // 'delete' is explicit: this is the REST delete, the one path that is
+      // allowed to log the tenant out and wipe the stored credentials.
+      await this.baileys.destroySession(sessionId, 'delete');
 
-        // Clean up client using ConnectionManager
-        await this.connectionManager.destroyClient(client, sessionId);
-        this.clients.delete(sessionId);
-      }
-
-      // Destroy session using SessionManager with auth cleanup
-      await this.sessionManager.destroySession(
-        sessionId,
-        undefined, // client already handled above
-        async (sid: string) => {
-          await this.authenticationManager.cleanupSessionAuth(sid);
-        }
-      );
+      // Deactivate the persisted row. No auth-cleanup callback: credentials
+      // live in Postgres now and destroySession('delete') already cleared them.
+      await this.sessionManager.destroySession(sessionId, undefined, undefined, 'delete');
 
       // Release locks
       this.sessionInitLocks.delete(sessionId);
@@ -300,17 +285,15 @@ class WhatsAppServiceSimple {
         /* ignore */
       }
 
-      logger.info(`✅ Session ${sessionId} destroyed completely with modular architecture`);
+      logger.info(`✅ Session ${sessionId} destroyed completely`);
     } catch (error) {
-      logger.error(`❌ Error destroying session ${sessionId} with modular architecture:`, error);
+      logger.error(`❌ Error destroying session ${sessionId}:`, error);
       throw error;
-    } finally {
-      this.destroyingSessions.delete(sessionId);
     }
   }
 
   async shutdown(): Promise<void> {
-    logger.info('🛑 Starting graceful shutdown with modular architecture...');
+    logger.info('🛑 Starting graceful shutdown...');
 
     // Stop health monitoring and periodic tasks
     try {
@@ -322,85 +305,51 @@ class WhatsAppServiceSimple {
       logger.error('Error stopping health monitoring:', error);
     }
 
-    // Shutdown all sessions using SessionManager. No auth cleanup here on
-    // purpose: a restart must not look like a session deletion.
-    await this.sessionManager.shutdownAllSessions(this.clients);
+    // Close every socket. shutdownAll routes through mode 'shutdown', which
+    // never clears credentials: a restart must not look like a session
+    // deletion.
+    await this.baileys.shutdownAll();
 
-    // Clean up all connection monitoring
-    this.connectionManager.cleanupAllMonitoring();
+    // Mark the persisted rows disconnected so the dashboard does not keep
+    // showing a 'ready' session for a process that is gone. The map argument
+    // is empty on purpose — the sockets are already closed above.
+    await this.sessionManager.shutdownAllSessions(new Map());
 
-    logger.info('🏁 WhatsApp service graceful shutdown completed (modular)');
+    logger.info('🏁 WhatsApp service graceful shutdown completed');
   }
 
   async forceDisconnectSession(sessionId: string): Promise<void> {
-    this.destroyingSessions.add(sessionId);
-    logger.info(`💪 Force disconnecting (pause) session ${sessionId} with modular architecture`);
+    logger.info(`💪 Force disconnecting (pause) session ${sessionId}`);
 
     try {
-      // 1. Close the WhatsApp client (browser) WITHOUT destroying session data
-      const client = this.clients.get(sessionId);
-      if (client) {
-        // Remove tracked event listeners surgically (prevents disconnect/destroy race)
-        this.eventDispatcher.cleanupSessionListeners(client, sessionId);
-        try {
-          await client.destroy();
-        } catch (clientErr) {
-          logger.warn(`Error closing client for session ${sessionId}:`, clientErr);
-        }
-        this.clients.delete(sessionId);
-      }
+      // Closes the socket and writes the 'disconnected' status itself — the
+      // facade must not write it a second time (two writers, same row, same
+      // field). Credentials are kept, so no new QR is needed to resume.
+      await this.baileys.forceDisconnect(sessionId);
 
-      // 2. Clean up browser monitoring (intervals) for this session
-      this.connectionManager.cleanupMonitoring(sessionId);
+      // The webhook is the facade's, and it is not part of what the manager
+      // took over.
+      await this.publisher.sendForceDisconnectWebhook(sessionId);
 
-      // 3. Update status to 'disconnected' in all 3 layers (memory, DB, Redis)
-      //    but keep the session in memory Map and isActive=true in DB
-      await this.sessionManager.forceDisconnectSession(sessionId);
-
-      // 4. Send webhook notification
-      await this.eventDispatcher.sendForceDisconnectWebhook(sessionId);
-
-      logger.info(`✅ Session ${sessionId} paused successfully — auth files preserved (modular)`);
+      logger.info(`✅ Session ${sessionId} paused successfully — credentials preserved`);
     } catch (error) {
-      logger.error(`❌ Error pausing session ${sessionId} (modular):`, error);
+      logger.error(`❌ Error pausing session ${sessionId}:`, error);
       throw error;
-    } finally {
-      this.destroyingSessions.delete(sessionId);
     }
   }
 
-  // Private helper methods for modular architecture
+  // Private helper methods
 
-  private async handleBrowserDisconnect(sessionId: string, disconnectType: string): Promise<void> {
-    try {
-      logger.warn(
-        `🚨 Handling browser disconnect for session ${sessionId}, type: ${disconnectType} (modular)`
-      );
-
-      // Handle disconnect using ConnectionManager
-      await this.connectionManager.handleBrowserDisconnect(
-        sessionId,
-        disconnectType,
-        this.sessionManager.updateSessionStatus.bind(this.sessionManager)
-      );
-
-      // Clean up client reference
-      this.clients.delete(sessionId);
-
-      // Send webhook notification
-      await this.eventDispatcher.sendBrowserDisconnectWebhook(sessionId, disconnectType);
-
-      logger.info(`✅ Browser disconnect handled for session ${sessionId} (modular)`);
-    } catch (error) {
-      logger.error(
-        `❌ Error handling browser disconnect for session ${sessionId} (modular):`,
-        error
-      );
-    }
-  }
-
+  /**
+   * `phoneNumber` arrives as bare E.164 digits, never a JID: the only caller is
+   * IncomingMessagePipeline, which passes `dto.senderPhone`, and both
+   * normalizers resolve that through a `toPhone` that strips the domain and
+   * the device suffix and then rejects anything that is not E.164. The suffix
+   * strips that used to live here were vestigial from before the ReplyPort
+   * seam and matched nothing.
+   */
   private async checkPhoneNumberAllowedWithLog(
-    phoneNumberWithSuffix: string,
+    phoneNumber: string,
     sessionId: string,
     messagePreview?: string
   ): Promise<{ allowed: boolean; reason: string; leadInfo?: any }> {
@@ -409,10 +358,7 @@ class WhatsAppServiceSimple {
       const { default: WhatsAppAuthorizationService } =
         await import('./WhatsAppAuthorizationService');
 
-      // Remove WhatsApp suffix to get clean phone number
-      const phoneNumber = phoneNumberWithSuffix.replace('@c.us', '').replace('@g.us', '');
-
-      logger.debug(`🔍 Checking authorization for phone number: ${phoneNumber} (modular)`);
+      logger.debug(`🔍 Checking authorization for phone number: ${phoneNumber}`);
 
       // B2.0 follow-up: resolve tenantId for authorization pipeline scoping
       const { default: DatabaseServiceMod } = await import('./DatabaseService');
@@ -426,15 +372,12 @@ class WhatsAppServiceSimple {
         timestamp: new Date(),
       });
 
-      logger.info(
-        `🔐 Authorization result for ${phoneNumber}: ${authorizationResult.decision} (modular)`,
-        {
-          reason: authorizationResult.reason,
-          confidence: authorizationResult.confidence,
-          leadId: authorizationResult.leadInfo?.id,
-          leadName: authorizationResult.leadInfo?.name,
-        }
-      );
+      logger.info(`🔐 Authorization result for ${phoneNumber}: ${authorizationResult.decision}`, {
+        reason: authorizationResult.reason,
+        confidence: authorizationResult.confidence,
+        leadId: authorizationResult.leadInfo?.id,
+        leadName: authorizationResult.leadInfo?.name,
+      });
 
       // Convert to legacy format for compatibility
       return {
@@ -443,7 +386,7 @@ class WhatsAppServiceSimple {
         leadInfo: authorizationResult.leadInfo,
       };
     } catch (error) {
-      logger.error('Error in enhanced authorization check (modular):', error);
+      logger.error('Error in enhanced authorization check:', error);
 
       // Fallback to conservative approach
       return {
@@ -453,21 +396,17 @@ class WhatsAppServiceSimple {
     }
   }
 
-  // Session recovery method used by SessionRecoveryService
-  async recoverSessionWithAuthValidation(sessionId: string, persistedData: any): Promise<boolean> {
+  // Session recovery entry point kept for API compatibility
+  async recoverSessionWithAuthValidation(
+    sessionId: string,
+    _persistedData?: any
+  ): Promise<boolean> {
     try {
-      logger.info(`🔄 Recovering session ${sessionId} with modular architecture`);
-
-      // Use SessionManager to recover with auth validation
-      return await this.sessionManager.recoverSessionWithAuthValidation(
-        sessionId,
-        async (sessionId: string) => {
-          // Use createSession as the callback
-          return await this.createSession(sessionId);
-        }
-      );
+      logger.info(`🔄 Recovering session ${sessionId}`);
+      await this.createSession(sessionId);
+      return true;
     } catch (error) {
-      logger.error(`Error recovering session ${sessionId} with modular architecture:`, error);
+      logger.error(`Error recovering session ${sessionId}:`, error);
       return false;
     }
   }
@@ -482,52 +421,37 @@ class WhatsAppServiceSimple {
   }
 
   /**
-   * Get module status (only available in modular mode)
+   * Get module status
    */
   getModuleStatus(): any {
     return {
       architecture: 'modular',
+      engine: 'baileys',
       modules: {
         messageHandler: !!this.messageHandler,
         sessionManager: !!this.sessionManager,
-        connectionManager: !!this.connectionManager,
-        eventDispatcher: !!this.eventDispatcher,
-        authenticationManager: !!this.authenticationManager,
+        publisher: !!this.publisher,
+        baileys: !!this.baileys,
       },
-      activeSessions: this.clients.size,
-      webhookUrl: this.eventDispatcher.getWebhookUrl(),
+      webhookUrl: this.publisher.getWebhookUrl(),
     };
   }
 
   /**
-   * Test webhook (only available in modular mode)
+   * Test webhook connectivity
    */
   async testWebhook(): Promise<{ success: boolean; error?: string }> {
-    return await this.eventDispatcher.testWebhook();
+    return await this.publisher.testWebhook();
   }
 
   /**
-   * Handle auth invalidation (unpaired from phone or auth_failure).
-   * Cleans up stale auth files so next reconnect generates a fresh QR.
-   */
-  private async handleAuthInvalidated(sessionId: string, reason: string): Promise<void> {
-    logger.warn(`🔑 Auth invalidated for session ${sessionId} — reason: ${reason}`);
-
-    // 1. Clean up stale local auth files
-    try {
-      await this.authenticationManager.cleanupSessionAuth(sessionId);
-      logger.info(`Stale auth files cleaned for session ${sessionId}`);
-    } catch (err) {
-      logger.warn(`Error cleaning auth files for ${sessionId}:`, err);
-    }
-
-    logger.info(
-      `✅ Auth invalidation cleanup done for ${sessionId} — reconnect will require fresh QR`
-    );
-  }
-
-  /**
-   * Get health info for a specific session
+   * Get health info for a specific session.
+   *
+   * `hasLocalAuth` keeps its name but is now `store.hasCredentials` — a
+   * Postgres read, not a file on disk. A database error propagates rather
+   * than degrading to `false`: a pooler timeout means *unknown*, and
+   * answering "no credentials" would mark a healthy session auth_failure and
+   * demand a QR that was never needed.
    */
   async getSessionHealth(sessionId: string): Promise<{
     status: string;
@@ -535,29 +459,7 @@ class WhatsAppServiceSimple {
     heartbeatAge?: number;
     authInvalidated?: boolean;
   }> {
-    const session = this.sessionManager.getSession(sessionId);
-    const hasLocalAuth = fs.existsSync(path.join('./wwebjs_auth', `session-${sessionId}`));
-
-    let heartbeatAge: number | undefined;
-    try {
-      const hb = await redisClient.get(`${REDIS_KEYS.SESSION_HEARTBEAT}${sessionId}`);
-      if (hb) {
-        heartbeatAge = Date.now() - parseInt(hb, 10);
-      }
-    } catch {
-      /* ignore */
-    }
-
-    // Check if auth was invalidated (unpaired from phone or auth_failure)
-    const authInvalidated =
-      session?.metadata?.authInvalidated === true || session?.status === 'auth_failure';
-
-    return {
-      status: session?.status || 'unknown',
-      hasLocalAuth,
-      heartbeatAge,
-      authInvalidated,
-    };
+    return this.baileys.getSessionHealth(sessionId);
   }
 }
 

@@ -29,7 +29,12 @@ export interface SessionPersistenceData {
  * Implements the Repository pattern for session data management
  */
 export class SessionPersistenceService {
-  private prisma: PrismaClient;
+  /**
+   * Public so SessionCredentialsStore can share it: whatsapp_auth_keys is a
+   * child of whatsapp_sessions, and a second PrismaClient would be a second
+   * connection pool against the same Supabase pooler for the same two tables.
+   */
+  readonly prisma: PrismaClient;
 
   constructor() {
     this.prisma = new PrismaClient();

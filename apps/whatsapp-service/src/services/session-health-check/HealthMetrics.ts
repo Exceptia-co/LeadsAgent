@@ -1,8 +1,7 @@
 import { logger } from '../../utils/logger';
 import SessionPersistenceService from '../SessionPersistenceService';
+import { sessionCredentialsStore } from '../session-credentials/SessionCredentialsStore';
 import type { WhatsAppSession } from '../../types';
-import * as fs from 'fs';
-import * as path from 'path';
 
 export interface SessionMetrics {
   responseTimeMs: number;
@@ -66,7 +65,12 @@ export class HealthMetrics {
         responseTimeMs: 0,
         isConnected: false,
         isAuthenticated: false,
-        authFileHealth: 'missing',
+        // Starting value for "not measured yet", not a claim. It used to be
+        // 'missing', which meant that any throw before the auth check below
+        // -- a Postgres blip, now that the check is a database read -- was
+        // reported as "this session has no credentials" and raised the
+        // auth-missing alert for a session whose credentials are fine.
+        authFileHealth: 'valid',
         consecutiveFailures: 0,
         uptime: 0,
         messagesSent24h: 0,
@@ -134,82 +138,20 @@ export class HealthMetrics {
   }
 
   /**
-   * Check authentication file health
+   * Whether this session holds credentials it could reconnect with.
+   *
+   * Name and return type kept: the dashboard, the alert rules and
+   * /health/sessions all read `authFileHealth`. The source is the credential
+   * store, not the filesystem, so 'corrupted' has no subject any more -- a row
+   * either decrypts or the store throws. Deliberately not wrapped in a
+   * try/catch: a pooler timeout means *unknown*, and answering 'missing' would
+   * raise an auth alert and send an operator hunting for a QR that was never
+   * needed. Letting it throw records the collection failure instead.
    */
   async checkAuthFileHealth(sessionId: string): Promise<'valid' | 'corrupted' | 'missing'> {
-    try {
-      const authDataPath = path.resolve('./wwebjs_auth');
-      const sessionAuthPath = path.join(authDataPath, `session-${sessionId}`);
-
-      if (!fs.existsSync(sessionAuthPath)) {
-        logger.debug(`🔐 Auth files missing for session ${sessionId}`);
-        return 'missing';
-      }
-
-      // Check for essential files
-      const essentialFiles = ['Default', 'RemoteAuth', 'Session Storage'];
-      let foundFiles = 0;
-
-      for (const fileName of essentialFiles) {
-        const filePath = path.join(sessionAuthPath, fileName);
-        if (fs.existsSync(filePath)) {
-          foundFiles++;
-        }
-      }
-
-      // Check for lock files (corruption indicators)
-      const lockFiles = await this.findLockFiles(sessionAuthPath);
-      const hasStaleLocks = lockFiles.some(lockFile => {
-        const stats = fs.statSync(lockFile);
-        return Date.now() - stats.mtime.getTime() > 5 * 60 * 1000; // Older than 5 minutes
-      });
-
-      let authHealth: 'valid' | 'corrupted' | 'missing';
-      if (foundFiles === 0) {
-        authHealth = 'missing';
-      } else if (hasStaleLocks || foundFiles < essentialFiles.length / 2) {
-        authHealth = 'corrupted';
-      } else {
-        authHealth = 'valid';
-      }
-
-      logger.debug(
-        `🔐 Auth file health for ${sessionId}: ${authHealth} (${foundFiles}/${essentialFiles.length} files)`
-      );
-      return authHealth;
-    } catch (error) {
-      logger.debug(`Error checking auth file health for ${sessionId}:`, error);
-      return 'corrupted';
-    }
-  }
-
-  /**
-   * Find lock files in directory recursively
-   */
-  private async findLockFiles(dirPath: string): Promise<string[]> {
-    const lockFiles: string[] = [];
-
-    try {
-      if (!fs.existsSync(dirPath)) return lockFiles;
-
-      const items = fs.readdirSync(dirPath);
-
-      for (const item of items) {
-        const itemPath = path.join(dirPath, item);
-        const stat = fs.statSync(itemPath);
-
-        if (stat.isDirectory()) {
-          const subLockFiles = await this.findLockFiles(itemPath);
-          lockFiles.push(...subLockFiles);
-        } else if (item === 'LOCK' || item === 'lockfile' || item.endsWith('.lock')) {
-          lockFiles.push(itemPath);
-        }
-      }
-    } catch (error) {
-      // Ignore errors in lock file detection
-    }
-
-    return lockFiles;
+    const hasCredentials = await sessionCredentialsStore.hasCredentials(sessionId);
+    logger.debug(`🔐 Credentials for ${sessionId}: ${hasCredentials ? 'present' : 'absent'}`);
+    return hasCredentials ? 'valid' : 'missing';
   }
 
   /**

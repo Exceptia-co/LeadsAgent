@@ -106,5 +106,9 @@ describe('WhatsAppEventPublisher', () => {
     await expect(
       new WhatsAppEventPublisher(URL).sendWebhook(payload() as any)
     ).resolves.toBeUndefined();
+    // Resolving is also what a sendWebhook that skips the delivery entirely
+    // does, so "did not throw" on its own proves nothing about the failure
+    // being tolerated. The attempt is what makes this discriminate.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

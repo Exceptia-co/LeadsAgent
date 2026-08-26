@@ -83,15 +83,17 @@ export function validateEnv(): Env {
       logger.warn(`⚠️  ${msg} (dev mode: continuing)`);
     }
 
-    // No fail-fast here: unlike WHATSAPP_SERVICE_HMAC_SECRET, nothing on this
-    // branch reads this key yet (Phase 2 wires it into the auth adapter).
-    // Exiting production boot for an unused secret would boot-loop Hetzner.
-    // SessionCredentialsStore.key() is the right place to fail, once the
-    // store is actually used.
     if (!env.WHATSAPP_AUTH_ENCRYPTION_KEY) {
-      logger.warn(
-        '⚠️  WHATSAPP_AUTH_ENCRYPTION_KEY not set — session credential storage will refuse to seal/open values when used'
-      );
+      const msg =
+        'WHATSAPP_AUTH_ENCRYPTION_KEY is required outside test — session credentials cannot be sealed or opened without it';
+      if (isProd) {
+        logger.error(`❌ ${msg}`);
+        logger.error(
+          '🛑 Exiting because NODE_ENV=production and the credential encryption key is missing.'
+        );
+        process.exit(1);
+      }
+      logger.warn(`⚠️  ${msg} (dev mode: continuing)`);
     }
 
     if (!env.DATABASE_URL) {

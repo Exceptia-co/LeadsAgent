@@ -510,9 +510,27 @@ export class BaileysSessionManager {
     // because the injected implementation happens to swallow its own errors --
     // a property no type expresses and nothing enforces.
     try {
+      // 'NETWORK_ERROR', not 'WHATSAPP_DISCONNECT'. The switch on the other
+      // side of this call has no case for the latter, so it falls to
+      // `default`, which persists `metadata.autoReconnect: false` -- and
+      // RecoveryRunner refuses to recover a session carrying that flag. A
+      // transient blip would therefore bar its own session from recovery
+      // forever if the process restarted before the in-memory retry landed:
+      // the Phase 1 latch, arriving by a new road.
+      //
+      // The old engine avoided it by classifying the drop; Baileys collapses
+      // every non-401 close into one event and 408 covers both connectionLost
+      // and timedOut, so classifying by code is not available. It does not
+      // need to be: this manager already knows whether it intends to retry. A
+      // close that schedules one is by definition recoverable, which is what
+      // NETWORK_ERROR means to that switch. The close that exhausts the budget
+      // is the one that stops recovery, and markGaveUp writes
+      // `autoReconnect: false` itself -- last write wins, since the metadata
+      // column is replaced wholesale. The real close code still travels in
+      // `originalReason`.
       await this.deps.handleSessionDisconnect(
         sessionId,
-        loggedOut ? 'WHATSAPP_LOGGED_OUT' : 'WHATSAPP_DISCONNECT',
+        loggedOut ? 'WHATSAPP_LOGGED_OUT' : 'NETWORK_ERROR',
         code ?? 'unknown'
       );
     } catch (error) {
@@ -527,7 +545,77 @@ export class BaileysSessionManager {
       await this.markLoggedOut(sessionId);
       return;
     }
-    await this.scheduleRetry(sessionId, code);
+
+    // `reason` is not decoration: apps/api's handleSessionDisconnected writes it
+    // straight into whatsapp_sessions.lastError -- the same row and column the
+    // terminal paths below just wrote. One generic string for every arm would
+    // therefore erase the specific explanation microseconds after persisting
+    // it, leaving the operator "Connection closed (code 408)" where
+    // "Reconnect budget exhausted after 5 attempts" was. So: whatever a branch
+    // persisted is what its webhook carries.
+    let reason = `Connection closed (code ${code ?? 'unknown'})`;
+    let disconnectType = 'NETWORK_ERROR';
+
+    if (code === DisconnectReason.connectionReplaced) {
+      // 440 means another client has taken this session over -- usually the
+      // user opening WhatsApp Web somewhere else. Retrying is not a
+      // reconnect, it is a fight: we come back and kick them off, they come
+      // back and kick us off, five times over. Every round is a real
+      // disconnection for whoever legitimately took over.
+      //
+      // Terminal, but NOT markLoggedOut: the credentials are perfectly valid,
+      // someone else is simply using them. Clearing the store here would turn
+      // "you opened WhatsApp elsewhere" into "scan a new QR", which is worse
+      // than the bug.
+      logger.warn(
+        `Session ${sessionId} was replaced by another WhatsApp client (440); not reconnecting`
+      );
+      reason = 'Session taken over by another WhatsApp client (440)';
+      // Not NETWORK_ERROR: this is a terminal takeover, not a blip we intend
+      // to retry. Nothing reads this field today, which is exactly why it has
+      // to be right -- the first consumer will trust it.
+      disconnectType = 'WHATSAPP_REPLACED';
+      await this.markTerminal(sessionId, reason, { replacedAt: new Date().toISOString() });
+    } else {
+      // One disconnect can emit `close` twice: the socket emits it, and end()
+      // emits it again during teardown. scheduleRetry already absorbs that by
+      // re-arming the same rung instead of advancing it, and a pending timer
+      // is the signal that this is the second one -- so the same fact keeps
+      // the dashboard from getting two session:disconnected events for one
+      // drop. A close that exhausts the budget is never a repeat (the rung
+      // cannot advance while a timer is pending), but it is checked first
+      // anyway so a terminal event can never be the one suppressed.
+      const repeatClose = this.retryTimers.has(sessionId);
+      const gaveUp = await this.scheduleRetry(sessionId, code);
+      if (gaveUp) {
+        reason = gaveUp;
+      } else if (repeatClose) {
+        return;
+      }
+    }
+
+    // The outgoing engine's `client.on('disconnected')` fired on every drop,
+    // so both consumers saw transient ones: apps/api recorded the drop, and
+    // SocketService turned it into `session:disconnected`. Emitting only from
+    // markLoggedOut would leave the dashboard showing a session as connected
+    // for the whole time it is down and reconnecting. Same frozen payload
+    // shape EventDispatcher used -- `data.reason` is the field both consumers
+    // actually read.
+    //
+    // After scheduleRetry, not before: arming the reconnect is the recovery
+    // and this is a notification, so the timer must not sit behind a network
+    // call that waits up to five seconds before giving up. Guarded for the
+    // same reason handleSessionDisconnect is.
+    try {
+      await this.deps.publisher.sendWebhook({
+        event: 'disconnected',
+        sessionId,
+        data: { reason, disconnectType },
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error(`disconnected webhook failed for session ${sessionId}:`, error);
+    }
   }
 
   private async onMessagesUpsert(
@@ -551,9 +639,10 @@ export class BaileysSessionManager {
 
   // ── reconnect policy ──────────────────────────────────────────────────────
 
-  private async scheduleRetry(sessionId: string, code?: number): Promise<void> {
+  /** Returns the persisted lastError if the budget ran out, else undefined. */
+  private async scheduleRetry(sessionId: string, code?: number): Promise<string | undefined> {
     const runtime = this.runtimes.get(sessionId);
-    if (!runtime) return;
+    if (!runtime) return undefined;
 
     // One disconnect can emit `close` twice -- the socket emits it, and end()
     // emits it again during teardown. Counting both burns two of the five
@@ -561,8 +650,7 @@ export class BaileysSessionManager {
     // re-arms the same rung instead of advancing it.
     const attempt = this.retryTimers.has(sessionId) ? runtime.attempts : runtime.attempts + 1;
     if (attempt > RETRY_SCHEDULE_MS.length) {
-      await this.markGaveUp(sessionId, code);
-      return;
+      return await this.markGaveUp(sessionId, code);
     }
     runtime.attempts = attempt;
 
@@ -584,9 +672,39 @@ export class BaileysSessionManager {
     logger.warn(
       `Session ${sessionId} closed (code ${code ?? 'unknown'}); reconnect attempt ${attempt} in ${Math.round(delay)}ms`
     );
+    return undefined;
   }
 
-  private async markGaveUp(sessionId: string, code?: number): Promise<void> {
+  /** Returns the lastError it persisted, so the webhook can carry the same one. */
+  private async markGaveUp(sessionId: string, code?: number): Promise<string> {
+    logger.error(
+      `Session ${sessionId} gave up after ${RETRY_SCHEDULE_MS.length} reconnect attempts (last code ${code ?? 'unknown'})`
+    );
+    const lastError = `Reconnect budget exhausted after ${RETRY_SCHEDULE_MS.length} attempts (last code ${code ?? 'unknown'})`;
+    await this.markTerminal(sessionId, lastError, { gaveUpAt: new Date().toISOString() });
+    return lastError;
+  }
+
+  /**
+   * Stop trying, keep the credentials. The two callers -- an exhausted
+   * reconnect budget and a 440 takeover -- differ only in what they put in
+   * `lastError`, which is the operator's record of what happened.
+   *
+   * autoReconnect stays true. The flag means "may RecoveryRunner attempt this
+   * session at boot", not "is a retry currently scheduled" -- and both
+   * conditions are per-process by construction, so a fresh process tries once
+   * more in an orderly way rather than looping. Writing false here would
+   * condemn a healthy session to zombie state over a two-minute fibre cut or a
+   * phone the user has since closed, recoverable only by hand: exactly the
+   * failure in docs/deployment/post-shutdown-fix-recovery.md. After this,
+   * false means one of exactly two deliberate things -- an operator paused the
+   * session (forceDisconnect), or WhatsApp ended it (401).
+   */
+  private async markTerminal(
+    sessionId: string,
+    lastError: string,
+    extra: Record<string, unknown>
+  ): Promise<void> {
     this.closeTerminally(sessionId);
 
     const session = this.sessions.get(sessionId);
@@ -595,12 +713,9 @@ export class BaileysSessionManager {
       session.lastSeen = new Date();
     }
 
-    logger.error(
-      `Session ${sessionId} gave up after ${RETRY_SCHEDULE_MS.length} reconnect attempts (last code ${code ?? 'unknown'})`
-    );
     await this.deps.updateSessionStatus(sessionId, 'disconnected', {
-      lastError: `Reconnect budget exhausted after ${RETRY_SCHEDULE_MS.length} attempts (last code ${code ?? 'unknown'})`,
-      metadata: { autoReconnect: false, gaveUpAt: new Date().toISOString() },
+      lastError,
+      metadata: { autoReconnect: true, ...extra },
     });
   }
 
@@ -615,23 +730,41 @@ export class BaileysSessionManager {
     // fresh rows for credentials WhatsApp has already invalidated.
     this.closeTerminally(sessionId);
 
+    // 'auth_failure', not 'disconnected'. Four things record this event and
+    // they must agree, or the operator cannot tell "needs a new QR" from
+    // "dropped and coming back":
+    //   1. handleSessionDisconnect('WHATSAPP_LOGGED_OUT') -> auth_failure
+    //   2. this in-memory status, which is what the REST session route serves
+    //   3. the updateSessionStatus below, which is the persisted row
+    //   4. the webhook, which apps/api turns into its own status
+    // Until this change, 2, 3 and 4 all overwrote 1 back to 'disconnected'.
+    // Recovery was never affected -- metadata.authInvalidated is what the
+    // runbook's latch reads -- but the status the dashboard shows was.
     const session = this.sessions.get(sessionId);
     if (session) {
-      session.status = 'disconnected';
+      session.status = 'auth_failure';
       session.qrCode = undefined;
       session.lastSeen = new Date();
       session.metadata = { ...(session.metadata ?? {}), authInvalidated: true };
     }
 
+    const lastError = 'WhatsApp logged this session out (401)';
     await this.deps.store.clear(sessionId);
-    await this.deps.updateSessionStatus(sessionId, 'disconnected', {
-      lastError: 'WhatsApp logged this session out (401)',
+    await this.deps.updateSessionStatus(sessionId, 'auth_failure', {
+      lastError,
       metadata: { authInvalidated: true, autoReconnect: false },
     });
     await this.deps.publisher.sendWebhook({
       event: 'disconnected',
       sessionId,
-      data: { reason: 'logged_out', disconnectType: 'WHATSAPP_LOGGED_OUT' },
+      // authInvalidated is the field apps/api branches on
+      // (whatsapp.service.ts: `data?.authInvalidated ? 'auth_failure' : 'disconnected'`).
+      // Omitting it made the API record a credential death as an ordinary drop.
+      // `reason` is the message worth persisting, not a machine token: apps/api
+      // writes it into the same lastError this method just set, so 'logged_out'
+      // overwrote the sentence with a word. Nothing branches on the value --
+      // SocketService passes it through and the dashboard only logs it.
+      data: { reason: lastError, disconnectType: 'WHATSAPP_LOGGED_OUT', authInvalidated: true },
       timestamp: new Date().toISOString(),
     });
   }

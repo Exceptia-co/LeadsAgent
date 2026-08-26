@@ -61,7 +61,7 @@ jest.mock('../services/DatabaseService', () => ({
 
 const sendMessage = jest.fn();
 
-jest.mock('../services/WhatsAppServiceSimple', () => ({
+jest.mock('../services/WhatsAppService', () => ({
   __esModule: true,
   default: { sendMessage: (...args: unknown[]) => sendMessage(...args) },
 }));

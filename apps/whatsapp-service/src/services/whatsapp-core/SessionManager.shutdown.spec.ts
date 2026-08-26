@@ -16,6 +16,17 @@ jest.mock('../../utils/logger', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
 }));
 
+const mockRedisSet = jest.fn();
+
+jest.mock('../../config/redis', () => ({
+  __esModule: true,
+  default: {
+    set: (...args: unknown[]) => mockRedisSet(...args),
+    setObject: jest.fn().mockResolvedValue(undefined),
+  },
+  REDIS_KEYS: { SESSION_HEARTBEAT: 'session:hb:', SESSION_STATUS: 'session:status:' },
+}));
+
 import { SessionManager } from './SessionManager';
 
 const SESSION_ID = 'smoke-session';
@@ -108,5 +119,65 @@ describe('SessionManager shutdown vs delete', () => {
 
     expect(mockDeactivateSession).toHaveBeenCalledWith(SESSION_ID);
     expect(cleanup).toHaveBeenCalledWith(SESSION_ID);
+  });
+
+  it('maps_a_baileys_logout_to_auth_failure_not_a_plain_disconnect', async () => {
+    // Baileys reports a 401 upstream as 'WHATSAPP_LOGGED_OUT'. Without a case
+    // for it the switch falls to `default`, which persists 'disconnected' with
+    // authInvalidated:false -- the dashboard reads status, so a session whose
+    // credentials are dead would look like a network blip and no one would be
+    // told to scan a new QR.
+    await manager.handleSessionDisconnect(SESSION_ID, 'WHATSAPP_LOGGED_OUT', 401);
+
+    const [sessionId, status, payload] = mockUpdateSessionStatus.mock.calls[0];
+    expect(sessionId).toBe(SESSION_ID);
+    expect(status).toBe('auth_failure');
+    expect(payload.metadata.authInvalidated).toBe(true);
+    expect(payload.metadata.autoReconnect).toBe(false);
+  });
+});
+
+describe('SessionManager heartbeat source', () => {
+  let manager: SessionManager;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+    mockRedisSet.mockResolvedValue(undefined);
+    manager = new SessionManager();
+  });
+
+  afterEach(() => {
+    manager.stopHeartbeatUpdates();
+    jest.useRealTimers();
+  });
+
+  it('writes_heartbeats_for_the_injected_sessions_not_its_own_map', async () => {
+    // The engine owns the live session map now. Reading `this.sessions` here
+    // -- which is what this method did, and which nothing populates any more
+    // -- writes no heartbeat at all, and getSessionHealth silently loses
+    // heartbeatAge for every session.
+    manager.startHeartbeatUpdates(async () => [
+      { id: 'live', status: 'ready' } as any,
+      { id: 'down', status: 'disconnected' } as any,
+    ]);
+
+    jest.advanceTimersByTime(30000);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockRedisSet).toHaveBeenCalledTimes(1);
+    expect(mockRedisSet.mock.calls[0][0]).toBe('session:hb:live');
+  });
+
+  it('stopHeartbeatUpdates_leaves_no_timer_behind', () => {
+    manager.startHeartbeatUpdates(async () => []);
+    expect(jest.getTimerCount()).toBe(1);
+
+    manager.stopHeartbeatUpdates();
+
+    // The interval is the only thing this class keeps alive between calls; a
+    // stop that forgets it keeps hitting Redis for the life of the process.
+    expect(jest.getTimerCount()).toBe(0);
   });
 });

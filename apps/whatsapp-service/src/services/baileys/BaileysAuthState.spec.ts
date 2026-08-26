@@ -17,8 +17,21 @@ describe('makeBaileysAuthState', () => {
 
     const { state } = await makeBaileysAuthState('s1', store);
 
+    // Without this the test passes against an implementation that returns a
+    // hardcoded object and never reads the store at all -- which would hand
+    // every session brand-new credentials and lose the pairing on restart.
+    // The exact arguments matter: reading a different category or key finds
+    // nothing and regenerates, silently, for a session that had creds.
+    expect(store.get).toHaveBeenCalledWith('s1', 'creds', ['creds']);
+    // The whole initAuthCreds key set, not two fields: a stub carrying just
+    // registrationId and noiseKey satisfies the pair below while missing the
+    // Signal identity Baileys needs to complete a handshake.
+    expect(Object.keys(state.creds).sort()).toEqual(Object.keys(initAuthCreds()).sort());
     expect(state.creds.registrationId).toEqual(expect.any(Number));
     expect(Buffer.isBuffer(state.creds.noiseKey.private)).toBe(true);
+    expect(Buffer.isBuffer(state.creds.signedIdentityKey.public)).toBe(true);
+    expect(state.creds.signedPreKey.keyId).toEqual(expect.any(Number));
+    expect(typeof state.creds.advSecretKey).toBe('string');
   });
 
   it('revives_app_state_sync_keys_as_protobuf_messages', async () => {
@@ -54,7 +67,7 @@ describe('makeBaileysAuthState', () => {
     // protobuf constructor would corrupt them.
     const store = makeStore();
     const raw = Buffer.from([1, 2, 3, 4]);
-    store.get.mockResolvedValue({ 'k1': raw });
+    store.get.mockResolvedValue({ k1: raw });
 
     const { state } = await makeBaileysAuthState('s1', store);
 

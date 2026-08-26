@@ -109,28 +109,20 @@ router.post(
   sessionController.forceDisconnectSession.bind(sessionController)
 );
 
-// QR code route (with Redis fast-read fallback).
+// QR code route.
 //
-// PR5a-ter: requireSessionOwnership runs BEFORE the Redis short-circuit
-// so the QR cannot be returned for a session belonging to another
-// tenant. Skipping ownership for the Redis path was the original bug —
-// the cache hit answered cross-tenant.
+// The Redis `session:qr:` fast path was removed with the engine cutover:
+// EventDispatcher was its only writer, so the read could only ever miss and
+// fall through to this same controller. The controller serves the QR from the
+// session manager's in-memory `session.qrCode`, which is where the engine
+// writes it.
+//
+// PR5a-ter: requireSessionOwnership still runs first, so the QR cannot be
+// returned for a session belonging to another tenant.
 router.get(
   '/sessions/:sessionId/qr',
   validateSessionId,
   requireSessionOwnership,
-  async (req, res, next) => {
-    try {
-      const { redisClient, REDIS_KEYS } = await import('../config/redis');
-      const qr = await redisClient.get(`${REDIS_KEYS.SESSION_QR}${req.params.sessionId}`);
-      if (qr) {
-        return res.json({ success: true, qrCode: qr, source: 'redis' });
-      }
-    } catch {
-      /* fall through to controller */
-    }
-    next();
-  },
   sessionController.getQRCode.bind(sessionController)
 );
 
@@ -146,7 +138,7 @@ router.get(
   requireSessionOwnership,
   async (req, res) => {
     try {
-      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+      const { default: WhatsAppService } = await import('../services/WhatsAppService');
       const health = await WhatsAppService.getSessionHealth(req.params.sessionId);
       res.json({ success: true, data: health });
     } catch (error) {
@@ -375,7 +367,7 @@ router.post('/conversations/:conversationId/send', requireTenantContext, async (
     const phoneNumber = conversationId.replace('conv_', '');
 
     // Importar el servicio de WhatsApp
-    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+    const { default: WhatsAppService } = await import('../services/WhatsAppService');
 
     // Formatear número para WhatsApp
     const formattedNumber = phoneNumber.includes('@c.us') ? phoneNumber : `${phoneNumber}@c.us`;
@@ -656,7 +648,7 @@ router.post('/proactive-messages', requireTenantContext, rateLimitBySession, asy
     }
 
     const { default: DatabaseService } = await import('../services/DatabaseService');
-    const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+    const { default: WhatsAppService } = await import('../services/WhatsAppService');
     const { PrismaClient } = await import('@leadcrm/db');
     // Reuse the singleton on DatabaseService rather than spawning a new
     // PrismaClient per request — see DatabaseService constructor.
@@ -912,7 +904,7 @@ router.post(
 
       // Importar servicios
       const { default: DatabaseService } = await import('../services/DatabaseService');
-      const { default: WhatsAppService } = await import('../services/WhatsAppServiceSimple');
+      const { default: WhatsAppService } = await import('../services/WhatsAppService');
       // PR5a-ter: tenant-scoped Prisma client used for the per-lead lookup
       // inside the loop (cross-tenant leadIds are silently skipped as
       // "Lead no encontrado").

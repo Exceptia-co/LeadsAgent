@@ -1,5 +1,6 @@
 import { logger } from '../../utils/logger';
 import SessionPersistenceService from '../SessionPersistenceService';
+import { sessionCredentialsStore } from '../session-credentials/SessionCredentialsStore';
 import type { WhatsAppSession } from '../../types';
 
 export interface RecoveryMetrics {
@@ -124,9 +125,13 @@ export class HealthMetrics {
           ? new Date(Math.max(...recoveryData.map(d => d.getTime())))
           : undefined;
 
+      // Was a pair of boolean flags stamped onto the session row by the
+      // retired disk-auth policy, which no longer exists and so no longer
+      // writes them. The question is the same one; the answer now comes from
+      // the credential store.
       let sessionsWithValidAuth = 0;
       for (const session of sessionsWithRecovery) {
-        if (session.metadata?.authFileExists && !session.metadata?.authCorruptionDetected) {
+        if (await sessionCredentialsStore.hasCredentials(session.sessionId)) {
           sessionsWithValidAuth++;
         }
       }
