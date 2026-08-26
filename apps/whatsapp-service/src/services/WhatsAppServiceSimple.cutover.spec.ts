@@ -224,6 +224,18 @@ describe('WhatsAppServiceSimple delegation invariants', () => {
     expect(mockRedisDel).toHaveBeenCalledWith('session:lock:s1');
   });
 
+  it('releases_its_own_lock_when_the_create_succeeds', async () => {
+    // The half that was missing, and the one boot recovery trips over. The
+    // lock serialises *initialisation*; leaving it standing for its 300s TTL
+    // after a successful create means any restart inside that window meets a
+    // lock its own dead predecessor took, and refuses to recover the
+    // session. Invisible while only humans created sessions -- nobody clicks
+    // Connect twice in five minutes.
+    await service.createSession('s1', 'tenant-1');
+
+    expect(mockRedisDel).toHaveBeenCalledWith('session:lock:s1');
+  });
+
   it('still_creates_a_session_that_was_paused_or_gave_up', async () => {
     // The counterpart to the guard above: forceDisconnect and an exhausted
     // reconnect budget both leave the session in the map with no socket. The

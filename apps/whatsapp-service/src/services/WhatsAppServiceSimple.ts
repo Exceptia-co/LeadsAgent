@@ -208,9 +208,21 @@ class WhatsAppServiceSimple {
       logger.info(`✅ Session ${sessionId} created successfully with Baileys`);
       return session;
     } catch (error) {
-      // Release locks on failure -- ours only. A failure before the lock was
-      // taken (the "already exists" guard, or losing the SET NX) owns nothing
-      // to release.
+      logger.error(`Error creating session ${sessionId}:`, error);
+      throw error;
+    } finally {
+      // Released on success too, not only on failure. The lock serialises
+      // *initialisation* -- once the socket exists, the in-memory "session
+      // already exists" guard above is what stops a duplicate. Releasing
+      // only in catch left it standing for its full 300s TTL after every
+      // successful create, so any restart inside that window met a lock its
+      // own dead predecessor had taken and refused to recover the session.
+      // Invisible until boot recovery existed: a human clicking Connect
+      // takes longer than five minutes to click it again.
+      //
+      // Ours only. A failure before the lock was taken (the "already exists"
+      // guard, or losing the SET NX) owns nothing to release, and deleting
+      // it would hand the session to whoever is mid-init right now.
       if (lockAcquired) {
         this.sessionInitLocks.delete(sessionId);
         try {
@@ -219,8 +231,6 @@ class WhatsAppServiceSimple {
           /* ignore */
         }
       }
-      logger.error(`Error creating session ${sessionId}:`, error);
-      throw error;
     }
   }
 
