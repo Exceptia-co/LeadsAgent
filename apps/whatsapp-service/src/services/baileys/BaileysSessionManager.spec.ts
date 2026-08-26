@@ -9,8 +9,7 @@ jest.mock('@whiskeysockets/baileys', () => {
     __esModule: true,
     default: (...args: unknown[]) => mockMakeWASocket(...args),
     makeWASocket: (...args: unknown[]) => mockMakeWASocket(...args),
-    makeCacheableSignalKeyStore: (...args: unknown[]) =>
-      mockMakeCacheableSignalKeyStore(...args),
+    makeCacheableSignalKeyStore: (...args: unknown[]) => mockMakeCacheableSignalKeyStore(...args),
   };
 });
 
@@ -438,9 +437,9 @@ describe('BaileysSessionManager connection lifecycle', () => {
       await jest.advanceTimersByTimeAsync(1000);
       expect(mockMakeWASocket).toHaveBeenCalledTimes(i);
     }
-    expect(sessionStatus.mock.calls.filter((c: any[]) => c[2]?.metadata?.restartLoopAt)).toHaveLength(
-      0
-    );
+    expect(
+      sessionStatus.mock.calls.filter((c: any[]) => c[2]?.metadata?.restartLoopAt)
+    ).toHaveLength(0);
 
     jest.useRealTimers();
   });
@@ -506,7 +505,7 @@ describe('BaileysSessionManager connection lifecycle', () => {
     for (const rung of [2000, 5000, 10000, 30000, 60000]) {
       close();
       await jest.advanceTimersByTimeAsync(rung - 1);
-      expect(mockMakeWASocket).toHaveBeenCalledTimes(expected);   // not yet
+      expect(mockMakeWASocket).toHaveBeenCalledTimes(expected); // not yet
       await jest.advanceTimersByTimeAsync(1);
       expect(mockMakeWASocket).toHaveBeenCalledTimes(++expected); // now
     }
@@ -646,7 +645,10 @@ describe('BaileysSessionManager connection lifecycle', () => {
     sock.emit('messages.upsert', {
       type: 'notify',
       messages: [
-        { key: { remoteJid: '34600111222@s.whatsapp.net', id: 'GHOST' }, message: { conversation: 'x' } },
+        {
+          key: { remoteJid: '34600111222@s.whatsapp.net', id: 'GHOST' },
+          message: { conversation: 'x' },
+        },
       ],
     });
     await Promise.resolve();
@@ -1091,9 +1093,7 @@ describe('BaileysSessionManager observable state', () => {
     // NETWORK_ERROR, not WHATSAPP_DISCONNECT: see
     // `a_transient_close_does_not_bar_the_session_from_recovery` below for why
     // the string is load-bearing.
-    expect(sessionDisconnect).toHaveBeenCalledWith(
-      SESSION_ID, 'NETWORK_ERROR', expect.anything()
-    );
+    expect(sessionDisconnect).toHaveBeenCalledWith(SESSION_ID, 'NETWORK_ERROR', expect.anything());
 
     sessionDisconnect.mockClear();
     sock.emit('connection.update', {
@@ -1103,7 +1103,9 @@ describe('BaileysSessionManager observable state', () => {
     await Promise.resolve();
     expect(sessionDisconnect).toHaveBeenCalledTimes(1);
     expect(sessionDisconnect).toHaveBeenCalledWith(
-      SESSION_ID, 'WHATSAPP_LOGGED_OUT', expect.anything()
+      SESSION_ID,
+      'WHATSAPP_LOGGED_OUT',
+      expect.anything()
     );
 
     jest.useRealTimers();
@@ -1119,14 +1121,24 @@ describe('BaileysSessionManager inbound messages', () => {
 
     sock.emit('messages.upsert', {
       type: 'append',
-      messages: [{ key: { remoteJid: '34600111222@s.whatsapp.net', id: 'OLD' }, message: { conversation: 'viejo' } }],
+      messages: [
+        {
+          key: { remoteJid: '34600111222@s.whatsapp.net', id: 'OLD' },
+          message: { conversation: 'viejo' },
+        },
+      ],
     });
     await Promise.resolve();
     expect(pipeline.handle).not.toHaveBeenCalled();
 
     sock.emit('messages.upsert', {
       type: 'notify',
-      messages: [{ key: { remoteJid: '34600111222@s.whatsapp.net', id: 'NEW' }, message: { conversation: 'nuevo' } }],
+      messages: [
+        {
+          key: { remoteJid: '34600111222@s.whatsapp.net', id: 'NEW' },
+          message: { conversation: 'nuevo' },
+        },
+      ],
     });
     await Promise.resolve();
     expect(pipeline.handle).toHaveBeenCalledTimes(1);
@@ -1147,7 +1159,9 @@ describe('BaileysSessionManager inbound messages', () => {
 
     sock.emit('messages.upsert', {
       type: 'notify',
-      messages: [{ key: { remoteJid: 'status@broadcast', id: 'S1' }, message: { conversation: 'x' } }],
+      messages: [
+        { key: { remoteJid: 'status@broadcast', id: 'S1' }, message: { conversation: 'x' } },
+      ],
     });
     await Promise.resolve();
 
@@ -1241,7 +1255,10 @@ describe('BaileysSessionManager shutdown vs delete', () => {
     // Hold the close handler open exactly where the race lives.
     let release!: () => void;
     sessionDisconnect.mockImplementation(
-      () => new Promise<void>(resolve => { release = resolve; })
+      () =>
+        new Promise<void>(resolve => {
+          release = resolve;
+        })
     );
 
     sock.emit('connection.update', {

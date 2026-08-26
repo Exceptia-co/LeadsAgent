@@ -247,9 +247,7 @@ export class MessageHandler {
         logger.error('Error sending intelligent fallback message:', replyError);
         // Last resort generic message
         try {
-          await port.reply(
-            'Gracias por tu mensaje. Un representante te contactará pronto. 👍'
-          );
+          await port.reply('Gracias por tu mensaje. Un representante te contactará pronto. 👍');
         } catch (finalError) {
           logger.error('Error sending final fallback:', finalError);
         }

@@ -45,7 +45,9 @@ describe('normalizeBaileysMessage', () => {
     // and answer a stranger. This is the single most dangerous line in the
     // file, and removing the isLidUser branch must fail here.
     const dto = normalizeBaileysMessage(
-      waMessage({ key: { remoteJid: '182736451827364@lid', senderPn: '34600111222@s.whatsapp.net' } }),
+      waMessage({
+        key: { remoteJid: '182736451827364@lid', senderPn: '34600111222@s.whatsapp.net' },
+      }),
       SESSION_ID
     );
 

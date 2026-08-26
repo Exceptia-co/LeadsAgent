@@ -1,4 +1,10 @@
-import { extractMessageContent, getContentType, isJidGroup, isLidUser, jidDecode } from '@whiskeysockets/baileys';
+import {
+  extractMessageContent,
+  getContentType,
+  isJidGroup,
+  isLidUser,
+  jidDecode,
+} from '@whiskeysockets/baileys';
 import type { WAMessage } from '@whiskeysockets/baileys';
 import type { NormalizedWhatsAppMessage, NormalizedMessageType } from '../../types/messages';
 
@@ -18,7 +24,10 @@ function toPhone(jid: string | null | undefined): string | null {
  * (group). When the JID is a LID and no PN accompanies it, there is no phone
  * number -- returning null is correct, inventing one is not.
  */
-function resolvePhone(jid: string | null | undefined, pn: string | null | undefined): string | null {
+function resolvePhone(
+  jid: string | null | undefined,
+  pn: string | null | undefined
+): string | null {
   if (isLidUser(jid)) return toPhone(pn);
   return toPhone(jid);
 }

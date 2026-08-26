@@ -29,7 +29,8 @@ export async function makeBaileysAuthState(
   // a plain resolved object -- not a promise, not a lazy proxy.
   const creds: AuthenticationCreds = (stored[CREDS_KEY] as AuthenticationCreds) ?? initAuthCreds();
 
-  const persistCreds = () => store.setBatch(sessionId, { [CREDS_CATEGORY]: { [CREDS_KEY]: creds } });
+  const persistCreds = () =>
+    store.setBatch(sessionId, { [CREDS_CATEGORY]: { [CREDS_KEY]: creds } });
 
   const state: AuthenticationState = {
     creds,
