@@ -10,6 +10,39 @@ import { logger } from '../utils/logger';
  * after it validates that the dashboard signed the request with a real
  * Tenant.id. Requests without a tenant context never reach these handlers.
  */
+/**
+ * Map an engine session status onto the vocabulary the dashboard renders.
+ *
+ * `hasQr` is not decoration. The engine holds a pairing session at
+ * `connecting` for the whole QR window, so a status-only mapping reports
+ * CONNECTING while a QR is on screen -- and the dashboard renders its QR
+ * block for QR_READY/QR_PENDING only. The session list is polled far more
+ * often than the QR rotates, so each poll unmounted the QR the socket event
+ * had just painted, leaving the operator staring at "Conectando" for the
+ * 20-60s until the next rotation.
+ *
+ * The `connecting` guard matters: a deactivated row keeps the last qr_code
+ * it ever had, and that QR is dead. Only a session the engine is actively
+ * pairing may advertise one.
+ */
+export function mapStatusToDashboard(status: string, hasQr = false): string {
+  if (hasQr && status === 'connecting') return 'QR_READY';
+
+  switch (status) {
+    case 'ready':
+    case 'authenticated':
+      return 'CONNECTED';
+    case 'connecting':
+      return 'CONNECTING';
+    case 'disconnected':
+      return 'DISCONNECTED';
+    case 'auth_failure':
+      return 'AUTH_INVALID';
+    default:
+      return 'QR_READY';
+  }
+}
+
 export class SessionController {
   /**
    * Asserts that `sessionId` exists and is owned by `tenantId`. Returns
@@ -158,12 +191,14 @@ export class SessionController {
 
       const sessions = persisted.map(p => {
         const mem = memorySessions.find(m => m.id === p.sessionId);
+        const effective = mem?.status ?? p.status;
+        const qr = mem?.qrCode ?? p.qrCode;
         return {
           id: p.sessionId,
           name: p.name || p.sessionId,
-          status: this.mapStatusToDashboard(mem?.status ?? p.status),
+          status: mapStatusToDashboard(effective, !!qr),
           phoneNumber: mem?.connectedNumber ?? p.connectedNumber,
-          qr: mem?.qrCode ?? p.qrCode,
+          qr,
           createdAt: (p.lastSeen ?? new Date()).toISOString(),
           updatedAt: (p.lastSeen ?? new Date()).toISOString(),
           lastSeen: p.lastSeen?.toISOString(),
@@ -180,23 +215,6 @@ export class SessionController {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-    }
-  }
-
-  // Helper method to map service status to dashboard status
-  private mapStatusToDashboard(status: string): string {
-    switch (status) {
-      case 'ready':
-      case 'authenticated':
-        return 'CONNECTED';
-      case 'connecting':
-        return 'CONNECTING';
-      case 'disconnected':
-        return 'DISCONNECTED';
-      case 'auth_failure':
-        return 'AUTH_INVALID';
-      default:
-        return 'QR_READY';
     }
   }
 
