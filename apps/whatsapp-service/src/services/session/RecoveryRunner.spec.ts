@@ -158,6 +158,28 @@ describe('RecoveryRunner credential gate', () => {
     expect(result.success).toBe(true);
   });
 
+  it('does not bar a session from future recovery when it merely skips one', async () => {
+    // `autoReconnect: false` means "the user does not want this session
+    // reconnected" -- standing intent, not a verdict this function reached.
+    // shouldRecoverSession re-derives its answer from the row every boot, so
+    // writing the flag here only made time-bounded reasons permanent: being
+    // "manually disconnected recently" stops being true after 30 minutes.
+    hasCredentials.mockResolvedValue(true);
+
+    await new RecoveryRunner().executeSessionRecovery(
+      makeService(),
+      sessionRow({
+        metadata: { manualDisconnect: true, lastDisconnectTime: new Date().toISOString() },
+      }),
+      OPTIONS
+    );
+
+    const written = updateSessionStatus.mock.calls[0][2];
+    expect(written.metadata).not.toHaveProperty('autoReconnect', false);
+    // The reason is still recorded -- this drops the latch, not the diagnosis.
+    expect(written.metadata.recoverySkipReason).toMatch(/manually disconnected/i);
+  });
+
   it('still refuses a credentialled session the user closed on purpose', async () => {
     // The credential gate runs first, so this proves it did not swallow the
     // checks behind it: a force-disconnected row stays skipped.

@@ -158,11 +158,18 @@ export class RecoveryRunner {
     if (!shouldRecoverCheck.shouldRecover) {
       logger.info(`⏭️ Omitiendo sesión ${sessionId}: ${shouldRecoverCheck.reason}`);
 
+      // Records why, and does NOT write autoReconnect:false. That flag means
+      // "may RecoveryRunner attempt this session" -- standing intent, set by
+      // a user's deliberate disconnect. shouldRecoverSession is a pure
+      // function of the row and reaches the same verdict next boot from the
+      // same data, so writing the flag here adds nothing except turning
+      // every time-bounded reason permanent: "manually disconnected
+      // recently" stops being true after 30 minutes, and a session skipped
+      // once for it was barred forever.
       await this.persistenceService.updateSessionStatus(sessionId, 'disconnected', {
         lastError: `Skipped recovery: ${shouldRecoverCheck.reason}`,
         metadata: {
           ...sessionData.metadata,
-          autoReconnect: false,
           lastRecoverySkip: new Date().toISOString(),
           recoverySkipReason: shouldRecoverCheck.reason,
         },
