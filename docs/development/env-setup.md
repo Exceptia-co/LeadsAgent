@@ -111,8 +111,7 @@ In production, Redis is co-located on the Hetzner VPS at `localhost:6379`.
 | `WHATSAPP_ALLOW_NEW_LEADS` | `true` | Bot accepts messages from unknown numbers and creates a new Lead. Set to `false` for closed support deployments. |
 | `WHATSAPP_REQUIRE_WHITELIST` | `true` | Only allow messages from numbers that pass the whitelist heuristic. |
 | `WHATSAPP_BLOCK_NEWSLETTERS` | `true` | Drop messages matching newsletter patterns (unsubscribe, do-not-reply, etc). |
-| `WHATSAPP_ENABLE_AUTO_RECOVERY` | `false` (dev) / `true` (prod) | Whether the service tries to reconnect dropped WhatsApp sessions on boot. |
-| `PUPPETEER_HEADLESS` | `false` (dev) / `true` (prod) | `false` shows the Chrome window for debugging; `true` runs headless. |
+| `WHATSAPP_ENABLE_AUTO_RECOVERY` | `true` | Reconnect known sessions at boot. Must be the exact string `true`; anything else, including unset, leaves every session down until someone clicks Create in the dashboard. Sessions with no stored credentials are skipped — they need a QR. |
 
 ---
 
@@ -161,7 +160,7 @@ When rotating secrets, all surfaces using that secret must update at the same ti
 | `WHATSAPP_SERVICE_HMAC_SECRET` | Vercel + Hetzner api + Hetzner whatsapp-service + every dev's local `.env` |
 | `CLERK_SECRET_KEY` | Vercel + Hetzner api + Hetzner whatsapp-service + every dev's local `.env` |
 | `CLERK_WEBHOOK_SECRET` | Vercel + Hetzner api (only the API verifies webhooks) + every dev's local `.env` |
-| `WHATSAPP_AUTH_ENCRYPTION_KEY` | Hetzner whatsapp-service only (not read by the dashboard or the API). Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Not read by anything yet — it's wired up once the Baileys credential store (`SessionCredentialsStore`) goes live, so a missing value today is not an incident. |
+| `WHATSAPP_AUTH_ENCRYPTION_KEY` | Hetzner whatsapp-service only (not read by the dashboard or the API). Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. **Live since the Baileys cutover: it seals every row in `whatsapp_auth_keys`.** Missing, no session can pair; changed, every existing session's credentials become unreadable and each one needs a new QR. Treat it like a database password — back it up, and rotate only with the re-pairing planned in. |
 
 Step-by-step rotation is tracked in `docs/deployment/secrets-rotation.md`.
 

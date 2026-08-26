@@ -1,5 +1,12 @@
 # Informe de Estado Real — LeadsCRM
 
+> ⚠️ **Documento histórico — congelado el 2026-05-05.** Describe el motor
+> anterior, `whatsapp-web.js` sobre Puppeteer, que dejó de existir con el
+> cutover a Baileys del 2026-08-26: no hay Chromium, ni `wwebjs_auth`, ni
+> `LocalAuth`, y las credenciales de sesión viven cifradas en
+> `whatsapp_auth_keys` (Postgres). Se conserva por el porqué de las decisiones
+> de su época. Para el estado actual, `CLAUDE.md` es la fuente canónica.
+
 **Fecha:** 2026-05-05 (v11 — Fase B.2 completa + review fixes + smoke local verde)
 **Branch analizado:** `feat/b2.0-tenant-scope-defense` (HEAD `d6f70ad` — 19 commits sobre `develop`)
 **Método:** Auditoría `path:line` verificable + checks locales (`prisma validate`, `db:generate`, `typecheck`, `test`, `build`, `lint`) + verificación live Supabase MCP + Hetzner SSH + Clerk Dashboard (Chrome MCP) + smoke webhook E2E con org `WebhookSmokeTest` el 2026-05-03 19:51 UTC.

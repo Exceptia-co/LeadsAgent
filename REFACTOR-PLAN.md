@@ -1,5 +1,12 @@
 # Plan de refactorización — Pre-existing Issues
 
+> ⚠️ **Documento histórico — congelado el 2026-05-05.** Describe el motor
+> anterior, `whatsapp-web.js` sobre Puppeteer, que dejó de existir con el
+> cutover a Baileys del 2026-08-26: no hay Chromium, ni `wwebjs_auth`, ni
+> `LocalAuth`, y las credenciales de sesión viven cifradas en
+> `whatsapp_auth_keys` (Postgres). Se conserva por el porqué de las decisiones
+> de su época. Para el estado actual, `CLAUDE.md` es la fuente canónica.
+
 **Fecha:** 2026-05-05
 **Auditor:** Claude Code (auditoría estática sobre branch `feat/b2.0-tenant-scope-defense`)
 **Documento fuente:** `PREEXISTING-ISSUES.md`
