@@ -371,6 +371,33 @@ describe('BaileysSessionManager connection lifecycle', () => {
     jest.useRealTimers();
   });
 
+  it('still_schedules_the_retry_when_the_disconnect_bookkeeping_fails', async () => {
+    // handleSessionDisconnect is a database write. An unguarded rejection
+    // aborts onClose before the stopped re-check and scheduleRetry, and the
+    // session sits at 'connecting' with no socket and no timer -- a zombie
+    // nothing recovers but a process restart. It is latent only because the
+    // injected implementation happens to swallow its own errors, which no type
+    // expresses and nothing enforces. The only witness is the timer that was
+    // never created.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    mockMakeWASocket.mockClear();
+    sessionDisconnect.mockRejectedValue(new Error('db timeout'));
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
+    await Promise.resolve();
+
+    expect(jest.getTimerCount()).toBe(1);
+    await jest.advanceTimersByTimeAsync(2000);
+    expect(mockMakeWASocket).toHaveBeenCalledTimes(1);
+
+    jest.useRealTimers();
+  });
+
   it('keeps_the_retry_timers_of_two_sessions_independent', async () => {
     // The test above is also satisfied by a single global timer -- which
     // would mean two sessions dropping together produce one reconnect and one
@@ -493,6 +520,15 @@ describe('BaileysSessionManager connection lifecycle', () => {
     });
     await Promise.resolve();
     expect(store.clear).toHaveBeenCalledWith(SESSION_ID);
+
+    // And the dead socket is out of the map. No return value and no mock call
+    // witnesses this -- the harm is a resource left alive: three listeners on
+    // a dead connection, and a stray second close rebuilding on in-memory
+    // creds that store.clear just orphaned in the database. sendMessage is the
+    // one observable that can see the socket is gone.
+    expect(await manager.sendMessage(SESSION_ID, '34600111222', 'x')).toMatchObject({
+      success: false,
+    });
   });
 
   it('publishes_the_qr_and_caches_it_on_the_session_row', async () => {
