@@ -1,8 +1,15 @@
-import type { Client } from 'whatsapp-web.js';
 import { logger } from '../../utils/logger';
 import type { WhatsAppSession } from '../../types';
 import SessionPersistenceService from '../SessionPersistenceService';
 import redisClient, { REDIS_KEYS } from '../../config/redis';
+
+/**
+ * Structural stand-in for the engine client this class used to receive
+ * directly. Post-cutover, every real call site passes `undefined` (or an
+ * empty Map) here -- BaileysSessionManager owns the live socket -- so this
+ * only needs to describe the one method destroySession ever called.
+ */
+type DestroyableClient = { destroy(): Promise<void> };
 
 /**
  * SessionManager - Handles session lifecycle, status management, and persistence operations
@@ -21,8 +28,9 @@ export class SessionManager {
    * No longer populated after the Baileys cutover: BaileysSessionManager owns
    * the live session map, and WhatsAppServiceSimple reads it from there. This
    * map, and every accessor over it (getSession, getAllSessions, hasSession,
-   * createSessionObject, …), is dead weight kept only until Task 8b sweeps the
-   * whatsapp-web.js layer. Do not add a reader: it will always be empty.
+   * createSessionObject, …), is dead weight -- this class's remaining live
+   * role is the persisted session row (status writes, disconnect policy), not
+   * the in-memory map. Do not add a reader: it will always be empty.
    */
   private sessions: Map<string, WhatsAppSession> = new Map();
   private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -179,7 +187,7 @@ export class SessionManager {
    */
   async destroySession(
     sessionId: string,
-    client?: Client,
+    client?: DestroyableClient,
     cleanupCallback?: (sessionId: string) => Promise<void>,
     mode: 'shutdown' | 'delete' = 'delete'
   ): Promise<void> {
@@ -341,7 +349,7 @@ export class SessionManager {
   /**
    * Shutdown all sessions gracefully
    */
-  async shutdownAllSessions(clients: Map<string, Client>): Promise<void> {
+  async shutdownAllSessions(clients: Map<string, DestroyableClient>): Promise<void> {
     logger.info('🛑 Starting graceful shutdown of all sessions...');
 
     const sessionIds = Array.from(this.sessions.keys());

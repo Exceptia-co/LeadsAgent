@@ -86,10 +86,6 @@ export interface SendMessageResponse {
 
 export interface WhatsAppConfig {
   sessionPath: string;
-  puppeteerOptions: {
-    headless: boolean;
-    args: string[];
-  };
   webhookUrl?: string;
   apiBaseUrl: string;
   redis: {

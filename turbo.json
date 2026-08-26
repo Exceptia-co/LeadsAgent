@@ -12,8 +12,6 @@
     "CORS_ORIGIN",
     "WEBHOOK_URL",
     "WHATSAPP_*",
-    "PUPPETEER_*",
-    "CHROME_EXECUTABLE_PATH",
     "AI_PROVIDER",
     "OPENROUTER_*",
     "OPENAI_API_KEY",

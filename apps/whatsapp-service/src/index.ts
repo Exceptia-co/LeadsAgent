@@ -11,10 +11,11 @@ import { validateEnv } from './config/env';
 
 // Fase A6 (2026-04-19): capturar errores no manejados pero NO matar el proceso.
 // Antes un uncaughtException en una sesión WhatsApp tumbaba todas las demás
-// (cada sesión = 1 Chromium; si whatsapp-web.js dispara un error, el proceso
-// entero se moría). Ahora loguear y continuar; la sesión problemática se
-// recupera vía SessionRecoveryService. El graceful recovery por sesión
-// específica se afinará en Fase C8 (detached frame healthcheck).
+// (un error no capturado en cualquier sesión mataba el proceso entero, y con
+// él, cada socket WebSocket de Baileys que seguía vivo). Ahora loguear y
+// continuar; la sesión problemática se recupera vía SessionRecoveryService.
+// El graceful recovery por sesión específica se afinará en Fase C8 (detached
+// frame healthcheck).
 process.on('uncaughtException', error => {
   console.error('Uncaught Exception:', error);
   logger.error('Uncaught Exception — keeping process alive to protect other sessions:', error);

@@ -3,7 +3,7 @@
  *
  * Testeamos el comportamiento a nivel del método de RedisClient, no del
  * handler completo en EventDispatcher. El handler es demasiado complejo de
- * mockear (whatsapp-web.js, Puppeteer, DB, webhooks); probar la primitive
+ * mockear (DB, webhooks); probar la primitive
  * garantiza que el bloque atómico sobre el que se apoya el dedupe funciona.
  *
  * Casos cubiertos:

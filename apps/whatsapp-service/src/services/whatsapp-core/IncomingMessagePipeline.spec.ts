@@ -127,7 +127,7 @@ describe('IncomingMessagePipeline', () => {
     // The pipeline only concatenates REDIS_KEYS.MESSAGE_DEDUP with dto.id -- it
     // never reads dto.sessionId itself, so this only proves that much: the key
     // prefix and the TTL. Session-scoping is a property of dto.id, produced by
-    // the normalizer -- see wwebjs-normalizer.spec.ts's
+    // the normalizer -- see baileys-normalizer.spec.ts's
     // prefixes_the_dto_id_with_the_session_it_was_normalized_for for the test
     // that actually exercises where the session prefix is introduced.
     await makePipeline().handle(dto(), PORT);

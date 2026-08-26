@@ -362,7 +362,7 @@ export const REDIS_KEYS = {
 
 export const REDIS_TTL = {
   // Fase A1: ventana de 5 min es el sweet spot industry-standard para WhatsApp.
-  // Cubre casi todos los re-emits de whatsapp-web.js sin acumular claves.
+  // Cubre casi todos los re-emits del transporte sin acumular claves.
   MESSAGE_DEDUP_SECONDS: 300,
 };
 

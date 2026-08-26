@@ -24,7 +24,7 @@ import { sessionCredentialsStore } from './session-credentials/SessionCredential
  * - SessionManager: persisted session row, status writes, disconnect policy
  * - WhatsAppEventPublisher: Socket.IO + HMAC-signed webhook emission
  *
- * The public API is unchanged from the whatsapp-web.js era, so the REST
+ * The public API is unchanged across the engine cutover, so the REST
  * routes, the Socket.IO payloads and the message webhook contract are all
  * untouched.
  */
