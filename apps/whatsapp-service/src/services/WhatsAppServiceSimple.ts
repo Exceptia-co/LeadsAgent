@@ -374,11 +374,23 @@ class WhatsAppServiceSimple {
       const { default: DatabaseServiceMod } = await import('./DatabaseService');
       const tenantId = await DatabaseServiceMod.getSessionTenantId(sessionId);
 
-      const authorizationResult = await WhatsAppAuthorizationService.authorize({
+      // `authorizeAndManageLead`, not `authorize`: the second only reads.
+      // The lead-creating path existed and had no caller, so an inbound from
+      // an unknown number was authorised, answered, and persisted with
+      // `leadId: null` -- 14% of rows in production, invisible to every
+      // JOIN-based reader. Creating the lead here, before the AI reply and
+      // before DatabaseService.saveConversation does its lookup, is what
+      // makes that lookup find something.
+      const {
+        authorization: authorizationResult,
+        lead,
+        error: leadError,
+      } = await WhatsAppAuthorizationService.authorizeAndManageLead({
         phoneNumber,
         sessionId,
         tenantId: tenantId ?? undefined,
         messagePreview,
+        leadSource: 'whatsapp-inbound',
         timestamp: new Date(),
       });
 
@@ -390,10 +402,25 @@ class WhatsAppServiceSimple {
       });
 
       // Convert to legacy format for compatibility
+      // The freshly created lead when there was one, the looked-up lead
+      // otherwise.
+      const resolvedLead = lead ?? authorizationResult.leadInfo;
+
+      // authorizeAndManageLead reports a failed lead creation by RETURNING
+      // `{ error }`, not by throwing. Letting that through would answer the
+      // contact and persist the exchange against no lead -- the exact hole
+      // this call was swapped in to close, reopened on the failure path.
+      if (authorizationResult.decision === 'ALLOWED' && !resolvedLead) {
+        logger.error(
+          `🚫 Authorized ${phoneNumber} but no lead to attach it to${leadError ? `: ${leadError}` : ''} — not processing`
+        );
+        return { allowed: false, reason: leadError ?? 'Authorized but no lead could be created' };
+      }
+
       return {
         allowed: authorizationResult.decision === 'ALLOWED',
         reason: authorizationResult.reason,
-        leadInfo: authorizationResult.leadInfo,
+        leadInfo: resolvedLead,
       };
     } catch (error) {
       logger.error('Error in enhanced authorization check:', error);
