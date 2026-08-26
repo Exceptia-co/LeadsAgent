@@ -56,7 +56,15 @@ function toText(content: Record<string, any>, contentType: string | undefined): 
 function toSeconds(ts: unknown): number {
   if (typeof ts === 'number') return ts;
   if (typeof ts === 'string') return Number(ts);
-  if (ts && typeof ts === 'object' && 'low' in (ts as any)) return Number((ts as any).low);
+  if (ts && typeof ts === 'object' && 'low' in (ts as any)) {
+    // `low` is the low 32 bits, read as a *signed* int32. It is correct only
+    // while the epoch fits in 31 bits: on 19 January 2038 the sign bit flips
+    // and every timestamp silently becomes a large negative number. Long's own
+    // toNumber() joins the halves; the raw `low` stays as the fallback for the
+    // plain {low, high} literals a test or a mock can produce.
+    const long = ts as { toNumber?: () => number; low: number };
+    return Number(long.toNumber?.() ?? long.low);
+  }
   return 0;
 }
 
@@ -92,7 +100,16 @@ export function normalizeBaileysMessage(
     id: `${sessionId}:${providerId}`,
     sessionId,
     senderPhone,
-    recipientPhone: isGroup ? null : senderPhone,
+    // Always null, group or not. This lands on the frozen webhook as `data.to`,
+    // which the outgoing engine filled with the account's own number
+    // (`message.to`). A WAMessage carries no equivalent -- the account's JID
+    // lives on the socket (`sock.user.id`), not on the message -- and
+    // `senderPhone` here would make `data.to` equal `data.from` on every
+    // inbound message. Nothing reads the field today, which is exactly why a
+    // plausible-looking lie is worse than an absence: the first consumer would
+    // trust it. Deriving the real value means passing the account's own number
+    // in, and this signature is frozen.
+    recipientPhone: null,
     text: toText(content as Record<string, any>, contentType),
     timestamp: toSeconds(message.messageTimestamp),
     type: toType(contentType),

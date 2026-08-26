@@ -25,7 +25,11 @@ describe('normalizeBaileysMessage', () => {
       id: `${SESSION_ID}:ABC123`,
       sessionId: SESSION_ID,
       senderPhone: '34600111222',
-      recipientPhone: '34600111222',
+      // Null, not the sender: this becomes `data.to` on the frozen webhook,
+      // and the account's own number -- what the outgoing engine put there --
+      // is not on a WAMessage. Echoing senderPhone would make `data.to` equal
+      // `data.from` on every inbound message, which reads as real.
+      recipientPhone: null,
       text: 'hola',
       timestamp: 1756000000,
       type: 'text',
@@ -117,6 +121,27 @@ describe('normalizeBaileysMessage', () => {
 
     expect(typeof dto?.timestamp).toBe('number');
     expect(dto?.timestamp).toBe(1756000000);
+  });
+
+  it('joins_both_halves_of_a_real_Long_instead_of_reading_low_alone', () => {
+    // `low` is the low 32 bits read as a signed int32. Every epoch until 19
+    // January 2038 fits in 31 bits, so reading it alone is indistinguishable
+    // from correct today and silently negative afterwards -- 2038-01-19
+    // 03:14:08 UTC is 2147483648, whose `low` is -2147483648. protobufjs's Long
+    // exposes toNumber(); the fallback stays for plain {low, high} literals.
+    const dto = normalizeBaileysMessage(
+      waMessage({
+        messageTimestamp: {
+          low: -2147483648,
+          high: 0,
+          unsigned: true,
+          toNumber: () => 2147483648,
+        },
+      }),
+      SESSION_ID
+    );
+
+    expect(dto?.timestamp).toBe(2147483648);
   });
 
   it('drops_a_message_with_no_id_and_a_message_with_no_content', () => {

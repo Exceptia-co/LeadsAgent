@@ -70,7 +70,7 @@ pnpm audit:infra                    # Run scripts/audit-infra.ts (Hetzner/Supaba
 apps/
 ├── dashboard/             # Next.js 14 frontend (port 3001) — Clerk auth, SWR, Tailwind, Radix UI
 ├── api/                   # NestJS 10 REST API (port 3003) — Clerk JWT, Prisma, Throttler
-├── whatsapp-service/      # Express + whatsapp-web.js (port 3002) — Puppeteer, Socket.IO, Redis
+├── whatsapp-service/      # Express + @whiskeysockets/baileys (port 3002) — WebSocket, Socket.IO, Redis
 └── docs/                  # Next.js docs site
 
 packages/
@@ -136,7 +136,22 @@ UUIDs are primary keys throughout. Cascade was relaxed in T4.1 to support soft d
 - Group/broadcast filter: `@g.us` and `status@broadcast` JIDs are dropped before parsing
 - Typing indicator wraps the entire `processMessageWithAI` (start at handler entry, clear in `finally`) so the user sees "typing..." for the full ~5-6s LLM thinking window
 - The runtime stays alive on `uncaughtException` / `unhandledRejection` (no `process.exit(1)`) so a crash in one session doesn't kill the others
-- **Dev local con `PUPPETEER_HEADLESS=false`**: el Chrome de Puppeteer queda visible con DevTools abierto (`devtools = !isProduction && !headless` en `puppeteer.config.ts:103`). Cualquier interacción tuya con esa ventana (abrir DevTools, refrescar, scroll en panel de elementos) puede destruir el JS context y causar `Protocol error: Execution context was destroyed` en el siguiente `Client.sendMessage`. Para smoke runtime fiable: `PUPPETEER_HEADLESS=true pnpm dev` (la env var debe estar declarada en `turbo.json globalEnv` — ya incluida como `PUPPETEER_*`, ver patrón whitelist; también `dotenv.config()` no pisa env vars existentes, así que el override de shell gana sobre `.env`). Producción siempre es headless por `NODE_ENV=production`.
+- **Engine: Baileys, not a browser.** `@whiskeysockets/baileys` speaks the WhatsApp
+  protocol over a WebSocket. There is no Chromium, no Puppeteer, no page context and
+  no `PUPPETEER_*` env var; a session costs a socket and a few MB instead of a browser.
+  `pnpm dev` starts it with nothing to keep off-screen.
+- **Sessions live in Postgres, not on disk.** `whatsapp_auth_keys` holds the Signal
+  credentials, one AES-256-GCM sealed row per key, written through
+  `SessionCredentialsStore.setBatch` (one transaction per Baileys commit). There is no
+  `wwebjs_auth` directory and no `LocalAuth`: a session survives a restart because the
+  rows do. `WHATSAPP_AUTH_ENCRYPTION_KEY` is what opens them — see Environment Variables.
+- **The engine is `BaileysSessionManager`** (`src/services/baileys/`): sockets, the
+  in-memory session map, the reconnect policy and the credential lifecycle. It never
+  touches Prisma — persistence goes through injected `updateSessionStatus` /
+  `handleSessionDisconnect`. Reconnects are throttled on purpose: a five-rung backoff
+  with jitter (2s→60s, then terminal) for network closes, and three 1s rebuilds for
+  `restartRequired` (515) before that is terminal too. Nothing may reconnect in a bare
+  loop; ban risk follows traffic behaviour.
 
 ### Dashboard (apps/dashboard)
 
@@ -167,6 +182,14 @@ Files:
 - `CLERK_WEBHOOK_SECRET` — required by `apps/dashboard/app/api/webhooks/clerk/route.ts` (user events: `user.created/updated/deleted`). Runs on Vercel.
 - `CLERK_ORG_WEBHOOK_SECRET` — required by `apps/api/src/clerk-webhooks/clerk-organizations.controller.ts` (org events: `organization.created/updated/deleted`). Runs on Hetzner Nest API. **Distinct from `CLERK_WEBHOOK_SECRET`** — different webhook endpoint, different runtime, different signing secret. Without it: new orgs in Clerk Production never auto-create a `tenants` row. Vercel does NOT consume this secret (only Hetzner needs it).
 - `WHATSAPP_ALLOW_NEW_LEADS` — defaults to `true` in code (lead-capture mode). Set to `false` only for "private support" deployments. **Resolution order: env > DB config > hardcoded default**
+- `WHATSAPP_AUTH_ENCRYPTION_KEY` (64 hex chars = 32 bytes) — seals every row in
+  `whatsapp_auth_keys`. Missing: `SessionCredentialsStore` throws
+  `"WHATSAPP_AUTH_ENCRYPTION_KEY is not set; refusing to store credentials"` and no
+  session can pair. **Changed or rotated: every existing session's credentials become
+  unreadable** — the store now refuses to start a session whose `creds` row it cannot
+  decrypt rather than minting a fresh identity over it, so the failure is loud and the
+  rows survive. Treat it like a database password: back it up, do not regenerate it
+  casually, and rotate only with the sessions' re-pairing planned in.
 
 **Service Ports:**
 
@@ -297,14 +320,23 @@ ssh root@46.225.26.89 '
   cd /opt/leadcrm
   git pull origin develop   # or main once merged
   pnpm install --frozen-lockfile
-  pnpm build                # required: whatsapp-service runs node dist/index.js
+  # Filtered on purpose -- see below. Required: whatsapp-service runs node dist/index.js
+  pnpm build --filter=@leadcrm/api --filter=@leadcrm/whatsapp-service
   pm2 restart all --update-env
 '
 ```
 
-Do **not** drop the `pnpm build`. `apps/whatsapp-service` starts from
-`dist/index.js`, so without it PM2 restarts the previous bundle and the deploy
-looks successful while shipping nothing.
+Do **not** drop the build. `apps/whatsapp-service` starts from `dist/index.js`, so
+without it PM2 restarts the previous bundle and the deploy looks successful while
+shipping nothing.
+
+Do **not** drop the `--filter`s either. An unfiltered `pnpm build` also builds the
+dashboard, which prerenders 13 routes needing a Clerk `publishableKey` that only
+exists in Vercel — it fails on the VPS every time. Under `set -e` that failure aborts
+the script **before `pm2 restart`**, so the operator gets new code checked out,
+dependencies installed, and the old bundle still serving, with every visible sign
+saying the deploy ran. The dashboard is deployed by Vercel and has no business being
+built here.
 
 If you ever deploy the two services separately, **`leadcrm-api` goes first**: the
 proactive consent gate in `whatsapp-service` filters by `sessionId`, and the Nest
@@ -312,8 +344,32 @@ webhook is what persists that `sessionId` on the inbound message. The other orde
 silently stops every proactive send — they are counted as `failed`, not raised as
 an error.
 
-Effects: ~15-30s downtime while installing deps and restarting; the WhatsApp `test` session disconnects briefly and reconnects via LocalAuth. Verify with `pm2 logs whatsapp-service --lines 30` — should show `Environment validated (NODE_ENV=production)` and `[DEDUPE] Checking msgId=...` on inbound messages.
+Effects: ~15-30s downtime while installing deps and restarting; each WhatsApp session
+disconnects briefly and comes back by re-reading its credentials from
+`whatsapp_auth_keys` (there is no `LocalAuth` and no on-disk session state any more).
+A session whose rows are gone, or whose `WHATSAPP_AUTH_ENCRYPTION_KEY` no longer
+matches, does **not** come back and needs a new QR. Verify with
+`pm2 logs whatsapp-service --lines 30` — should show
+`Environment validated (NODE_ENV=production)` and `[DEDUPE] Checking msgId=...` on
+inbound messages.
+
+**Two install-time constraints, both able to fail a deploy that looks routine:**
+
+- **This tree does not install under pnpm 11.** Baileys pulls `libsignal` from a git
+  URL, and pnpm 11 refuses it outright with
+  `ERR_PNPM_EXOTIC_SUBDEP — Exotic dependency "libsignal" (resolved via
+  git-repository) is not allowed in subdependencies`. 9 and 10 both install it fine —
+  the VPS runs 10.28.1 today — so this is a ceiling, not a required version. The repo
+  declares `packageManager: pnpm@9.0.0`; run `corepack enable` on the VPS so that
+  declaration actually governs, because a globally npm-installed pnpm ignores it and a
+  future `npm i -g pnpm@latest` would then break the deploy with an error that never
+  mentions Baileys.
+- **The VPS needs outbound access to `codeload.github.com` at install time.**
+  `libsignal` resolves to a tarball served from there — a different host from
+  `github.com`, so a network that allows one may still block the other. Check the host
+  that actually serves the file:
+  `curl -fsSI -o /dev/null https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7 && echo reachable`
 
 **Vercel (dashboard at `guatsapp.me`)** auto-deploys from the configured Production Branch (typically `main`). To promote `develop` → prod: `git checkout main && git merge develop && git push`.
 
-**Phase C will add** `.github/workflows/deploy-hetzner.yml` with `workflow_dispatch` (semi-automatic deploy via GitHub Actions button), using `pm2 reload` (not restart) once the whatsapp-service supports zero-downtime reload. Auto-on-push-to-main is vetoed until then because each restart drops the WhatsApp Chromium session.
+**Phase C will add** `.github/workflows/deploy-hetzner.yml` with `workflow_dispatch` (semi-automatic deploy via GitHub Actions button), using `pm2 reload` (not restart) once the whatsapp-service supports zero-downtime reload. Auto-on-push-to-main is vetoed until then because each restart drops every live WhatsApp socket.

@@ -348,7 +348,6 @@ export const REDIS_KEYS = {
   AI_RESPONSE_CACHE: 'ai:response:cache:',
   RATE_LIMIT: 'rate:limit:',
   SESSION_STATUS: 'session:status:',
-  SESSION_QR: 'session:qr:',
   SESSION_HEARTBEAT: 'session:hb:',
   SESSION_LOCK: 'session:lock:',
   MESSAGE_QUEUE: 'message:queue:',

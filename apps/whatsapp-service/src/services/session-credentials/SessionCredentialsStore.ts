@@ -109,33 +109,16 @@ export class SessionCredentialsStore {
           `Failed to decrypt auth key ${category}/${row.keyId} for session ${sessionId}:`,
           error
         );
+        // Except for `creds`, where "missing" is a destructive lie. The caller
+        // mints a fresh identity with initAuthCreds() and the first
+        // creds.update upserts it over the row that is still sitting there --
+        // so a wrong or rotated WHATSAPP_AUTH_ENCRYPTION_KEY destroys
+        // credentials that were still recoverable while the row survived.
+        // Failing the session start is repairable; this is not.
+        if (category === 'creds') throw error;
       }
     }
     return result;
-  }
-
-  async set(
-    sessionId: string,
-    category: string,
-    values: Record<string, unknown | null>
-  ): Promise<void> {
-    const toDelete = Object.keys(values).filter(k => values[k] === null);
-    const toWrite = Object.keys(values).filter(k => values[k] !== null);
-
-    if (toDelete.length > 0) {
-      await this.prisma.whatsAppAuthKey.deleteMany({
-        where: { sessionId, category, keyId: { in: toDelete } },
-      });
-    }
-
-    for (const keyId of toWrite) {
-      const sealed = this.seal(values[keyId]);
-      await this.prisma.whatsAppAuthKey.upsert({
-        where: { sessionId_category_keyId: { sessionId, category, keyId } },
-        create: { sessionId, category, keyId, value: sealed as unknown as object },
-        update: { value: sealed as unknown as object },
-      });
-    }
   }
 
   /**

@@ -38,6 +38,28 @@ import { makeBaileysReplyPort } from './baileys-reply-port';
  */
 const RETRY_SCHEDULE_MS = [2000, 5000, 10000, 30000, 60000];
 
+/**
+ * The 515 (`restartRequired`) budget: three rebuilds, one second apart.
+ *
+ * 515 on the first pairing is a normal step and a slow reconnect there is a
+ * visibly slow pairing, so the delay is a floor rather than a backoff. A
+ * *repeating* 515 is not normal: it is the documented outcome of credentials
+ * that never persist, and `saveCreds` rejections are swallowed into a log line
+ * by attach()'s `guard()`. Unthrottled, that is a hot reconnect loop against
+ * WhatsApp on a client's personal number -- the one risk this migration was
+ * approved on the condition of not worsening.
+ *
+ * Counted separately from `attempts` rather than inside it, because a 515
+ * during first pairing is an ordinary protocol step and not a failure: sharing
+ * the counter would leave every freshly-linked session starting life with four
+ * network retries instead of five, and a first backoff rung of 5 s instead of
+ * 2 s. Both counters reset on a clean `open` -- a successful connection is the
+ * evidence that whatever caused the previous restarts is over, so the cap
+ * applies to *consecutive* 515s, which is what a loop is made of.
+ */
+const RESTART_REQUIRED_DELAY_MS = 1000;
+const RESTART_REQUIRED_LIMIT = 3;
+
 interface SessionHandlers {
   connection: (update: Partial<ConnectionState>) => void;
   creds: (update: Partial<AuthenticationCreds>) => void;
@@ -57,6 +79,8 @@ interface SessionRuntime {
   /** The exact listener identities currently subscribed, so `off` can hit them. */
   handlers?: SessionHandlers;
   attempts: number;
+  /** 515s spent, capped separately from `attempts`. See RESTART_REQUIRED_LIMIT. */
+  restartAttempts: number;
   credsAnnounced: boolean;
   openAnnounced: boolean;
 }
@@ -155,6 +179,7 @@ export class BaileysSessionManager {
       saveCreds,
       log,
       attempts: 0,
+      restartAttempts: 0,
       credsAnnounced: false,
       openAnnounced: false,
     });
@@ -243,6 +268,13 @@ export class BaileysSessionManager {
     if (mode === 'delete') {
       await this.deps.store.clear(sessionId);
     }
+
+    // Last, and only here. The flag exists to stop a close handler suspended
+    // mid-await from rebuilding a session that is being torn down, so it has to
+    // outlive every await above -- but a set that is only ever added to grows
+    // for the process lifetime. Dropping it is safe because the missing runtime
+    // is now the durable marker: onClose re-checks that too.
+    this.stopped.delete(sessionId);
     logger.info(`🗑️ Baileys session ${sessionId} torn down (${mode})`);
   }
 
@@ -439,9 +471,14 @@ export class BaileysSessionManager {
     const number = jidDecode(sock.user?.id)?.user ?? 'unknown';
 
     // A clean connection ends the backoff: a session that reconnects fine five
-    // times over a month must not be out of retries on the sixth blip.
+    // times over a month must not be out of retries on the sixth blip. Same
+    // for the 515 budget -- a session that pairs normally (one 515), runs for a
+    // month and then meets two unrelated ones must not give up on the third.
     this.clearRetry(sessionId);
-    if (runtime) runtime.attempts = 0;
+    if (runtime) {
+      runtime.attempts = 0;
+      runtime.restartAttempts = 0;
+    }
 
     const session = this.sessions.get(sessionId);
     if (session) {
@@ -470,11 +507,35 @@ export class BaileysSessionManager {
         data: { number },
         timestamp: new Date().toISOString(),
       });
+      return;
     }
+    // No runtime means the session was torn down underneath us; there is
+    // nothing left to announce a recovery for.
+    if (!runtime) return;
+
+    // A reconnect still has to be announced, just not as `authenticated`.
+    // onClose publishes `disconnected` on every transient close -- the old
+    // engine did, and the dashboard needs to see a drop -- and SocketService
+    // turns that into session:disconnected, which useSocket writes into React
+    // state that only session:connected, session:status_changed or a page
+    // reload clears. Announcing the drop and not the recovery leaves a session
+    // that came back five seconds later showing DISCONNECTED indefinitely.
+    //
+    // `status_change` and not a third `authenticated`: SocketService and
+    // apps/api's handleStatusChange both already handle this event, so it needs
+    // no new contract, and the "exactly two authenticated webhooks per session
+    // lifecycle" shape Phase 1 froze stays untouched.
+    await this.deps.publisher.sendWebhook({
+      event: 'status_change',
+      sessionId,
+      data: { status: 'ready', number },
+      timestamp: new Date().toISOString(),
+    });
   }
 
   private async onClose(sessionId: string, error: unknown): Promise<void> {
     const code = statusCodeOf(error);
+    const runtime = this.runtimes.get(sessionId);
 
     // Whatever happens next, the session is not ready: during a rebuild the
     // socket map is empty between delete and set.
@@ -487,15 +548,32 @@ export class BaileysSessionManager {
     // 515 fires on the first pairing and is a normal step. Treating it as a
     // failure is the classic integration bug: the session pairs, instantly
     // "fails", and never comes up.
-    if (code === DisconnectReason.restartRequired) {
-      logger.info(`Session ${sessionId} requested a restart (515), reconnecting immediately`);
-      // A 515 arriving while a backoff timer is pending would otherwise leave
-      // that timer to fire a second rebuild and churn the socket that just
-      // came up. `attempts` is deliberately not reset: 515 is not evidence the
-      // connection is healthy.
-      this.clearRetry(sessionId);
-      this.rebuild(sessionId);
-      return;
+    let restartLoop = false;
+    if (code === DisconnectReason.restartRequired && runtime) {
+      // Same double-close rule scheduleRetry uses: one disconnect can emit
+      // `close` twice, and a pending timer is the signal that this is the
+      // second one. Counting it would burn the budget at twice the rate.
+      if (!this.retryTimers.has(sessionId)) runtime.restartAttempts += 1;
+
+      if (runtime.restartAttempts <= RESTART_REQUIRED_LIMIT) {
+        logger.info(
+          `Session ${sessionId} requested a restart (515), rebuilding in ${RESTART_REQUIRED_DELAY_MS}ms (${runtime.restartAttempts}/${RESTART_REQUIRED_LIMIT})`
+        );
+        // Through the retry timer, not a bare rebuild: the delay is the
+        // throttle, and the shared timer is what destroySession /
+        // forceDisconnect / closeTerminally already cancel. A 515 arriving
+        // while a backoff timer is pending must also not leave that timer to
+        // fire a second rebuild and churn the socket that just came up --
+        // armRetry clears it first. `attempts` is deliberately not reset: 515
+        // is not evidence the connection is healthy.
+        this.armRetry(sessionId, RESTART_REQUIRED_DELAY_MS);
+        return;
+      }
+      // Budget spent. Falls through to the reporting below and ends terminally
+      // there, rather than in the network backoff: three consecutive 515s with
+      // no successful connection in between is not a blip that a longer wait
+      // fixes, it is a session that cannot complete a handshake.
+      restartLoop = true;
     }
 
     // connectionLost and timedOut are both 408 and cannot be told apart, so
@@ -539,7 +617,11 @@ export class BaileysSessionManager {
 
     // Every await between the close event and the schedule is a place where
     // the session can be destroyed underneath us. Check after the last one.
-    if (this.stopped.has(sessionId)) return;
+    // Both conditions, not just `stopped`: destroySession clears its own flag
+    // on the way out (it would otherwise grow for the process lifetime), so a
+    // handler resuming after a completed teardown is recognised by the runtime
+    // being gone -- the same guard rebuild() uses.
+    if (this.stopped.has(sessionId) || !this.runtimes.has(sessionId)) return;
 
     if (loggedOut) {
       await this.markLoggedOut(sessionId);
@@ -576,6 +658,17 @@ export class BaileysSessionManager {
       // to be right -- the first consumer will trust it.
       disconnectType = 'WHATSAPP_REPLACED';
       await this.markTerminal(sessionId, reason, { replacedAt: new Date().toISOString() });
+    } else if (restartLoop) {
+      // Its own string, not the network-budget one: the operator has only
+      // `lastError` to tell "the connection kept dropping" from "the session
+      // kept being asked to restart and never got past the handshake", and the
+      // second one usually means credentials are not being persisted.
+      logger.error(
+        `Session ${sessionId} hit ${RESTART_REQUIRED_LIMIT} consecutive restartRequired (515) closes; not reconnecting`
+      );
+      reason = `Consecutive restartRequired (515) limit reached after ${RESTART_REQUIRED_LIMIT} rebuilds`;
+      disconnectType = 'WHATSAPP_RESTART_LOOP';
+      await this.markTerminal(sessionId, reason, { restartLoopAt: new Date().toISOString() });
     } else {
       // One disconnect can emit `close` twice: the socket emits it, and end()
       // emits it again during teardown. scheduleRetry already absorbs that by
@@ -648,7 +741,17 @@ export class BaileysSessionManager {
     // emits it again during teardown. Counting both burns two of the five
     // rungs and installs the 5 s delay where 2 s was due, so a second event
     // re-arms the same rung instead of advancing it.
-    const attempt = this.retryTimers.has(sessionId) ? runtime.attempts : runtime.attempts + 1;
+    //
+    // `attempts > 0` guards the one case where a timer is pending on a rung
+    // that was never taken: the 515 path arms the same timer without touching
+    // `attempts`, so a non-515 close arriving before that rebuild would land on
+    // rung 0 -- RETRY_SCHEDULE_MS[-1] is undefined and setTimeout(NaN) fires
+    // immediately, which is the unthrottled reconnect this schedule exists to
+    // prevent.
+    const attempt =
+      this.retryTimers.has(sessionId) && runtime.attempts > 0
+        ? runtime.attempts
+        : runtime.attempts + 1;
     if (attempt > RETRY_SCHEDULE_MS.length) {
       return await this.markGaveUp(sessionId, code);
     }
@@ -657,18 +760,7 @@ export class BaileysSessionManager {
     // Jitter so every session on the box does not retry in lockstep after a
     // network blip and arrive as one burst.
     const delay = RETRY_SCHEDULE_MS[attempt - 1] + this.jitter();
-
-    // At most one pending retry per session: `close` can arrive more than once
-    // for a single disconnect -- the socket emits it, and end() emits it again
-    // during teardown -- and two timers racing produce two live sockets.
-    this.clearRetry(sessionId);
-    this.retryTimers.set(
-      sessionId,
-      setTimeout(() => {
-        this.retryTimers.delete(sessionId);
-        this.rebuild(sessionId);
-      }, delay)
-    );
+    this.armRetry(sessionId, delay);
     logger.warn(
       `Session ${sessionId} closed (code ${code ?? 'unknown'}); reconnect attempt ${attempt} in ${Math.round(delay)}ms`
     );
@@ -793,6 +885,23 @@ export class BaileysSessionManager {
       logger.warn(`Error ending socket for session ${sessionId}:`, error);
     }
     this.sockets.delete(sessionId);
+  }
+
+  /**
+   * At most one pending rebuild per session, always cancellable by clearRetry.
+   * `close` can arrive more than once for a single disconnect -- the socket
+   * emits it, and end() emits it again during teardown -- and two timers racing
+   * produce two live sockets.
+   */
+  private armRetry(sessionId: string, delay: number): void {
+    this.clearRetry(sessionId);
+    this.retryTimers.set(
+      sessionId,
+      setTimeout(() => {
+        this.retryTimers.delete(sessionId);
+        this.rebuild(sessionId);
+      }, delay)
+    );
   }
 
   private clearRetry(sessionId: string): void {

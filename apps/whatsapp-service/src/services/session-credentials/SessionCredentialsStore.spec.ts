@@ -58,16 +58,16 @@ beforeEach(() => {
 
 describe('SessionCredentialsStore', () => {
   it('round_trips_a_value_through_encryption', async () => {
-    const store = new SessionCredentialsStore();
+    const store = new SessionCredentialsStore(prismaMock as any);
     const secret = { privateKey: 'signal-private-key', counter: 7 };
 
-    await store.set(SESSION_ID, 'creds', { creds: secret });
+    await store.setBatch(SESSION_ID, { creds: { creds: secret } });
 
     // Assert BOTH envelopes: upsert always carries a create AND an update
     // payload (Prisma picks which one runs), so a rotation that leaked
     // plaintext through update.value while sealing create.value would slip
     // past a check that only looked at one of the two.
-    const { create, update } = mockUpsert.mock.calls[0][0];
+    const { create, update } = txMock.whatsAppAuthKey.upsert.mock.calls[0][0];
     expect(JSON.stringify(create.value)).not.toContain('signal-private-key');
     expect(JSON.stringify(update.value)).not.toContain('signal-private-key');
     // "Doesn't contain the substring" also passes for a base64-without-
@@ -75,8 +75,8 @@ describe('SessionCredentialsStore', () => {
     // twice must not produce the same envelope. A base64 "seal" is
     // deterministic and would emit an identical iv both times; AES-GCM's
     // random IV will not.
-    await store.set(SESSION_ID, 'creds', { creds: secret });
-    const secondEnvelope = mockUpsert.mock.calls[1][0].create.value;
+    await store.setBatch(SESSION_ID, { creds: { creds: secret } });
+    const secondEnvelope = txMock.whatsAppAuthKey.upsert.mock.calls[1][0].create.value;
     expect(secondEnvelope.iv).not.toEqual(create.value.iv);
 
     mockFindMany.mockResolvedValue([{ keyId: 'creds', value: create.value }]);
@@ -89,12 +89,12 @@ describe('SessionCredentialsStore', () => {
     // Signal key material is binary. Plain JSON.stringify/parse turns a
     // Buffer into a plain {type:'Buffer',data:[...]} object and never back,
     // which silently corrupts the only kind of value this store exists for.
-    const store = new SessionCredentialsStore();
+    const store = new SessionCredentialsStore(prismaMock as any);
     const secret = { privateKey: Buffer.from([1, 2, 3, 255]), counter: 7 };
 
-    await store.set(SESSION_ID, 'creds', { creds: secret });
+    await store.setBatch(SESSION_ID, { creds: { creds: secret } });
 
-    const stored = mockUpsert.mock.calls[0][0].create.value;
+    const stored = txMock.whatsAppAuthKey.upsert.mock.calls[0][0].create.value;
     mockFindMany.mockResolvedValue([{ keyId: 'creds', value: stored }]);
     const read = await store.get(SESSION_ID, 'creds', ['creds']);
 
@@ -117,12 +117,12 @@ describe('SessionCredentialsStore', () => {
     // Uint8Array (Buffer subclasses it), so `instanceof Uint8Array` and byte
     // equality both hold for the revived value even though it isn't the
     // exact same subclass instance that went in. That's fine for Baileys.
-    const store = new SessionCredentialsStore();
+    const store = new SessionCredentialsStore(prismaMock as any);
     const secret = { privateKey: new Uint8Array([1, 2, 3, 255]), counter: 7 };
 
-    await store.set(SESSION_ID, 'creds', { creds: secret });
+    await store.setBatch(SESSION_ID, { creds: { creds: secret } });
 
-    const stored = mockUpsert.mock.calls[0][0].create.value;
+    const stored = txMock.whatsAppAuthKey.upsert.mock.calls[0][0].create.value;
     mockFindMany.mockResolvedValue([{ keyId: 'creds', value: stored }]);
     const read = await store.get(SESSION_ID, 'creds', ['creds']);
 
@@ -133,7 +133,7 @@ describe('SessionCredentialsStore', () => {
   });
 
   it('scopes_every_read_and_write_by_session_and_category', async () => {
-    const store = new SessionCredentialsStore();
+    const store = new SessionCredentialsStore(prismaMock as any);
 
     await store.get(SESSION_ID, 'pre-key', ['1', '2']);
 
@@ -142,9 +142,9 @@ describe('SessionCredentialsStore', () => {
       select: { keyId: true, value: true },
     });
 
-    await store.set(SESSION_ID, 'pre-key', { '1': { v: 1 } });
+    await store.setBatch(SESSION_ID, { 'pre-key': { '1': { v: 1 } } });
 
-    const { where, create } = mockUpsert.mock.calls[0][0];
+    const { where, create } = txMock.whatsAppAuthKey.upsert.mock.calls[0][0];
     expect(where).toEqual({
       sessionId_category_keyId: { sessionId: SESSION_ID, category: 'pre-key', keyId: '1' },
     });
@@ -152,22 +152,24 @@ describe('SessionCredentialsStore', () => {
   });
 
   it('writes_each_key_independently_so_concurrent_sets_cannot_lose_updates', async () => {
-    const store = new SessionCredentialsStore();
+    const store = new SessionCredentialsStore(prismaMock as any);
 
-    await store.set(SESSION_ID, 'session', { a: { v: 1 }, b: { v: 2 } });
+    await store.setBatch(SESSION_ID, { session: { a: { v: 1 }, b: { v: 2 } } });
 
-    expect(mockUpsert).toHaveBeenCalledTimes(2);
-    const keyIds = mockUpsert.mock.calls.map(c => c[0].where.sessionId_category_keyId.keyId);
+    expect(txMock.whatsAppAuthKey.upsert).toHaveBeenCalledTimes(2);
+    const keyIds = txMock.whatsAppAuthKey.upsert.mock.calls.map(
+      (c: any[]) => c[0].where.sessionId_category_keyId.keyId
+    );
     expect(keyIds.sort()).toEqual(['a', 'b']);
   });
 
   it('deletes_a_key_when_its_value_is_null', async () => {
-    const store = new SessionCredentialsStore();
+    const store = new SessionCredentialsStore(prismaMock as any);
 
-    await store.set(SESSION_ID, 'pre-key', { '3': null });
+    await store.setBatch(SESSION_ID, { 'pre-key': { '3': null } });
 
-    expect(mockUpsert).not.toHaveBeenCalled();
-    expect(mockDeleteMany).toHaveBeenCalledWith({
+    expect(txMock.whatsAppAuthKey.upsert).not.toHaveBeenCalled();
+    expect(txMock.whatsAppAuthKey.deleteMany).toHaveBeenCalledWith({
       where: { sessionId: SESSION_ID, category: 'pre-key', keyId: { in: ['3'] } },
     });
   });
@@ -185,7 +187,7 @@ describe('SessionCredentialsStore', () => {
     expect(read).not.toHaveProperty('missing');
   });
 
-  it('omits_a_key_that_fails_to_decrypt_and_logs_the_error_instead_of_throwing', async () => {
+  it('omits_a_signal_key_that_fails_to_decrypt_and_logs_the_error_instead_of_throwing', async () => {
     const store = new SessionCredentialsStore();
     const { logger } = jest.requireMock('../../utils/logger') as {
       logger: { error: jest.Mock };
@@ -195,11 +197,27 @@ describe('SessionCredentialsStore', () => {
       { keyId: 'corrupt', value: { ciphertext: 'AAAA', iv: 'AAAA', authTag: 'AAAA' } },
     ]);
 
-    const read = await store.get(SESSION_ID, 'creds', ['corrupt']);
+    const read = await store.get(SESSION_ID, 'pre-key', ['corrupt']);
 
     expect(read).toStrictEqual({});
     expect(read).not.toHaveProperty('corrupt');
     expect(logger.error).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws_rather_than_report_an_undecryptable_creds_row_as_missing', async () => {
+    // The category where "missing" is a destructive lie. makeBaileysAuthState
+    // answers an absent creds row with initAuthCreds(), and the first
+    // creds.update upserts that fresh identity over the row that is still
+    // sitting there -- so a wrong or rotated WHATSAPP_AUTH_ENCRYPTION_KEY
+    // turns recoverable credentials into a QR scan, silently, one log line
+    // deep. Pre-keys regenerate; an identity does not.
+    const store = new SessionCredentialsStore();
+
+    mockFindMany.mockResolvedValue([
+      { keyId: 'creds', value: { ciphertext: 'AAAA', iv: 'AAAA', authTag: 'AAAA' } },
+    ]);
+
+    await expect(store.get(SESSION_ID, 'creds', ['creds'])).rejects.toThrow();
   });
 
   it('clear_removes_every_row_for_the_session', async () => {

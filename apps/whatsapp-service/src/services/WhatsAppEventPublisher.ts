@@ -87,22 +87,6 @@ export class WhatsAppEventPublisher {
   }
 
   /**
-   * Send browser disconnect webhook
-   */
-  async sendBrowserDisconnectWebhook(sessionId: string, disconnectType: string): Promise<void> {
-    await this.sendWebhook({
-      event: 'browser_closed',
-      sessionId,
-      data: {
-        disconnectType,
-        timestamp: new Date().toISOString(),
-        autoReconnect: false,
-      },
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  /**
    * Update webhook URL
    */
   setWebhookUrl(webhookUrl: string): void {

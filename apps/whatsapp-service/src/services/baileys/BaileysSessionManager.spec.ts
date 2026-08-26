@@ -23,10 +23,10 @@ const mockRedisGet = jest.fn();
 jest.mock('../../config/redis', () => ({
   __esModule: true,
   redisClient: { get: (...args: unknown[]) => mockRedisGet(...args) },
-  // The real prefixes, from config/redis.ts:351-353. Inventing one here
-  // makes the mock answer for a key the implementation never asks about, so
-  // the test passes whatever the implementation actually reads.
-  REDIS_KEYS: { SESSION_QR: 'session:qr:', SESSION_HEARTBEAT: 'session:hb:' },
+  // The real prefix, from config/redis.ts. Inventing one here makes the mock
+  // answer for a key the implementation never asks about, so the test passes
+  // whatever the implementation actually reads.
+  REDIS_KEYS: { SESSION_HEARTBEAT: 'session:hb:' },
   REDIS_TTL: {},
 }));
 
@@ -281,10 +281,180 @@ describe('BaileysSessionManager connection lifecycle', () => {
     expect(authEvents).toHaveLength(2);
   });
 
+  it('announces_a_recovered_connection_so_the_dashboard_can_leave_DISCONNECTED', async () => {
+    // The mirror of the test above, and the reason it cannot simply stay
+    // silent. onClose publishes `disconnected` on every transient close --
+    // SocketService turns that into session:disconnected, and useSocket writes
+    // DISCONNECTED into React state that only session:connected,
+    // session:status_changed or a page reload clears. Announcing the drop and
+    // not the recovery leaves a session that came back five seconds later
+    // showing as down until someone reloads the page.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    sock.emit('creds.update', {});
+    sock.emit('connection.update', { connection: 'open' });
+    await Promise.resolve();
+    publisher.sendWebhook.mockClear();
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
+    await jest.advanceTimersByTimeAsync(2000);
+    sock.emit('connection.update', { connection: 'open' });
+    await Promise.resolve();
+
+    const events = publisher.sendWebhook.mock.calls.map((c: any[]) => c[0]);
+    expect(events.filter((p: any) => p.event === 'disconnected')).toHaveLength(1);
+    // Still no third `authenticated`: Phase 1 froze two per session lifetime,
+    // so the recovery has to travel as something else.
+    expect(events.filter((p: any) => p.event === 'authenticated')).toHaveLength(0);
+
+    // `status_change` needs no new contract -- SocketService and apps/api's
+    // handleStatusChange both already handle it. The status string is
+    // load-bearing: SocketService.mapStatusToFrontend turns 'ready' into
+    // CONNECTED, and anything it does not recognise becomes QR_PENDING.
+    const recovery = events.filter((p: any) => p.event === 'status_change');
+    expect(recovery).toHaveLength(1);
+    expect(recovery[0]).toMatchObject({
+      sessionId: SESSION_ID,
+      data: { status: 'ready', number: '34600111222' },
+    });
+    expect(typeof recovery[0].timestamp).toBe('string');
+
+    jest.useRealTimers();
+  });
+
   it('treats_restartRequired_as_a_reconnect_and_not_as_a_failure', async () => {
     // 515 fires on the first pairing and is a normal step. Treating it as a
     // disconnect is the classic Baileys integration bug: the session pairs,
     // instantly "fails", and never comes up.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    mockMakeWASocket.mockClear();
+
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.restartRequired } } },
+    });
+    // Fast, but never instant. Both sides of the floor: a bare rebuild() in
+    // this branch passes any "reconnects eventually" assertion while removing
+    // the only throttle on the path -- and 515 is the code a session that
+    // cannot persist its credentials repeats forever.
+    await jest.advanceTimersByTimeAsync(999);
+    expect(mockMakeWASocket).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1);
+
+    expect(store.clear).not.toHaveBeenCalled();
+    expect(mockMakeWASocket).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
+  });
+
+  it('caps_consecutive_515s_and_ends_the_session_with_its_own_lastError', async () => {
+    // The failure this guards is not a slow pairing, it is a hot loop: a 515
+    // that repeats -- the documented outcome of credentials that never
+    // persist, and saveCreds rejections are swallowed into a log line by the
+    // handler guard -- would otherwise rebuild forever, one second apart,
+    // against WhatsApp on a client's personal number, reporting nothing.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    mockMakeWASocket.mockClear();
+
+    const restart = () =>
+      sock.emit('connection.update', {
+        connection: 'close',
+        lastDisconnect: { error: { output: { statusCode: DisconnectReason.restartRequired } } },
+      });
+
+    for (let i = 1; i <= 3; i++) {
+      restart();
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(mockMakeWASocket).toHaveBeenCalledTimes(i);
+    }
+    // Three fast rebuilds and not one word upstream -- that is the deal, and
+    // it only holds while the budget lasts.
+    expect(sessionDisconnect).not.toHaveBeenCalled();
+
+    restart();
+    await jest.advanceTimersByTimeAsync(120000);
+    // No fourth socket, and none appearing later on any rung: the fourth
+    // consecutive 515 is terminal, not a slower retry. Advancing well past the
+    // whole backoff schedule is what separates the two.
+    expect(mockMakeWASocket).toHaveBeenCalledTimes(3);
+    expect(jest.getTimerCount()).toBe(0);
+    // And it is reported: the persisted row, its own explanation, and the
+    // webhook carrying the same one. A generic "reconnect budget exhausted"
+    // here would tell the operator the network dropped, when what actually
+    // happened is that the handshake never completed -- usually because the
+    // credentials are not being persisted.
+    expect(sessionDisconnect).toHaveBeenCalledWith(SESSION_ID, 'NETWORK_ERROR', 515);
+    const terminal = sessionStatus.mock.calls.filter((c: any[]) => c[2]?.metadata?.restartLoopAt);
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0][1]).toBe('disconnected');
+    expect(terminal[0][2].lastError).toContain('515');
+    expect(terminal[0][2].lastError).not.toContain('Reconnect budget');
+    const published = publisher.sendWebhook.mock.calls
+      .map((c: any[]) => c[0])
+      .filter((p: any) => p.event === 'disconnected')
+      .pop();
+    // apps/api writes data.reason straight into the same lastError column.
+    expect(published.data.reason).toBe(terminal[0][2].lastError);
+    expect(published.data.disconnectType).toBe('WHATSAPP_RESTART_LOOP');
+    // Credentials survive: a session that cannot finish a handshake is not a
+    // session WhatsApp has logged out, and clearing them would turn a
+    // recoverable fault into "scan a new QR".
+    expect(store.clear).not.toHaveBeenCalled();
+
+    jest.useRealTimers();
+  });
+
+  it('counts_only_consecutive_515s_so_a_successful_connection_clears_the_budget', async () => {
+    // One 515 is what first pairing looks like. Without the reset, that single
+    // ordinary restart is banked forever: a session that pairs, runs for a
+    // month and then meets two unrelated 515s gives up on the third for a
+    // reason that has nothing to do with it.
+    jest.useFakeTimers();
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+    mockMakeWASocket.mockClear();
+
+    const restart = () =>
+      sock.emit('connection.update', {
+        connection: 'close',
+        lastDisconnect: { error: { output: { statusCode: DisconnectReason.restartRequired } } },
+      });
+
+    restart();
+    await jest.advanceTimersByTimeAsync(1000);
+    sock.emit('connection.update', { connection: 'open' });
+    await Promise.resolve();
+
+    // Three more, all of which must still reconnect on the fast path.
+    for (let i = 2; i <= 4; i++) {
+      restart();
+      await jest.advanceTimersByTimeAsync(1000);
+      expect(mockMakeWASocket).toHaveBeenCalledTimes(i);
+    }
+    expect(sessionStatus.mock.calls.filter((c: any[]) => c[2]?.metadata?.restartLoopAt)).toHaveLength(
+      0
+    );
+
+    jest.useRealTimers();
+  });
+
+  it('does_not_reconnect_instantly_when_a_close_lands_on_a_rung_the_515_path_armed', async () => {
+    // The 515 path arms the shared retry timer without spending a backoff rung.
+    // scheduleRetry reads a pending timer as "this is the second close of one
+    // disconnect" and reuses the current rung -- which is rung 0 here, so
+    // RETRY_SCHEDULE_MS[-1] is undefined, the delay is NaN, and setTimeout(NaN)
+    // fires on the next tick. That is an unthrottled reconnect reached without
+    // a single line looking wrong, and nothing else in this file catches it:
+    // remove `&& runtime.attempts > 0` from scheduleRetry and all other tests
+    // stay green.
+    jest.useFakeTimers();
     const manager = makeManager();
     await manager.createSession(SESSION_ID);
     mockMakeWASocket.mockClear();
@@ -294,9 +464,22 @@ describe('BaileysSessionManager connection lifecycle', () => {
       lastDisconnect: { error: { output: { statusCode: DisconnectReason.restartRequired } } },
     });
     await Promise.resolve();
+    // Before the 1 s rebuild fires, an ordinary close arrives.
+    sock.emit('connection.update', {
+      connection: 'close',
+      lastDisconnect: { error: { output: { statusCode: DisconnectReason.connectionLost } } },
+    });
 
-    expect(store.clear).not.toHaveBeenCalled();
+    // t=0 is the assertion that matters: a NaN delay lands here.
+    await jest.advanceTimersByTimeAsync(0);
+    expect(mockMakeWASocket).not.toHaveBeenCalled();
+    // And it took the first real rung, not a shorter one.
+    await jest.advanceTimersByTimeAsync(1999);
+    expect(mockMakeWASocket).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1);
     expect(mockMakeWASocket).toHaveBeenCalledTimes(1);
+
+    jest.useRealTimers();
   });
 
   it('backs_off_between_reconnects_and_gives_up_after_five', async () => {
@@ -1070,11 +1253,29 @@ describe('BaileysSessionManager shutdown vs delete', () => {
     // Destroy while the handler is suspended, then let it resume.
     await manager.destroySession(SESSION_ID, 'delete');
     release();
-    await Promise.resolve();
+    // Drain the microtask queue rather than ticking it once: the resumed
+    // handler has several awaits left before it reaches anything observable,
+    // and a single Promise.resolve() asserts on a handler that has not got
+    // there yet -- which passes for every implementation, including the broken
+    // one. advanceTimersByTimeAsync(0) fires no pending retry (the shortest
+    // rung is 2 s), so the timer assertion below still means what it says.
+    await jest.advanceTimersByTimeAsync(0);
     // After the handler has resumed -- that is the whole point of this test --
     // and before any timer can fire. A retry scheduled here would no-op when
     // it fired, and still hold the event loop open through a pm2 shutdown.
     expect(jest.getTimerCount()).toBe(0);
+    // And nothing else the resumed handler could still emit: a `disconnected`
+    // webhook for a session that was deliberately deleted tells the dashboard
+    // and apps/api about a drop that did not happen.
+    expect(
+      publisher.sendWebhook.mock.calls
+        .map((c: any[]) => c[0])
+        .filter((p: any) => p.event === 'disconnected')
+    ).toHaveLength(0);
+    // The stop flag is released on the way out of destroySession -- a set that
+    // is only ever added to grows for the process lifetime -- so what stops the
+    // resumed handler above is the missing runtime, not the flag.
+    expect((manager as any).stopped.size).toBe(0);
 
     await jest.advanceTimersByTimeAsync(120000);
 

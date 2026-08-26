@@ -63,7 +63,6 @@ export interface WebhookPayload {
     | 'qr_updated'
     | 'authenticated'
     | 'disconnected'
-    | 'browser_closed'
     | 'force_disconnected'
     | 'webhook_test';
   sessionId: string;

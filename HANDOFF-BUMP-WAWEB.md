@@ -224,17 +224,29 @@ Remove-Item C:\Users\admin\Desktop\LeadsAgent\HANDOFF-BUMP-WAWEB.md
 
 Production deploy follows the manual Hetzner flow in `CLAUDE.md` "Production deployment notes":
 
+> **Superseded 2026-08-26.** This document stays closed as WONTFIX, but the snippet
+> below was a trap: it omitted `--frozen-lockfile` and the build entirely, and told
+> the operator to watch for a `PATCH_NOT_APPLIED` warning about a patch that no longer
+> exists — `whatsapp-web.js` and its patch were deleted with the Baileys cutover.
+> The corrected flow, and the only one to use, is `CLAUDE.md`
+> § "Production deployment notes".
+
 ```bash
 ssh root@46.225.26.89 '
   set -e
   cd /opt/leadcrm
   git pull origin main
-  pnpm install
+  pnpm install --frozen-lockfile
+  # Filtered: an unfiltered build fails on the dashboard and, under set -e, aborts
+  # before pm2 restart -- see CLAUDE.md
+  pnpm build --filter=@leadcrm/api --filter=@leadcrm/whatsapp-service
   pm2 restart all --update-env
 '
 ```
 
-Verify on prod: `pm2 logs whatsapp-service --lines 50` shows `Environment validated (NODE_ENV=production)` and the test session reconnects via LocalAuth. **Critical**: watch the first 2-3 minutes of logs after restart for any `PATCH_NOT_APPLIED` warning — if it shows up, the patch didn't propagate cleanly to the prod node_modules and the race is unguarded.
+Verify on prod: `pm2 logs whatsapp-service --lines 50` shows
+`Environment validated (NODE_ENV=production)` and each session reconnecting from its
+`whatsapp_auth_keys` rows (there is no `LocalAuth` any more).
 
 ---
 

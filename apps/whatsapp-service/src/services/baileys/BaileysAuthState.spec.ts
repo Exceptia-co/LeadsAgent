@@ -4,7 +4,6 @@ import { makeBaileysAuthState } from './BaileysAuthState';
 function makeStore() {
   return {
     get: jest.fn().mockResolvedValue({}),
-    set: jest.fn().mockResolvedValue(undefined),
     setBatch: jest.fn().mockResolvedValue(undefined),
     clear: jest.fn().mockResolvedValue(undefined),
     hasCredentials: jest.fn().mockResolvedValue(false),
@@ -89,7 +88,6 @@ describe('makeBaileysAuthState', () => {
     // nulls, which are the deletions -- would satisfy a keys-only assertion
     // and lose every pre-key deletion silently.
     expect(store.setBatch).toHaveBeenCalledTimes(1);
-    expect(store.set).not.toHaveBeenCalled();
     expect(store.setBatch.mock.calls[0][0]).toBe('s1');
     expect(store.setBatch.mock.calls[0][1]).toStrictEqual({
       'pre-key': { '1': null },

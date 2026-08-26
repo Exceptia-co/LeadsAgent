@@ -390,14 +390,22 @@ ssh root@46.225.26.89 '
   cd /opt/leadcrm
   git pull origin main
   pnpm install --frozen-lockfile
-  pnpm build                      # NO omitir: whatsapp-service corre node dist/index.js
+  # Filtrado a propósito (ver abajo). NO omitir: whatsapp-service corre node dist/index.js
+  pnpm build --filter=@leadcrm/api --filter=@leadcrm/whatsapp-service
   pm2 restart all --update-env
 '
 ```
 
-**El `pnpm build` no es opcional.** `apps/whatsapp-service` arranca con
-`node dist/index.js`; sin recompilar, PM2 reinicia el bundle anterior y el deploy
-parece correcto sin serlo.
+**El build no es opcional.** `apps/whatsapp-service` arranca con `node dist/index.js`;
+sin recompilar, PM2 reinicia el bundle anterior y el deploy parece correcto sin serlo.
+
+**Los `--filter` tampoco.** Un `pnpm build` sin filtros construye también el dashboard,
+que prerenderiza 13 rutas que necesitan una `publishableKey` de Clerk que solo existe
+en Vercel: falla siempre en el VPS. Con `set -e`, ese fallo aborta el script **antes de
+`pm2 restart`**, así que el operador se queda con el código nuevo en disco, las
+dependencias instaladas y el bundle viejo sirviendo — con todas las señales visibles
+diciendo que el deploy salió bien. El dashboard lo despliega Vercel; aquí no pinta
+nada.
 
 `pm2 restart all` reinicia ambos servicios a la vez, que es lo que hace falta cuando
 un cambio los cruza. Si los despliegas por separado, **`leadcrm-api` va primero**:
@@ -405,8 +413,30 @@ el gate de consentimiento de `whatsapp-service` filtra por `sessionId`, y quien
 persiste ese `sessionId` en el mensaje entrante es el webhook de Nest. Al revés, los
 proactivos dejan de salir en silencio (se contabilizan como `failed`, no como error).
 
-Efecto: ~15–30 s de caída, y la sesión de WhatsApp se desconecta y vuelve por
-`LocalAuth`. Verificar con `pm2 logs whatsapp-service --lines 30`.
+Efecto: ~15–30 s de caída. Cada sesión de WhatsApp se desconecta y vuelve leyendo sus
+credenciales de `whatsapp_auth_keys` — desde el cambio de motor a Baileys ya no hay
+`LocalAuth` ni estado en disco. Una sesión sin esas filas, o cuya
+`WHATSAPP_AUTH_ENCRYPTION_KEY` ya no coincida, **no vuelve**: pide QR nuevo.
+Verificar con `pm2 logs whatsapp-service --lines 30`.
+
+### Dos restricciones de instalación (Baileys)
+
+Ambas tumban un deploy que parece rutinario:
+
+- **Este árbol no instala con pnpm 11.** Baileys arrastra `libsignal` desde una URL de
+  git y pnpm 11 lo rechaza con
+  `ERR_PNPM_EXOTIC_SUBDEP — Exotic dependency "libsignal" (resolved via
+  git-repository) is not allowed in subdependencies`. Con 9 y con 10 instala bien —el
+  VPS corre 10.28.1 hoy—, así que es un techo, no una versión obligatoria. El repo
+  declara `packageManager: pnpm@9.0.0`; ejecuta `corepack enable` en el VPS para que
+  esa declaración mande de verdad, porque un pnpm instalado global con npm la ignora y
+  entonces un `npm i -g pnpm@latest` futuro rompería el deploy con un error que nunca
+  menciona Baileys.
+- **El VPS necesita salida a `codeload.github.com` en tiempo de instalación.**
+  `libsignal` resuelve a un tarball servido desde ahí —host distinto de `github.com`,
+  así que una red que permita uno puede seguir bloqueando el otro—. Comprobar el host
+  que sirve el fichero de verdad:
+  `curl -fsSI -o /dev/null https://codeload.github.com/whiskeysockets/libsignal-node/tar.gz/bcea72df9ec34d9d9140ab30619cf479c7c144c7 && echo reachable`
 
 ---
 
