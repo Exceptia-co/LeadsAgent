@@ -1,6 +1,7 @@
 import { logger } from '../../utils/logger';
 import type { SessionPersistenceData } from '../SessionPersistenceService';
 import SessionPersistenceService from '../SessionPersistenceService';
+import { sessionCredentialsStore } from '../session-credentials/SessionCredentialsStore';
 import { SESSION_CONSTANTS } from '../../config/session-constants';
 
 export interface RecoveryOptions {
@@ -105,6 +106,53 @@ export class RecoveryRunner {
   ): Promise<RecoveryExecutionResult> {
     const sessionStartTime = Date.now();
     const { sessionId } = sessionData;
+
+    // Credentials first, before any other check. A session with no rows in
+    // `whatsapp_auth_keys` cannot reconnect: Baileys would mint a fresh
+    // identity and sit emitting QR codes at a screen nobody is watching,
+    // burning one live socket per session for as long as the process runs.
+    //
+    // This returns before the skip path below on purpose. That path writes
+    // `autoReconnect: false`, and "needs a QR" is not "never try again" --
+    // latching it here would make pairing from the dashboard impossible
+    // rather than one click away. A failed check means *unknown*, not
+    // absent, so it skips this boot and leaves the row untouched too.
+    let hasCredentials: boolean;
+    try {
+      hasCredentials = await sessionCredentialsStore.hasCredentials(sessionId);
+    } catch (error) {
+      logger.warn(
+        `⏭️ Omitiendo sesión ${sessionId}: no se pudo leer credenciales: ${String(error)}`
+      );
+      return {
+        sessionId,
+        success: false,
+        recoveryTimeMs: Date.now() - sessionStartTime,
+        attempts: 0,
+        skipped: true,
+        skipReason: 'credential lookup failed',
+      };
+    }
+
+    if (!hasCredentials) {
+      logger.info(`⏭️ Omitiendo sesión ${sessionId}: sin credenciales almacenadas, requiere QR`);
+
+      // Status only -- no lastError, no metadata, and above all no
+      // autoReconnect:false. The row may still say `ready` from before the
+      // restart, and leaving that would show the operator a connected
+      // session with no socket behind it. Saying `disconnected` is simply
+      // true, and it is the one write that does not bar the next attempt.
+      await this.persistenceService.updateSessionStatus(sessionId, 'disconnected');
+
+      return {
+        sessionId,
+        success: false,
+        recoveryTimeMs: Date.now() - sessionStartTime,
+        attempts: 0,
+        skipped: true,
+        skipReason: 'no stored credentials; needs a new QR',
+      };
+    }
 
     const shouldRecoverCheck = this.shouldRecoverSession(sessionData, options);
     if (!shouldRecoverCheck.shouldRecover) {
@@ -329,15 +377,17 @@ export class RecoveryRunner {
       }
     }
 
-    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
-    const lastSeenDate = new Date(lastSeen || 0);
-
-    if (lastSeenDate > oneMinuteAgo) {
-      return {
-        shouldRecover: false,
-        reason: 'Session was updated recently, might be starting up',
-      };
-    }
+    // Deliberately no "lastSeen is under a minute old, it might still be
+    // starting up" check. Recovery runs in exactly one place -- process
+    // boot, from WhatsAppServiceSimple.runInitialize -- where the session
+    // map is empty by definition and every row's lastSeen is seconds old,
+    // because a pm2 restart takes 15-30s. The heuristic therefore skipped
+    // precisely the sessions it existed to protect, and the skip path writes
+    // autoReconnect:false, so each fast restart latched them shut for good.
+    //
+    // "Is this session already alive?" has an exact answer a few lines down
+    // in executeSessionRecovery: getSessionStatus reads the in-memory map.
+    // A clock reading was only ever a proxy for it.
 
     return {
       shouldRecover: true,

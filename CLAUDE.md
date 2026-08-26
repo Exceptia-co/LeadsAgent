@@ -182,6 +182,14 @@ Files:
 - `CLERK_WEBHOOK_SECRET` — required by `apps/dashboard/app/api/webhooks/clerk/route.ts` (user events: `user.created/updated/deleted`). Runs on Vercel.
 - `CLERK_ORG_WEBHOOK_SECRET` — required by `apps/api/src/clerk-webhooks/clerk-organizations.controller.ts` (org events: `organization.created/updated/deleted`). Runs on Hetzner Nest API. **Distinct from `CLERK_WEBHOOK_SECRET`** — different webhook endpoint, different runtime, different signing secret. Without it: new orgs in Clerk Production never auto-create a `tenants` row. Vercel does NOT consume this secret (only Hetzner needs it).
 - `WHATSAPP_ALLOW_NEW_LEADS` — defaults to `true` in code (lead-capture mode). Set to `false` only for "private support" deployments. **Resolution order: env > DB config > hardcoded default**
+- `WHATSAPP_ENABLE_AUTO_RECOVERY` — must be the string `true` for sessions to
+  reconnect at boot; anything else (including unset) means every session stays
+  down after a restart until someone clicks Create in the dashboard. Unset in
+  prod until 2026-08-26, which is why a `pm2 restart` left the dashboard showing
+  sessions with no socket behind them. `RecoveryRunner` skips a session with no
+  rows in `whatsapp_auth_keys` (it needs a QR, and starting it would mint a new
+  identity and emit QR codes at nobody), one the user disconnected on purpose,
+  and one already live in memory.
 - `WHATSAPP_AUTH_ENCRYPTION_KEY` (64 hex chars = 32 bytes) — seals every row in
   `whatsapp_auth_keys`. Missing: `SessionCredentialsStore` throws
   `"WHATSAPP_AUTH_ENCRYPTION_KEY is not set; refusing to store credentials"` and no

@@ -733,6 +733,27 @@ describe('BaileysSessionManager connection lifecycle', () => {
     expect(sent.sessionId).toBe(SESSION_ID);
     expect(sent.data).toStrictEqual({ qrCode: 'QR-PAYLOAD' });
   });
+
+  it('clears_last_error_when_the_connection_opens', async () => {
+    // RecoveryRunner.shouldRecoverSession bails on a `lastError` matching
+    // "force disconnected by user" before any other check, and nothing else
+    // in the system ever clears that column. Without this write, one
+    // deliberate disconnect barred a session from auto-recovery permanently
+    // -- the row kept describing a disconnect that a later successful
+    // pairing had already undone.
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+
+    sock.emit('connection.update', { connection: 'open' });
+    await Promise.resolve();
+
+    const readyCall = sessionStatus.mock.calls.find((c: any[]) => c[1] === 'ready');
+    expect(readyCall).toBeDefined();
+    // Explicitly null, not merely absent: SessionPersistenceService only
+    // writes the column when the key is present (`!== undefined`), so
+    // omitting it leaves the stale error in place.
+    expect(readyCall![2]).toHaveProperty('lastError', null);
+  });
 });
 
 describe('BaileysSessionManager observable state', () => {

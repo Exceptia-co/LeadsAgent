@@ -495,8 +495,16 @@ export class BaileysSessionManager {
     const announce = !!runtime && !runtime.openAnnounced;
     if (announce) runtime.openAnnounced = true;
 
+    // `lastError` is cleared here, and only here. It answers "why is this
+    // session not working", so a session that just opened has no answer to
+    // give. Leaving it means the column stops describing what happened and
+    // starts describing what once happened -- and RecoveryRunner reads it to
+    // decide the future: `shouldRecoverSession` bails on "force disconnected
+    // by user" before any other check. Written once and never cleared, one
+    // deliberate disconnect barred that session from auto-recovery forever.
     await this.deps.updateSessionStatus(sessionId, 'ready', {
       connectedNumber: number,
+      lastError: null,
       lastHealthCheck: new Date(),
     });
 

@@ -19,7 +19,8 @@ export interface SessionPersistenceData {
   lastSeen: Date;
   isActive?: boolean;
   reconnectCount?: number;
-  lastError?: string;
+  /** `null` clears the column: a session that just opened has no error. */
+  lastError?: string | null;
   webhookUrl?: string;
   metadata?: any;
 }
