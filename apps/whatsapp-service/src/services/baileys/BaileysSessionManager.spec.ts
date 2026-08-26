@@ -180,6 +180,49 @@ describe('BaileysSessionManager construction', () => {
     expect(sock.sendMessage).toHaveBeenCalledWith('34600111222@s.whatsapp.net', { text: 'hola' });
     expect(result).toMatchObject({ success: true, messageId: 'OUT1' });
   });
+
+  it('strips_the_wwebjs_suffix_the_send_routes_append', async () => {
+    // Not a legacy possibility -- routes/index.ts:381 (send in conversation)
+    // and :774 (proactive send) both build `${phone}@c.us` unconditionally and
+    // hand it to sendMessage. @c.us is whatsapp-web.js's user domain; Baileys
+    // does not use it. Passing the `@` straight through would give Baileys a
+    // domain it cannot address and fail 100% of outbound traffic with
+    // { success: false } and no diagnostic -- while every inbound test in this
+    // file, and a smoke test that only checks inbound, stayed green.
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+
+    for (const to of ['34600111222@c.us', '34600111222']) {
+      await manager.sendMessage(SESSION_ID, to, 'hola');
+      expect(sock.sendMessage).toHaveBeenLastCalledWith('34600111222@s.whatsapp.net', {
+        text: 'hola',
+      });
+    }
+
+    // The two domains Baileys does address are left alone -- rewriting a group
+    // JID into a user JID would send the message to the wrong chat entirely.
+    for (const jid of ['120363000000000000@g.us', '34600111222@s.whatsapp.net']) {
+      await manager.sendMessage(SESSION_ID, jid, 'hola');
+      expect(sock.sendMessage).toHaveBeenLastCalledWith(jid, { text: 'hola' });
+    }
+  });
+
+  it('refuses_a_second_createSession_for_a_live_session', async () => {
+    // Overwriting the runtime orphans the live socket with its three listeners
+    // still subscribed under handler identities detach can no longer reach:
+    // every inbound message delivered twice, and the orphan's eventual close
+    // tearing down the socket that replaced it. WhatsAppServiceSimple's
+    // `clients.has` check is what prevents this today and Task 8a deletes that
+    // map, so the guard has to live in the manager.
+    const manager = makeManager();
+    await manager.createSession(SESSION_ID);
+
+    await expect(manager.createSession(SESSION_ID)).rejects.toThrow(
+      `Session ${SESSION_ID} already exists`
+    );
+    expect(mockMakeWASocket).toHaveBeenCalledTimes(1);
+    expect(mockMakeBaileysAuthState).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('BaileysSessionManager connection lifecycle', () => {
@@ -312,8 +355,18 @@ describe('BaileysSessionManager connection lifecycle', () => {
       });
     close();
     close();
-    await jest.advanceTimersByTimeAsync(10000);
 
+    // The rung, not only the count. Advancing straight to 10 000 ms covers the
+    // 5 000 ms rung too, so counting one socket also passes when the second
+    // close burned a second attempt and installed the wrong delay -- halving
+    // the five-attempt budget for one disconnect.
+    await jest.advanceTimersByTimeAsync(1999);
+    expect(mockMakeWASocket).not.toHaveBeenCalled();
+    await jest.advanceTimersByTimeAsync(1);
+    expect(mockMakeWASocket).toHaveBeenCalledTimes(1);
+
+    // And no second timer racing behind it.
+    await jest.advanceTimersByTimeAsync(10000);
     expect(mockMakeWASocket).toHaveBeenCalledTimes(1);
     jest.useRealTimers();
   });

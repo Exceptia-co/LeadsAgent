@@ -87,8 +87,16 @@ function statusCodeOf(error: unknown): number | undefined {
   return (error as { output?: { statusCode?: number } })?.output?.statusCode;
 }
 
+/** The only two JID domains Baileys addresses; @c.us is whatsapp-web.js's. */
+const BAILEYS_DOMAIN = /@(s\.whatsapp\.net|g\.us)$/;
+
 function toJid(to: string): string {
-  return to.includes('@') ? to : `${to.replace(/\D/g, '')}@s.whatsapp.net`;
+  // Callers still pass the legacy @c.us suffix -- the path this replaces
+  // stripped it explicitly (MessageHandler.normalizePhoneNumber). Baileys does
+  // not use that domain, so passing it through fails the send and returns
+  // { success: false } with nothing explaining why.
+  const bare = to.replace(/@c\.us$/, '');
+  return BAILEYS_DOMAIN.test(bare) ? bare : `${bare.replace(/\D/g, '')}@s.whatsapp.net`;
 }
 
 /**
@@ -122,6 +130,15 @@ export class BaileysSessionManager {
   }
 
   async createSession(sessionId: string, tenantId?: string): Promise<WhatsAppSession> {
+    // A second create would overwrite the runtime and orphan the live socket
+    // with its three listeners still subscribed under handler identities
+    // `detach` can no longer reach: every inbound message delivered twice, and
+    // the orphan's eventual close tearing down the socket that replaced it.
+    // WhatsAppServiceSimple's `clients.has` check is what prevents this today,
+    // and Task 8a deletes that map -- so the guard lives here now.
+    if (this.sockets.has(sessionId)) {
+      throw new Error(`Session ${sessionId} already exists`);
+    }
     this.stopped.delete(sessionId);
 
     const { state, saveCreds } = await makeBaileysAuthState(sessionId, this.deps.store);
@@ -472,6 +489,11 @@ export class BaileysSessionManager {
     // "fails", and never comes up.
     if (code === DisconnectReason.restartRequired) {
       logger.info(`Session ${sessionId} requested a restart (515), reconnecting immediately`);
+      // A 515 arriving while a backoff timer is pending would otherwise leave
+      // that timer to fire a second rebuild and churn the socket that just
+      // came up. `attempts` is deliberately not reset: 515 is not evidence the
+      // connection is healthy.
+      this.clearRetry(sessionId);
       this.rebuild(sessionId);
       return;
     }
@@ -481,12 +503,21 @@ export class BaileysSessionManager {
     const loggedOut = code === DisconnectReason.loggedOut;
 
     // Injected so the persisted row and its reconnectCount keep being
-    // maintained the way they are today.
-    await this.deps.handleSessionDisconnect(
-      sessionId,
-      loggedOut ? 'WHATSAPP_LOGGED_OUT' : 'WHATSAPP_DISCONNECT',
-      code ?? 'unknown'
-    );
+    // maintained the way they are today. The reconnect must survive a
+    // bookkeeping failure: an unguarded rejection here skips the stopped
+    // re-check, the logout wipe and the retry, leaving the session at
+    // 'connecting' with no socket and no timer, forever. It is latent only
+    // because the injected implementation happens to swallow its own errors --
+    // a property no type expresses and nothing enforces.
+    try {
+      await this.deps.handleSessionDisconnect(
+        sessionId,
+        loggedOut ? 'WHATSAPP_LOGGED_OUT' : 'WHATSAPP_DISCONNECT',
+        code ?? 'unknown'
+      );
+    } catch (error) {
+      logger.error(`handleSessionDisconnect failed for session ${sessionId}:`, error);
+    }
 
     // Every await between the close event and the schedule is a place where
     // the session can be destroyed underneath us. Check after the last one.
@@ -524,7 +555,11 @@ export class BaileysSessionManager {
     const runtime = this.runtimes.get(sessionId);
     if (!runtime) return;
 
-    const attempt = runtime.attempts + 1;
+    // One disconnect can emit `close` twice -- the socket emits it, and end()
+    // emits it again during teardown. Counting both burns two of the five
+    // rungs and installs the 5 s delay where 2 s was due, so a second event
+    // re-arms the same rung instead of advancing it.
+    const attempt = this.retryTimers.has(sessionId) ? runtime.attempts : runtime.attempts + 1;
     if (attempt > RETRY_SCHEDULE_MS.length) {
       await this.markGaveUp(sessionId, code);
       return;
@@ -552,7 +587,7 @@ export class BaileysSessionManager {
   }
 
   private async markGaveUp(sessionId: string, code?: number): Promise<void> {
-    this.clearRetry(sessionId);
+    this.closeTerminally(sessionId);
 
     const session = this.sessions.get(sessionId);
     if (session) {
@@ -575,7 +610,10 @@ export class BaileysSessionManager {
    * delete -- no heuristic decides on its own that credentials are bad.
    */
   private async markLoggedOut(sessionId: string): Promise<void> {
-    this.clearRetry(sessionId);
+    // Unsubscribe before the wipe, same reason as destroySession: a
+    // creds.update still in flight would land after store.clear and write
+    // fresh rows for credentials WhatsApp has already invalidated.
+    this.closeTerminally(sessionId);
 
     const session = this.sessions.get(sessionId);
     if (session) {
@@ -598,6 +636,32 @@ export class BaileysSessionManager {
     });
   }
 
+  /**
+   * Shared tail of the two paths that end a session without deleting it: the
+   * 401 wipe and the exhausted retry budget. Both leave the row in `sessions`
+   * so the dashboard still lists it, but the socket has to go.
+   *
+   * Left in the map it would keep three live listeners on a dead connection:
+   * `sendMessage` would still find it, and a stray second `close` carrying a
+   * non-401 code would re-enter onClose and rebuild using in-memory creds that
+   * `store.clear` had already orphaned in the database.
+   */
+  private closeTerminally(sessionId: string): void {
+    this.stopped.add(sessionId);
+    this.clearRetry(sessionId);
+
+    const sock = this.sockets.get(sessionId);
+    if (!sock) return;
+
+    this.detach(sessionId, sock);
+    try {
+      sock.end(undefined);
+    } catch (error) {
+      logger.warn(`Error ending socket for session ${sessionId}:`, error);
+    }
+    this.sockets.delete(sessionId);
+  }
+
   private clearRetry(sessionId: string): void {
     const timer = this.retryTimers.get(sessionId);
     if (timer) {
@@ -606,5 +670,3 @@ export class BaileysSessionManager {
     }
   }
 }
-
-export default BaileysSessionManager;
