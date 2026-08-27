@@ -13,6 +13,28 @@ import type { ReplyPort } from '../../types/reply-port';
  * The outbound path (sendMessage) moved to BaileysSessionManager with the
  * engine cutover.
  */
+/**
+ * The moment WhatsApp says a message happened, or undefined if it gave
+ * nothing usable.
+ *
+ * `> 0`, not just "not NaN": `new Date(0 * 1000)` is a perfectly valid Date --
+ * 1 Jan 1970 -- and Number.isNaN waves it straight through. That is T3
+ * exactly, and T3 only stopped being harmless once the proactive consent
+ * window started reasoning about recency.
+ *
+ * Upper bound too: a millisecond value arriving where seconds are expected
+ * gets re-multiplied by 1000 into a `timestamptz` far in the future -- and
+ * unlike the 1970 case (which fails *closed* on the proactive consent gate's
+ * `createdAt >= cutoff` filter), a far-future `createdAt` grants that lead
+ * consent permanently. That direction is the dangerous one, so it gets its own
+ * guard rather than riding on "finite".
+ */
+function toOccurredAt(timestamp: unknown): Date | undefined {
+  const seconds = Number(timestamp);
+  if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 4e9) return undefined;
+  return new Date(seconds * 1000);
+}
+
 export class MessageHandler {
   /**
    * Process message with AI integration.
@@ -26,6 +48,15 @@ export class MessageHandler {
     const startTime = Date.now();
     let aiResponse: string = '';
     let knowledgeBaseIdsUsed: string[] = [];
+
+    // Hoisted above the try so the catch at the bottom can reach them. The
+    // catch replies to the customer, so whatever it sends is a real message
+    // that has to be recorded -- and it can only tell whether the inbound was
+    // already written by watching this flag as the try runs.
+    let inboundPersisted = false;
+    const occurredAt = toOccurredAt(dto.timestamp);
+    // dto.id is `${sessionId}:${providerId}` -- keep the provider half.
+    const providerMessageId = dto.id.includes(':') ? dto.id.split(':').slice(1).join(':') : dto.id;
 
     try {
       logger.info(`🧠 Processing message with enhanced AI thinking for session ${sessionId}`);
@@ -53,31 +84,6 @@ export class MessageHandler {
       // Already suffix-free -- normalizeWwebjsMessage validates E.164 before
       // building the DTO.
       const phoneNumber = dto.senderPhone;
-
-      // Derived once and passed only to the two INBOUND saveConversation
-      // calls below -- the fallback reply at the bottom of this method is an
-      // OUTBOUND, and the customer's message id/time do not describe it.
-      const occurredAt = (() => {
-        const seconds = Number(dto.timestamp);
-        // `> 0`, not just "not NaN": `new Date(0 * 1000)` is a perfectly
-        // valid Date -- 1 Jan 1970 -- and Number.isNaN waves it straight
-        // through. That is T3 exactly, and T3 only stopped being harmless
-        // once the proactive consent window started reasoning about recency.
-        //
-        // Upper bound too: a millisecond value arriving where seconds are
-        // expected gets re-multiplied by 1000 into a `timestamptz` far in the
-        // future -- and unlike the 1970 case (which fails *closed* on the
-        // proactive consent gate's `createdAt >= cutoff` filter), a far-future
-        // `createdAt` grants that lead consent permanently. That direction is
-        // the dangerous one, so it gets its own guard rather than riding on
-        // "finite".
-        if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 4e9) return undefined;
-        return new Date(seconds * 1000);
-      })();
-      // dto.id is `${sessionId}:${providerId}` -- keep the provider half.
-      const providerMessageId = dto.id.includes(':')
-        ? dto.id.split(':').slice(1).join(':')
-        : dto.id;
 
       // B2.1: resolve tenantId + aiAgentId in a single query
       const { tenantId, aiAgentId } = await DatabaseService.getSessionContext(sessionId);
@@ -153,7 +159,7 @@ export class MessageHandler {
         // msg se persiste pero el bot msg no. saveConversation internamente
         // ya es unified-write (PRD Fase 1): cada llamada crea 1 fila en
         // `messages` + 1 en `whatsapp_conversations` con FK message_id.
-        await this.persistMessagePair({
+        inboundPersisted = await this.persistMessagePair({
           sessionId,
           phoneNumber,
           userMessageText: dto.text,
@@ -201,7 +207,7 @@ export class MessageHandler {
         logger.info(`❌ No AI response sent to ${phoneNumber}. Reason: ${reason}`);
 
         // Still save the user message for record keeping
-        await DatabaseService.saveConversation({
+        const inboundRowId = await DatabaseService.saveConversation({
           sessionId: sessionId,
           phoneNumber: phoneNumber,
           messageText: dto.text,
@@ -216,6 +222,8 @@ export class MessageHandler {
           occurredAt,
           status: 'READ',
         });
+        // Same rule: a null answer means the row was dropped, not written.
+        inboundPersisted = inboundRowId !== null;
 
         // Send intelligent fallback when AI thinking failed with an error
         if (thinkingResult.error) {
@@ -279,19 +287,81 @@ export class MessageHandler {
       // Get phone number for fallback (define it here since it's in catch block)
       const phoneNumber = dto.senderPhone;
 
+      // Whatever actually reached the customer, or undefined if both replies
+      // failed. Recorded rather than assumed: this block can send the
+      // intelligent fallback, the generic one, or nothing at all.
+      let replySent: string | undefined;
+
       // Critical error fallback — tenantId/aiAgentId unavailable (declared in try block).
       // KB search here is intentionally unscoped; the warning will fire from DatabaseService.
       try {
         const intelligentFallback = await this.generateIntelligentFallback(dto.text, phoneNumber);
         await port.reply(intelligentFallback);
+        replySent = intelligentFallback;
       } catch (replyError) {
         logger.error('Error sending intelligent fallback message:', replyError);
         // Last resort generic message
+        const generic = 'Gracias por tu mensaje. Un representante te contactará pronto. 👍';
         try {
-          await port.reply('Gracias por tu mensaje. Un representante te contactará pronto. 👍');
+          await port.reply(generic);
+          replySent = generic;
         } catch (finalError) {
           logger.error('Error sending final fallback:', finalError);
         }
+      }
+
+      // This block used to answer the customer and record nothing: the
+      // exchange happened on WhatsApp and left no trace in the CRM, so an
+      // operator saw a conversation with a hole in it exactly where something
+      // had gone wrong.
+      //
+      // The inbound is written only if the try did not already write it --
+      // two paths reach here with it persisted (a throw after
+      // persistMessagePair, and one after the no-response write). The reply
+      // is written whenever one was actually sent, with no such condition:
+      // even when the try already recorded a reply, the message sent HERE is
+      // a different one the customer really received.
+      try {
+        // Imported here rather than reused from the try: that binding is
+        // block-scoped, and the throw may well have happened before it existed.
+        const { default: DatabaseService } = await import('../DatabaseService');
+
+        if (!inboundPersisted) {
+          await DatabaseService.saveConversation({
+            sessionId,
+            phoneNumber,
+            messageText: dto.text,
+            messageType: dto.type,
+            intent: 'processing_error',
+            sentiment: 'neutral',
+            aiProvider: 'none',
+            tokensUsed: 0,
+            isFromUser: true,
+            providerMessageId,
+            occurredAt,
+            status: 'READ',
+          });
+        }
+
+        if (replySent) {
+          await DatabaseService.saveConversation({
+            sessionId,
+            phoneNumber,
+            responseText: replySent,
+            messageType: 'text',
+            intent: 'processing_error_fallback',
+            sentiment: 'neutral',
+            aiProvider: 'fallback',
+            tokensUsed: 0,
+            isFromUser: false,
+            status: 'SENT',
+          });
+        }
+      } catch (persistError) {
+        // Deliberately swallowed. We are already in the failure path; the
+        // customer has their answer, and a write failing here must not
+        // escape into the caller and take the message handler down with it.
+        logger.error('Error persisting the failed exchange:', persistError);
       }
     }
   }
@@ -633,6 +703,12 @@ Respuesta:`,
    * mensajes con FK bidireccional. Por ahora mantenemos compat con el
    * modelo unified-write actual.
    */
+  /**
+   * @returns whether the INBOUND row actually landed. `saveConversation`
+   * swallows its own failures and answers `null`, so "we called it" and "the
+   * row exists" are different facts — and the catch at the top of this class
+   * decides whether to write the inbound from exactly this answer.
+   */
   private async persistMessagePair(params: {
     sessionId: string;
     phoneNumber: string;
@@ -645,7 +721,7 @@ Respuesta:`,
     tokensUsed: number;
     providerMessageId?: string;
     occurredAt?: Date;
-  }): Promise<void> {
+  }): Promise<boolean> {
     const { default: DatabaseService } = await import('../DatabaseService');
     const {
       sessionId,
@@ -711,6 +787,11 @@ Respuesta:`,
         botMsgId: botResult.value,
       });
     }
+
+    // Fulfilled with a null value means saveConversation swallowed a failure
+    // and wrote nothing. Reporting that as persisted would make the catch
+    // skip an inbound that does not exist.
+    return userResult.status === 'fulfilled' && userResult.value !== null;
   }
 }
 
