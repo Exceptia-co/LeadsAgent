@@ -1,5 +1,12 @@
 import { Pool } from 'pg';
-import { PrismaClient, MessageDirection, MessageType, Prisma } from '@leadcrm/db';
+import {
+  PrismaClient,
+  MessageDirection,
+  MessageType,
+  MessageStatus,
+  LeadStatus,
+  Prisma,
+} from '@leadcrm/db';
 import { logger } from '../utils/logger';
 import PhoneNumberService from './PhoneNumberService';
 import type { TrainingInteraction } from '../types';
@@ -36,6 +43,12 @@ export interface ConversationData {
   aiProvider?: string;
   tokensUsed?: number;
   isFromUser?: boolean;
+  /** The id the transport assigned this message. Not a WhatsApp-global id. */
+  providerMessageId?: string;
+  /** When WhatsApp says the message happened, not when we wrote the row. */
+  occurredAt?: Date;
+  /** READ for an inbound we processed, SENT for a reply we dispatched. */
+  status?: 'READ' | 'SENT';
 }
 
 export interface ConversationHistory {
@@ -587,6 +600,12 @@ class DatabaseService {
             direction: isFromUser ? MessageDirection.INBOUND : MessageDirection.OUTBOUND,
             messageType: toPrismaMessageType(data.messageType),
             sessionId: data.sessionId,
+            whatsappMessageId: data.providerMessageId,
+            status: data.status ? MessageStatus[data.status] : undefined,
+            // Omitted rather than nulled when absent: Prisma applies the
+            // column default, and an Invalid Date here is how T3 put rows
+            // in 1970.
+            createdAt: data.occurredAt,
           },
         });
 
@@ -606,6 +625,24 @@ class DatabaseService {
             isFromUser,
           },
         });
+
+        if (isFromUser && lead) {
+          // Always true for an inbound.
+          await tx.lead.updateMany({
+            where: { id: lead.id, tenantId, deletedAt: null },
+            data: { lastContact: new Date() },
+          });
+
+          // Only the first rung, and the condition lives in the WHERE rather
+          // than in a value read earlier: `lead` was fetched before this
+          // transaction opened, so deciding from `lead.status` would let an
+          // inbound drag a lead that became GANADO in between back to
+          // CONTACTADO. Postgres evaluates this against the row as it is now.
+          await tx.lead.updateMany({
+            where: { id: lead.id, tenantId, deletedAt: null, status: LeadStatus.NUEVO },
+            data: { status: LeadStatus.CONTACTADO },
+          });
+        }
 
         return { conversationId: conversation.id, messageId: message.id };
       });

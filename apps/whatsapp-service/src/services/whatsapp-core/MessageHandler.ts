@@ -54,6 +54,23 @@ export class MessageHandler {
       // building the DTO.
       const phoneNumber = dto.senderPhone;
 
+      // Derived once and passed only to the two INBOUND saveConversation
+      // calls below -- the fallback reply at the bottom of this method is an
+      // OUTBOUND, and the customer's message id/time do not describe it.
+      const occurredAt = (() => {
+        const seconds = Number(dto.timestamp);
+        // `> 0`, not just "not NaN": `new Date(0 * 1000)` is a perfectly
+        // valid Date -- 1 Jan 1970 -- and Number.isNaN waves it straight
+        // through. That is T3 exactly, and T3 only stopped being harmless
+        // once the proactive consent window started reasoning about recency.
+        if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+        return new Date(seconds * 1000);
+      })();
+      // dto.id is `${sessionId}:${providerId}` -- keep the provider half.
+      const providerMessageId = dto.id.includes(':')
+        ? dto.id.split(':').slice(1).join(':')
+        : dto.id;
+
       // B2.1: resolve tenantId + aiAgentId in a single query
       const { tenantId, aiAgentId } = await DatabaseService.getSessionContext(sessionId);
       if (!tenantId) {
@@ -138,6 +155,8 @@ export class MessageHandler {
           sentiment: thinkingResult.thinkingProcess.steps[0]?.data?.sentiment,
           aiProvider: thinkingResult.provider,
           tokensUsed: thinkingResult.tokensUsed || 0,
+          providerMessageId,
+          occurredAt,
         });
 
         // Calculate success metrics for learning
@@ -185,6 +204,9 @@ export class MessageHandler {
           aiProvider: thinkingResult.provider,
           tokensUsed: 0,
           isFromUser: true,
+          providerMessageId,
+          occurredAt,
+          status: 'READ',
         });
 
         // Send intelligent fallback when AI thinking failed with an error
@@ -200,18 +222,29 @@ export class MessageHandler {
             );
             await port.reply(intelligentFallback);
 
-            // Log the fallback usage
+            // Log the fallback usage. This is the reply we sent, not the
+            // customer's message, so it goes in `responseText` with
+            // `isFromUser: false` -- same shape as persistMessagePair's bot
+            // write above. It used to go in `messageText`, the exact bug
+            // found and fixed in persistMessagePair on 2026-04-19 and never
+            // fixed here: saveConversation reads `responseText` when
+            // `isFromUser` is false, so `canonicalContent` was null and the
+            // row was dropped with a warning -- every intelligent-fallback
+            // reply ever sent has gone unrecorded. It gets `status: 'SENT'`
+            // and nothing else new -- the inbound's id and time do not
+            // describe this reply.
             await DatabaseService.saveConversation({
               sessionId: sessionId,
               phoneNumber: phoneNumber,
-              messageText: intelligentFallback,
-              responseText: undefined,
+              messageText: undefined,
+              responseText: intelligentFallback,
               messageType: 'text',
               intent: 'fallback_response',
               sentiment: 'neutral',
               aiProvider: 'intelligent_fallback',
               tokensUsed: 0,
               isFromUser: false,
+              status: 'SENT',
             });
 
             logger.info(`✅ Intelligent fallback sent to ${phoneNumber}`);
@@ -602,6 +635,8 @@ Respuesta:`,
     sentiment?: string;
     aiProvider: string;
     tokensUsed: number;
+    providerMessageId?: string;
+    occurredAt?: Date;
   }): Promise<void> {
     const { default: DatabaseService } = await import('../DatabaseService');
     const {
@@ -614,6 +649,8 @@ Respuesta:`,
       sentiment,
       aiProvider,
       tokensUsed,
+      providerMessageId,
+      occurredAt,
     } = params;
 
     const [userResult, botResult] = await Promise.allSettled([
@@ -628,6 +665,9 @@ Respuesta:`,
         aiProvider,
         tokensUsed,
         isFromUser: true,
+        providerMessageId,
+        occurredAt,
+        status: 'READ',
       }),
       DatabaseService.saveConversation({
         sessionId,
@@ -646,6 +686,8 @@ Respuesta:`,
         aiProvider,
         tokensUsed: 0,
         isFromUser: false,
+        // Outbound: the inbound's id and time do not describe this reply.
+        status: 'SENT',
       }),
     ]);
 
