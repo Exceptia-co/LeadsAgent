@@ -36,13 +36,13 @@ describe('WhatsAppEventPublisher', () => {
     process.env.WHATSAPP_SERVICE_HMAC_SECRET = 'a'.repeat(64);
     const fetchSpy = jest.spyOn(global, 'fetch');
 
-    const publisher = new (WhatsAppEventPublisher as unknown as new (url?: string) => WhatsAppEventPublisher)(
-      'http://example.test/hook'
-    );
+    const publisher = new (WhatsAppEventPublisher as unknown as new (
+      url?: string
+    ) => WhatsAppEventPublisher)('http://example.test/hook');
     await publisher.sendWebhook({
-      event: 'message',
+      event: 'status_change',
       sessionId: 's1',
-      data: { body: 'hola' },
+      data: { status: 'ready' },
       timestamp: new Date().toISOString(),
     });
 

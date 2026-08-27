@@ -310,10 +310,10 @@ describe('BaileysSessionManager connection lifecycle', () => {
     // so the recovery has to travel as something else.
     expect(events.filter((p: any) => p.event === 'authenticated')).toHaveLength(0);
 
-    // `status_change` needs no new contract -- SocketService and apps/api's
-    // handleStatusChange both already handle it. The status string is
-    // load-bearing: SocketService.mapStatusToFrontend turns 'ready' into
-    // CONNECTED, and anything it does not recognise becomes QR_PENDING.
+    // `status_change` needs no new contract -- SocketService already handles
+    // it. The status string is load-bearing: SocketService.mapStatusToFrontend
+    // turns 'ready' into CONNECTED, and anything it does not recognise becomes
+    // QR_PENDING.
     const recovery = events.filter((p: any) => p.event === 'status_change');
     expect(recovery).toHaveLength(1);
     expect(recovery[0]).toMatchObject({

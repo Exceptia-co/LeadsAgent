@@ -63,7 +63,15 @@ export class MessageHandler {
         // valid Date -- 1 Jan 1970 -- and Number.isNaN waves it straight
         // through. That is T3 exactly, and T3 only stopped being harmless
         // once the proactive consent window started reasoning about recency.
-        if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+        //
+        // Upper bound too: a millisecond value arriving where seconds are
+        // expected gets re-multiplied by 1000 into a `timestamptz` far in the
+        // future -- and unlike the 1970 case (which fails *closed* on the
+        // proactive consent gate's `createdAt >= cutoff` filter), a far-future
+        // `createdAt` grants that lead consent permanently. That direction is
+        // the dangerous one, so it gets its own guard rather than riding on
+        // "finite".
+        if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 4e9) return undefined;
         return new Date(seconds * 1000);
       })();
       // dto.id is `${sessionId}:${providerId}` -- keep the provider half.

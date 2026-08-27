@@ -1,7 +1,6 @@
 import { redisClient, REDIS_KEYS, REDIS_TTL } from '../../config/redis';
 import { logger } from '../../utils/logger';
 import type { NormalizedWhatsAppMessage } from '../../types/messages';
-import type { WhatsAppMessage } from '../../types';
 import type { ReplyPort } from '../../types/reply-port';
 
 export interface IncomingMessagePipelineDeps {
@@ -18,14 +17,6 @@ export interface IncomingMessagePipelineDeps {
   sessionManager: {
     updateSessionStatus(sessionId: string, status: string, data?: unknown): Promise<void>;
   };
-  sendWebhook(payload: {
-    event: string;
-    sessionId: string;
-    // Frozen wire shape -- apps/api reads `data.from`/`data.body` over HTTP.
-    // Never widen this back to NormalizedWhatsAppMessage.
-    data: WhatsAppMessage;
-    timestamp: string;
-  }): Promise<void>;
 }
 
 const HEALTH_UPDATE_INTERVAL_MS = 30000;
@@ -76,30 +67,6 @@ export class IncomingMessagePipeline {
           );
         }
       }
-
-      // The webhook wire format is FROZEN. `apps/api` consumes this payload
-      // over HTTP and reads `data.from` and `data.body`; its controller types
-      // the field as `any`, so neither side's typecheck can catch a drift.
-      // Emitting the DTO raw here throws `undefined.replace()` in the API on
-      // every inbound message. Map back to the published shape instead.
-      await this.deps.sendWebhook({
-        event: 'message',
-        sessionId: dto.sessionId,
-        data: {
-          id: dto.id,
-          from: dto.senderPhone,
-          // WhatsAppMessage.to is `string`; recipientPhone is `string | null`.
-          // strictNullChecks is off in this project so nothing mechanical
-          // catches the mismatch -- coerce explicitly rather than lie about it.
-          to: dto.recipientPhone ?? '',
-          body: dto.text,
-          timestamp: dto.timestamp,
-          type: dto.type,
-          isGroup: dto.isGroup,
-          fromMe: dto.fromMe,
-        },
-        timestamp: new Date().toISOString(),
-      });
     } catch (error) {
       logger.error(`Error processing message in session ${dto.sessionId}:`, error);
     }

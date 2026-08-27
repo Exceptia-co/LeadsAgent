@@ -57,13 +57,7 @@ export type SessionStatus =
   | 'waiting_qr';
 
 export interface WebhookPayload {
-  event:
-    | 'message'
-    | 'status_change'
-    | 'qr_updated'
-    | 'authenticated'
-    | 'disconnected'
-    | 'webhook_test';
+  event: 'status_change' | 'qr_updated' | 'authenticated' | 'disconnected';
   sessionId: string;
   data: any;
   timestamp: string;

@@ -408,10 +408,13 @@ diciendo que el deploy salió bien. El dashboard lo despliega Vercel; aquí no p
 nada.
 
 `pm2 restart all` reinicia ambos servicios a la vez, que es lo que hace falta cuando
-un cambio los cruza. Si los despliegas por separado, **`leadcrm-api` va primero**:
-el gate de consentimiento de `whatsapp-service` filtra por `sessionId`, y quien
-persiste ese `sessionId` en el mensaje entrante es el webhook de Nest. Al revés, los
-proactivos dejan de salir en silencio (se contabilizan como `failed`, no como error).
+un cambio los cruza. El orden entre los dos servicios ya no afecta a la persistencia
+de mensajes. Se llegó a decir que **`leadcrm-api` tenía que ir primero**, porque el
+webhook de Nest persistía el `sessionId` en el mensaje entrante y el gate de
+consentimiento proactivo filtra por él. Eso nunca fue cierto en este despliegue:
+`WEBHOOK_URL` nunca estuvo configurada, así que ningún webhook llegó a entregarse, y
+`DatabaseService.saveConversation` siempre ha escrito el `sessionId` por su cuenta. El
+canal de entrada de Nest se retiró el 2026-08-27.
 
 Efecto: ~15–30 s de caída. Cada sesión de WhatsApp se desconecta y vuelve leyendo sus
 credenciales de `whatsapp_auth_keys` — desde el cambio de motor a Baileys ya no hay

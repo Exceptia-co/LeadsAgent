@@ -529,10 +529,11 @@ export class BaileysSessionManager {
     // reload clears. Announcing the drop and not the recovery leaves a session
     // that came back five seconds later showing DISCONNECTED indefinitely.
     //
-    // `status_change` and not a third `authenticated`: SocketService and
-    // apps/api's handleStatusChange both already handle this event, so it needs
-    // no new contract, and the "exactly two authenticated webhooks per session
-    // lifecycle" shape Phase 1 froze stays untouched.
+    // `status_change` and not a third `authenticated`: SocketService already
+    // handles this event (turns it into session:status_changed for the
+    // dashboard), so it needs no new contract, and the "exactly two
+    // authenticated webhooks per session lifecycle" shape Phase 1 froze stays
+    // untouched.
     await this.deps.publisher.sendWebhook({
       event: 'status_change',
       sessionId,
@@ -636,13 +637,15 @@ export class BaileysSessionManager {
       return;
     }
 
-    // `reason` is not decoration: apps/api's handleSessionDisconnected writes it
-    // straight into whatsapp_sessions.lastError -- the same row and column the
-    // terminal paths below just wrote. One generic string for every arm would
+    // `reason` is not decoration: for the terminal branches below, markTerminal
+    // (and markGaveUp, which calls it) writes it straight into
+    // whatsapp_sessions.lastError -- the same row and column
+    // handleSessionDisconnect() already wrote generically, above, moments
+    // earlier in this same process. One generic string for every arm would
     // therefore erase the specific explanation microseconds after persisting
     // it, leaving the operator "Connection closed (code 408)" where
     // "Reconnect budget exhausted after 5 attempts" was. So: whatever a branch
-    // persisted is what its webhook carries.
+    // persists locally is what its webhook carries too.
     let reason = `Connection closed (code ${code ?? 'unknown'})`;
     let disconnectType = 'NETWORK_ERROR';
 

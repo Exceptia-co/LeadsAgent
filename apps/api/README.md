@@ -125,7 +125,6 @@ pnpm type-check       # TypeScript check
 | Método | Endpoint                      | Descripción          | Auth |
 | ------ | ----------------------------- | -------------------- | ---- |
 | `POST` | `/api/whatsapp/send`          | Enviar mensaje       | ✅   |
-| `GET`  | `/api/whatsapp/conversations` | Lista conversaciones | ✅   |
 
 ### Sistema
 

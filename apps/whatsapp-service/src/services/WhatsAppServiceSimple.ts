@@ -25,8 +25,9 @@ import { sessionCredentialsStore } from './session-credentials/SessionCredential
  * - WhatsAppEventPublisher: Socket.IO + HMAC-signed webhook emission
  *
  * The public API is unchanged across the engine cutover, so the REST
- * routes, the Socket.IO payloads and the message webhook contract are all
- * untouched.
+ * routes and the Socket.IO payloads are untouched. The inbound message
+ * webhook itself is gone -- its only consumer (apps/api) was retired, and
+ * with it the HTTP transport; see IncomingMessagePipeline.
  */
 class WhatsAppServiceSimple {
   private sessionInitLocks: Set<string> = new Set();
@@ -62,7 +63,6 @@ class WhatsAppServiceSimple {
     sessionManager: {
       updateSessionStatus: this.sessionManager.updateSessionStatus.bind(this.sessionManager),
     },
-    sendWebhook: this.publisher.sendWebhook.bind(this.publisher),
   });
 
   private baileys = new BaileysSessionManager({
