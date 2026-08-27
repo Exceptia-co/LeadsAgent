@@ -124,7 +124,6 @@ pnpm type-check       # TypeScript check
 
 | Método | Endpoint                      | Descripción          | Auth |
 | ------ | ----------------------------- | -------------------- | ---- |
-| `POST` | `/api/whatsapp/webhook`       | Webhook de mensajes  | ❌   |
 | `POST` | `/api/whatsapp/send`          | Enviar mensaje       | ✅   |
 | `GET`  | `/api/whatsapp/conversations` | Lista conversaciones | ✅   |
 
@@ -401,24 +400,17 @@ CMD ["node", "dist/main"]
 
 ## 🔄 Integración con WhatsApp Service
 
-### Webhook Configuration
+Nest API solo envía mensajes salientes hacia `whatsapp-service`, vía
+`POST /api/whatsapp/send` firmado con HMAC-SHA256
+(`apps/api/src/whatsapp/service-auth.ts`). No existe un canal de entrada:
+`whatsapp-service` persiste directamente los mensajes entrantes
+(`DatabaseService.saveConversation`) contra la misma base de datos
+Postgres, sin pasar por Nest.
 
-```typescript
-// whatsapp.controller.ts
-@Post('webhook')
-async handleWebhook(@Body() payload: WhatsAppWebhookDto) {
-  // Procesar mensaje entrante de WhatsApp
-  const lead = await this.leadService.findByPhone(payload.phone)
-
-  // Crear mensaje en la base de datos
-  await this.messageService.create({
-    leadId: lead.id,
-    content: payload.message,
-    direction: MessageDirection.INBOUND,
-    messageType: MessageType.TEXT
-  })
-}
-```
+Existió antes un endpoint `POST /whatsapp/webhook` para que
+`whatsapp-service` notificara a Nest de eventos entrantes, protegido por
+`HmacAuthGuard`. Nunca llegó a usarse en producción — `WEBHOOK_URL` nunca
+se configuró en el VPS — y se retiró el 2026-08-27.
 
 ## 🎯 Próximos Pasos
 

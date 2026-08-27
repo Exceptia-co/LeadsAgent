@@ -63,7 +63,8 @@ API Endpoints (Puerto 3003) - ✅ 100% Funcionales:
 ├── GET/POST /leads - Gestión completa de leads
 ├── GET /leads/stats - Analytics con enums españoles
 ├── PATCH /leads/:id/status - Cambios de estado type-safe
-└── POST /whatsapp/webhook - Webhook de mensajes WhatsApp
+└── POST /whatsapp/send - Envío de mensajes WhatsApp (el webhook de entrada
+    nunca se usó en producción y fue retirado el 2026-08-27)
 
 Modelos de Datos:
 ├── Lead (assignedTo, moodScore, tags[]) - ✅ Operativo

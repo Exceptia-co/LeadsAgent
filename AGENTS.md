@@ -104,7 +104,7 @@ GEMINI_API_KEY="..."                   # AI fallback
 **Security Rules:**
 
 - NEVER commit secrets/keys — use `.env` files only (all `.env*` are in `.gitignore` except `.env.example`).
-- All Nest controllers are gated by `@UseGuards(ClerkAuthGuard)` except the webhook endpoints (`/whatsapp/webhook` and `/api/webhooks/clerk`).
+- All Nest controllers are gated by `@UseGuards(ClerkAuthGuard)` except the webhook endpoints (`/api/webhooks/clerk` and `/api/webhooks/clerk/organizations`), which carry their own signature verification. The Nest-side WhatsApp inbound webhook was retired on 2026-08-27 — `WEBHOOK_URL` was never set in production, so it never received a request.
 - Server-to-server traffic to the whatsapp-service is gated by HMAC-SHA256 (`x-service-signature` + `x-service-timestamp`, 5-min replay window). Helpers at `apps/dashboard/lib/service-auth.ts` and `apps/api/src/whatsapp/service-auth.ts`; verifier at `apps/whatsapp-service/src/middleware/auth.ts`.
 - Use class-validator for input validation (every Nest DTO).
 - **RLS in Supabase is intentionally off** (13/13 tables, 0 policies). Option C of PRD T0.1 — operation is single-admin and every DB client uses a role that bypasses RLS. Re-open if a second user appears, PostgREST is exposed, or a Clerk↔Supabase JWT bridge is introduced.
@@ -113,7 +113,7 @@ GEMINI_API_KEY="..."                   # AI fallback
 
 **Auth:** Clerk JWT required everywhere except `/api/webhooks/*` (which carry their own signing).
 **Format:** Standard `{ success, data, error }` responses.
-**Key Routes:** `/api/leads` (CRUD + soft delete), `/api/templates` (CRUD + preview), `/api/whatsapp/webhook`, `/api/webhooks/clerk` (user events, Vercel), `/api/webhooks/clerk/organizations` (organization events, Hetzner Nest — auto-creates `tenants` row).
+**Key Routes:** `/api/leads` (CRUD + soft delete), `/api/templates` (CRUD + preview), `/api/webhooks/clerk` (user events, Vercel), `/api/webhooks/clerk/organizations` (organization events, Hetzner Nest — auto-creates `tenants` row).
 **Proxy to whatsapp-service:** the dashboard never calls `localhost:3002` directly — every request goes through `apps/dashboard/app/api/whatsapp/[...path]/route.ts`, which `requireClerkToken` + signs HMAC before forwarding. WebSocket (Socket.IO) is the only channel that bypasses the proxy — it uses `getWhatsAppSocketUrl()` directly.
 
 ## Testing Strategy

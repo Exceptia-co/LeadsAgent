@@ -10,8 +10,10 @@ async function bootstrap() {
 
   const isProduction = process.env.NODE_ENV === 'production';
 
-  // Capture rawBody so HmacAuthGuard can recompute the HMAC-SHA256 over the
-  // exact bytes Nest's built-in body parser would otherwise discard.
+  // Capture rawBody so signature-verifying webhook handlers can recompute a
+  // digest over the exact bytes received. The WhatsApp webhook that
+  // originally needed this was retired on 2026-08-27; the Clerk
+  // Organizations webhook still needs it.
   app.use(
     json({
       limit: '1mb',

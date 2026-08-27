@@ -385,11 +385,13 @@ dependencies installed, and the old bundle still serving, with every visible sig
 saying the deploy ran. The dashboard is deployed by Vercel and has no business being
 built here.
 
-If you ever deploy the two services separately, **`leadcrm-api` goes first**: the
-proactive consent gate in `whatsapp-service` filters by `sessionId`, and the Nest
-webhook is what persists that `sessionId` on the inbound message. The other order
-silently stops every proactive send — they are counted as `failed`, not raised as
-an error.
+Deploy order between the two services does not affect message persistence.
+It was once claimed that `leadcrm-api` had to go first, because the Nest
+webhook persisted `sessionId` on inbound messages and the proactive
+consent gate filters by it. That was never true in this deployment:
+`WEBHOOK_URL` was unset, so no webhook was ever delivered, and
+`DatabaseService.saveConversation` has been writing `sessionId` itself all
+along. The Nest inbound channel was retired on 2026-08-27.
 
 Effects: ~15-30s downtime while installing deps and restarting; each WhatsApp session
 disconnects briefly and comes back by re-reading its credentials from

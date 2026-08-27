@@ -13,25 +13,12 @@ import { WhitelistService } from './whitelist.service';
 import { ClerkAuthGuard } from '../auth/clerk-auth.guard';
 import { TenantContextGuard } from '../auth/tenant-context.guard';
 import { CurrentUser } from '../auth/user.decorator';
-import { HmacAuthGuard } from './hmac-auth.guard';
 
 interface SendMessageDto {
   sessionId: string;
   phone: string;
   message: string;
   type?: 'text' | 'image' | 'document' | 'audio' | 'video';
-}
-
-interface WebhookPayload {
-  event:
-    | 'message'
-    | 'status_change'
-    | 'qr_updated'
-    | 'authenticated'
-    | 'disconnected';
-  sessionId: string;
-  data: any;
-  timestamp: string;
 }
 
 @Controller('whatsapp')
@@ -42,59 +29,6 @@ export class WhatsAppController {
     private readonly whatsAppService: WhatsAppService,
     private readonly whitelistService: WhitelistService,
   ) {}
-
-  @Post('webhook')
-  @UseGuards(HmacAuthGuard)
-  async handleWebhook(@Body() payload: WebhookPayload) {
-    this.logger.log(
-      `Webhook received: ${payload.event} for session ${payload.sessionId}`,
-    );
-
-    try {
-      switch (payload.event) {
-        case 'message':
-          await this.whatsAppService.handleIncomingMessage(
-            payload.sessionId,
-            payload.data,
-          );
-          break;
-
-        case 'authenticated':
-          await this.whatsAppService.handleSessionAuthenticated(
-            payload.sessionId,
-            payload.data,
-          );
-          break;
-
-        case 'disconnected':
-          await this.whatsAppService.handleSessionDisconnected(
-            payload.sessionId,
-            payload.data,
-          );
-          break;
-
-        case 'status_change':
-          await this.whatsAppService.handleStatusChange(
-            payload.sessionId,
-            payload.data,
-          );
-          break;
-
-        case 'qr_updated':
-          // QR code updated - could be stored or forwarded to frontend
-          this.logger.log(`QR code updated for session ${payload.sessionId}`);
-          break;
-
-        default:
-          this.logger.warn(`Unhandled webhook event: ${payload.event}`);
-      }
-
-      return { success: true, message: 'Webhook processed successfully' };
-    } catch (error) {
-      this.logger.error('Error processing webhook:', error);
-      throw error;
-    }
-  }
 
   @Post('send')
   @UseGuards(ClerkAuthGuard, TenantContextGuard)
