@@ -189,7 +189,7 @@ export class BaileysSessionManager {
       clientId: sessionId,
       status: 'connecting',
       lastSeen: new Date(),
-      webhookUrl: process.env.WEBHOOK_URL,
+      webhookUrl: undefined,
       metadata: { tenantId },
     };
     this.sessions.set(sessionId, session);

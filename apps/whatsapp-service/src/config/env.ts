@@ -40,7 +40,6 @@ const envSchema = z.object({
   // Otros
   CORS_ORIGIN: z.string().optional(),
   LOG_LEVEL: z.string().optional(),
-  WEBHOOK_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

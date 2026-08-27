@@ -41,7 +41,6 @@ module.exports = {
         PORT: 3002,
         // These should be set in the actual environment
         // DATABASE_URL: '...',
-        // WHATSAPP_WEBHOOK_SECRET: '...',
         // API_URL: '...',
       },
     },

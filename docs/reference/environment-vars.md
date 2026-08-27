@@ -129,16 +129,12 @@ OPENAI_BASE_URL="https://api.openai.com/v1"
 # WhatsApp Service
 WHATSAPP_SERVICE_URL="http://localhost:3002"
 WHATSAPP_SERVICE_PORT=3002
-WHATSAPP_WEBHOOK_SECRET="your_secure_webhook_secret"
 WHATSAPP_SESSION_DIR="./.wwebjs_sessions"
 
 # Proactive consent window: a proactive send needs whatsapp_authorized=true AND
 # an inbound message from that lead on that same session within N days.
 # Positive integer, default 30, capped at 90 in code.
 PROACTIVE_INBOUND_WINDOW_DAYS=30
-
-# Webhook Configuration
-WEBHOOK_URL="http://localhost:3003/api/webhooks/whatsapp"
 ```
 
 ### Session Management
@@ -434,7 +430,6 @@ cp .env.example .env
 ### Optional but Recommended
 
 - [ ] `REDIS_URL` - For caching and performance
-- [ ] `WHATSAPP_WEBHOOK_SECRET` - For WhatsApp security
 - [ ] `JWT_SECRET` - For enhanced security
 - [ ] `LOG_LEVEL` - For appropriate logging
 

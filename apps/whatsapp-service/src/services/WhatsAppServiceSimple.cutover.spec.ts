@@ -56,9 +56,6 @@ jest.mock('./session-credentials/SessionCredentialsStore', () => ({
 jest.mock('./WhatsAppEventPublisher', () => ({
   WhatsAppEventPublisher: jest.fn().mockImplementation(() => ({
     sendWebhook: jest.fn().mockResolvedValue(undefined),
-    sendForceDisconnectWebhook: jest.fn().mockResolvedValue(undefined),
-    testWebhook: jest.fn(),
-    getWebhookUrl: () => undefined,
   })),
 }));
 

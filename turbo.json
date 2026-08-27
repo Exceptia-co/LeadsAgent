@@ -10,7 +10,6 @@
     "SUPABASE_SERVICE_ROLE_KEY",
     "REDIS_*",
     "CORS_ORIGIN",
-    "WEBHOOK_URL",
     "WHATSAPP_*",
     "AI_PROVIDER",
     "OPENROUTER_*",

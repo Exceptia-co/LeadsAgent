@@ -50,7 +50,7 @@ class WhatsAppServiceSimple {
   // manager below read the three above during field initialisation.
   private messageHandler = MessageHandler;
   private sessionManager = SessionManager;
-  private publisher = new WhatsAppEventPublisher(process.env.WEBHOOK_URL);
+  private publisher = new WhatsAppEventPublisher();
 
   private pipeline = new IncomingMessagePipeline({
     authChecker: {
@@ -201,7 +201,7 @@ class WhatsAppServiceSimple {
       // the handshake, so creating the socket first makes the very first
       // creds.update fail on a constraint violation — during pairing, where it
       // reads as "the QR did not work".
-      await this.sessionManager.persistSession(sessionId, tenantId, process.env.WEBHOOK_URL);
+      await this.sessionManager.persistSession(sessionId, tenantId, undefined);
 
       const session = await this.baileys.createSession(sessionId, tenantId);
 
@@ -337,10 +337,6 @@ class WhatsAppServiceSimple {
       // field). Credentials are kept, so no new QR is needed to resume.
       await this.baileys.forceDisconnect(sessionId);
 
-      // The webhook is the facade's, and it is not part of what the manager
-      // took over.
-      await this.publisher.sendForceDisconnectWebhook(sessionId);
-
       logger.info(`✅ Session ${sessionId} paused successfully — credentials preserved`);
     } catch (error) {
       logger.error(`❌ Error pausing session ${sessionId}:`, error);
@@ -470,15 +466,7 @@ class WhatsAppServiceSimple {
         publisher: !!this.publisher,
         baileys: !!this.baileys,
       },
-      webhookUrl: this.publisher.getWebhookUrl(),
     };
-  }
-
-  /**
-   * Test webhook connectivity
-   */
-  async testWebhook(): Promise<{ success: boolean; error?: string }> {
-    return await this.publisher.testWebhook();
   }
 
   /**
