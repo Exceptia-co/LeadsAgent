@@ -323,15 +323,18 @@ export class RecoveryRunner {
       };
     }
 
-    if (
-      sessionMetadata.lastAlertType === 'authentication' ||
-      (lastError && RecoveryRunner.isAuthCorruptionError(lastError))
-    ) {
-      return {
-        shouldRecover: false,
-        reason: 'Authentication files are corrupted or invalid',
-      };
-    }
+    // No auth-corruption branch. It was dead twice over: its string list
+    // named files and browser profiles that stopped existing at the cutover,
+    // and its metadata test compared `lastAlertType` against
+    // 'authentication', a value AlertManager never writes — its types are
+    // 'auth', 'connection', 'functionality' and 'performance'.
+    //
+    // Repairing the comparison would have been worse than deleting it. The
+    // pre-key exhaustion alerts are type 'auth', so a session warning that it
+    // is low on pre-keys would have become a session barred from recovery.
+    // Missing credentials and `autoReconnect: false` are structured signals
+    // that say what they mean; a string match on a persisted error message,
+    // read back on the next boot, is not.
 
     if (
       sessionMetadata.manualDisconnect === true &&
@@ -358,32 +361,6 @@ export class RecoveryRunner {
       };
     }
 
-    if (lastError) {
-      const permanentFailureIndicators = [
-        'whatsapp web session expired',
-        'unpaired',
-        'timeout',
-        'authentication failed permanently',
-        'account banned',
-        'phone number not allowed',
-        'authentication files are corrupted',
-        'session files invalid',
-        'chrome profile corrupted',
-      ];
-
-      const normalizedError = lastError.toLowerCase();
-      const hasPermanentFailure = permanentFailureIndicators.some(indicator =>
-        normalizedError.includes(indicator)
-      );
-
-      if (hasPermanentFailure) {
-        return {
-          shouldRecover: false,
-          reason: `Permanent failure detected: ${lastError}`,
-        };
-      }
-    }
-
     // Deliberately no "lastSeen is under a minute old, it might still be
     // starting up" check. Recovery runs in exactly one place -- process
     // boot, from WhatsAppServiceSimple.runInitialize -- where the session
@@ -402,43 +379,14 @@ export class RecoveryRunner {
     };
   }
 
-  /**
-   * The three heuristics that came back from AuthValidator with the storage
-   * migration. None of them ever touched the filesystem: two are substring
-   * matches on a persisted lastError, one is a timestamp comparison. They
-   * decide whether to *retry* a session, never whether to delete anything.
-   */
-  private static isAuthCorruptionError(lastError: string): boolean {
-    const authCorruptionIndicators = [
-      'authentication files are corrupted',
-      'auth files corrupted',
-      'session files invalid',
-      'chrome profile corrupted',
-      'local storage corrupted',
-      'session storage corrupted',
-      'authentication failed repeatedly',
-      'qr code timeout',
-      'auth timeout',
-      'profile directory corrupted',
-      'browser profile invalid',
-    ];
-
-    const normalizedError = lastError.toLowerCase();
-    return authCorruptionIndicators.some(indicator => normalizedError.includes(indicator));
-  }
-
   private static isSessionClosedByUser(lastError: string): boolean {
-    const userClosureIndicators = [
-      'browser disconnected',
-      'browser was closed',
-      'page closed',
-      'browser_closed',
-      'page_closed',
-      'target closed',
-      'force disconnected by user',
-      'user closed',
-      'window closed',
-    ];
+    // One entry, because one thing writes it: BaileysSessionManager's
+    // forceDisconnect. The other eight described a Chromium page or window
+    // being closed and were dead the moment the engine stopped being a
+    // browser -- kept only in `whatsapp_sessions.last_error` on rows that
+    // have been inactive since before the cutover, which `loadActiveSessions`
+    // never returns.
+    const userClosureIndicators = ['force disconnected by user'];
 
     const normalizedError = lastError.toLowerCase();
     return userClosureIndicators.some(indicator => normalizedError.includes(indicator));

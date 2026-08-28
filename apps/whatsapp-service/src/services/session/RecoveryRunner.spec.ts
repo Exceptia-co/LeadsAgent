@@ -180,6 +180,43 @@ describe('RecoveryRunner credential gate', () => {
     expect(written.metadata.recoverySkipReason).toMatch(/manually disconnected/i);
   });
 
+  it('recovers a session whose last error was a transient timeout', async () => {
+    // 'timeout' used to sit in a permanent-failure list, matched as a
+    // substring. A pooler wobble writing 'pool timeout' into last_error
+    // therefore marked the session permanently unrecoverable — the exact
+    // opposite of what a timeout means.
+    hasCredentials.mockResolvedValue(true);
+    const service = makeService();
+
+    const result = await new RecoveryRunner().executeSessionRecovery(
+      service,
+      sessionRow({ lastError: 'pool timeout' }),
+      OPTIONS
+    );
+
+    expect(service.createSession).toHaveBeenCalledWith('sess-1');
+    expect(result.skipped).toBeFalsy();
+  });
+
+  it('recovers a session that merely raised an auth alert', async () => {
+    // `lastAlertType: 'auth'` is what AlertManager writes when pre-keys run
+    // low — a session that needs watching, not one that must never be
+    // reconnected. The old branch compared against 'authentication', which
+    // nothing writes, so it never fired; repairing that comparison instead of
+    // deleting it would have turned every pre-key warning into a recovery ban.
+    hasCredentials.mockResolvedValue(true);
+    const service = makeService();
+
+    const result = await new RecoveryRunner().executeSessionRecovery(
+      service,
+      sessionRow({ metadata: { lastAlertType: 'auth' } }),
+      OPTIONS
+    );
+
+    expect(service.createSession).toHaveBeenCalledWith('sess-1');
+    expect(result.skipped).toBeFalsy();
+  });
+
   it('still refuses a credentialled session the user closed on purpose', async () => {
     // The credential gate runs first, so this proves it did not swallow the
     // checks behind it: a force-disconnected row stays skipped.
