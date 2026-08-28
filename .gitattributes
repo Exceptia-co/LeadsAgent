@@ -1,0 +1,16 @@
+# Line endings.
+#
+# The repository stores LF. Without this file git has no opinion about what a
+# working tree should get, so a WSL checkout on /mnt/c materialises CRLF and
+# every file it touches reports as modified with no content change — 195 of
+# them, for months, hiding real changes in the noise and blocking any
+# fast-forward that lands on one.
+#
+# Prettier already enforces `endOfLine: "lf"` for this repo. This makes git
+# agree with it, in every checkout, on every platform.
+* text=auto eol=lf
+
+# Byte-for-byte, never filtered.
+*.ico binary
+*.woff binary
+*.woff2 binary
