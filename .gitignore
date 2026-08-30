@@ -123,3 +123,11 @@ tmpclaude-*
 
 # MCP config (contains API tokens)
 .mcp.json
+
+# Local AI tooling
+.agents/
+.atl/
+.commandcode/
+.cursor/
+agent/
+skills-lock.json
